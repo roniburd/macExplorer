@@ -22,7 +22,7 @@
 | `docs/superpowers/plans/2026-11-01-phase1-s5-ui-content.md` | S5 ui-content | P1-31 … P1-38 |
 | `docs/superpowers/plans/2026-11-01-phase1-s6-validation.md` | S6 validation | P1-39 … P1-42 |
 
-Tasks execute in ID order (P1-01, P1-02, …). The ID order is a valid topological order of the dependency graph in §4 of this document. The app is launchable from P1-01 onward.
+Tasks execute in ID order (P1-01, P1-02, …). The ID order is a valid topological order of the dependency graph in §4 of this document. §6 (end of this file) lists every task with its slice file and plan status. The app is launchable from P1-01 onward.
 
 ## Global Constraints
 
@@ -134,6 +134,11 @@ let package = Package(
 
 `FSKitTests` is the only target that reads `Bundle.module` (test bundles are not code-signed app bundles, so the accessor is fine there).
 
+Manifest amendments made by later tasks (consistency pass 2026-11-02; the manifest above is what P1-01 writes):
+- P1-01's stub file for each test target (`MacxFixturesTests`, `FSKitTests`, `CoreTests`, `UITests`) must contain at least one test method: with Xcode installed each test target is its own `.xctest` bundle and an empty one fails to load (S1 Contract note 14). P1-01 creates `Tests/FSKitTests/Corpus/sort-allowed-divergences.json` as `[]` so the `.copy("Corpus")` resource compiles; P1-07 replaces it with `{ "comment", "categories", "divergences" }` (S1 Contract note 8).
+- P1-39 appends `.testTarget(name: "BenchTests", dependencies: ["macx-bench", "Core", "MacxFS", "MacxFixtures"], swiftSettings: strict)` and P1-40 appends `.testTarget(name: "ScenarioRunnerTests", dependencies: ["macx-scenarios", "Core", "MacxFS", "MacxFixtures"], swiftSettings: strict)` after `UITests` (S6 Contract note C2). Tests import the executables as `@testable import macx_bench` / `macx_scenarios`.
+- P1-41 changes `Resources/Info.plist`'s `NSPrincipalClass` to `MacxApplication` (an `NSApplication` subclass in `Sources/UI/App/MacxApplication.swift` that lets the scenario driver pin the key window) and `Sources/App/main.swift` to instantiate it.
+
 ## 2. File structure (Phase 1)
 
 One line of responsibility per file. Owning task in brackets. Keep files under ~300 lines; split by responsibility if one grows.
@@ -182,12 +187,12 @@ Sources/FSKit/Reader/FallbackReader.swift       [P1-06] synchronous readdir + fs
 Sources/FSKit/Reader/RecordConverter.swift      [P1-06] cfsk_record → Entry (kind, flags, type index, identity)
 Sources/FSKit/Reader/ItemReader.swift           [P1-06] stat a list of names in one dir (watcher incremental path)
 Sources/FSKit/Reader/DirectoryReader.swift      [P1-06] per-volume actor; streaming (2,000 / 8 ms), stalls, cancel
-Sources/FSKit/Reader/DirectoryReaders.swift     [P1-06] registry: one DirectoryReader per volume
+Sources/FSKit/Reader/DirectoryReaders.swift     [P1-08] registry: one DirectoryReader per volume (needs MountTableStore, so it lands with Volumes)
 Sources/FSKit/Sort/ViewQuery.swift              [P1-07] SortField, SortDescriptor, ViewQuery
 Sources/FSKit/Sort/SortKeyColumn.swift          [P1-07] byte-key column (arena + offsets)
 Sources/FSKit/Sort/SortKeys.swift               [P1-07] CFStringFold name keys, digit runs, search fold
 Sources/FSKit/Sort/Sorter.swift                 [P1-07] permutation by memcmp/integer keys, filter, merge
-Sources/FSKit/Volumes/VolumeInfo.swift          [P1-08] VolumeID, VolumeInfo, VolumeCapabilities
+Sources/FSKit/Volumes/VolumeInfo.swift          [P1-04 creates it with VolumeID only (LanePool needs it); P1-08 adds VolumeInfo, VolumeCapabilities]
 Sources/FSKit/Volumes/MountTable.swift          [P1-08] longest-prefix lookup, MountTableStore (Sendable mirror)
 Sources/FSKit/Volumes/VolumeScanner.swift       [P1-08] VolumeScanning protocol + SystemVolumeScanner (mountedVolumeURLs on a lane)
 Sources/FSKit/Volumes/Volumes.swift             [P1-08] @MainActor registry: list, events, capacity cache, release handlers
@@ -195,9 +200,11 @@ Sources/FSKit/Volumes/Volumes.swift             [P1-08] @MainActor registry: lis
 Sources/MacxFixtures/Sandbox.swift              [P1-02] guarded temp root; all fixture writes
 Sources/MacxFixtures/DiskImage.swift            [P1-02] hdiutil create/attach/detach inside a Sandbox (APFS, HFS+, ExFAT, MS-DOS; size; read-only)
 Sources/MacxFixtures/FixtureTree.swift          [P1-02] builders: flat N files, §9 golden tree, deep trees, sparse, xattrs, locked, aliases
+Sources/MacxFixtures/TrapProbe.swift            [P1-02] runs a trapping test body in a child xctest process (safety-trap tests)
 Sources/MacxFixtures/SortCorpus.swift           [P1-07] deterministic ~5k-name corpus generator
 
 Sources/Core/Support/CoreEnvironment.swift      [P1-25] DI bundle of every Core service
+Sources/Core/Support/SandboxEjector.swift       [P1-25] internal Ejecting used by sandboxed(root:): ejects only images mounted under the root
 Sources/Core/Support/StatePaths.swift           [P1-01] app state dir (journal, settings file, recents)
 Sources/Core/Support/LaunchOptions.swift        [P1-01] command-line parsing (--root, --state-dir, …)
 Sources/Core/Support/ChangeBus.swift            [P1-10] routes LocalChange posts to FolderModels by directory
@@ -339,6 +346,8 @@ Sources/UI/Operations/OperationsPanel.swift     [P1-38] popover + Window › Ope
 Sources/UI/Scenario/ScenarioProbe.swift         [P1-26] ScenarioProbe protocol + ScenarioHooks (optional closures later tasks install)
 Sources/UI/Scenario/ScenarioFile.swift          [P1-41] Codable scenario schema (§3.14)
 Sources/UI/Scenario/ScenarioDriver.swift        [P1-41] in-process runner: synthesizes NSEvents, probes, writes result JSON
+Sources/UI/Scenario/{KeySynth,ExpectationMatcher,ScenarioInteraction,ScenarioFixtures,ScenarioLaunch}.swift [P1-41] driver parts (see S6 P1-41 Files)
+Sources/UI/App/MacxApplication.swift            [P1-41] NSApplication subclass: scenario driver pins key/main window while the app is inactive
 
 Sources/App/main.swift                          [P1-01] NSApplication bootstrap, parses LaunchOptions
 Sources/App/AppDelegate.swift                   [P1-01] launch → UIContext/WindowManager; app-level commands (grows in P1-26/P1-30)
@@ -349,10 +358,13 @@ Sources/macx-bench/Metrics.swift                [P1-39] metric definitions (enum
 Sources/macx-bench/Stats.swift                  [P1-39] warm-up + 5 iterations, median/p90
 Sources/macx-bench/Budgets.swift                [P1-39] §4.4 budget table, --check-budgets
 Sources/macx-bench/BaselineCompare.swift        [P1-39] --compare: >20% AND >5 ms slower fails
+Sources/macx-bench/{BenchCLI,Report,Machine,FixtureAdapter}.swift [P1-39] options, JSON report, machine info, the only file naming MacxFixtures
 
 Sources/macx-scenarios/main.swift               [P1-40] CLI: --list, --filter, --json, --keep-sandbox; crash-helper subcommand
 Sources/macx-scenarios/CoreScenario.swift       [P1-40] scenario protocol + assertion helpers
 Sources/macx-scenarios/Scenarios/*.swift        [P1-40] browse, ops, conflicts, cross-volume, watcher, clipboard, undo scenarios
+Sources/macx-scenarios/FixtureAdapter.swift     [P1-40] the only file naming MacxFixtures (SandboxHandle)
+scripts/verify-phase1.sh                        [P1-42] runs every Phase 1 gate (build, test, bundle, both scenario runners, bench) in one ${TMPDIR}/macx-*-<UUID> run directory
 
 Tests/MacxFixturesTests/SandboxTests.swift      [P1-02]
 Tests/FSKitTests/Corpus/sort-allowed-divergences.json [P1-01 creates `[]`; P1-07 fills] allowed sort differences with reasons
@@ -410,13 +422,84 @@ Tests/UITests/DragDropTests.swift               [P1-36]
 Tests/UITests/PropertiesViewModelTests.swift    [P1-37]
 Tests/UITests/InteractionRouterTests.swift      [P1-38]
 Tests/Scenarios/*.json                          [P1-41] UI scenario files (§3.14 schema)
+Tests/BenchTests/*.swift                        [P1-39] (target added by P1-39, §1 amendments)
+Tests/ScenarioRunnerTests/*.swift               [P1-40] (target added by P1-40, §1 amendments)
+Tests/CoreTests/FileOps/FileOpsTestSupport.swift [P1-17] FileOpsTestCase + Sendable FileOpsWorld; the only CoreTests/FileOps file naming MacxFixtures
+Tests/UITests/Support/ContentTestHarness.swift  [P1-31] the only way S5 UI tests build a world (sandboxed CoreEnvironment + LaunchOptions)
+scripts/l10n-add.sh                             [P1-31] adds English String Catalog keys
 ```
+
+This map is the minimum. Each slice file's "File structure (this slice)" section and each task's **Files** list are authoritative for additional files (splits that keep files under ~300 lines, test files, helpers).
 
 ## 3. Interface contract
 
 Slice authors copy these declarations exactly (names, labels, parameter and return types, isolation, `Sendable`, `throws`). Bodies are the slice's job. Anything not listed is internal to its module and may be shaped freely. If a slice finds a contract bug, it fixes it here in the same commit and notes it in the task.
 
 Conventions: paths cross module boundaries as file `URL`s (`URL(filePath:directoryHint:)`), standardized; byte names stay in arenas; times are nanoseconds since 1970 (`Int64`) inside MacxFS and `Date` in Core's UI-facing types.
+
+### 3.0 MacxFixtures (test fixtures; P1-02, plus `SortCorpus` in P1-07)
+
+Added by the consistency pass (S1 Contract note 1; S3 note 1, S5 note 1, S6 note C1 all use these names). Copied exactly from S1 P1-02's Interfaces block, which stays authoritative. `MacxFixtures` is linked only by test targets, `macx-bench` and `macx-scenarios`; the `UI` and `macExplorer` targets never link it (enforced by `check-layering.sh`, P1-42). Writes into a mounted image go through the sandbox with `image.relativeMountPath + "/…"`, or through raw writes on URLs under `image.mountPoint` (which is inside the sandbox).
+
+```swift
+public final class Sandbox: Sendable {
+    public static let allowedPrefixes: [String]            // macx-tests, macx-bench, macx-scenario, macx-fixtures
+    public let root: URL                                     // symlink-resolved, /private/var/folders/…/T/<prefix>-<UUID>
+    public init(prefix: String = "macx-tests") throws
+    public init(adopting directory: URL) throws              // runner-created <prefix>-* dir directly in $TMPDIR
+    public func contains(_ url: URL) -> Bool
+    @discardableResult public func checked(_ url: URL, file: StaticString = #fileID, line: UInt = #line) -> URL   // traps outside
+    public func url(_ relative: String, file: StaticString = #fileID, line: UInt = #line) -> URL               // traps outside
+    @discardableResult public func createDirectory(_ relative: String) throws -> URL      // mkdir -p; existing is fine
+    @discardableResult public func createFile(_ relative: String, contents: Data = Data("x".utf8)) throws -> URL  // parents created; O_EXCL
+    public func overwrite(_ relative: String, contents: Data) throws
+    public func append(_ relative: String, contents: Data) throws
+    @discardableResult public func createSparseFile(_ relative: String, size: Int64) throws -> URL
+    @discardableResult public func createSymlink(_ relative: String, target: String) throws -> URL
+    @discardableResult public func createHardLink(_ relative: String, to existing: String) throws -> URL
+    @discardableResult public func createAlias(_ relative: String, to target: String) throws -> URL
+    public func setFlags(_ relative: String, _ flags: UInt32) throws          // lchflags, replaces all flags
+    public func setMode(_ relative: String, _ mode: mode_t) throws
+    public func setXattr(_ relative: String, name: String, value: Data) throws
+    public func setHiddenExtension(_ relative: String, _ hidden: Bool = true) throws
+    public func setDates(_ relative: String, modified: Date? = nil, created: Date? = nil) throws
+    public func rename(_ from: String, to: String) throws
+    public func remove(_ relative: String) throws
+    public func destroy()                                     // idempotent; detaches images first, clears protections, deletes root only
+    public static func resolvedTemporaryDirectory() throws -> String
+}
+public enum SandboxError: Error, Equatable, Sendable { case notASandboxDirectory(String) }
+public enum DiskImageFormat: String, Sendable, CaseIterable { case apfs = "APFS", hfsPlus = "HFS+", exfat = "ExFAT", msdos = "MS-DOS" }
+public enum DiskImageError: Error, Sendable, Equatable { case hdiutilFailed(arguments: [String], status: Int32, output: String), timedOut(arguments: [String]) }
+public final class DiskImage: Sendable {
+    public let imageURL: URL, mountPoint: URL, relativeMountPath: String, format: DiskImageFormat, isReadOnly: Bool
+    public static var isAvailable: Bool { get }
+    public static func create(in sandbox: Sandbox, format: DiskImageFormat, sizeMB: Int = 32, volumeName: String = "MACXTEST",
+                              readOnly: Bool = false, populate: ((URL) throws -> Void)? = nil) throws -> DiskImage
+    public func detach() throws                               // hdiutil detach -force; idempotent
+}
+public enum GoldenName { public static let plain, empty, sparse, nfc, nfd, emoji, long255, long255Multibyte, dotHidden, flagHidden,
+    symlinkToFile, symlinkToDir, brokenSymlink, alias, app, rtfd, folder, dottedFolder, locked, xattrs, extensionHidden,
+    hardLinkA, hardLinkB, noAccessDir, noAccessFile, executable, readOnly, dated: String; public static let all: [String] }
+public enum FixtureTree {
+    @discardableResult public static func golden(in sandbox: Sandbox, at relative: String = "golden") throws -> URL
+    @discardableResult public static func flat(in sandbox: Sandbox, at relative: String, count: Int, prefix: String = "file-",
+                                               ext: String = ".txt", width: Int = 6, directoriesEvery: Int = 0) throws -> URL
+    @discardableResult public static func deep(in sandbox: Sandbox, at relative: String, depth: Int, breadth: Int, filesPerDir: Int) throws -> URL
+}
+public enum TrapProbe {
+    public static let environmentKey: String                 // "MACX_TRAP_PROBE"
+    public static let trappedStatus: Int32                   // 86
+    public struct Result: Sendable, Equatable { public var status: Int32; public var trapped: Bool { get }; public var output: String }
+    public static func isChild(_ name: String) -> Bool
+    public static func value(_ key: String) -> String?
+    public static func run(name: String, testIdentifier: String, bundle: URL, environment: [String: String] = [:]) throws -> Result
+}
+// SortCorpus.swift (P1-07)
+public enum SortCorpus { public static func names(count: Int = 5_000, seed: UInt64 = 0x6D61_6378) -> [String] }
+```
+
+Usage in every test that touches the file system: `sandbox = try Sandbox(); let s = sandbox!; addTeardownBlock { s.destroy() }`.
 
 ### 3.1 CFSKit (C, `Sources/CFSKit/include/CFSKit.h`)
 
@@ -458,7 +541,9 @@ typedef struct cfsk_record {
     int64_t     mtime_ns;
     int64_t     crtime_ns;
     uint32_t    bsd_flags;     /* st_flags */
-    uint32_t    access_mask;   /* R_OK|W_OK|X_OK for the calling user */
+    uint32_t    access_mask;   /* R_OK|W_OK|X_OK for the calling user: filled from ATTR_CMN_USERACCESS (ATTR_CMN_ACCESSMASK
+                                  is the file's mode bits, not the caller's access; S1 Contract note 4). CFSK_HAS_ACCESSMASK
+                                  marks it present. Mode bits for Properties come from lstat (P1-16). */
     uint16_t    finder_flags;  /* host-endian FileInfo/FolderInfo finderFlags */
     uint32_t    finder_type;   /* host-endian OSType, e.g. 'alis' */
     int64_t     data_length;
@@ -585,6 +670,9 @@ public actor LanePool {
     /// otherwise queuing on the least busy). Returns when `work` returns, however late. If the watchdog
     /// poisons the lane meanwhile, `onStall(.stalled)` fires (once), the lane leaves the pool forever, and
     /// `onStall(.resumed)` fires if work later heartbeats or returns.
+    /// Toolchain rule (S1 Contract note 7, verified on Swift 6.4.2): `work` (and the body of withNoMaterialization)
+    /// must be a plain `throws` closure, never one declared `throws(E)`; typed-throws calls inside it are fine.
+    @discardableResult
     public func perform<T: Sendable>(
         on volume: VolumeID,
         _ laneClass: LaneClass = .read,
@@ -804,7 +892,7 @@ public actor DirectoryReader {
     public func cancelAll() async
 }
 
-// Reader/DirectoryReaders.swift
+// Reader/DirectoryReaders.swift (implemented in P1-08, because it needs MountTableStore; S1 Contract note 3)
 public final class DirectoryReaders: Sendable {
     public init(lanes: LanePool, mountTable: MountTableStore, types: TypeRegistry = .shared)
     public func reader(for directory: URL) -> DirectoryReader          // by MountTable volume, else VolumeID.unknown
@@ -865,6 +953,10 @@ public enum Sorter {
     /// "--"). Descending reverses within each folders/files group; folders stay first.
     public static func permutation(_ store: EntryStore, nameKeys: SortKeyColumn, searchKeys: SortKeyColumn?,
                                    query: ViewQuery, kindRanks: [UInt16]) -> [UInt32]
+    /// Filtered + sorted subset of storage indices `range` (same rules as permutation). FolderWorker uses it to
+    /// sort each loading batch before `merge` (S1 Contract note 5; added by P1-07).
+    public static func sortedRun(_ store: EntryStore, range: Range<Int>, nameKeys: SortKeyColumn, searchKeys: SortKeyColumn?,
+                                 query: ViewQuery, kindRanks: [UInt16]) -> [UInt32]
     /// Loading path: merge an already-sorted run of new indices into a sorted permutation.
     public static func merge(_ sorted: [UInt32], _ run: [UInt32], store: EntryStore, nameKeys: SortKeyColumn,
                              query: ViewQuery, kindRanks: [UInt16]) -> [UInt32]
@@ -879,7 +971,7 @@ public struct VolumeID: Hashable, Sendable, Codable, CustomStringConvertible {
     public let raw: String                       // "uuid:<volumeUUIDString>" or "mnt:<mount path>"
     public init(raw: String)
     public static let unknown: VolumeID           // "unknown"
-}
+}   // VolumeID is created by P1-04 (LanePool needs it); P1-08 adds the rest of this file (S1 Contract note 2)
 public struct VolumeCapabilities: Sendable, Hashable, Codable {
     public var idStable: Bool       // VOL_CAP_FMT_PERSISTENTOBJECTIDS
     public var renameExcl: Bool     // VOL_CAP_INT_RENAME_EXCL
@@ -953,7 +1045,9 @@ public final class Volumes {
     public func volume(for url: URL) -> VolumeInfo?     // in-memory
     public func cachedAvailableCapacity(_ volume: VolumeID) -> Int64?
     public func refreshAvailableCapacity(_ volume: VolumeID) async -> Int64?   // lane, then cached
-    /// Runs every release handler (cancel reads ≤1 s, stop watchers, pause jobs, move windows home).
+    /// Runs every release handler (cancel reads ≤1 s, stop watchers, pause jobs, move windows home), sequentially in
+    /// registration order. Volumes registers none itself: CoreEnvironment (P1-25: reader cancellation first, then
+    /// watchers, then FileOpQueue.suspendJobs) and WindowManager (P1-26: moveWindowsHome) do (S1 Contract note 15).
     public func release(_ volume: VolumeID) async
     public func addReleaseHandler(_ handler: @escaping @MainActor (VolumeID) async -> Void) -> ObserverToken
     public func observe(_ handler: @escaping @MainActor ([VolumeInfo]) -> Void) -> ObserverToken
@@ -967,7 +1061,7 @@ public final class Volumes {
 public enum Reason: Sendable, Equatable {
     case notFound, notADirectory, permissionPOSIX, permissionTCC, volumeGone, other(Int32)
     public init(errno: Int32)   // ENOENT→notFound, ENOTDIR→notADirectory, EACCES→permissionPOSIX, EPERM→permissionTCC, ENXIO/ENODEV→volumeGone
-}
+}   // P1-10: a ReadFailure with stage == .unresponsiveVolume (code ETIMEDOUT) becomes FolderState.unresponsive, checked before Reason(errno:) (S1 Contract note 16)
 public enum FolderState: Sendable, Equatable {
     case loading, partial, complete, error(Reason), unresponsive, waitingForPermission
 }
@@ -1063,6 +1157,9 @@ public struct LocalChange: Sendable, Equatable {
 public final class ChangeBus {
     public init()
     public func post(_ changes: [LocalChange])
+    /// Keys are the standardized path WITHOUT a trailing slash, and /private/var ≡ /var: LocalChange.directory carries
+    /// a trailing slash (URL(filePath:directoryHint: .isDirectory)) while observers register the folder's own URL
+    /// (S3 Contract note 16; P1-25's end-to-end test fails otherwise).
     public func observe(directory: URL, _ handler: @escaping @MainActor (LocalChange) -> Void) -> ObserverToken
 }
 
@@ -1563,6 +1660,8 @@ public final class Clipboard {
 
 // Drag/DropPolicy.swift
 public enum DragOperation: Sendable, Equatable { case copy, move, alias, menu, none }
+// No symlink case: a real right-drag picks "Make Symbolic Link Here" through UI's DropChoice, so the scenario-only
+// probePerformDrop(…menuChoice:) cannot choose it (S5 Contract note 2, S6 Contract note C5).
 public struct DragModifiers: OptionSet, Sendable, Hashable {
     public let rawValue: UInt8
     public init(rawValue: UInt8)
@@ -1650,7 +1749,8 @@ public struct CountProgress: Sendable, Equatable {
 }
 public enum FolderCounter {
     /// fts(FTS_PHYSICAL|FTS_XDEV) under no-materialization on a read lane; ~10 Hz updates; cancel by
-    /// ending iteration or cancelling the consuming Task. Never follows symlinks.
+    /// ending iteration or cancelling the consuming Task. Never follows symlinks. Counts the folder's contents, not the
+    /// folder itself (S5 Contract note 10: F/{a,b,sub/c} → files 3, folders 1).
     public static func count(_ url: URL, lanes: LanePool, volume: VolumeID) -> AsyncStream<CountProgress>
 }
 ```
@@ -1713,16 +1813,27 @@ public final class CoreEnvironment {
     public init(statePaths: StatePaths, lanes: LanePool, settingsStorage: any SettingsStorage,
                 volumeScanner: any VolumeScanning, volumeEvents: (any VolumeEventSource)?,
                 pasteboard: any PasteboardBackend, launchServices: any LaunchServicesProviding,
-                ejector: any Ejecting, trash: any TrashService, fileOpTuning: FileOpTuning = FileOpTuning())
+                ejector: any Ejecting, trash: any TrashService, fileOpTuning: FileOpTuning = FileOpTuning(),
+                home: URL = FileManager.default.homeDirectoryForCurrentUser)   // home → Settings.home; AppBootstrap passes --root in sandbox mode
+    /// Undo menu names are user-visible text, which Core never produces. Default: the verb's raw value ("copying").
+    /// P1-26 (AppBootstrap) MUST install a localized formatter at launch (S3 Contract note 7).
+    public var undoActionName: @MainActor (JobDescription) -> String
     /// Wires readers/volumes/watchers into a FolderContext.
     public func folderContext() -> FolderContext
     public func makeFolderModel(_ directory: URL, query: ViewQuery? = nil) -> FolderModel
-    /// Starts volumes, operations consumer, and runs LaunchRecovery from the journal.
+    /// Starts volumes, operations consumer, and runs LaunchRecovery from the journal. The FileOpQueue is built held:
+    /// no job runs until recovery finished (jobs enqueued earlier wait in .queued). The app MUST await it at launch
+    /// (P1-26 AppBootstrap), and every harness awaits it before its first job (S5 ContentTestHarness, S6 worlds):
+    /// OperationsCenter.perform starts only the event consumer, not the hold release (S3 Contract note 6). Idempotent.
     public func start() async -> RecoveryReport
     /// Test/scenario factory: InMemorySettingsStorage, InMemoryPasteboard, FakeLaunchServices,
     /// SandboxTrash(root/.trash), StatePaths(root: root/state), a fresh LanePool, SystemVolumeScanner,
     /// no volume events, an ejector that only ejects images under `root`, and interaction target
-    /// ScriptedInteraction() (callers may environment.interaction.setTarget(...)). `root` must be a Sandbox root.
+    /// ScriptedInteraction() (callers may environment.interaction.setTarget(...)). `root` must be a Sandbox root:
+    /// traps unless its last component is macx-tests-/macx-bench-/macx-scenario-/macx-fixtures-<…> inside $TMPDIR
+    /// (/var and /private/var spellings; pure string check). Sets Settings.home = root. Puts state/ and .trash/
+    /// directly in root, so harnesses keep fixtures in a subfolder (S5 `files/`, S6 `work/`). Ejector: internal
+    /// SandboxEjector (Support/SandboxEjector.swift) refusing mount points outside root (S3 Contract note 8).
     public static func sandboxed(root: URL) -> CoreEnvironment
 }
 ```
@@ -1769,13 +1880,14 @@ public enum JobVerb: String, Sendable, Codable {
     case copying, moving, trashing, deleting, duplicating, creating, renaming, makingAlias, makingSymlink,
          changingPermissions, changingAttributes, undoing, redoing
 }
-/// UI formats "Copying 1,204 items from Downloads to Backup".
-public struct JobDescription: Sendable, Equatable {
+/// UI formats "Copying 1,204 items from Downloads to Backup". Codable: JournalEntry.jobStarted stores it (S3 note 2).
+public struct JobDescription: Sendable, Equatable, Codable {
     public var verb: JobVerb
     public var itemCount: Int
     public var firstItemName: String?
     public var sourceFolderName: String?
     public var destinationFolderName: String?
+    public init(verb: JobVerb, itemCount: Int, firstItemName: String?, sourceFolderName: String?, destinationFolderName: String?)
 }
 public struct JobSnapshot: Sendable, Identifiable, Equatable {
     public var id: JobID
@@ -1784,7 +1896,17 @@ public struct JobSnapshot: Sendable, Identifiable, Equatable {
     public var progress: JobProgress
     public var origin: OriginID?
     public var startedAt: ContinuousClock.Instant
+    public init(id: JobID, description: JobDescription, state: JobState, progress: JobProgress,
+                origin: OriginID?, startedAt: ContinuousClock.Instant)
 }
+// Additive public members from S3 (P1-17; S3 Contract note 2), usable by UI/scenario tests:
+//   JobID.short: String (first 8 hex chars); JobProgress.init() (all zero/nil); memberwise public inits of
+//   ItemSummary, ConflictPair, ConflictInfo, SpaceShortfall, AttributeSnapshot (all-nil defaults), JobRecord(id:verb:actions:),
+//   SkippedItem(url:reason:), JobOutcome(record:skipped:wasCancelled:created:localChanges:), RecoveryReport();
+//   JournalEntry.job: JobID; ScriptedInteraction.askedSpace() -> [SpaceShortfall], askedNoTrash() -> [[URL]];
+//   SandboxTrash(directory:refusingPathsUnder: [URL]) (paths under those throw .noTrash); public struct ThroughputMeter.
+// Undo skip reasons reuse kinds (S3 note 11): item gone → .sourceGone; changed since the job → .changedDuringMove
+// (UI words it "changed since the operation" for .undoing/.redoing jobs); conflict skipped at an occupied path → nil.
 
 // FileOps/JobProgress.swift
 public struct JobProgress: Sendable, Equatable {
@@ -1978,12 +2100,18 @@ public actor FileOpQueue {
     /// Volumes.release: queued jobs touching the volume pause; returns running ones (UI asks cancel/wait).
     public func suspendJobs(touching mountPoint: URL) -> [JobID]
     public nonisolated var events: AsyncStream<JobEvent> { get }    // single consumer: OperationsCenter
+    /// Additive (S3 note 3): whether a finished job's request asked for an undo entry (false for undo/redo jobs).
+    public func registersUndo(_ id: JobID) -> Bool
+    // internal (S3 note 6): init(lanes:trash:journal:interaction:tuning:startsHeld:), releaseHold(); FileOpTuning's
+    // internal test knobs allowClone/forceCrossVolume/bodyOverride (@testable import Core; S3 note 4).
 }
 
 // FileOps/FileOpUndoStack.swift
 @MainActor
 public final class FileOpUndoStack {
     public init(queue: FileOpQueue)
+    /// groupsByEvent == false: one explicit group per job. UI code must never call beginUndoGrouping() on it. The stack
+    /// retains each entry's target (UndoManager doesn't). Redo = inverse of the undo job's record (S3 notes 9, 10, 13).
     public let undoManager: UndoManager            // returned by every window's windowWillReturnUndoManager
     /// Registers one entry per completed undoable job (also partly completed ones).
     public func register(_ outcome: JobOutcome, actionName: String)
@@ -2003,7 +2131,9 @@ public final class OperationsCenter {
     public var overallFraction: Double? { get }
     public var hasActiveJobs: Bool { get }
     public func start()                                   // consumes queue.events; posts localChanges; registers undo
-    public func perform(_ request: JobRequest) async -> JobOutcome   // enqueue + await (UI convenience)
+    /// enqueue + await. Returns only after localChanges were posted, the undo entry registered and onFinished observers
+    /// ran (queue.outcome(of:) can return earlier). Code that checks canUndo or the folder right after a job uses this.
+    public func perform(_ request: JobRequest) async -> JobOutcome
     public func onFinished(_ handler: @escaping @MainActor (JobSnapshot, JobOutcome) -> Void) -> ObserverToken
 }
 
@@ -2012,7 +2142,9 @@ public final class OperationsCenter {
 public final class TerminationCoordinator {
     public init(queue: FileOpQueue, operations: OperationsCenter)
     public var activeCount: Int { get }
-    /// Cancels every job (§6.1 cancel path) and waits; returns false if `timeout` elapsed first.
+    /// Cancels every job (§6.1 cancel path) and waits; returns false if `timeout` elapsed first. A job suspended on an
+    /// unanswered dialog can't finish its cancel, so P1-30's quit flow and P1-38's InteractionRouter answer pending
+    /// questions with .cancelJob/.cancel/false when Stop and Quit starts (S3 Contract note 18).
     public func stopAllAndWait(timeout: Duration = .seconds(10)) async -> Bool
 }
 ```
@@ -2028,12 +2160,20 @@ public final class UIContext {
     public init(environment: CoreEnvironment, options: LaunchOptions)
     public let environment: CoreEnvironment
     public let options: LaunchOptions
-    public let icons: IconCache
+    /// Internal (IconCache is internal, so a public property would not compile). Added by P1-31, which creates
+    /// IconCache; P1-26 declares UIContext without it (consistency pass; no forward stub).
+    let icons: IconCache
     public let windows: WindowManager
     /// P1-26 installs BasicAlertInteraction; P1-38 installs InteractionRouter. Also sets environment.interaction's target.
     public private(set) var interaction: any FileOpInteraction
     public func installInteraction(_ interaction: any FileOpInteraction)
+    // Additive (P1-38, S5 note 6): internal `operationsUI: OperationsUI` (owns router + Operations panel) and
+    // public func showOperationsPanel() (Window › Operations; the app delegate calls it when no browser window is open).
 }
+// App launch obligations (P1-26 AppBootstrap; S3 notes 6–7, consistency pass): build the live CoreEnvironment with
+// `home: options.root` when options.isSandboxed; set `environment.undoActionName` to a localized formatter
+// ("Copy", "Move", … via L10n); `await environment.start()` before restoring windows; show the RecoveryReport
+// notice (P1-30) when it is not empty. WindowManager registers Volumes.addReleaseHandler → moveWindowsHome.
 
 // App/WindowManager.swift
 @MainActor
@@ -2160,6 +2300,12 @@ enum KeyEventTranslator { static func chord(for event: NSEvent) -> KeyChord? }
 @MainActor final class PropertiesWindowController: NSWindowController { static func show(for urls: [URL], context: UIContext); static func show(volume: VolumeInfo, context: UIContext) }
 @MainActor final class DefaultAppSheet { static func present(for file: URL, on window: NSWindow, context: UIContext) async }
 @MainActor final class InteractionRouter: FileOpInteraction { init(windows: WindowManager) }   // nonisolated protocol methods hop to main
+// InteractionRouter additive (P1-38, S5 notes 4–6, 12): init(windows:presenter:resolveHost:) for tests;
+// func hostWindow(for origin: OriginID?) -> NSWindow? (browser window, else a visible Properties window, else nil =
+// Operations panel; Phase 2 P2-05 modifies it rather than producing it); func stopAnswering() (Stop and Quit: P1-30's
+// handler calls it right before termination.stopAllAndWait). Errors from Properties-window origins are answered .skip
+// (PropertiesWindowController.answersErrorsInline(_:)) and shown inline. DefaultAppSheet gains the overloads
+// present(for:on:context:alwaysChecked:) and present(for:on:context:alwaysChecked:opensFile:) (P1-35/P1-37).
 @MainActor final class BasicAlertInteraction: FileOpInteraction { init() }
 
 // Support/AXID.swift  (accessibility identifiers; the scenario runner relies on these)
@@ -2182,6 +2328,7 @@ enum AXID {
     static let operationsCapsule = "macx.operations"
     static func conflictButton(_ a: ConflictAction) -> String // "macx.conflict.<rawValue>"
     static let propertiesWindow = "macx.properties"
+    static let operationsPanel = "macx.operationsPanel"            // additive, P1-38
 }
 
 // Scenario/ScenarioProbe.swift (P1-26). BrowserWindowController conforms in P1-26. Feature-specific
@@ -2244,7 +2391,7 @@ struct ScenarioFile: Codable {
         var sources: [String]            // names in the current folder
         var onto: String                 // row name, "" = current folder, "sidebar:<Favorite name>", "crumb:<index>"
         var secondary: Bool?             // right-drag
-        var choose: String?              // drop-menu choice: "copy", "move", "alias", "symlink", "cancel"
+        var choose: String?              // drop-menu choice: "copy", "move", "alias", "cancel" (no "symlink": DragOperation has no such case; S6 note C5)
     }
     struct Expectation: Codable {
         var rows: [String]?              // exact display order
@@ -2275,8 +2422,16 @@ struct ScenarioFile: Codable {
 /// The driver creates the fixture inside --root before the first step, and refuses (result passed=false)
 /// unless --root is an empty directory whose last path component starts with "macx-scenario-".
 /// Result JSON written to --scenario-output:
-/// {"name": String, "passed": Bool, "failedStep": Int?, "message": String?, "durationMs": Int}
+/// {"name": String, "passed": Bool, "failedStep": Int?, "message": String?, "durationMs": Int, "activated": Bool}
 @MainActor final class ScenarioDriver { init(context: UIContext, file: URL, output: URL); func run() async -> Bool }
+// Additive (P1-41, S6 notes C4–C6): optional fields Fixture.modes ([path: octal string]), Step.command (Command raw
+// value via its main-menu item), Step.answerAlert (AppKit alert/sheet button title), Expectation.rowCount/
+// editingAddress/viewMode/sheetPresent/propertiesWindows/windowCount/fileSizes; Expectation.emptyState and .banner are
+// substring matches. Conflict answers come from a ScenarioInteraction decorator around the real InteractionRouter
+// (SwiftUI dialogs expose no in-process accessibility tree). `public enum ScenarioLaunch { @MainActor public static
+// func runIfRequested(context: UIContext) }` is the app's single launch hook; `@objc(MacxApplication) public final class
+// MacxApplication: NSApplication` pins the key window while the app is inactive. The roots ScenarioDriver accepts are
+// `<run dir>/<scenario>/macx-scenario-root`; UI never links MacxFixtures (ScenarioFixtures has its own guard).
 ```
 
 ## 4. Ordered task list
@@ -2290,9 +2445,9 @@ Format: ID [slice] deliverable (dependencies). Each task ships its own tests and
 | P1-03 | S1 | `CFSKit`: bulk read, bounds-checked cursor, `cfsk_stat_at`, materialization, volume caps; fuzz test (random + truncated buffers, 100k iterations) never crashes | P1-01 |
 | P1-04 | S1 | Lanes: `IOLane`, `LanePool.perform`, watchdog (poison, `awaitingPermission`, resumed), poison cap → unresponsive, `Generation`, `withNoMaterialization`, `assertOffMain`, `Observers`, `PerfSignposts` | P1-03 |
 | P1-05 | S1 | Store: `Entry`, `EntryFlags`, `Batch`, `NameArena`, `RowID`/`IdentityMode`/`NameNormalizer`, `TypeRegistry`, `EntryStore` (append, order, inverse map, upsert, remove) | P1-04 |
-| P1-06 | S1 | Reading: `BulkReader`, `FallbackReader`, `RecordConverter`, `ItemReader`, `DirectoryReader` streaming (2,000/8 ms), stall events, cancel, `DirectoryReaders`; golden test vs `lstat`/`getattrlist` on the §9 tree; fallback parity | P1-02, P1-05 |
+| P1-06 | S1 | Reading: `BulkReader`, `FallbackReader`, `RecordConverter`, `ItemReader`, `DirectoryReader` streaming (2,000/8 ms), stall events, cancel (`DirectoryReaders` lands in P1-08); golden test vs `lstat`/`getattrlist` on the §9 tree; fallback parity | P1-02, P1-05 |
 | P1-07 | S1 | Sorting: `ViewQuery`, `SortKeyColumn`, `SortKeys` (fold, digit runs, NFC tie-break, search fold), `Sorter.permutation/merge`; 5k corpus golden vs `localizedStandardCompare` with listed divergences; 100k re-sort smoke | P1-05 |
-| P1-08 | S1 | Volumes: `VolumeInfo`/`VolumeCapabilities`/`MountTable`/`MountTableStore`, `SystemVolumeScanner`, `@MainActor Volumes` (events, capacity cache, release handlers); disk-image mount/unmount test | P1-04, P1-02 |
+| P1-08 | S1 | Volumes: `VolumeInfo`/`VolumeCapabilities`/`MountTable`/`MountTableStore`, `SystemVolumeScanner`, `@MainActor Volumes` (events, capacity cache, release handlers), `DirectoryReaders` (moved here from P1-06: needs `MountTableStore`); disk-image mount/unmount test | P1-04, P1-02, P1-06 |
 | P1-09 | S2 | `Change`/`ChangeSet`, `StoreDiff` (identity, replacement rule, reload, moves, duplicate keys); randomized diff-applies-to-equal-order property test | P1-07 |
 | P1-10 | S2 | `FolderModel` + `FolderWorker` + `ChangeBus` + `Selection` + `NameRules` + `FramePacer` + `WatchTypes` (with `NoopWatcher`): state machine, loading presentation (sorted first batch, ≤1 reset/frame, final reset), selection by identity, scroll anchor, query/re-sort, retry/unresponsive, generation discard; Review Focus 2 and 3 tests | P1-06, P1-08, P1-09 |
 | P1-11 | S2 | `Watcher`, `EventClassifier`, `TreeWatcher`, `FolderModel+Watch` (no-gap capture/buffer, incremental ≤256, single full re-read + one pending, root changed → relocate, volume gone → home); burst/atomic-save/hard-link/exFAT tests | P1-10 |
@@ -2310,12 +2465,12 @@ Format: ID [slice] deliverable (dependencies). Each task ships its own tests and
 | P1-23 | S3 | Trash (no-trash fallback), delete permanently (removefile progress), alias, symlink (relative same volume), setAttributes, chmodRecursive; §6.5 error table on EROFS / locked / ENOSPC / name-too-long images | P1-22 |
 | P1-24 | S3 | `UndoPlanner` + `FileOpUndoStack`: inverse per §6.6 row, identity checks, skipped summary, occupied-path conflicts, partial jobs, redo, field-editor managers | P1-23 |
 | P1-25 | S3 | `OperationsCenter`, `TerminationCoordinator`, `CoreEnvironment` (+ `sandboxed(root:)`), `folderContext()`, launch recovery wiring; end-to-end Core test: browse sandbox, paste-copy, see LocalChange in FolderModel, undo | P1-24, P1-11, P1-13, P1-14, P1-15, P1-16 |
-| P1-26 | S4 | Window shell: `AppBootstrap`, `UIContext`, `WindowManager`, `BrowserSession`, `BrowserWindowController`, split view, placeholder content (row count), restoration (off in sandbox), ⌘N/⌘W, last-window-keeps-running, `AXID`, `BasicAlertInteraction`, `CommandActions` (`CommandTarget`/`CommandHandler`/`CommandHandlingViewController`), `MenuValidation`, `ScenarioProbe` + `ScenarioHooks` | P1-25 |
+| P1-26 | S4 | Window shell: `AppBootstrap`, `UIContext`, `WindowManager`, `BrowserSession`, `BrowserWindowController`, split view, placeholder content (row count), restoration (off in sandbox), ⌘N/⌘W, last-window-keeps-running, `AXID`, `BasicAlertInteraction`, `CommandActions` (`CommandTarget`/`CommandHandler`/`CommandHandlingViewController`), `MenuValidation`, `ScenarioProbe` + `ScenarioHooks`; launch obligations in §3.14 (await `start()`, `undoActionName`, sandbox `home`) | P1-25 |
 | P1-27 | S4 | Toolbar: back/forward/up group with history menus, breadcrumb (segments, › menus, « overflow), edit mode (⌘L, parsing, autocomplete, recents, inline error), search filter field, view switcher | P1-26 |
 | P1-28 | S4 | Sidebar: Favorites (bookmarks, defaults, drag add/reorder, remove, stale Locate…), Locations (live volumes, eject button), Folders tree (lazy dirs-only, auto-reveal, ←/→, TreeWatcher), collapsible persisted sections | P1-26 |
 | P1-29 | S4 | Command bar, status bar (counts, selection size, free space), `MainMenuBuilder` (every Command, KeyMap primaries), `KeyRouter` + `KeyEventTranslator`, Tab focus cycle, ⇧ turns Delete into Delete Permanently | P1-27, P1-28 |
 | P1-30 | S4 | Settings window (SwiftUI, §7), onboarding sheet (FDA, fn-keys, deep links), `AppLifecycle` (quit with jobs → Stop and Quit / Cancel, 10 s, Dock badge, Window › Operations entry, recovery notice) | P1-29 |
-| P1-31 | S5 | Details view: `FileListView`, `ContentViewController`, `DetailsViewController`, columns (choose/reorder/resize/auto-fit/persist), header sort, `Formatters`, density, alternating rows, cut dim + italic, `IconCache` tiers 0/1, ChangeSet application, scroll anchor, signposts | P1-29 |
+| P1-31 | S5 | Details view (also adds `UIContext.icons`): `FileListView`, `ContentViewController`, `DetailsViewController`, columns (choose/reorder/resize/auto-fit/persist), header sort, `Formatters`, density, alternating rows, cut dim + italic, `IconCache` tiers 0/1, ChangeSet application, scroll anchor, signposts | P1-29 |
 | P1-32 | S5 | Icons view: `FileGridLayout` (O(1) frames, O(visible) rects), `IconsViewController`, `IconItem` (two-line middle ellipsis), sizes S/M/L, rubber band → model, spatial arrows | P1-31 |
 | P1-33 | S5 | `SelectionController` (click/⌘/⇧/arrows/⇧-arrows, ⌘A, invert), `TypeSelect`, `EmptyStateView` (all §5.5 states + Open Privacy Settings / Properties / Retry), `BannerView`, filter wiring, status updates | P1-32 |
 | P1-34 | S5 | `InlineRenameController`: F2/⌘⇧R/Return-setting, base-name selection, Tab → next, NameRules errors, extension-change and hidden warnings, new-item auto rename, selection carried across rename, per-edit undo manager | P1-33 |
@@ -2352,3 +2507,72 @@ Format: ID [slice] deliverable (dependencies). Each task ships its own tests and
 - Tests for Core and UI that touch the file system create a `Sandbox` in `setUp` and register teardown; disk images come from `DiskImage.create(in: sandbox, ...)`.
 - When a task needs a type from a later task, it does not stub it: the ID order already guarantees availability. If a task finds it needs one, move the type to the earlier task here in §3 and in both slice files.
 - The Review Focus tests listed above are mandatory in their owning tasks.
+- Cross-slice rules confirmed while writing S1/S3/S5/S6 (each slice's "Contract notes" section has the detail):
+  - Use the §3.0 `MacxFixtures` names exactly. Each harness reaches them through one adapter file (`FileOpsTestSupport.swift`, `ContentTestHarness.swift`, the two `FixtureAdapter.swift` files), so a naming difference is fixed in one place.
+  - Closures passed to `LanePool.perform` or `withNoMaterialization` are plain `throws`, never `throws(E)` (S1 note 7; verified miscompile on Swift 6.4.2).
+  - `@MainActor` XCTest classes cannot call `async` helpers of a non-`Sendable` base test class under Swift 6 region isolation (S3 note 20). Put shared async helpers on a `Sendable` world object (S3 `FileOpsWorld`, S5 `ContentTestHarness`).
+  - Code that checks undo state or the folder right after a job uses `OperationsCenter.perform`, not `FileOpQueue.outcome(of:)` (S3 note 15).
+  - Tests answer job questions with `ScriptedInteraction` (or a decorator) so no test can block on a modal dialog (S5 note 3).
+
+### Obligations for the S2 and S4 slice authors (collected from the other slices' contract notes)
+
+Neither `2026-11-01-phase1-s2-core-model.md` nor `2026-11-01-phase1-s4-ui-shell.md` existed when S1, S3, S5 and S6 were written. Later tasks rely on these behaviours, so the S2/S4 tasks must include them (with a test where marked):
+
+- **P1-01:** each test-target stub contains one test method; `Corpus/sort-allowed-divergences.json` is `[]`; `Info.plist` `NSPrincipalClass` starts as `NSApplication` (P1-41 changes it); `LaunchOptions`/`StatePaths` exactly as §3.12 (S3, S5, S6 consume them).
+- **P1-09/P1-10:** `FolderWorker` sorts each loading batch with `Sorter.sortedRun` and then `Sorter.merge` (S1 note 5). `ReadFailure.stage == .unresponsiveVolume` → `FolderState.unresponsive`, checked before `Reason(errno:)` (S1 note 16). `ChangeBus` matches directories by standardized path without a trailing slash, `/private/var` ≡ `/var` (S3 note 16; test it).
+- **P1-12:** `Settings(storage:home:)` stores `home` as given; `sandboxed(root:)` and sandbox-mode `AppBootstrap` pass the sandbox root.
+- **P1-14:** `EjectCoordinator` works with any `Ejecting`; `CoreEnvironment.sandboxed` passes the internal `SandboxEjector` (P1-25). The eject test uses only a disk image the test created.
+- **P1-16:** Properties reads mode bits with `lstat` (`Entry` has no mode, S1 note 4). `FolderCounter` counts a folder's contents, not the folder itself (S5 note 10; P1-37's test pins `files == 3, folders == 1` for `F/{a,b,sub/c}`). Sparse files may report full allocation on APFS (S1 note 13).
+- **P1-26:** `UIContext` without `icons` (P1-31 adds it); the §3.14 launch obligations (sandbox `home`, localized `undoActionName`, `await environment.start()`); `WindowManager` registers the `moveWindowsHome` release handler; `BrowserWindowController.scenarioHooks` and every `ScenarioProbe` member, with `probePerformDrop` forwarding to `scenarioHooks.performDrop`; `UIContext.installInteraction(BasicAlertInteraction())` as the last statement of `UIContext.init` (P1-38 replaces exactly that line).
+- **P1-29/P1-30:** the app delegate keeps its `UIContext` in a property named `context` (P1-38 adds `@objc func macx_showOperations(_:)` there if P1-30 adds no handler). P1-30's Stop and Quit handler is the single place that calls `environment.termination.stopAllAndWait(...)`, so P1-38 can insert `context.operationsUI.router.stopAnswering()` before it (S3 note 18).
+
+## 6. Execution order
+
+Execute strictly in this order (it is the ID order, a valid topological order of §4's dependencies). Each task's full plan is in the slice file named next to it. Status as of the consistency pass on 2026-11-02:
+
+| # | Task | Slice file | Plan status |
+|---|---|---|---|
+| 1 | P1-01 | `docs/superpowers/plans/2026-11-01-phase1-s4-ui-shell.md` | **missing** (S4 file not written) |
+| 2 | P1-02 | `docs/superpowers/plans/2026-11-01-phase1-s1-fskit.md` | complete |
+| 3 | P1-03 | `docs/superpowers/plans/2026-11-01-phase1-s1-fskit.md` | complete |
+| 4 | P1-04 | `docs/superpowers/plans/2026-11-01-phase1-s1-fskit.md` | complete |
+| 5 | P1-05 | `docs/superpowers/plans/2026-11-01-phase1-s1-fskit.md` | complete |
+| 6 | P1-06 | `docs/superpowers/plans/2026-11-01-phase1-s1-fskit.md` | complete |
+| 7 | P1-07 | `docs/superpowers/plans/2026-11-01-phase1-s1-fskit.md` | complete |
+| 8 | P1-08 | `docs/superpowers/plans/2026-11-01-phase1-s1-fskit.md` | complete |
+| 9 | P1-09 | `docs/superpowers/plans/2026-11-01-phase1-s2-core-model.md` | **missing** (S2 file not written) |
+| 10 | P1-10 | `docs/superpowers/plans/2026-11-01-phase1-s2-core-model.md` | **missing** |
+| 11 | P1-11 | `docs/superpowers/plans/2026-11-01-phase1-s2-core-model.md` | **missing** |
+| 12 | P1-12 | `docs/superpowers/plans/2026-11-01-phase1-s2-core-model.md` | **missing** |
+| 13 | P1-13 | `docs/superpowers/plans/2026-11-01-phase1-s2-core-model.md` | **missing** |
+| 14 | P1-14 | `docs/superpowers/plans/2026-11-01-phase1-s2-core-model.md` | **missing** |
+| 15 | P1-15 | `docs/superpowers/plans/2026-11-01-phase1-s2-core-model.md` | **missing** |
+| 16 | P1-16 | `docs/superpowers/plans/2026-11-01-phase1-s2-core-model.md` | **missing** |
+| 17 | P1-17 | `docs/superpowers/plans/2026-11-01-phase1-s3-fileops.md` | complete |
+| 18 | P1-18 | `docs/superpowers/plans/2026-11-01-phase1-s3-fileops.md` | complete |
+| 19 | P1-19 | `docs/superpowers/plans/2026-11-01-phase1-s3-fileops.md` | complete |
+| 20 | P1-20 | `docs/superpowers/plans/2026-11-01-phase1-s3-fileops.md` | complete |
+| 21 | P1-21 | `docs/superpowers/plans/2026-11-01-phase1-s3-fileops.md` | complete |
+| 22 | P1-22 | `docs/superpowers/plans/2026-11-01-phase1-s3-fileops.md` | complete |
+| 23 | P1-23 | `docs/superpowers/plans/2026-11-01-phase1-s3-fileops.md` | complete |
+| 24 | P1-24 | `docs/superpowers/plans/2026-11-01-phase1-s3-fileops.md` | complete |
+| 25 | P1-25 | `docs/superpowers/plans/2026-11-01-phase1-s3-fileops.md` | complete |
+| 26 | P1-26 | `docs/superpowers/plans/2026-11-01-phase1-s4-ui-shell.md` | **missing** (S4 file not written) |
+| 27 | P1-27 | `docs/superpowers/plans/2026-11-01-phase1-s4-ui-shell.md` | **missing** |
+| 28 | P1-28 | `docs/superpowers/plans/2026-11-01-phase1-s4-ui-shell.md` | **missing** |
+| 29 | P1-29 | `docs/superpowers/plans/2026-11-01-phase1-s4-ui-shell.md` | **missing** |
+| 30 | P1-30 | `docs/superpowers/plans/2026-11-01-phase1-s4-ui-shell.md` | **missing** |
+| 31 | P1-31 | `docs/superpowers/plans/2026-11-01-phase1-s5-ui-content.md` | complete |
+| 32 | P1-32 | `docs/superpowers/plans/2026-11-01-phase1-s5-ui-content.md` | complete |
+| 33 | P1-33 | `docs/superpowers/plans/2026-11-01-phase1-s5-ui-content.md` | complete |
+| 34 | P1-34 | `docs/superpowers/plans/2026-11-01-phase1-s5-ui-content.md` | complete |
+| 35 | P1-35 | `docs/superpowers/plans/2026-11-01-phase1-s5-ui-content.md` | complete |
+| 36 | P1-36 | `docs/superpowers/plans/2026-11-01-phase1-s5-ui-content.md` | complete |
+| 37 | P1-37 | `docs/superpowers/plans/2026-11-01-phase1-s5-ui-content.md` | complete |
+| 38 | P1-38 | `docs/superpowers/plans/2026-11-01-phase1-s5-ui-content.md` | complete |
+| 39 | P1-39 | `docs/superpowers/plans/2026-11-01-phase1-s6-validation.md` | complete |
+| 40 | P1-40 | `docs/superpowers/plans/2026-11-01-phase1-s6-validation.md` | complete |
+| 41 | P1-41 | `docs/superpowers/plans/2026-11-01-phase1-s6-validation.md` | **incomplete**: Steps 1–8 are written (all 21 scenario JSON files included); the remaining steps (`scripts/ui-scenarios.sh`, `scripts/ui-ax-smoke.sh` + `.applescript`, running the catalog in the bundled app, commit) are not, nor are S6's Spec coverage and Contract notes C1–C11 that the text references |
+| 42 | P1-42 | `docs/superpowers/plans/2026-11-01-phase1-s6-validation.md` | **missing** |
+
+Do not start a task whose plan is missing or incomplete. Write the missing plans first, following §5 (including the obligations above), then re-run this consistency check.

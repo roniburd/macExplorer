@@ -856,7 +856,7 @@ final class IconCache {
 }
 ```
 
-UIContext: `UIContext.icons: IconCache` is in the contract from P1-26, but the type is created here. Run `grep -n "IconCache" Sources/UI/App/UIContext.swift Sources/UI -r`. If P1-26 left a placeholder `IconCache` class anywhere, delete it, since this file replaces it. Make sure `UIContext.init` contains exactly this line (add it after `self.options = options` if it is missing):
+UIContext: the overview §3.14 assigns `UIContext.icons: IconCache` to this task (P1-26 declares `UIContext` without it, because the type is created here). Run `grep -rn "IconCache" Sources/UI`. If P1-26 nevertheless left a placeholder `IconCache` class or an `icons` property anywhere, delete the placeholder, since this file replaces it. In `Sources/UI/App/UIContext.swift` make sure the class declares `let icons: IconCache` (internal, like the type) and that `init` contains exactly this line (add it after `self.options = options` if it is missing):
 
 ```swift
         self.icons = IconCache(lanes: environment.lanes, types: environment.types)
@@ -8577,7 +8577,7 @@ git commit -m "feat: properties window with inline-error edits as undoable jobs 
   - Earlier S5: `ExternalURLOpening`, `ExternalOpeners.opener(for:)`, `RecordingURLOpener.shared`, `SystemSettingsLinks.privacyAllFiles`; `ObservationLoop(_:onChange:)`; `Formatters.bytes(_:)`, `.date(_:style:now:calendar:locale:)`; `IconCache.typeIcon(_:points:scale:)`; `ErrorText.jobError(_:name:verb:)`; `TriCheckbox`; `PropertiesWindowController.answersErrorsInline(_:)`; `FileCommandController.pendingCommands`, `.performWindowCommand(_:target:)`.
 - Produces:
   - Overview §3.14, exact: `@MainActor final class InteractionRouter: FileOpInteraction { init(windows: WindowManager) }` (the protocol methods are `nonisolated` and hop to the main actor).
-  - Internal: `enum InteractionQuestion: Sendable, Equatable { case conflict(ConflictInfo), error(FileOpError), space(SpaceShortfall), noTrash([URL]); var fallback: InteractionAnswer }`; `enum InteractionAnswer: Sendable, Equatable { case conflict(ConflictResolution), error(ErrorResolution), confirm(Bool) }`; `enum DialogHost: Hashable, Sendable { case window(OriginID), operationsPanel }`; `@MainActor protocol DialogPresenting: AnyObject { func present(_:job:on:) async -> InteractionAnswer? }`; `@MainActor final class SerialGate { enter() async; leave(); waitingCount }`; `InteractionRouter.init(windows:presenter:resolveHost:)`, `.presenter`, `.panelWindow`, `.answersInline`, `.route(_:) -> DialogHost`, `.hostWindow(for:) -> NSWindow?` (P2-05 extends it), `.window(for:)`, `.pendingHosts`, `.revealQuestion(for:)`.
+  - Internal: `enum InteractionQuestion: Sendable, Equatable { case conflict(ConflictInfo), error(FileOpError), space(SpaceShortfall), noTrash([URL]); var fallback: InteractionAnswer }`; `enum InteractionAnswer: Sendable, Equatable { case conflict(ConflictResolution), error(ErrorResolution), confirm(Bool) }`; `enum DialogHost: Hashable, Sendable { case window(OriginID), operationsPanel }`; `@MainActor protocol DialogPresenting: AnyObject { func present(_:job:on:) async -> InteractionAnswer? }`; `@MainActor final class SerialGate { enter() async; leave(); waitingCount }`; `InteractionRouter.init(windows:presenter:resolveHost:)`, `.presenter`, `.panelWindow`, `.answersInline`, `.route(_:) -> DialogHost`, `.hostWindow(for:) -> NSWindow?` (P2-05 extends it), `.window(for:)`, `.pendingHosts`, `.revealQuestion(for:)`, `.stopAnswering()` and `.isStopping` (Stop and Quit, Contract note 12).
   - `struct ConflictDialogModel { enum Choice; title; message; choices; applyToAllTitle; defaultAction; init(_:); resolution(_:applyToAll:); static title(_:) }`, `ConflictDialogView`, `@MainActor final class SheetHost { run(_:on:) async -> InteractionAnswer?; finish(_:) }`, `@MainActor final class AppKitDialogPresenter: DialogPresenting { init(icons:opener:types:); handle(_:) -> InteractionAnswer; icon(for:) }`.
   - `struct CompareSelection { struct Row; rows; init(_:); canContinue; allSources; allDestinations; setAllSources(_:); setAllDestinations(_:); resolution; static action(keepSource:keepDestination:isFolderPair:) }`, `CompareView`.
   - `struct DialogButton { title; answer; role; isDefault; sideEffect }`, `struct ErrorDialogModel { context; title; detail; buttons; static error(_:job:locale:); static space(_:job:locale:); static noTrash(_:job:locale:) }`, `ErrorDialogView`.
@@ -8784,6 +8784,31 @@ final class InteractionRouterTests: XCTestCase {
         presenter.answerOldest(.conflict(.one(.replace)))
         let answer = await second.value
         XCTAssertEqual(answer, .one(.replace))
+    }
+
+    /// Stop and Quit (§6.7, S3 Contract note 18): a job suspended on an unanswered dialog can't finish its cancel,
+    /// so the router ends open dialogs and answers waiting and later questions with the safe fallback.
+    func testStopAnsweringEndsOpenDialogsAndAnswersLaterQuestionsSafely() async throws {
+        let h = try await ContentTestHarness.make(self)
+        let presenter = RecordingPresenter()
+        let r = router(h, presenter)
+        let info = conflict(h)
+        let e = error(h, .inUse)
+        let origin = OriginID(raw: 8)
+        let jobA = job(origin), jobB = job(origin)
+        let open = Task { await r.resolveConflict(info, job: jobA) }
+        let waiting = Task { await r.resolveError(e, job: jobB) }
+        try await h.waitUntil("one dialog open, one waiting") { presenter.openCount == 1 }
+        r.stopAnswering()
+        let openAnswer = await open.value
+        let waitingAnswer = await waiting.value
+        XCTAssertEqual(openAnswer, .cancelJob, "the open dialog closes unanswered and the job stops safely")
+        XCTAssertEqual(waitingAnswer, .cancel, "the waiting question never shows")
+        let later = await r.confirmInsufficientSpace(SpaceShortfall(needed: 2, available: 1, volumeName: "V"), job: job(origin))
+        XCTAssertFalse(later, "questions asked after Stop and Quit get the fallback at once")
+        XCTAssertEqual(presenter.shown.count, 1)
+        XCTAssertEqual(presenter.openCount, 0)
+        XCTAssertTrue(r.pendingHosts.isEmpty)
     }
 
     func testErrorsFromInlineOriginsAreSkippedWithoutDialog() async throws {
@@ -9219,6 +9244,10 @@ final class InteractionRouter: FileOpInteraction {
     private var gates: [DialogHost: SerialGate] = [:]
     /// Where each waiting job's question is showing (Operations list "Show", tests).
     private(set) var pendingHosts: [JobID: DialogHost] = [:]
+    /// The presenting Task of each open dialog, so Stop and Quit can end them.
+    private var openDialogs: [JobID: Task<InteractionAnswer?, Never>] = [:]
+    /// Set by stopAnswering(): every question from then on gets its fallback without a dialog.
+    private(set) var isStopping = false
 
     /// §3.14. Presents with a URL opener that only records; OperationsUI swaps in the real presenter.
     convenience init(windows: WindowManager) {
@@ -9287,15 +9316,27 @@ final class InteractionRouter: FileOpInteraction {
         window.makeKeyAndOrderFront(nil)
     }
 
+    // MARK: Stop and Quit
+
+    /// Called by the Stop and Quit flow (P1-30's AppLifecycle) right before `termination.stopAllAndWait()` (§6.7,
+    /// S3 Contract note 18): closes every open dialog unanswered and answers every waiting or later question with
+    /// its fallback (.cancelJob / .cancel / false), so the cancelled jobs finish their cancel path (partials removed,
+    /// journal updated) before the 10 s timeout. Not reversible: the app is quitting.
+    func stopAnswering() {
+        isStopping = true
+        for task in openDialogs.values { task.cancel() }
+    }
+
     // MARK: asking
 
     func ask(_ question: InteractionQuestion, job: JobSnapshot) async -> InteractionAnswer {
+        if isStopping { return question.fallback }
         if case .error = question, let origin = job.origin, answersInline(origin) { return .error(.skip) }
         var host = route(job.origin)
         while true {
             let gate = gate(for: host)
             await gate.enter()
-            if Task.isCancelled {
+            if Task.isCancelled || isStopping {
                 gate.leave()
                 return question.fallback
             }
@@ -9305,9 +9346,19 @@ final class InteractionRouter: FileOpInteraction {
                 continue
             }
             pendingHosts[job.id] = host
-            let answer = await presenter.present(question, job: job, on: window(for: host))
+            let hostWindow = window(for: host)
+            // A child Task, so stopAnswering() can cancel it; the presenter treats cancellation as "went away".
+            let presenting = Task { @MainActor [self] in await self.presenter.present(question, job: job, on: hostWindow) }
+            openDialogs[job.id] = presenting
+            let answer = await withTaskCancellationHandler {
+                await presenting.value
+            } onCancel: {
+                presenting.cancel()
+            }
+            openDialogs[job.id] = nil
             pendingHosts[job.id] = nil
             gate.leave()
+            if isStopping { return question.fallback }
             if let answer { return answer }
             if Task.isCancelled { return question.fallback }
             if case .window(let origin) = host, route(origin) != host {   // the window closed under its sheet
@@ -10329,6 +10380,12 @@ Window › Operations with no browser window open: the menu item's `macx_showOpe
     }
 ```
 
+Stop and Quit (§6.7, S3 Contract note 18; consistency pass): find P1-30's Stop and Quit handler in `Sources/UI/App/AppLifecycle.swift` (the code that calls `environment.termination.stopAllAndWait(...)`) and add this line immediately before that call, so a job waiting on an open dialog can finish its cancel path within the 10 s timeout:
+
+```swift
+        context.operationsUI.router.stopAnswering()
+```
+
 In `Tests/UITests/Support/ContentTestHarness.swift`, add to `tearDown()` after the `PropertiesWindowController.closeAll(for: context)` line:
 
 ```swift
@@ -10338,7 +10395,7 @@ In `Tests/UITests/Support/ContentTestHarness.swift`, add to `tearDown()` after t
 - [ ] **Step 10: Run the tests to verify they pass**
 
 Run: `swift test --filter 'UITests\.(InteractionRouterTests|OperationsUITests)' 2>&1 | tail -5`
-Expected: `Executed 23 tests, with 0 failures` (with no GUI session: `with 4 tests skipped and 0 failures`).
+Expected: `Executed 24 tests, with 0 failures` (with no GUI session: `with 4 tests skipped and 0 failures`).
 
 Run: `swift test --filter UITests 2>&1 | tail -3`
 Expected: `with 0 failures` (every S4/S5 UI test, with the router installed by `UIContext` and the harness's scripted interaction as the proxy target).
@@ -10393,3 +10450,4 @@ Gaps and additive members found while writing this slice. The overview was not e
 9. **"Apply to enclosed items…" and execute bits.** S3's `chmodRecursive` applies one set of rwx bits to directories and files (`ModeChange.mode`). With a folder's mode (for example 0755), enclosed files become executable. Finder keeps file x bits. A later Core addition (for example `ModeChange.preservesFileExecuteBits`) would let P1-37 match Finder. P1-37 sends one job, as §5.8 says, and its test asserts only the enclosed folder's mode.
 10. **`FolderCounter` counts the folder's contents, not the folder itself.** `PropertiesViewModelTests.testFolderShowsLiveCountThatFinishes` pins `files == 3, folders == 1` for `F/{a,b,sub/c}`, and asserts only `bytes >= 60` (logical or allocated). If S2 P1-16 counts the root, change that test's expectation, not the UI.
 11. **Jobs younger than 1 s.** `OperationsCenter.visibleJobs` depends on the clock, so observation alone doesn't re-evaluate it at the 1 s mark. The capsule polls every 250 ms while `jobs` is non-empty, and the job list sits inside a `TimelineView(.periodic(by: 0.5))`.
+12. **Stop and Quit with a dialog open (consistency pass, from S3 Contract note 18).** `InteractionRouter.stopAnswering()` closes every open dialog unanswered and answers every waiting or later question with its fallback (`.cancelJob` / `.cancel` / `false`). P1-38 Step 9 makes P1-30's Stop and Quit handler call `context.operationsUI.router.stopAnswering()` right before `environment.termination.stopAllAndWait()`, so a job suspended on a dialog finishes its cancel path inside the 10 s timeout. Each dialog now runs in a child `Task` that the router can cancel; presenters already treat cancellation as "went away". Pinned by `testStopAnsweringEndsOpenDialogsAndAnswersLaterQuestionsSafely` (P1-38 now has 24 tests in its filter).

@@ -6626,7 +6626,8 @@ public final class CoreEnvironment {
     public init(statePaths: StatePaths, lanes: LanePool, settingsStorage: any SettingsStorage,
                 volumeScanner: any VolumeScanning, volumeEvents: (any VolumeEventSource)?,
                 pasteboard: any PasteboardBackend, launchServices: any LaunchServicesProviding,
-                ejector: any Ejecting, trash: any TrashService, fileOpTuning: FileOpTuning = FileOpTuning())
+                ejector: any Ejecting, trash: any TrashService, fileOpTuning: FileOpTuning = FileOpTuning(),
+                home: URL = FileManager.default.homeDirectoryForCurrentUser)   // `home` additive (overview §3.12, consistency pass)
     public func folderContext() -> FolderContext
     public func makeFolderModel(_ directory: URL, query: ViewQuery? = nil) -> FolderModel
     public func start() async -> RecoveryReport
@@ -7463,10 +7464,13 @@ public final class CoreEnvironment {
     public convenience init(statePaths: StatePaths, lanes: LanePool, settingsStorage: any SettingsStorage,
                             volumeScanner: any VolumeScanning, volumeEvents: (any VolumeEventSource)?,
                             pasteboard: any PasteboardBackend, launchServices: any LaunchServicesProviding,
-                            ejector: any Ejecting, trash: any TrashService, fileOpTuning: FileOpTuning = FileOpTuning()) {
+                            ejector: any Ejecting, trash: any TrashService, fileOpTuning: FileOpTuning = FileOpTuning(),
+                            home: URL = FileManager.default.homeDirectoryForCurrentUser) {
+        // `home` (additive, consistency pass): the app passes its --root in sandbox mode (P1-26 AppBootstrap) so
+        // default favorites and "go home" fallbacks never leave the sandbox.
         self.init(statePaths: statePaths, lanes: lanes, settingsStorage: settingsStorage, volumeScanner: volumeScanner,
                   volumeEvents: volumeEvents, pasteboard: pasteboard, launchServices: launchServices, ejector: ejector,
-                  trash: trash, fileOpTuning: fileOpTuning, home: FileManager.default.homeDirectoryForCurrentUser,
+                  trash: trash, fileOpTuning: fileOpTuning, home: home,
                   interactionTarget: nil)
     }
 
@@ -7673,3 +7677,4 @@ Gaps or deviations found while writing this slice. The overview was not edited (
 18. **Stop and Quit with an open dialog.** A job suspended in `FileOpInteraction` can't finish its cancel until the question is answered, so `stopAllAndWait` returns `false` at the timeout (tested). P1-30's quit flow and P1-38's `InteractionRouter` should answer pending questions with `.cancel`/`.cancelJob`/`false` when Stop and Quit starts, so the cancel path (partials removed, journal updated) completes before the 10 s timeout.
 19. **`visibleJobs`** reveals a job `revealDelay` (1 s) after it was added, queued or running, unless it finished first. `waitingForUser` jobs are visible at once.
 20. **Swift 6 test isolation.** `@MainActor` test classes can't call the `FileOpsTestCase` base class's `async` helpers: under region isolation the call sends the non-`Sendable` test case off the main actor (verified error: `sending value of non-Sendable type … risks causing data races`). They use the `Sendable` `FileOpsWorld` view (`world`), whose `request(_:)` traps before enqueueing any URL outside the sandbox. S5/S6 harnesses that subclass `XCTestCase` under `@MainActor` hit the same rule.
+21. **`CoreEnvironment.init(…, home:)`** (consistency pass, additive, public, defaults to `homeDirectoryForCurrentUser`). Without it the app's sandbox mode (`--root`/`--state-dir`, built by S4's `AppBootstrap` through the public init) had no way to keep `Settings.home` inside the sandbox, so default favorites and the volume-gone "go home" relocation pointed at the real home while a UI scenario was running. P1-26 passes `home: options.root` when `options.isSandboxed`.
