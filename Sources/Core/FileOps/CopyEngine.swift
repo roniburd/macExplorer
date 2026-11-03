@@ -21,6 +21,8 @@ final class CopyProgressBox {
     let chunk: Int64
     var reported: Int64 = 0
     var nextMark: Int64
+    /// errno of a failed read/write reported through COPYFILE_ERR (copyfile would otherwise retry forever).
+    var failure: Int32 = 0
     let onBytes: (Int64) -> Void
     let onChunk: () -> Void
     init(lane: LaneContext, control: JobControl, chunk: Int64, onBytes: @escaping (Int64) -> Void, onChunk: @escaping () -> Void) {
@@ -56,6 +58,11 @@ enum CopyEngine {
             let callback: copyfile_callback_t = { what, stage, state, _, _, ctx in
                 guard let ctx else { return COPYFILE_CONTINUE }
                 let box = Unmanaged<CopyProgressBox>.fromOpaque(ctx).takeUnretainedValue()
+                if stage == COPYFILE_ERR {
+                    // CONTINUE here makes copyfile retry the failed write (e.g. ENOSPC) in an endless loop.
+                    box.failure = errno != 0 ? errno : EIO
+                    return COPYFILE_QUIT
+                }
                 if what == COPYFILE_COPY_DATA && stage == COPYFILE_PROGRESS {
                     var copied: off_t = 0
                     _ = copyfile_state_get(state, UInt32(COPYFILE_STATE_COPIED), &copied)
@@ -70,9 +77,9 @@ enum CopyEngine {
                 if expectedSize > box.reported { onBytes(expectedSize - box.reported) }   // clone: no callbacks
                 return .copied
             }
-            let e = errno
+            let e = box.failure != 0 ? box.failure : errno
             if e != EEXIST { _ = unlink(dst) }
-            if control.isCancelled || e == ECANCELED { return .cancelled }
+            if control.isCancelled || (box.failure == 0 && e == ECANCELED) { return .cancelled }
             return .failed(e)
         }
     }

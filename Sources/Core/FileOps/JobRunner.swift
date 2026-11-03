@@ -291,6 +291,18 @@ enum JobRunner {
             }
         case .move(let sources, let destination):
             await MoveJob.run(ctx, sources: sources, destination: destination)
+        case .trash(let urls):
+            await TrashDeleteJobs.trash(ctx, urls)
+        case .delete(let urls):
+            await TrashDeleteJobs.delete(ctx, urls)
+        case .alias(let sources, let destination):
+            await LinkJobs.alias(ctx, sources: sources, destination: destination)
+        case .symlink(let sources, let destination):
+            await LinkJobs.symlink(ctx, sources: sources, destination: destination)
+        case .chmodRecursive(let url, let change):
+            await AttributeJobs.chmodRecursive(ctx, url, change)
+        case .setAttributes(let urls, let edit):
+            await AttributeJobs.setAttributes(ctx, urls, edit)
         default:
             // Kinds are wired one by one in P1-19 … P1-24; P1-24 removes this branch.
             for u in ctx.kind.allURLs { ctx.skip(u, reason: .other(code: ENOTSUP, message: String(cString: strerror(ENOTSUP)))) }
@@ -317,5 +329,16 @@ extension JobContext {
         case .skip, .skipAll: skip(url, reason: kind); return .skipped
         case .cancel: cancelJob(); return .cancelled
         }
+    }
+}
+
+extension JobContext {
+    /// "Delete permanently?" for items on volumes without a Trash.
+    func askNoTrash(_ urls: [URL]) async -> Bool {
+        let previous = snapshot().state
+        setState(.waitingForUser)
+        let answer = await interaction.confirmPermanentDeleteWithoutTrash(urls, job: snapshot())
+        setState(previous)
+        return answer
     }
 }
