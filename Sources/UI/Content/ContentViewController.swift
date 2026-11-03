@@ -9,6 +9,7 @@ final class ContentViewController: CommandHandlingViewController {
     let context: UIContext
     let session: BrowserSession
     let details: DetailsViewController
+    private(set) var icons: IconsViewController?
     let commandBar = CommandBarView()
     let statusBar = StatusBarView()
     let stack = NSStackView()
@@ -126,7 +127,26 @@ final class ContentViewController: CommandHandlingViewController {
     // MARK: view mode
 
     func setViewMode(_ mode: ViewMode) {
-        mount(details)   // P1-32 replaces this body to add the Icons view
+        let list: FileListView
+        switch mode {
+        case .details: list = details
+        case .icons: list = iconsController()
+        }
+        guard list !== activeList || mountedListView !== list.view else { return }
+        if list !== activeList {
+            activeList.bind(nil)
+            activeList = list
+        }
+        mount(list)
+        list.bind(session.folder)
+    }
+
+    private func iconsController() -> IconsViewController {
+        if let icons { return icons }
+        let created = IconsViewController(context: context)
+        addChild(created)
+        icons = created
+        return created
     }
 
     func mount(_ list: FileListView) {
