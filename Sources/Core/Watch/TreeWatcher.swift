@@ -46,6 +46,11 @@ public final class TreeWatcher {
 
     public init(onChange: @escaping @MainActor (URL) -> Void) { self.onChange = onChange }
 
+    /// A resumed vnode source lives until cancelled: close every fd with the watcher.
+    isolated deinit {
+        for node in nodes.values { node.cancel() }
+    }
+
     public var count: Int { nodes.count }
 
     /// false when over the cap or the volume is not local: caller re-reads on re-expand / window key.

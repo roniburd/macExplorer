@@ -12,6 +12,8 @@ public final class UIContext {
     public private(set) lazy var windows: WindowManager = WindowManager(context: self)
     /// P1-26 installs BasicAlertInteraction; P1-38 installs InteractionRouter. Also sets environment.interaction's target.
     public private(set) var interaction: any FileOpInteraction
+    /// Eject questions and errors (P1-28 EjectFlow); tests install a scripted one.
+    var ejectPrompts: any EjectPrompting = AlertEjectPrompts()
 
     public init(environment: CoreEnvironment, options: LaunchOptions) {
         self.environment = environment

@@ -164,6 +164,7 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
 
     public func windowWillClose(_ notification: Notification) {
         sessionToken = nil
+        (sidebarPane as? SidebarViewController)?.close()
         session.close()
         onClose?()
         onClose = nil

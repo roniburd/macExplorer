@@ -13,7 +13,7 @@ final class BrowserSplitViewController: NSSplitViewController {
         self.session = session
         super.init(nibName: nil, bundle: nil)
 
-        let sidebar = PlaceholderSidebarViewController()   // P1-28 replaces it with SidebarViewController
+        let sidebar = SidebarViewController(context: context, session: session)
         let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebar)
         sidebarItem.minimumThickness = 160
         sidebarItem.maximumThickness = 400

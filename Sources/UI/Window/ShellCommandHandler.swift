@@ -3,7 +3,8 @@ import Core
 import MacxFS
 
 /// Interim CommandHandler (P1-26): navigation, window, view-mode and undo commands, so the shell is usable before
-/// the file commands exist. P1-35's FileCommandController replaces it on every pane.
+/// the file commands exist; P1-28 adds the sidebar row commands (Open, Open in New Window, Eject, Remove from
+/// Favorites). P1-35's FileCommandController replaces it on every pane.
 @MainActor
 final class ShellCommandHandler: CommandHandler {
     private let context: UIContext
@@ -17,15 +18,47 @@ final class ShellCommandHandler: CommandHandler {
     static let handled: Set<Command> = [
         .back, .forward, .up, .refresh, .newWindow, .closeWindow, .focusAddressBar, .focusSearch,
         .viewAsDetails, .viewAsIcons, .undo, .redo,
+        .open, .openInNewWindow, .eject, .removeFromFavorites,
     ]
+
+    /// Open and Open in New Window only for sidebar rows here (content items open in P1-35).
+    private static let sidebarOnly: Set<Command> = [.open, .openInNewWindow, .eject, .removeFromFavorites]
 
     func canPerform(_ command: Command, target: CommandTarget) -> Bool {
         guard Self.handled.contains(command), let session = window?.session else { return false }
         let undo = context.environment.undo
-        let state = CommandState(canUndo: undo.canUndo, canRedo: undo.canRedo,
+        var state = CommandState(canUndo: undo.canUndo, canRedo: undo.canRedo,
                                  canGoBack: session.history.canGoBack, canGoForward: session.history.canGoForward,
                                  canGoUp: session.folder.directory.standardizedFileURL.path != "/")
-        return CommandAvailability.isEnabled(command, focus: .content, state: state)
+        let focus: FocusContext
+        switch target {
+        case .contentSelection, .currentFolder:
+            if Self.sidebarOnly.contains(command) { return false }
+            focus = .content
+        case .favorite(let favorite):
+            focus = .sidebarFavorites
+            state.selectionCount = favorite.url == nil ? 0 : 1
+            state.singleFolderSelected = favorite.url != nil
+        case .volume(let volume):
+            focus = .sidebarLocations
+            state.selectionCount = 1
+            state.singleFolderSelected = true
+            state.targetIsEjectable = volume.isEjectable
+        case .folder:
+            focus = .sidebarFolders
+            state.selectionCount = 1
+            state.singleFolderSelected = true
+        }
+        return CommandAvailability.isEnabled(command, focus: focus, state: state)
+    }
+
+    private static func url(of target: CommandTarget) -> URL? {
+        switch target {
+        case .favorite(let favorite): favorite.url
+        case .volume(let volume): volume.mountPoint
+        case .folder(let url): url
+        case .contentSelection, .currentFolder: nil
+        }
     }
 
     func perform(_ command: Command, target: CommandTarget, sender: Any?) {
@@ -46,6 +79,16 @@ final class ShellCommandHandler: CommandHandler {
         case .viewAsIcons: setViewMode(.icons)
         case .undo: context.environment.undo.undoManager.undo()
         case .redo: context.environment.undo.undoManager.redo()
+        case .open: if let url = Self.url(of: target) { window.session.navigate(to: url) }
+        case .openInNewWindow: if let url = Self.url(of: target) { context.windows.openWindow(at: url) }
+        case .eject:
+            guard case .volume(let volume) = target else { return }
+            let flow = EjectFlow(environment: context.environment, prompts: context.ejectPrompts)
+            let host = window.window
+            Task { await flow.eject(volume, window: host) }
+        case .removeFromFavorites:
+            guard case .favorite(let favorite) = target else { return }
+            SidebarFavoritesModel.remove(id: favorite.favorite.id, from: context.environment.settings)
         default: break
         }
     }

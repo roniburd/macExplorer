@@ -60,16 +60,3 @@ final class PlaceholderContentViewController: CommandHandlingViewController {
         countLabel.stringValue = String(format: L10n.string("%ld items"), session.folder.rowCount)
     }
 }
-
-/// P1-26 placeholder sidebar. P1-28 deletes this type (SidebarViewController).
-@MainActor
-final class PlaceholderSidebarViewController: CommandHandlingViewController {
-    override var focusContext: FocusContext { .sidebarFavorites }
-
-    override func loadView() {
-        let root = FocusableView()
-        root.setAccessibilityIdentifier(AXID.sidebar)
-        root.widthAnchor.constraint(greaterThanOrEqualToConstant: 160).isActive = true
-        view = root
-    }
-}
