@@ -1,0 +1,234 @@
+import Foundation
+import MacxFS
+
+/// Off-main half of a FolderModel (§4.3 ownership 2–3): sort keys, the sorted merge while loading, re-sorts,
+/// incremental patches and diffs. It never makes a file-system call and never mutates the model's store; it returns
+/// permutations and new stores that main applies.
+///
+/// Sort keys (name, extension, cached search) are kept per storage index of the model's store. They are tagged:
+/// every result that changes storage returns a new `KeysTag`, and every call passes the tag of the store main
+/// holds. A mismatch (main dropped a result) rebuilds the keys from the store passed in, so keys never drift.
+actor FolderWorker {
+    typealias KeysTag = UInt64
+
+    struct Keys: Sendable {
+        var name = SortKeyColumn()
+        var ext = SortKeyColumn()
+        var search: SortKeyColumn?         // searchFold per storage index; built on the first filtered sort
+
+        mutating func append(_ batch: Batch) {
+            name.append(contentsOf: SortKeys.nameKeys(batch))
+            ext.append(contentsOf: SortKeys.extensionKeys(batch))
+            search = nil
+        }
+
+        static func build(_ store: EntryStore) -> Keys {
+            Keys(name: SortKeys.nameKeys(store, range: 0..<store.count), ext: SortKeys.extensionKeys(store, range: 0..<store.count))
+        }
+    }
+
+    /// A read in progress: its own copy of the store (same storage indices as main's when loading), keys,
+    /// the sorted permutation of everything merged so far, and sorted runs not merged yet.
+    private struct Building {
+        var generation: Generation
+        var store: EntryStore
+        var keys = Keys()
+        var order: [UInt32] = []
+        var runs: [[UInt32]] = []
+        var dirty = false
+        var query: ViewQuery
+    }
+
+    struct PatchResult: Sendable {
+        var store: EntryStore
+        var diff: DiffResult
+        var tag: KeysTag
+    }
+
+    private let types: TypeRegistry
+    private var keys = Keys()
+    private var tag: KeysTag = 0
+    private var nextTag: KeysTag = 0
+    private var building: Building?
+
+    init(types: TypeRegistry) { self.types = types }
+
+    // MARK: Loading and re-reads
+
+    /// Starts collecting the batches of read `generation` (replacing any read in progress).
+    func begin(_ generation: Generation, identityMode: IdentityMode, query: ViewQuery) {
+        building = Building(generation: generation, store: EntryStore(identityMode: identityMode), query: query)
+    }
+
+    /// Drops the read in progress (navigation, close, retry).
+    func cancel() { building = nil }
+
+    /// Appends a batch of the current read and sorts it within itself. False for a stale generation.
+    @discardableResult
+    func ingest(_ batch: Batch) -> Bool {
+        guard building?.generation == batch.generation, batch.count > 0 else { return building?.generation == batch.generation }
+        let lower = building!.store.count
+        building!.store.append(batch)
+        building!.keys.append(batch)
+        let b = building!
+        let run = Sorter.sortedRun(b.store, range: lower..<b.store.count, nameKeys: b.keys.name, searchKeys: nil,
+                                   query: b.query, kindRanks: types.kindRanks().ranks, extensionKeys: b.keys.ext)
+        building!.runs.append(run)
+        building!.dirty = true
+        return true
+    }
+
+    /// Re-sorts the read in progress for a new query.
+    func setLoadingQuery(_ query: ViewQuery) {
+        guard var b = building, b.query != query else { return }
+        building = nil
+        b.query = query
+        b.runs = []
+        b.order = permutation(b.store, b.keys, query)
+        b.dirty = true
+        building = b
+    }
+
+    /// The sorted permutation of every row merged so far, or nil if nothing changed since the last call
+    /// (or `generation` is not the read in progress). At most one call per display frame.
+    func takeLoadingOrder(_ generation: Generation) -> [UInt32]? {
+        guard building?.generation == generation, building!.dirty else { return nil }
+        mergeRuns()
+        building!.dirty = false
+        return building!.order
+    }
+
+    /// Initial load or retry finished: main's store holds the same batches in the same order. Returns the final
+    /// permutation for `query` and adopts the read's keys; the read's store copy is dropped.
+    func finishLoad(_ generation: Generation, query: ViewQuery) -> (order: [UInt32], tag: KeysTag)? {
+        guard building?.generation == generation else { return nil }
+        if building!.query != query { setLoadingQuery(query) } else { mergeRuns() }
+        let b = building!
+        building = nil
+        keys = b.keys
+        return (b.order, newTag())
+    }
+
+    /// A re-read (refresh, full rescan) finished: the new listing replaces `old`. Returns the sorted new store
+    /// and its diff against `old`.
+    func finishReread(_ generation: Generation, old: EntryStore, query: ViewQuery) -> PatchResult? {
+        guard building?.generation == generation else { return nil }
+        if building!.query != query { setLoadingQuery(query) } else { mergeRuns() }
+        var b = building!
+        building = nil
+        b.store.setOrder(b.order)
+        keys = b.keys
+        let diff = StoreDiff.diff(old: old, new: b.store)
+        return PatchResult(store: b.store, diff: diff, tag: newTag())
+    }
+
+    // MARK: Complete folders
+
+    /// Display permutation of `store` for `query` (re-sort, filter, show hidden).
+    func resort(_ store: EntryStore, tag storeTag: KeysTag, query: ViewQuery) -> [UInt32] {
+        sync(store, storeTag)
+        if !query.filter.isEmpty && keys.search == nil { keys.search = SortKeys.searchKeys(store) }
+        return permutation(store, keys, query)
+    }
+
+    /// Applies a stat of some names (watcher incremental path, LocalChange): present names are upserted (and any
+    /// other identity holding that name removed, so an atomic save becomes a replacement), missing names lose their
+    /// rows, names that failed keep their rows with the errno. Returns the re-sorted store and its diff.
+    func patch(_ old: EntryStore, tag storeTag: KeysTag, result: ItemReadResult, query: ViewQuery,
+               caseSensitive: Bool) -> PatchResult {
+        sync(old, storeTag)
+        var store = old
+        var k = keys
+        k.search = nil
+        var present: [String: UInt32] = [:]          // identityName → upserted storage index
+        for i in 0..<result.batch.count {
+            let name = result.batch.name(at: i), entry = result.batch.entries[i]
+            let before = store.count
+            let index = store.upsert(entry, name: name)
+            let nameKey = SortKeys.nameKey(name, isFolder: entry.isFolderForSorting)
+            let extKey = SortKeys.extensionKey(name, kind: entry.kind)
+            if Int(index) == before {
+                nameKey.withUnsafeBytes { k.name.append($0) }
+                extKey.withUnsafeBytes { k.ext.append($0) }
+            } else {
+                k.name.replace(Int(index), with: nameKey)
+                k.ext.replace(Int(index), with: extKey)
+            }
+            present[NameNormalizer.identityName(name, caseSensitive: caseSensitive)] = index
+        }
+        for error in result.batch.errors where Int(error.index) < result.batch.count {
+            if let index = present[NameNormalizer.identityName(result.batch.name(at: Int(error.index)), caseSensitive: caseSensitive)] {
+                store.setError(error.code, at: index)
+            }
+        }
+
+        let missing = Set(result.missing.map { NameNormalizer.identityName($0, caseSensitive: caseSensitive) })
+        let failed = Dictionary(result.errors.map { (NameNormalizer.identityName($0.key, caseSensitive: caseSensitive), $0.value) },
+                                uniquingKeysWith: { a, _ in a })
+        var removed = Set<UInt32>()
+        if !missing.isEmpty || !present.isEmpty || !failed.isEmpty {
+            for i in 0..<UInt32(store.count) {
+                let name = NameNormalizer.identityName(store.name(i), caseSensitive: caseSensitive)
+                if missing.contains(name) {
+                    removed.insert(i)
+                } else if let keep = present[name], keep != i {
+                    removed.insert(i)                // another identity held the name: replaced
+                } else if let code = failed[name] {
+                    store.setError(code, at: i)
+                }
+            }
+        }
+        store.remove(removed)
+        k.name.remove(removed)
+        k.ext.remove(removed)
+        store.setOrder(permutation(store, k, query))
+        keys = k
+        let diff = StoreDiff.diff(old: old, new: store)
+        return PatchResult(store: store, diff: diff, tag: newTag())
+    }
+
+    // MARK: Private
+
+    private func sync(_ store: EntryStore, _ storeTag: KeysTag) {
+        guard storeTag != tag || keys.name.count != store.count else { return }
+        keys = Keys.build(store)
+        tag = storeTag
+    }
+
+    private func newTag() -> KeysTag {
+        nextTag += 1
+        tag = nextTag
+        return tag
+    }
+
+    private func permutation(_ store: EntryStore, _ keys: Keys, _ query: ViewQuery) -> [UInt32] {
+        Sorter.permutation(store, nameKeys: keys.name, searchKeys: query.filter.isEmpty ? nil : keys.search, query: query,
+                           kindRanks: types.kindRanks().ranks, extensionKeys: keys.ext)
+    }
+
+    /// Merges the pending sorted runs into the building order (pairwise, so a frame's work is O(n log runs)).
+    private func mergeRuns() {
+        guard var b = building, !b.runs.isEmpty else { return }
+        building = nil
+        let ranks = types.kindRanks().ranks
+        var runs = b.runs
+        while runs.count > 1 {
+            var next: [[UInt32]] = []
+            var i = 0
+            while i < runs.count {
+                if i + 1 < runs.count {
+                    next.append(Sorter.merge(runs[i], runs[i + 1], store: b.store, nameKeys: b.keys.name, query: b.query,
+                                             kindRanks: ranks, extensionKeys: b.keys.ext))
+                } else {
+                    next.append(runs[i])
+                }
+                i += 2
+            }
+            runs = next
+        }
+        b.order = Sorter.merge(b.order, runs[0], store: b.store, nameKeys: b.keys.name, query: b.query, kindRanks: ranks,
+                               extensionKeys: b.keys.ext)
+        b.runs = []
+        building = b
+    }
+}
