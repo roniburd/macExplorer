@@ -289,6 +289,8 @@ enum JobRunner {
             for parent in groups.keys.sorted() where !ctx.control.isCancelled {
                 await CopyJob.run(ctx, sources: groups[parent]!, destination: URL(filePath: parent, directoryHint: .isDirectory), duplicate: true)
             }
+        case .move(let sources, let destination):
+            await MoveJob.run(ctx, sources: sources, destination: destination)
         default:
             // Kinds are wired one by one in P1-19 … P1-24; P1-24 removes this branch.
             for u in ctx.kind.allURLs { ctx.skip(u, reason: .other(code: ENOTSUP, message: String(cString: strerror(ENOTSUP)))) }
