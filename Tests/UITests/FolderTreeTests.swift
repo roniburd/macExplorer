@@ -136,6 +136,52 @@ final class FolderTreeTests: XCTestCase {
         XCTAssertNil(none4, "outside every volume")
     }
 
+    func testAFailedOrStalledReadKeepsTheNodeExpandableAndReExpandRetries() async throws {
+        let (h, tree) = try await make()
+        let usb = tree.roots[1]
+        let script = ScriptedLister(results: [nil, nil, [("x", false)]])
+        tree.lister = { _ in script.next() }
+        await tree.load(usb)
+        XCTAssertFalse(usb.isLoaded, "a stall or failure leaves the children unknown")
+        XCTAssertTrue(tree.isExpandable(usb), "the disclosure triangle stays")
+        tree.didExpand(usb)
+        try await h.waitUntil("second read") { script.reads == 2 }
+        XCTAssertTrue(tree.isExpandable(usb))
+        tree.didCollapse(usb)
+        tree.didExpand(usb)
+        try await h.waitUntil("retried") { usb.isLoaded }
+        XCTAssertEqual(names(tree.children(of: usb)), ["x"])
+
+        script.results = [nil]
+        await tree.load(usb)
+        XCTAssertEqual(names(tree.children(of: usb)), ["x"], "a failed re-read keeps the previous children")
+    }
+
+    func testARequestDuringAReadRunsOneMoreRead() async throws {
+        let (_, tree) = try await make()
+        let usb = tree.roots[1]
+        let script = ScriptedLister(results: [])
+        script.listing = []
+        tree.lister = { _ in
+            let snapshot = script.listing
+            script.reads += 1
+            if script.reads == 1 { await withCheckedContinuation { script.gate = $0 } }
+            return snapshot
+        }
+        let first = Task { await tree.load(usb) }
+        while script.gate == nil { await Task.yield() }
+        script.listing = [("late", false)]            // created after the first read listed the folder
+        let second = Task { await tree.load(usb) }
+        let third = Task { await tree.load(usb) }
+        for _ in 0..<10 { await Task.yield() }
+        script.gate?.resume()
+        await first.value
+        await second.value
+        await third.value
+        XCTAssertEqual(names(tree.children(of: usb)), ["late"])
+        XCTAssertEqual(script.reads, 2, "requests during a read coalesce into one more read")
+    }
+
     func testRemovedVolumeDropsItsRootAndWatches() async throws {
         let (h, tree) = try await make { try $0.sandbox.createDirectory("usb/x") }
         let usb = tree.roots[1]
@@ -148,5 +194,21 @@ final class FolderTreeTests: XCTestCase {
         XCTAssertEqual(names(tree.roots), ["Macintosh HD"])
         XCTAssertEqual(tree.watchedCount, 0)
         XCTAssertEqual(Set(dropped), ["USB", "x"])
+    }
+}
+
+/// Scripted folder listings for FolderTreeController.lister.
+@MainActor
+private final class ScriptedLister {
+    var results: [FolderTreeController.Listing?]
+    var listing: FolderTreeController.Listing = []
+    var reads = 0
+    var gate: CheckedContinuation<Void, Never>?
+
+    init(results: [FolderTreeController.Listing?]) { self.results = results }
+
+    func next() -> FolderTreeController.Listing? {
+        reads += 1
+        return results.removeFirst()
     }
 }

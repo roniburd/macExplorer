@@ -273,6 +273,72 @@ final class SidebarTests: XCTestCase {
         XCTAssertNil(h.sidebar.commandTarget)
     }
 
+    func testICloudDriveRowIsALocationPointerThatNeverTrashesRenamesOrCuts() async throws {
+        let h = try await SidebarHarness.make(self) { try $0.dir("home/Library/Mobile Documents/com~apple~CloudDocs") }
+        try await h.waitUntil("iCloud Drive row") { h.names(in: .locations).contains("iCloud Drive") }
+        let recorder = SidebarRecordingHandler()
+        h.sidebar.handler = recorder
+        h.sidebar.select(row: h.row(named: "iCloud Drive", in: .locations))
+        XCTAssertEqual(h.sidebar.focusContext, .sidebarLocations)
+        guard case .location(let url)? = h.sidebar.commandTarget else { return XCTFail("a Locations target, not a tree folder") }
+        XCTAssertEqual(url.lastPathComponent, "com~apple~CloudDocs")
+        let disabled: [Command] = [.moveToTrash, .deletePermanently, .rename, .cut, .duplicate, .makeAlias, .newFolder]
+        for command in disabled {
+            h.sidebar.run(command, sender: nil)
+            let item = NSMenuItem(title: "", action: Selector(command.selectorName), keyEquivalent: "")
+            XCTAssertFalse(h.sidebar.validateMenuItem(item), "\(command) is disabled on a Locations row")
+        }
+        XCTAssertTrue(recorder.performed.isEmpty, "got \(recorder.performed.map(\.0))")
+        h.sidebar.run(.open, sender: nil)
+        XCTAssertEqual(recorder.performed.map(\.0), [.open])
+
+        h.sidebar.select(row: h.row(named: "USB", in: .locations))
+        h.sidebar.run(.moveToTrash, sender: nil)
+        h.sidebar.run(.rename, sender: nil)
+        XCTAssertEqual(recorder.performed.map(\.0), [.open], "volume rows are pointers too")
+    }
+
+    func testICloudDriveRowThroughTheShellHandler() async throws {
+        let h = try await SidebarHarness.make(self) { try $0.dir("home/Library/Mobile Documents/com~apple~CloudDocs") }
+        try await h.waitUntil("iCloud Drive row") { h.names(in: .locations).contains("iCloud Drive") }
+        let window = BrowserWindowController(context: h.context, initialURL: h.url("home"))
+        defer { window.close() }
+        let handler = ShellCommandHandler(context: h.context, window: window)
+        h.sidebar.handler = handler
+        h.sidebar.select(row: h.row(named: "iCloud Drive", in: .locations))
+        let target = try XCTUnwrap(h.sidebar.commandTarget)
+        XCTAssertTrue(handler.canPerform(.open, target: target))
+        XCTAssertTrue(handler.canPerform(.openInNewWindow, target: target))
+        XCTAssertFalse(handler.canPerform(.eject, target: target))
+        h.sidebar.run(.open, sender: nil)
+        XCTAssertEqual(window.session.folder.directory.lastPathComponent, "com~apple~CloudDocs")
+    }
+
+    func testWithNoRowSelectedWindowCommandsStillWork() async throws {
+        let h = try await SidebarHarness.make(self) { $0.settings.autoRevealInTree = false; try $0.dir("a") }
+        XCTAssertNil(h.sidebar.selectedItem)
+        let recorder = SidebarRecordingHandler()
+        h.sidebar.handler = recorder
+        let windowCommands: [Command] = [.newWindow, .closeWindow, .back, .forward, .up, .refresh, .focusAddressBar,
+                                         .focusSearch, .cycleFocusForward, .cycleFocusBackward, .viewAsIcons, .toggleHidden]
+        for command in windowCommands {
+            let item = NSMenuItem(title: "", action: Selector(command.selectorName), keyEquivalent: "")
+            XCTAssertTrue(h.sidebar.validateMenuItem(item), "\(command) stays enabled with no row")
+            h.sidebar.run(command, sender: nil)
+        }
+        XCTAssertEqual(recorder.performed.map(\.0), windowCommands)
+        for (_, target) in recorder.performed {
+            guard case .folder(let url) = target else { return XCTFail("a sidebar target (Tab cycles from the sidebar)") }
+            XCTAssertEqual(ChangeBus.key(for: url), ChangeBus.key(for: h.session.folder.directory))
+        }
+        for command in [Command.moveToTrash, .rename, .cut, .open, .openInNewWindow, .copy, .paste] {
+            let item = NSMenuItem(title: "", action: Selector(command.selectorName), keyEquivalent: "")
+            XCTAssertFalse(h.sidebar.validateMenuItem(item), "\(command) needs a row")
+            h.sidebar.run(command, sender: nil)
+        }
+        XCTAssertEqual(recorder.performed.count, windowCommands.count, "row commands never reach the handler")
+    }
+
     // MARK: navigation and the tree
 
     func testSelectingRowsNavigates() async throws {

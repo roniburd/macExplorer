@@ -9,6 +9,7 @@ enum CommandTarget {
     case folder(URL)                                     // item-context Paste into one folder, tree node
     case favorite(ResolvedFavorite)
     case volume(VolumeInfo)
+    case location(URL)                                   // a LOCATIONS row that is a folder, not a volume (iCloud Drive)
 }
 
 /// Runs commands. P1-26 installs the interim `ShellCommandHandler`; P1-35's FileCommandController replaces it.

@@ -45,6 +45,10 @@ final class ShellCommandHandler: CommandHandler {
             state.selectionCount = 1
             state.singleFolderSelected = true
             state.targetIsEjectable = volume.isEjectable
+        case .location:
+            focus = .sidebarLocations
+            state.selectionCount = 1
+            state.singleFolderSelected = true
         case .folder:
             focus = .sidebarFolders
             state.selectionCount = 1
@@ -58,7 +62,7 @@ final class ShellCommandHandler: CommandHandler {
         switch target {
         case .contentSelection, .currentFolder: .content
         case .favorite: .sidebarFavorites
-        case .volume: .sidebarLocations
+        case .volume, .location: .sidebarLocations
         case .folder: .sidebarFolders
         }
     }
@@ -67,7 +71,7 @@ final class ShellCommandHandler: CommandHandler {
         switch target {
         case .favorite(let favorite): favorite.url
         case .volume(let volume): volume.mountPoint
-        case .folder(let url): url
+        case .folder(let url), .location(let url): url
         case .contentSelection, .currentFolder: nil
         }
     }

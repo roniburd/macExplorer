@@ -57,16 +57,21 @@ final class FolderTreeController {
     }
 
     private(set) var roots: [FolderTreeNode] = []
-    private let readers: DirectoryReaders
     private var watcher: TreeWatcher!
     private var watched: [String: FolderTreeNode] = [:]
     private var loads: [ObjectIdentifier: Task<Void, Never>] = [:]
+    /// Nodes asked to load again while a read was running: one more read follows it (as FolderModel does).
+    private var pendingLoads: Set<ObjectIdentifier> = []
     /// The revealed path's nodes stay visible even when hidden (e.g. /private on the way to a temp folder).
     private var pinned: [ObjectIdentifier: FolderTreeNode] = [:]
 
+    typealias Listing = [(name: String, hidden: Bool)]
+    /// Lists a folder's subfolders; nil when the read failed or stalled (tests replace it).
+    var lister: @MainActor (URL) async -> Listing?
+
     init(readers: DirectoryReaders, showHidden: Bool) {
-        self.readers = readers
         self.showHidden = showHidden
+        lister = { url in await FolderTreeController.listDirectories(url, readers: readers) }
         watcher = TreeWatcher { [weak self] url in self?.watchedDirectoryChanged(url) }
     }
 
@@ -174,22 +179,30 @@ final class FolderTreeController {
         for node in stale { await load(node) }
     }
 
-    /// Reads `node`'s children (one read at a time per node; a caller arriving mid-read waits for it).
+    /// Reads `node`'s children, one read at a time per node. A caller arriving mid-read (a watcher event, a
+    /// re-expand) may have seen a change that read missed: it waits for the running read and one more read after it.
     func load(_ node: FolderTreeNode) async {
         let id = ObjectIdentifier(node)
-        if let running = loads[id] { return await running.value }
+        if let running = loads[id] {
+            pendingLoads.insert(id)
+            return await running.value
+        }
         let task = Task { @MainActor in
-            let listed = await Self.listDirectories(node.url, readers: self.readers)
+            repeat {
+                self.pendingLoads.remove(id)
+                let listed = await self.lister(node.url)
+                self.merge(listed, into: node)
+            } while self.pendingLoads.contains(id)
             self.loads[id] = nil
-            self.merge(listed, into: node)
         }
         loads[id] = task
         await task.value
     }
 
-    /// Children of `node` loaded at least once (reads only when not yet loaded).
+    /// Children of `node` loaded at least once (waits for a running read; reads only when not yet loaded).
     func ensureLoaded(_ node: FolderTreeNode) async {
-        if !node.isLoaded || loads[ObjectIdentifier(node)] != nil { await load(node) }
+        if let running = loads[ObjectIdentifier(node)] { await running.value }
+        if !node.isLoaded { await load(node) }
     }
 
     // MARK: reveal
@@ -236,11 +249,10 @@ final class FolderTreeController {
         Task { await self.load(node) }
     }
 
-    private func merge(_ listed: [(name: String, hidden: Bool)]?, into node: FolderTreeNode) {
-        guard let listed else {
-            if node.allChildren == nil { node.allChildren = []; onChange?(node) }
-            return
-        }
+    /// A failed or stalled read (nil) changes nothing: an unloaded node stays unknown and expandable, so re-expanding
+    /// retries, and a loaded one keeps its children.
+    private func merge(_ listed: Listing?, into node: FolderTreeNode) {
+        guard let listed else { return }
         let existing = node.allChildren ?? []
         var byName: [String: FolderTreeNode] = [:]
         for child in existing { byName[child.name] = child }
@@ -276,12 +288,12 @@ final class FolderTreeController {
     }
 
     /// Folder names (not packages) with their hidden flag, sorted like Finder; nil when the folder can't be read.
-    private static func listDirectories(_ directory: URL, readers: DirectoryReaders) async -> [(name: String, hidden: Bool)]? {
+    private static func listDirectories(_ directory: URL, readers: DirectoryReaders) async -> Listing? {
         var options = ReadOptions()
         options.directoriesOnly = true
         options.noMaterialization = true
         let stream = await readers.reader(for: directory).read(directory, generation: .initial, options: options)
-        var listed: [(name: String, hidden: Bool)] = []
+        var listed: Listing = []
         loop: for await event in stream {
             switch event {
             case .batch(let batch):

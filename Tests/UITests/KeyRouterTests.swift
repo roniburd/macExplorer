@@ -246,6 +246,28 @@ final class FocusCycleTests: XCTestCase {
         XCTAssertEqual(controller.probeFocus, .content, "⇧Tab: sidebar → content")
     }
 
+    func testTabLeavesTheSidebarWithNoRowSelected() async throws {
+        let h = try await ShellHarness.make(self)
+        h.environment.settings.autoRevealInTree = false
+        let controller = try await h.openWindow()
+        let sidebar = try XCTUnwrap(controller.sidebarPane as? SidebarViewController)
+        controller.focus(.content)
+        controller.focus(.sidebarFavorites)
+        XCTAssertNil(sidebar.selectedItem)
+        XCTAssertTrue(controller.window?.firstResponder === sidebar.outlineView)
+        for command in [Command.newWindow, .closeWindow] {
+            let item = NSMenuItem(title: "", action: Selector(command.selectorName), keyEquivalent: "")
+            XCTAssertTrue(sidebar.validateMenuItem(item), "\(command) stays enabled")
+        }
+        var addressFocused = false
+        controller.focusAddressBar = { addressFocused = true }
+        sidebar.outlineView.keyDown(with: KeyEvents.tab(window: controller.window))
+        XCTAssertTrue(addressFocused, "Tab: sidebar → address bar")
+        controller.focus(.sidebarFavorites)
+        sidebar.outlineView.keyDown(with: KeyEvents.shiftTab(window: controller.window))
+        XCTAssertEqual(controller.probeFocus, .content, "⇧Tab: sidebar → content")
+    }
+
     func testBackspaceInTheSidebarGoesBack() async throws {
         let h = try await ShellHarness.make(self)
         try h.dir("sub")

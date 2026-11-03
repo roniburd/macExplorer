@@ -47,21 +47,48 @@ final class SidebarViewController: CommandHandlingViewController {
     /// The selected row's section (§5.4); Favorites when nothing is selected.
     override var focusContext: FocusContext { selectedItem?.focusContext ?? .sidebarFavorites }
 
+    /// The selected row's target; nil when no row is selected.
     override var commandTarget: CommandTarget? { selectedItem?.commandTarget }
 
-    /// Sidebar remaps first (Favorites: Move to Trash → Remove from Favorites).
+    /// Sidebar remaps first (Favorites: Move to Trash → Remove from Favorites); commands the row's section disables
+    /// (§5.4: Del, ⇧Del, ⌘X, ⌘D, F2… on Favorites and Locations rows) never reach the handler.
     override func run(_ command: Command, sender: Any?) {
-        guard let effective = CommandAvailability.effectiveCommand(command, focus: focusContext) else { return }
-        super.run(effective, sender: sender)
+        guard let (effective, target) = resolve(command), let handler else { return }
+        handler.perform(effective, target: target, sender: sender)
     }
 
     override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         guard let command = MenuValidation.command(for: menuItem.action) else { return false }
         if MenuValidation.blockedByFieldEditor(command, window: viewIfLoaded?.window) { return false }
-        guard let effective = CommandAvailability.effectiveCommand(command, focus: focusContext),
-              let handler, let target = commandTarget else { return false }
+        guard let (effective, target) = resolve(command), let handler else { return false }
         return handler.canPerform(effective, target: target)
     }
+
+    /// The command and target the handler gets, or nil when the sidebar's focus disables it. With no row selected,
+    /// commands that don't act on a row (navigation, window, focus, view) still go through on the current folder
+    /// as a sidebar target, so Tab leaves the sidebar and ⌘N/⌘W stay enabled.
+    private func resolve(_ command: Command) -> (Command, CommandTarget)? {
+        guard let effective = CommandAvailability.effectiveCommand(command, focus: focusContext),
+              CommandAvailability.isEnabled(effective, focus: focusContext, state: Self.focusOnlyState) else { return nil }
+        if let target = commandTarget { return (effective, target) }
+        guard Self.rowIndependent.contains(effective) else { return nil }
+        return (effective, .folder(session.folder.directory))
+    }
+
+    /// Every state-dependent condition met, so `CommandAvailability.isEnabled` checks only the focus; the handler
+    /// checks the real state.
+    private static let focusOnlyState = CommandState(
+        selectionCount: 1, singleFolderSelected: true, canPaste: true, canUndo: true, canRedo: true, canGoBack: true,
+        canGoForward: true, canGoUp: true, targetIsEjectable: true, targetIsPackage: true, folderIsReadOnly: false)
+
+    /// Commands that act on the window or the session, not on a sidebar row.
+    static let rowIndependent: Set<Command> = [
+        .back, .forward, .up, .refresh, .newWindow, .closeWindow, .showOperations, .focusAddressBar, .focusSearch,
+        .cycleFocusForward, .cycleFocusBackward, .undo, .redo, .cancelOperation,
+        .viewAsDetails, .viewAsIcons, .iconSizeSmall, .iconSizeMedium, .iconSizeLarge,
+        .densityCompact, .densityRegular, .densityComfortable, .toggleHidden, .toggleCommandBar,
+        .sortByName, .sortByDateModified, .sortBySize, .sortByKind, .sortByDateCreated, .sortAscending, .sortDescending,
+    ]
 
     // MARK: view
 

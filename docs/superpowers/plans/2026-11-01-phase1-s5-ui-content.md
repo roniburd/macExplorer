@@ -1001,7 +1001,7 @@ enum CommandStateBuilder {
             }
         case .currentFolder:
             state.selectionCount = 0
-        case .folder:
+        case .folder, .location:
             state.selectionCount = 1
             state.singleFolderSelected = true
         case .favorite(let favorite):
@@ -4510,7 +4510,7 @@ git commit -m "feat: inline rename with name rules, warnings and live relayout (
 - Test: `Tests/UITests/ContextMenuTests.swift`, `Tests/UITests/FileCommandTests.swift`
 
 **Interfaces:**
-- Consumes: `CommandHandler` (`canPerform(_:target:) -> Bool`, `perform(_:target:sender:)`), `CommandTarget` (all five cases), `CommandAvailability.isEnabled(_:focus:state:)` / `effectiveCommand(_:focus:) -> Command?`, `Command` (every case), `Clipboard.copy/cut/cutNames(in:)/revalidate/clearCut/canPaste/pastePlan(into:moveItemHere:)/didPaste/observe/cutURLs`, `PastePlan`, `OpenPlanner.plan(_:newWindow:lanes:volumes:) async -> OpenPlan`, `OpenItem`, `OpenAction`, `LaunchServicesCache.cachedApplications(for:typeIndex:)/cachedDefault(for:)/prefetch(file:typeIndex:)/invalidate(file:)/observe/provider`, `LaunchServicesProviding` (all requirements), `FakeLaunchServices(apps:defaultApp:)/opened()/defaultsSet()`, `AppInfo(url:name:bundleIdentifier:)`, `EjectCoordinator.eject(_:) async throws(EjectError)`, `FavoritesResolver.makeFavorite/resolve`, `Settings` view/sort/terminal/favorites/confirmBeforeTrash, `OperationsCenter.perform`, `JobKind` (copy, move, trash, delete, duplicate, newItem, rename, alias, symlink), `FileOpUndoStack.undoManager`, S4 `BrowserWindowController.session/origin/navigate(to:selecting:)/focus(_:)`, `WindowManager.openWindow(at:selecting:)`, `BrowserSession.goBack/goForward/goUp/reload/viewMode/navigate`, `SidebarViewController`, `CommandHandlingViewController.handler`.
+- Consumes: `CommandHandler` (`canPerform(_:target:) -> Bool`, `perform(_:target:sender:)`), `CommandTarget` (all six cases; `.location` is iCloud Drive in LOCATIONS), `CommandAvailability.isEnabled(_:focus:state:)` / `effectiveCommand(_:focus:) -> Command?`, `Command` (every case), `Clipboard.copy/cut/cutNames(in:)/revalidate/clearCut/canPaste/pastePlan(into:moveItemHere:)/didPaste/observe/cutURLs`, `PastePlan`, `OpenPlanner.plan(_:newWindow:lanes:volumes:) async -> OpenPlan`, `OpenItem`, `OpenAction`, `LaunchServicesCache.cachedApplications(for:typeIndex:)/cachedDefault(for:)/prefetch(file:typeIndex:)/invalidate(file:)/observe/provider`, `LaunchServicesProviding` (all requirements), `FakeLaunchServices(apps:defaultApp:)/opened()/defaultsSet()`, `AppInfo(url:name:bundleIdentifier:)`, `EjectCoordinator.eject(_:) async throws(EjectError)`, `FavoritesResolver.makeFavorite/resolve`, `Settings` view/sort/terminal/favorites/confirmBeforeTrash, `OperationsCenter.perform`, `JobKind` (copy, move, trash, delete, duplicate, newItem, rename, alias, symlink), `FileOpUndoStack.undoManager`, S4 `BrowserWindowController.session/origin/navigate(to:selecting:)/focus(_:)`, `WindowManager.openWindow(at:selecting:)`, `BrowserSession.goBack/goForward/goUp/reload/viewMode/navigate`, `SidebarViewController`, `CommandHandlingViewController.handler`.
 - Produces:
   - Overview §3.14, exact: `@MainActor final class FileCommandController: CommandHandler { init(context: UIContext, window: BrowserWindowController) }`; `@MainActor final class ContextMenuBuilder { init(context: UIContext); func itemMenu(for rows: IndexSet, in folder: FolderModel, handler: CommandHandler) -> NSMenu; func emptySpaceMenu(for folder: FolderModel, handler: CommandHandler) -> NSMenu }`; `@MainActor final class DefaultAppSheet { static func present(for file: URL, on window: NSWindow, context: UIContext) async }`.
   - Internal: `FileCommandController.prompts: any CommandPrompts`, `.beginSidebarRename: ((URL) -> Void)?`, `.subjectURLs(_:)`, `.destinationFolder(_:)`, `.openWith(_:app:)`, `.openWithOther(_:)`, `.chooseDefaultApp(for:)`, `.showProperties(_:)` (P1-37 fills), `.performWindowCommand(_:target:)` (P1-38 fills `.showOperations`), `static let pendingCommands: Set<Command>`; `CommandPrompt`, `BrokenLinkChoice`, `@MainActor protocol CommandPrompts`, `AppKitCommandPrompts`, `TextPasteboard.write(_:options:)`; `MenuActionBox` (`command`, `target`, `handler`), `ClosureMenuItem(title:handler:)`, `ContextMenuTitles.title(_:)`, `ContextMenuBuilder.contextRows(clickedRow:selectedRows:)`; `OpenWithMenu(files:typeIndex:cache:icons:openWith:other:chooseDefault:)` with `.menu`/`.rebuild()`; `DefaultAppSheet.present(for:on:context:alwaysChecked:)`, `DefaultAppChoice.apply(app:file:always:provider:)`; `ContentViewController.contextMenu(forRow:) -> NSMenu?` (also used by S6's scenario driver for `rightClick` steps), `.refreshCutNames()`; `DetailsViewController.contextMenuProvider`, `IconsViewController.contextMenuProvider`.
@@ -5080,7 +5080,7 @@ final class FileCommandController: CommandHandler {
         case .contentSelection, .currentFolder: .content
         case .folder: .sidebarFolders
         case .favorite: .sidebarFavorites
-        case .volume: .sidebarLocations
+        case .volume, .location: .sidebarLocations
         }
     }
 
@@ -5146,7 +5146,7 @@ final class FileCommandController: CommandHandler {
         switch target {
         case .contentSelection(let folder): folder.selectedURLs
         case .currentFolder(let folder): [folder.directory]
-        case .folder(let url): [url]
+        case .folder(let url), .location(let url): [url]
         case .favorite(let favorite): favorite.url.map { [$0] } ?? []
         case .volume(let volume): [volume.mountPoint]
         }
@@ -5156,7 +5156,7 @@ final class FileCommandController: CommandHandler {
     func destinationFolder(_ target: CommandTarget) -> URL {
         switch target {
         case .contentSelection(let folder), .currentFolder(let folder): folder.directory
-        case .folder(let url): url
+        case .folder(let url), .location(let url): url
         case .favorite(let favorite): favorite.url ?? environment.settings.home
         case .volume(let volume): volume.mountPoint
         }
@@ -5167,7 +5167,7 @@ final class FileCommandController: CommandHandler {
         switch target {
         case .contentSelection(let folder), .currentFolder(let folder): folder.directory
         case .folder(let url): url.deletingLastPathComponent()
-        case .favorite, .volume: environment.settings.home
+        case .favorite, .volume, .location: environment.settings.home
         }
     }
 
@@ -5217,7 +5217,7 @@ extension FileCommandController {
             let lanes = environment.lanes
             let volumes = environment.volumes
             Task { await self.execute(await OpenPlanner.plan(items, newWindow: newWindow, lanes: lanes, volumes: volumes)) }
-        case .folder, .favorite, .volume:
+        case .folder, .favorite, .volume, .location:
             guard let url = subjectURLs(target).first else { return }
             if newWindow { context.windows.openWindow(at: url) } else { window?.navigate(to: url) }
         case .currentFolder(let folder):
@@ -8438,7 +8438,7 @@ Replace the P1-35 placeholder `showProperties(_:)` with:
         case .volume(let volume): return .volume(volume)
         case .contentSelection(let folder): urls = folder.selectedURLs.isEmpty ? [folder.directory] : folder.selectedURLs
         case .currentFolder(let folder): urls = [folder.directory]
-        case .folder(let url): urls = [url]
+        case .folder(let url), .location(let url): urls = [url]
         case .favorite(let favorite):
             guard let url = favorite.url else { return nil }
             urls = [url]

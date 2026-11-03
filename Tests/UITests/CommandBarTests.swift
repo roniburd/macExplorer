@@ -41,7 +41,7 @@ final class CommandBarTests: XCTestCase {
         XCTAssertEqual(actions(bar.newMenu), [.newFolder, .newTextFile, .newEmptyFile])
         XCTAssertEqual(actions(bar.sortMenu), [.sortByName, .sortByDateModified, .sortBySize, .sortByKind, .sortByDateCreated,
                                                .sortAscending, .sortDescending])
-        XCTAssertEqual(actions(bar.viewMenu), [.viewAsDetails, .iconSizeSmall, .iconSizeMedium, .iconSizeLarge,
+        XCTAssertEqual(actions(bar.viewMenu), [.viewAsDetails, .viewAsIcons, .iconSizeSmall, .iconSizeMedium, .iconSizeLarge,
                                                .densityCompact, .densityRegular, .densityComfortable,
                                                .toggleHidden, .toggleCommandBar])
         XCTAssertEqual(actions(bar.moreMenu), [.copyAsPath, .selectAll, .selectNone, .invertSelection,

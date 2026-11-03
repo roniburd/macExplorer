@@ -2262,6 +2262,8 @@ enum CommandTarget {
     case folder(URL)                                     // item-context Paste into one folder, tree node
     case favorite(ResolvedFavorite)
     case volume(VolumeInfo)
+    case location(URL)                                   // a LOCATIONS row that is a folder, not a volume (iCloud Drive):
+                                                         // Locations semantics, never a Folders-tree node
 }
 @MainActor protocol CommandHandler: AnyObject {
     func canPerform(_ command: Command, target: CommandTarget) -> Bool

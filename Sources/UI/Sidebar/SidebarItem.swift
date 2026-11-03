@@ -87,7 +87,7 @@ enum SidebarItem: Hashable {
         case .favoritesHeader, .locationsHeader, .foldersHeader: nil
         case .favorite(let f): .favorite(f.resolved)
         case .location(let v): .volume(v)
-        case .iCloudDrive(let url): .folder(url)
+        case .iCloudDrive(let url): .location(url)
         case .folder(let node): node.isVolumeRoot ? .volume(node.volume) : .folder(node.url)
         }
     }
