@@ -22,5 +22,7 @@ final class AXIDTests: XCTestCase {
         XCTAssertEqual(AXID.operationsCapsule, "macx.operations")
         XCTAssertEqual(AXID.conflictButton(.keepBoth), "macx.conflict.keepBoth")
         XCTAssertEqual(AXID.propertiesWindow, "macx.properties")
+        XCTAssertEqual(AXID.settingsWindow, "macx.settings")
+        XCTAssertEqual(AXID.onboardingSheet, "macx.onboarding")
     }
 }

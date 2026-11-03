@@ -16,6 +16,8 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
     var onClose: (() -> Void)?
 
     private var sessionToken: ObserverToken?
+    /// Settings › Advanced "Show the full path in the window title" applies to open windows (P1-30).
+    private var titleLoop: ObservationLoop?
     private var fieldEditorUndo: (owner: ObjectIdentifier, manager: UndoManager)?
 
     init(context: UIContext, initialURL: URL) {
@@ -54,6 +56,8 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
         installToolbarHooks()
         sessionToken = session.observe { [weak self] event in self?.handle(event) }
         folderDidChange()
+        titleLoop = ObservationLoop({ [weak self] in _ = self?.context.environment.settings.showFullPathInTitle },
+                                    onChange: { [weak self] in self?.updateTitle() })
     }
 
     required init?(coder: NSCoder) { fatalError("BrowserWindowController is created in code") }
@@ -133,13 +137,17 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
     }
 
     private func folderDidChange() {
+        updateTitle()
+        context.environment.settings.lastLocation = session.folder.directory
+        window?.invalidateRestorableState()
+    }
+
+    private func updateTitle() {
         let folder = session.folder
         let volume = context.environment.volumes.volume(for: folder.directory)
         let isVolumeRoot = volume.map { Self.samePath($0.mountPoint, folder.directory) } ?? false
         window?.title = WindowTitle.title(for: folder.directory, volumeName: isVolumeRoot ? volume?.name : nil,
                                           fullPath: context.environment.settings.showFullPathInTitle)
-        context.environment.settings.lastLocation = folder.directory
-        window?.invalidateRestorableState()
     }
 
     private static func samePath(_ a: URL, _ b: URL) -> Bool {
@@ -172,6 +180,8 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
 
     public func windowWillClose(_ notification: Notification) {
         sessionToken = nil
+        titleLoop?.cancel()
+        titleLoop = nil
         (sidebarPane as? SidebarViewController)?.close()
         session.close()
         onClose?()

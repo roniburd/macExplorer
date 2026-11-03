@@ -14,6 +14,8 @@ public final class UIContext {
     public private(set) var interaction: any FileOpInteraction
     /// Eject questions and errors (P1-28 EjectFlow); tests install a scripted one.
     var ejectPrompts: any EjectPrompting = AlertEjectPrompts()
+    /// The open Settings window (P1-30), if any; SettingsWindowController.show reuses it.
+    var settingsWindow: SettingsWindowController?
 
     public init(environment: CoreEnvironment, options: LaunchOptions) {
         self.environment = environment

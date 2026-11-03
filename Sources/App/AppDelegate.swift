@@ -2,12 +2,14 @@ import AppKit
 import Core
 import UI
 
-/// App launch → AppBootstrap (UIContext/WindowManager); app-level commands (P1-30 adds AppLifecycle).
+/// App launch → AppBootstrap (UIContext/WindowManager/AppLifecycle); app-level commands and termination go through
+/// AppLifecycle (P1-30).
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let options: LaunchOptions
     let statePaths: StatePaths
     private(set) var context: UIContext?
+    private(set) var lifecycle: AppLifecycle?
 
     init(options: LaunchOptions) {
         self.options = options
@@ -24,11 +26,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if options.isSandboxed { exit(73) }   // EX_CANTCREAT
         }
         Task { @MainActor [options, statePaths] in
-            let context = await AppBootstrap.launch(options: options, statePaths: statePaths)
-            self.context = context
+            let launched = await AppBootstrap.launch(options: options, statePaths: statePaths)
+            self.context = launched.context
+            self.lifecycle = launched.lifecycle
             NSApp.activate()
             if let delay = options.smokeExitAfter { scheduleSmokeExit(after: delay) }
         }
+    }
+
+    /// §6.7: with jobs active or blocked, ask "N operations are in progress" (Stop and Quit / Cancel).
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        lifecycle?.shouldTerminate() ?? .terminateNow
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        lifecycle?.willTerminate()
     }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
@@ -56,12 +68,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func newWindow(_ sender: Any?) { macx_newWindow(sender) }
 
+    /// macExplorer › Settings… (⌘,).
+    @objc func macx_showSettings(_ sender: Any?) {
+        lifecycle?.showSettings()
+    }
+
+    /// Window › Operations when no browser window handles it (AppLifecycle's Window › Operations entry).
+    @objc func macx_showOperations(_ sender: Any?) {
+        lifecycle?.showOperations()
+    }
+
     private func scheduleSmokeExit(after delay: Duration) {
         Task { @MainActor [options, statePaths] in
             try? await Task.sleep(for: delay)
             let titles = NSApp.orderedWindows.filter(\.isVisible).map(\.title)
             let report = SmokeReport(windowTitles: titles, root: options.root?.path(percentEncoded: false),
                                      processID: ProcessInfo.processInfo.processIdentifier)
+            self.lifecycle?.willTerminate()
             do {
                 try report.write(to: statePaths.root.appending(path: SmokeReport.fileName))
             } catch {

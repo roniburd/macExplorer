@@ -20,4 +20,6 @@ enum AXID {
     static let operationsCapsule = "macx.operations"
     static func conflictButton(_ a: ConflictAction) -> String { "macx.conflict.\(a.rawValue)" }
     static let propertiesWindow = "macx.properties"
+    static let settingsWindow = "macx.settings"          // additive, P1-30
+    static let onboardingSheet = "macx.onboarding"       // additive, P1-30
 }

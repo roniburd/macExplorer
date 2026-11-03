@@ -9,10 +9,11 @@ import UI
 enum AppBootstrap {
     /// Live services, or their sandbox stand-ins when `--state-dir` is given (overview Global Constraints › Safety):
     /// settings in `<state-dir>/settings.json`, a sandbox Trash, eject limited to images under the sandbox.
-    static func makeEnvironment(options: LaunchOptions, statePaths: StatePaths) -> CoreEnvironment {
+    static func makeEnvironment(options: LaunchOptions, statePaths: StatePaths,
+                                settingsStorage: any SettingsStorage) -> CoreEnvironment {
         let lanes = LanePool()
         let sandboxed = options.isSandboxed
-        let settings: any SettingsStorage = sandboxed ? FileSettingsStorage(fileURL: statePaths.settingsFile) : UserDefaultsStorage()
+        let settings = settingsStorage
         let trash: any TrashService
         if let directory = options.sandboxTrash {
             trash = SandboxTrash(directory: directory)
@@ -34,12 +35,21 @@ enum AppBootstrap {
         return environment
     }
 
-    /// Environment → UIContext → launch recovery and Core start → initial windows.
-    static func launch(options: LaunchOptions, statePaths: StatePaths) async -> UIContext {
-        let environment = makeEnvironment(options: options, statePaths: statePaths)
+    /// Settings in `<state-dir>/settings.json` in sandbox runs, else the app's user defaults.
+    static func makeSettingsStorage(options: LaunchOptions, statePaths: StatePaths) -> any SettingsStorage {
+        options.isSandboxed ? FileSettingsStorage(fileURL: statePaths.settingsFile) : UserDefaultsStorage()
+    }
+
+    /// Environment → UIContext → launch recovery and Core start → initial windows → AppLifecycle (onboarding sheet,
+    /// recovery notice when the RecoveryReport is not empty, Dock badge).
+    static func launch(options: LaunchOptions, statePaths: StatePaths) async -> (context: UIContext, lifecycle: AppLifecycle) {
+        let storage = makeSettingsStorage(options: options, statePaths: statePaths)
+        let environment = makeEnvironment(options: options, statePaths: statePaths, settingsStorage: storage)
         let context = UIContext(environment: environment, options: options)
-        _ = await environment.start()   // P1-30 shows the RecoveryReport notice when it is not empty
+        let recovery = await environment.start()
         await context.windows.restoreOrOpenInitial()
-        return context
+        let lifecycle = AppLifecycle(context: context, flushSettings: { (storage as? FileSettingsStorage)?.flush() })
+        lifecycle.didLaunch(recovery: recovery)
+        return (context, lifecycle)
     }
 }

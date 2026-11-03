@@ -78,6 +78,17 @@
         }
       }
     },
+    "%ld operations are in progress" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%ld operations are in progress"
+          }
+        }
+      }
+    },
     "%ld operations are still using “%@”." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -85,6 +96,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%ld operations are still using “%@”."
+          }
+        }
+      }
+    },
+    "%ld operations didn't finish." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%ld operations didn't finish."
           }
         }
       }
@@ -122,6 +144,28 @@
         }
       }
     },
+    "1 operation didn't finish." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 operation didn't finish."
+          }
+        }
+      }
+    },
+    "1 operation is in progress" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 operation is in progress"
+          }
+        }
+      }
+    },
     "About macExplorer" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -133,6 +177,17 @@
         }
       }
     },
+    "Absolute" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Absolute"
+          }
+        }
+      }
+    },
     "Address" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -140,6 +195,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Address"
+          }
+        }
+      }
+    },
+    "Advanced" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Advanced"
           }
         }
       }
@@ -265,6 +331,17 @@
         }
       }
     },
+    "Change…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Change…"
+          }
+        }
+      }
+    },
     "Choose" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -331,6 +408,28 @@
         }
       }
     },
+    "Confirm before deleting items permanently" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm before deleting items permanently"
+          }
+        }
+      }
+    },
+    "Confirm before moving items to the Trash" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm before moving items to the Trash"
+          }
+        }
+      }
+    },
     "Continue Anyway" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -338,6 +437,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Continue Anyway"
+          }
+        }
+      }
+    },
+    "Continue Without Full Disk Access" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continue Without Full Disk Access"
           }
         }
       }
@@ -375,6 +485,28 @@
         }
       }
     },
+    "Custom folder:" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Custom folder:"
+          }
+        }
+      }
+    },
+    "Custom…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Custom…"
+          }
+        }
+      }
+    },
     "Cut" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -404,6 +536,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Date Modified"
+          }
+        }
+      }
+    },
+    "Dates:" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dates:"
           }
         }
       }
@@ -573,6 +716,17 @@
         }
       }
     },
+    "External disks" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "External disks"
+          }
+        }
+      }
+    },
     "Favorites" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -657,6 +811,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Forward"
+          }
+        }
+      }
+    },
+    "Full Disk Access" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Full Disk Access"
+          }
+        }
+      }
+    },
+    "Function keys" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Function keys"
+          }
+        }
+      }
+    },
+    "General" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "General"
           }
         }
       }
@@ -760,6 +947,28 @@
         }
       }
     },
+    "In a new window" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In a new window"
+          }
+        }
+      }
+    },
+    "In the same window" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In the same window"
+          }
+        }
+      }
+    },
     "Invert Selection" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -833,6 +1042,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Large Icons"
+          }
+        }
+      }
+    },
+    "Last location" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last location"
           }
         }
       }
@@ -1101,6 +1321,39 @@
         }
       }
     },
+    "Open Keyboard Settings" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Keyboard Settings"
+          }
+        }
+      }
+    },
+    "Open Privacy & Security" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Privacy & Security"
+          }
+        }
+      }
+    },
+    "Open folders in:" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open folders in:"
+          }
+        }
+      }
+    },
     "Open in New Window" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1145,6 +1398,17 @@
         }
       }
     },
+    "Permanent deletes can't be undone, so they always ask first." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permanent deletes can't be undone, so they always ask first."
+          }
+        }
+      }
+    },
     "Previous Focus Area" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1163,6 +1427,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Properties"
+          }
+        }
+      }
+    },
+    "Put back %ld items that were being replaced." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Put back %ld items that were being replaced."
+          }
+        }
+      }
+    },
+    "Put back 1 item that was being replaced." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Put back 1 item that was being replaced."
           }
         }
       }
@@ -1211,6 +1497,17 @@
         }
       }
     },
+    "Relative" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Relative"
+          }
+        }
+      }
+    },
     "Remove from Favorites" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1218,6 +1515,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Remove from Favorites"
+          }
+        }
+      }
+    },
+    "Removed %ld incomplete copies." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Removed %ld incomplete copies."
+          }
+        }
+      }
+    },
+    "Removed 1 incomplete copy." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Removed 1 incomplete copy."
           }
         }
       }
@@ -1244,6 +1563,39 @@
         }
       }
     },
+    "Restored the original name of 1 item." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restored the original name of 1 item."
+          }
+        }
+      }
+    },
+    "Restored the original names of %ld items." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restored the original names of %ld items."
+          }
+        }
+      }
+    },
+    "Return key:" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Return key:"
+          }
+        }
+      }
+    },
     "Reveal in Finder" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1251,6 +1603,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Reveal in Finder"
+          }
+        }
+      }
+    },
+    "Reveal the current folder in the tree" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reveal the current folder in the tree"
+          }
+        }
+      }
+    },
+    "Row density:" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Row density:"
           }
         }
       }
@@ -1376,6 +1750,39 @@
         }
       }
     },
+    "Show hidden files and folders" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show hidden files and folders"
+          }
+        }
+      }
+    },
+    "Show the command bar" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show the command bar"
+          }
+        }
+      }
+    },
+    "Show the full path in the window title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show the full path in the window title"
+          }
+        }
+      }
+    },
     "Sidebar" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1464,6 +1871,39 @@
         }
       }
     },
+    "Startup folder:" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Startup folder:"
+          }
+        }
+      }
+    },
+    "Stop and Quit" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop and Quit"
+          }
+        }
+      }
+    },
+    "Stop and Quit cancels them safely: each finishes its current item and removes incomplete copies." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop and Quit cancels them safely: each finishes its current item and removes incomplete copies."
+          }
+        }
+      }
+    },
     "Subfolders of '%@'" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1471,6 +1911,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Subfolders of '%@'"
+          }
+        }
+      }
+    },
+    "Terminal" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terminal"
+          }
+        }
+      }
+    },
+    "Terminal app:" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terminal app:"
           }
         }
       }
@@ -1574,6 +2036,28 @@
         }
       }
     },
+    "Use Terminal" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use Terminal"
+          }
+        }
+      }
+    },
+    "Using F2 or F5? Hold fn, or turn on 'Use F1, F2, etc. keys as standard function keys'." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Using F2 or F5? Hold fn, or turn on 'Use F1, F2, etc. keys as standard function keys'."
+          }
+        }
+      }
+    },
     "View" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1592,6 +2076,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wait"
+          }
+        }
+      }
+    },
+    "Welcome to macExplorer" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Welcome to macExplorer"
           }
         }
       }
@@ -1680,6 +2175,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "macExplorer Help"
+          }
+        }
+      }
+    },
+    "macExplorer Settings" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macExplorer Settings"
+          }
+        }
+      }
+    },
+    "macExplorer cleaned up after operations that were interrupted" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macExplorer cleaned up after operations that were interrupted"
+          }
+        }
+      }
+    },
+    "macOS asks before an app reads Desktop, Documents, Downloads, other apps' data and external disks. With Full Disk Access, macExplorer can browse and search everywhere without a prompt for each folder. You can grant it in Privacy & Security at any time." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS asks before an app reads Desktop, Documents, Downloads, other apps' data and external disks. With Full Disk Access, macExplorer can browse and search everywhere without a prompt for each folder. You can grant it in Privacy & Security at any time."
           }
         }
       }
