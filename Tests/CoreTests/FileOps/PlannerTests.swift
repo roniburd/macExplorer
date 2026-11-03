@@ -45,6 +45,26 @@ final class PlannerTests: FileOpsTestCase {
         XCTAssertFalse(Planner.isSelfOrDescendant(source: "/x/A", destination: "/x"))
     }
 
+    func testPlanRefusesADestinationItemThatContainsTheSource() async throws {
+        let inner = try file("d/x/x")
+        let deeper = try file("d/y/sub/y")
+        let other = try file("d/z/w")
+        for mode in [PlanMode.copy, .move] {
+            let p = try await plan([inner, deeper, other], url("d"), mode)
+            XCTAssertEqual(p.refused, [Refusal(url: inner, kind: .intoItself), Refusal(url: deeper, kind: .intoItself)], "\(mode)")
+            XCTAssertEqual(p.items.map(\.source), [other])
+        }
+    }
+
+    func testOnlyUserImmutableCountsAsLocked() {
+        let base = PosixFS.Info(isDirectory: false, isSymlink: false, isRegular: true, size: 0, allocSize: 0, mode: 0o644,
+                                flags: 0, mtime: Date(), identity: FileIdentity(device: 1, inode: 1))
+        var u = base; u.flags = UInt32(UF_IMMUTABLE)
+        var s = base; s.flags = UInt32(SF_IMMUTABLE)
+        XCTAssertTrue(u.isLocked)
+        XCTAssertFalse(s.isLocked, "SF_IMMUTABLE can't be cleared by Unlock and Continue")
+    }
+
     func testPlanNeverFollowsSymlinks() async throws {
         try bigFile("elsewhere/huge", bytes: 1 << 20)
         try dir("a")

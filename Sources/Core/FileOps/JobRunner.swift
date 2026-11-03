@@ -376,6 +376,18 @@ extension JobContext {
     /// Undo/redo count one item per step, whatever the reused helpers added (they add their own item counts).
     func setItemsDone(_ n: Int) { state.withLock { $0.snapshot.progress.itemsDone = n } }
 
+    /// Progress before a step that may be redone (a partial copy removed for Retry); `restoreProgress` takes back
+    /// what the removed attempt counted, so "x of y" never exceeds the totals.
+    func progressMark() -> (items: Int, bytes: Int64) {
+        state.withLock { ($0.snapshot.progress.itemsDone, $0.snapshot.progress.bytesDone) }
+    }
+    func restoreProgress(_ mark: (items: Int, bytes: Int64)) {
+        state.withLock { $0.snapshot.progress.itemsDone = mark.items; $0.snapshot.progress.bytesDone = mark.bytes }
+    }
+
+    /// Reason of the most recently listed item (a child skipped inside a top-level item's copy).
+    func lastSkipReason() -> FileOpErrorKind? { state.withLock { $0.skipped.last?.reason } }
+
     /// A folder appeared without becoming part of the selection or `JobOutcome.created` (undo re-creating a parent).
     func noteAdded(_ url: URL) { mutateChange(url.deletingLastPathComponent()) { $0.added.append(url.lastPathComponent) } }
 }

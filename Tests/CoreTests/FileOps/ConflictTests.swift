@@ -183,6 +183,43 @@ final class ConflictTests: FileOpsTestCase {
         XCTAssertEqual(text(url("d/F/b")), "new b")
     }
 
+    /// Replace that skips a child never lands: the top-level source is listed, the destination stays.
+    func testReplaceWithSkippedChildListsTheTopLevelItem() async throws {
+        try file("src/F/a", "A"); try file("src/F/secret", "S"); try file("d/F", "old file")
+        XCTAssertEqual(chmod(url("src/F/secret").path, 0o000), 0)
+        var tuning = FileOpTuning(); tuning.allowClone = false
+        let (queue, _) = makeQueue(interaction: ScriptedInteraction(conflicts: [.one(.replace)], errors: [.skip]), tuning: tuning)
+        let o = try await run(.copy(sources: [url("src/F")], destination: url("d")), on: queue)
+        XCTAssertEqual(text(url("d/F")), "old file")
+        XCTAssertEqual(o.skipped.map(\.url), [url("src/F/secret"), url("src/F")])
+        XCTAssertEqual(partials(url("d")), [])
+    }
+
+    /// An unreadable source folder in a merge is asked about and listed, never treated as empty.
+    func testMergeOfUnreadableSourceFolderAsksAndSkips() async throws {
+        try file("src/F/a", "A"); try file("d/F/x", "X")
+        XCTAssertEqual(chmod(url("src/F").path, 0o000), 0)
+        let scripted = ScriptedInteraction(conflicts: [.one(.merge)], errors: [.skip])
+        let (queue, _) = makeQueue(interaction: scripted)
+        let o = try await run(.move(sources: [url("src/F")], destination: url("d")), on: queue)
+        XCTAssertEqual(scripted.askedErrors().map(\.kind), [.permissionDenied])
+        XCTAssertEqual(o.skipped.map(\.url), [url("src/F")])
+        XCTAssertEqual(names(url("d/F")), ["x"])
+        XCTAssertTrue(exists(url("src/F")))
+    }
+
+    /// Replace would trash the folder holding the source (copy d/x/x into d): refused like Finder.
+    func testPlanRefusesReplacingAFolderThatContainsTheSource() async throws {
+        let src = try file("d/x/x", "inner")
+        let scripted = ScriptedInteraction(conflicts: [.one(.replace)], errors: [.skip])
+        let (queue, _) = makeQueue(interaction: scripted)
+        let o = try await run(.copy(sources: [src], destination: url("d")), on: queue)
+        XCTAssertEqual(o.skipped, [SkippedItem(url: src, reason: .intoItself)])
+        XCTAssertEqual(scripted.askedConflicts().count, 0)
+        XCTAssertEqual(text(src), "inner")
+        XCTAssertEqual(trashed("x"), [])
+    }
+
     func testReplaceOnFolderPairMeansMerge() async throws {
         try file("src/F/a", "A"); try file("d/F/x", "X")
         let (queue, _) = makeQueue(interaction: ScriptedInteraction(conflicts: [.one(.replace)]))

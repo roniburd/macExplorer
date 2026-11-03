@@ -133,6 +133,44 @@ final class MoveTests: FileOpsTestCase {
         XCTAssertEqual(names(url("src/T")), ["a", "secret"])
     }
 
+    /// A child skipped inside a cross-volume move keeps the whole folder at the source: the folder is listed too.
+    func testCrossVolumeMoveWithSkippedChildListsTheTopLevelFolder() async throws {
+        try file("src/T/a", "A"); try file("src/T/secret", "S")
+        XCTAssertEqual(chmod(url("src/T/secret").path, 0o000), 0)
+        var tuning = FileOpTuning(); tuning.forceCrossVolume = true; tuning.allowClone = false
+        let (queue, _) = makeQueue(interaction: ScriptedInteraction(errors: [.skip]), tuning: tuning)
+        let o = try await run(.move(sources: [url("src/T")], destination: try dir("d")), on: queue)
+        XCTAssertEqual(o.skipped.map(\.url), [url("src/T/secret"), url("src/T")])
+        XCTAssertEqual(o.skipped.last?.reason, .permissionDenied)
+        XCTAssertEqual(o.record.actions, [])
+    }
+
+    /// A retried cross-volume copy (changed during move → Retry) counts its items and bytes once.
+    func testRetriedCrossVolumeMoveCountsProgressOnce() async throws {
+        let src = try bigFile("src/log.txt", bytes: 1 << 20)
+        let d = try dir("d")
+        let srcPath = src.path
+        let once = EventLog()
+        var tuning = FileOpTuning(faultHook: { point, _ in
+            guard point == .afterPartialCopy, once.all.isEmpty, let h = FileHandle(forWritingAtPath: srcPath) else { return }
+            once.add("appended")
+            h.seekToEndOfFile(); h.write(Data("more".utf8)); h.closeFile()
+        })
+        tuning.forceCrossVolume = true; tuning.allowClone = false
+        let lanes = LanePool()
+        let item = try await lanes.perform(on: .unknown, .fileOp) { lane in
+            Planner.plan(sources: [src], destination: d, mode: .move, forceCrossVolume: true, lane: lane).items[0]
+        }
+        let ctx = JobContext(id: JobID(), request: request(.move(sources: [src], destination: d)), lanes: lanes,
+                             trash: SandboxTrash(directory: trashDir), journal: Journal(fileURL: journalURL),
+                             interaction: ScriptedInteraction(errors: [.retry]), tuning: tuning)
+        let r = await MoveJob.crossVolume(ctx, item, to: d.appending(path: "log.txt"))
+        XCTAssertEqual(r, .done)
+        let p = ctx.snapshot().progress
+        XCTAssertEqual(p.itemsDone, 1)
+        XCTAssertLessThanOrEqual(p.bytesDone, (1 << 20) + 4)
+    }
+
     func testMoveConflictKeepBoth() async throws {
         let a = try file("src/a.txt", "new"); try file("d/a.txt", "old")
         let (queue, _) = makeQueue(interaction: ScriptedInteraction(conflicts: [.one(.keepBoth)]))

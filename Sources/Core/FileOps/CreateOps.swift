@@ -54,9 +54,12 @@ enum CreateOps {
             ctx.skip(url, reason: kind)
             return .skipped
         }
-        guard url.lastPathComponent != newName else { return .done }
         let target = url.deletingLastPathComponent().appending(path: newName)
         let parent = url.deletingLastPathComponent()
+        // Bytes, not String ==: canonical equivalence would make every normalization-only rename a no-op.
+        let parentPath = parent.path, given = url.lastPathComponent
+        let current = ((try? await ctx.onLane { _ in RenamePrimitive.onDiskName(in: parentPath, matching: given) }) ?? nil) ?? given
+        guard Array(current.utf8) != Array(newName.utf8) else { return .done }
         var caps = (try? await ctx.onLane { _ in VolumeIdentity.capabilities(of: parent) })
             ?? VolumeIdentity.Capabilities(clone: false, renameExcl: false, caseSensitive: false)
         if ctx.tuning.forceCaseInsensitive { caps.caseSensitive = false }
@@ -64,7 +67,7 @@ enum CreateOps {
         // Same-item renames go in place only while `target` is absent or this very item (the name rules can be
         // wrong about the volume's folding); anything else takes the primitive, which never overwrites.
         var inPlaceResult: StepResult?
-        if RenamePrimitive.isSameItemRename(url.lastPathComponent, newName, caseSensitive: caps.caseSensitive) {
+        if RenamePrimitive.isSameItemRename(current, newName, caseSensitive: caps.caseSensitive) {
             inPlaceResult = await inPlace(ctx, from: url, to: target)
         }
         let result: StepResult

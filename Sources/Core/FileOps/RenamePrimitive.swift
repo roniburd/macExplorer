@@ -56,6 +56,26 @@ enum RenamePrimitive {
         return directory(dir, containsExactly: name) ? .applied : .needsTwoStep
     }
 
+    /// The name as stored in `dir` for `name`: the entry with exactly its bytes, else the first canonically equal
+    /// one (a URL can carry another normalization than the disk). nil = no such entry.
+    static func onDiskName(in dir: String, matching name: String) -> String? {
+        assertOffMain()
+        guard let d = opendir(dir) else { return nil }
+        defer { closedir(d) }
+        let target = Array(name.utf8)
+        var equivalent: String?
+        while let ent = readdir(d) {
+            let len = Int(ent.pointee.d_namlen)
+            let bytes = withUnsafeBytes(of: &ent.pointee.d_name) { Array($0.prefix(len)) }
+            if bytes == target { return name }
+            if equivalent == nil {
+                let s = String(decoding: bytes, as: UTF8.self)
+                if s == name { equivalent = s }          // String == is canonical equivalence
+            }
+        }
+        return equivalent
+    }
+
     /// readdir byte comparison (no normalization, no case folding).
     static func directory(_ dir: String, containsExactly name: String) -> Bool {
         assertOffMain()

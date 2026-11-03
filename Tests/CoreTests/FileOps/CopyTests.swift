@@ -213,6 +213,27 @@ final class CopyTests: FileOpsTestCase {
         XCTAssertEqual(text(dst), "someone else's")
     }
 
+    /// Another process takes the target between the conflict check and the copy; Cancel must not record its item.
+    func testCancelledCopyNeverRecordsAnItemItDidNotCreate() async throws {
+        let a = try file("src/a", "mine")
+        let d = try dir("d")
+        let foreign = try file("d/a", "someone else's")
+        let lanes = LanePool()
+        let item = try await lanes.perform(on: .unknown, .fileOp) { lane in
+            Planner.plan(sources: [a], destination: nil, mode: .copy, forceCrossVolume: false, lane: lane).items[0]
+        }
+        let scripted = ScriptedInteraction(errors: [.cancel])
+        let ctx = JobContext(id: JobID(), request: request(.copy(sources: [a], destination: d)), lanes: lanes,
+                             trash: SandboxTrash(directory: trashDir), journal: Journal(fileURL: journalURL),
+                             interaction: scripted, tuning: FileOpTuning())
+        let r = await CopyJob.copyItem(ctx, item, to: foreign)
+        XCTAssertEqual(r, .cancelled)
+        XCTAssertEqual(scripted.askedErrors().count, 1)
+        XCTAssertEqual(ctx.outcome().record.actions, [])
+        XCTAssertEqual(ctx.outcome().created, [])
+        XCTAssertEqual(text(foreign), "someone else's")
+    }
+
     func testUnreadableEntryReportsPermissionAndOtherEntriesCopy() async throws {
         try file("T/a"); try file("T/secret"); try file("T/c")
         XCTAssertEqual(chmod(url("T/secret").path, 0o000), 0)

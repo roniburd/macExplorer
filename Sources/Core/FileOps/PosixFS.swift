@@ -14,7 +14,9 @@ enum PosixFS {
         var flags: UInt32
         var mtime: Date
         var identity: FileIdentity
-        var isLocked: Bool { flags & UInt32(UF_IMMUTABLE | SF_IMMUTABLE) != 0 }
+        /// User immutable (uchg) only: the one Unlock and Continue can clear. SF_IMMUTABLE (schg) EPERMs map to
+        /// .blockedByMacOS, so the user is never asked to unlock something that stays locked.
+        var isLocked: Bool { flags & UInt32(UF_IMMUTABLE) != 0 }
         var isDataless: Bool { flags & UInt32(SF_DATALESS) != 0 }
     }
 
@@ -64,6 +66,23 @@ enum PosixFS {
         if unlock { clearImmutable(path) }
         return removefile(path, nil, removefile_flags_t(REMOVEFILE_RECURSIVE)) == 0 ? 0 : errno
     }
+
+    /// Names in `dir` (no "." / ".."), sorted; errno when the folder can't be read (never an empty list instead).
+    static func childNames(_ dir: String) -> Result<[String], PosixCode> {
+        assertOffMain()
+        guard let d = opendir(dir) else { return .failure(PosixCode(errno)) }
+        defer { closedir(d) }
+        var names: [String] = []
+        errno = 0
+        while let ent = readdir(d) {
+            let len = Int(ent.pointee.d_namlen)
+            let name = withUnsafeBytes(of: &ent.pointee.d_name) { String(decoding: $0.prefix(len), as: UTF8.self) }
+            if name != "." && name != ".." { names.append(name) }
+        }
+        if errno != 0 { return .failure(PosixCode(errno)) }
+        return .success(names.sorted())
+    }
+    struct PosixCode: Error, Sendable, Equatable { var code: Int32; init(_ code: Int32) { self.code = code } }
 
     /// Mount point (f_mntonname) of the volume holding `path`.
     static func mountPoint(of path: String) -> String? {

@@ -63,6 +63,10 @@ enum Planner {
                 if isSelfOrDescendant(source: s, destination: destResolved) {
                     plan.refused.append(Refusal(url: src, kind: .intoItself)); continue
                 }
+                // The other way round (copy d/x/x into d): Replace would trash the folder holding the source.
+                if let destination, destinationItemContains(source: s, destination.appending(path: src.lastPathComponent)) {
+                    plan.refused.append(Refusal(url: src, kind: .intoItself)); continue
+                }
             }
             let sameVolume = !forceCrossVolume && (destDevice == nil || info.identity.device == destDevice)
             let deep: Bool
@@ -83,6 +87,19 @@ enum Planner {
         }
         plan.neededBytes = neededBytes(plan.items, mode: mode, destinationClones: plan.capabilities.clone)
         return plan
+    }
+
+    /// true when `target` is an existing folder that is an ancestor of `source` (by identity, so case and
+    /// normalization variants of the path are caught too).
+    static func destinationItemContains(source: String, _ target: URL) -> Bool {
+        guard let t = PosixFS.info(target.path), t.isDirectory else { return false }
+        var dir = (source as NSString).deletingLastPathComponent
+        while !dir.isEmpty {
+            if PosixFS.info(dir)?.identity == t.identity { return true }
+            if dir == "/" { break }
+            dir = (dir as NSString).deletingLastPathComponent
+        }
+        return false
     }
 
     static func isSelfOrDescendant(source: String, destination: String) -> Bool {

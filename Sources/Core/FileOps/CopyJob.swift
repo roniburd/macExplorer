@@ -63,12 +63,13 @@ enum CopyJob {
     }
 
     /// Copies one top-level item to `target` and records it (also when cancelled or partly skipped:
-    /// whatever landed is recorded so undo can remove it).
+    /// whatever landed is recorded so undo can remove it). Only a root this copy created is recorded, never
+    /// an item another process put at `target`.
     @discardableResult
     static func copyItem(_ ctx: JobContext, _ item: PlanItem, to target: URL) async -> TreeOutcome {
-        let outcome = await TreeCopier.copy(ctx, item, to: target)
-        guard outcome != .skipped else { return outcome }
-        if let id = (try? await ctx.onLane({ _ in FileIdentity.of(path: target.path) })) ?? nil {
+        let (outcome, root) = await TreeCopier.copyTracked(ctx, item, to: target)
+        guard outcome != .skipped, let root else { return outcome }
+        if let id = (try? await ctx.onLane({ _ in FileIdentity.of(path: target.path) })) ?? nil, id == root {
             ctx.record(.created(target, id))
             ctx.landed(target)
         }

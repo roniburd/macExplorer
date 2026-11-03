@@ -159,9 +159,12 @@ extension ConflictExecutor {
             if !ctx.control.isCancelled { ctx.skip(src, reason: nil) }
             return ctx.control.isCancelled ? .cancelled : .skipped
         }
+        let mark = ctx.progressMark()
         let copied = await TreeCopier.copy(ctx, item, to: partial)
         guard copied == .completed else {
             await MoveJob.removePartial(ctx, partial, entry)
+            // A skipped child means the destination is never replaced: list the item too, not only the child.
+            if copied == .partial { ctx.skip(src, reason: ctx.lastSkipReason()) }
             return copied == .cancelled ? .cancelled : .skipped
         }
         ctx.fault(.afterPartialCopy)
@@ -173,6 +176,7 @@ extension ConflictExecutor {
             await MoveJob.removePartial(ctx, partial, entry)
             switch await ctx.askError(FileOpError(kind: .changedDuringMove, url: src, destination: target)) {
             case .retry, .continueAnyway, .unlockAndContinue:
+                ctx.restoreProgress(mark)
                 return await replace(ctx, item: item, target: target, operation: operation, renameExcl: renameExcl)
             case .skip, .skipAll: ctx.skip(src, reason: .changedDuringMove); return .skipped
             case .cancel: ctx.cancelJob(); return .cancelled
@@ -191,7 +195,9 @@ extension ConflictExecutor {
             await MoveJob.removePartial(ctx, partial, entry)
             let code: Int32 = switch renamed { case .exists: EEXIST; case .crossDevice: EXDEV; case .failed(let e): e; case .renamed: 0 }
             switch await ctx.resolveFailure(code, url: src, destination: target) {
-            case .retry: return await replace(ctx, item: item, target: target, operation: operation, renameExcl: renameExcl)
+            case .retry:
+                ctx.restoreProgress(mark)
+                return await replace(ctx, item: item, target: target, operation: operation, renameExcl: renameExcl)
             case .skipped: return .skipped
             case .cancelled: return .cancelled
             }
@@ -214,20 +220,37 @@ extension ConflictExecutor {
     static func merge(_ ctx: JobContext, item: PlanItem, into target: URL, operation: Operation, renameExcl: Bool) async -> StepResult {
         let src = item.source
         let force = ctx.tuning.forceCrossVolume
-        let children = (try? await ctx.onLane { _ in
-            ((try? FileManager.default.contentsOfDirectory(atPath: src.path)) ?? []).sorted()
-        }) ?? []
+        // An unreadable source folder is asked about (Retry/Skip/Cancel), never merged as if it were empty.
+        var children: [String] = []
+        listing: while true {
+            let listed = (try? await ctx.onLane { _ in PosixFS.childNames(src.path) }) ?? .failure(.init(EIO))
+            switch listed {
+            case .success(let names): children = names; break listing
+            case .failure(let e):
+                switch await ctx.resolveFailure(e.code, url: src, destination: target) {
+                case .retry: continue listing
+                case .skipped: return .skipped
+                case .cancelled: return .cancelled
+                }
+            }
+        }
         var result: StepResult = .done
         for child in children {
             guard await ctx.checkpoint() else { return .cancelled }
             let childSrc = src.appending(path: child)
             let childDst = target.appending(path: child)
-            let planned = try? await ctx.onLane { lane -> (PlanItem?, Bool) in
+            let planned = try? await ctx.onLane { lane -> (PlanItem?, Refusal?, Bool) in
                 let p = Planner.plan(sources: [childSrc], destination: target, mode: operation == .copy ? .copy : .move,
                                      forceCrossVolume: force, lane: lane)
-                return (p.items.first, PosixFS.exists(childDst.path))
+                return (p.items.first, p.refused.first, PosixFS.exists(childDst.path))
             }
-            guard case let (childItem?, conflicting)? = planned else { continue }
+            guard case let (childItem?, _, conflicting)? = planned else {
+                // Refused (e.g. gone since the listing): listed, never dropped silently.
+                let kind = planned?.1?.kind ?? .other(code: EIO, message: String(cString: strerror(EIO)))
+                ctx.skip(childSrc, reason: kind)
+                result = .skipped
+                continue
+            }
             let r: StepResult
             if conflicting {
                 guard let action = await decide(ctx, source: childSrc, target: childDst, pending: [childSrc], destinationDir: target) else {

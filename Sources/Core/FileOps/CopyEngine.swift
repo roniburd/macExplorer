@@ -10,6 +10,8 @@ struct TreeCopyState: Sendable {
     var openDirs: [OpenDir] = []
     var skippedPrefix: String? = nil
     var hadSkips = false
+    /// Identity of the root entry this copy created (mkdir or copyfile succeeded); nil = the root never landed.
+    var rootIdentity: FileIdentity? = nil
 }
 
 enum TreeStep: Sendable, Equatable { case finished, failed(index: Int, code: Int32), cancelled }
@@ -150,14 +152,20 @@ enum CopyEngine {
                 if e.errorCode != 0 { return .failed(index: state.next, code: e.errorCode) }
                 let rc = makeDirectory(dst)
                 if rc != 0 { return .failed(index: state.next, code: rc) }
+                if state.next == 0 { state.rootIdentity = PosixFS.info(dst)?.identity }
                 state.openDirs.append(.init(relativePath: e.relativePath, source: src, destination: dst))
                 progress(1, 0, label)
             case .file, .symlink:
+                var fileBytes: Int64 = 0
                 let r = copyFile(from: src, to: dst, expectedSize: e.type == .file ? e.size : 0, clone: clone,
                                  chunkBytes: chunkBytes, lane: lane, control: control,
-                                 onBytes: { progress(0, $0, nil) }, onChunk: onChunk)
+                                 onBytes: { fileBytes += $0; progress(0, $0, nil) }, onChunk: onChunk)
+                // A failed or cancelled file is unlinked, so its bytes are taken back (a retry counts them again).
+                if r != .copied, fileBytes != 0 { progress(0, -fileBytes, nil) }
                 switch r {
-                case .copied: progress(1, 0, label)
+                case .copied:
+                    if state.next == 0 { state.rootIdentity = PosixFS.info(dst)?.identity }
+                    progress(1, 0, label)
                 case .cancelled: finalizeAll(&state); return .cancelled
                 case .failed(let code): return .failed(index: state.next, code: code)
                 }
@@ -188,6 +196,12 @@ enum TreeOutcome: Sendable, Equatable { case completed, partial, skipped, cancel
 /// Async driver: runs copyTree on a fileOp lane, asks about failing entries, resumes.
 enum TreeCopier {
     static func copy(_ ctx: JobContext, _ item: PlanItem, to destination: URL) async -> TreeOutcome {
+        await copyTracked(ctx, item, to: destination).outcome
+    }
+
+    /// Also returns the identity of the root this copy created (nil when the root never landed, e.g. EEXIST
+    /// on the root and Cancel), so callers record only what this job put on disk.
+    static func copyTracked(_ ctx: JobContext, _ item: PlanItem, to destination: URL) async -> (outcome: TreeOutcome, root: FileIdentity?) {
         var state = TreeCopyState()
         let clone = ctx.tuning.allowClone
         let chunk = ctx.tuning.copyChunkBytes
@@ -208,9 +222,9 @@ enum TreeCopier {
             state = newState
             switch step {
             case .finished:
-                return state.hadSkips ? .partial : .completed
+                return (state.hadSkips ? .partial : .completed, state.rootIdentity)
             case .cancelled:
-                return .cancelled
+                return (.cancelled, state.rootIdentity)
             case .failed(let index, let code):
                 let rel = item.entries[index].relativePath
                 let failing = rel.isEmpty ? item.source : item.source.appending(path: rel)
@@ -221,13 +235,13 @@ enum TreeCopier {
                     if index == 0 {
                         let s = state
                         _ = try? await ctx.onLane { _ in var st = s; CopyEngine.finalizeAll(&st) }
-                        return .skipped
+                        return (.skipped, nil)
                     }
                     CopyEngine.skipEntry(item, &state)
                 case .cancelled:
                     let s = state
                     _ = try? await ctx.onLane { _ in var st = s; CopyEngine.finalizeAll(&st) }
-                    return .cancelled
+                    return (.cancelled, state.rootIdentity)
                 }
             }
         }

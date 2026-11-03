@@ -85,9 +85,12 @@ enum MoveJob {
                 case .cancelled: return .cancelled
                 }
             }
+            let mark = ctx.progressMark()
             let copied = await TreeCopier.copy(ctx, item, to: partial)
             guard copied == .completed else {
                 await removePartial(ctx, partial, entry)
+                // A skipped child keeps the whole item at the source: list the item too, not only the child.
+                if copied == .partial { ctx.skip(src, reason: ctx.lastSkipReason()) }
                 return copied == .cancelled ? .cancelled : .skipped
             }
             ctx.fault(.afterPartialCopy)
@@ -98,7 +101,7 @@ enum MoveJob {
             guard verified else {
                 await removePartial(ctx, partial, entry)
                 switch await ctx.askError(FileOpError(kind: .changedDuringMove, url: src, destination: target)) {
-                case .retry, .continueAnyway, .unlockAndContinue: continue
+                case .retry, .continueAnyway, .unlockAndContinue: ctx.restoreProgress(mark); continue
                 case .skip, .skipAll: ctx.skip(src, reason: .changedDuringMove); return .skipped
                 case .cancel: ctx.cancelJob(); return .cancelled
                 }
@@ -109,7 +112,7 @@ enum MoveJob {
                 await removePartial(ctx, partial, entry)
                 let code: Int32 = switch renamed { case .exists: EEXIST; case .crossDevice: EXDEV; case .failed(let e): e; case .renamed: 0 }
                 switch await ctx.resolveFailure(code, url: src, destination: target) {
-                case .retry: continue
+                case .retry: ctx.restoreProgress(mark); continue
                 case .skipped: return .skipped
                 case .cancelled: return .cancelled
                 }

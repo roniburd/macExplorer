@@ -100,12 +100,22 @@ final class RenameTests: FileOpsTestCase {
 
     func testNormalizationOnlyRenameStoresNewBytes() async throws {
         let nfc = "caf\u{E9}.txt", nfd = "cafe\u{301}.txt"
-        let a = try file("d/\(nfc)", "A")
+        let d = try dir("d")
+        // open(2) with the NFC bytes themselves (Foundation's file APIs would store a decomposed name).
+        let fd = open(d.path + "/" + nfc, O_CREAT | O_EXCL | O_WRONLY, 0o644)   // Swift passes the String's own UTF-8
+        XCTAssertGreaterThanOrEqual(fd, 0); close(fd)
+        let dirPath = d.path
+        let lanes = LanePool()
+        let before = try await lanes.perform(on: .unknown, .fileOp) { _ in
+            (RenamePrimitive.directory(dirPath, containsExactly: nfc), RenamePrimitive.directory(dirPath, containsExactly: nfd))
+        }
+        XCTAssertTrue(before.0, "fixture stored with NFC bytes"); XCTAssertFalse(before.1)
         let (queue, _) = makeQueue()
-        _ = try await run(.rename(a, to: nfd), on: queue)
-        let dirURL = url("d")
-        let hasNFD = try await LanePool().perform(on: .unknown, .fileOp) { _ in RenamePrimitive.directory(dirURL.path, containsExactly: nfd) }
-        XCTAssertTrue(hasNFD)
+        _ = try await run(.rename(d.appending(path: nfc), to: nfd), on: queue)
+        let after = try await lanes.perform(on: .unknown, .fileOp) { _ in
+            (RenamePrimitive.directory(dirPath, containsExactly: nfc), RenamePrimitive.directory(dirPath, containsExactly: nfd))
+        }
+        XCTAssertFalse(after.0); XCTAssertTrue(after.1, "the new NFD bytes are on disk")
     }
 
     func testCaseOnlyRenameOnExFATImage() async throws {
