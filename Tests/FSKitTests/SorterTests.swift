@@ -1,0 +1,159 @@
+import Foundation
+import MacxFS
+import XCTest
+
+final class SorterTests: XCTestCase {
+    private let registry = TypeRegistry()
+
+    /// (name, kind, size, mtime, flags)
+    private func store(_ rows: [(String, Kind, Int64, Int64, EntryFlags)]) -> EntryStore {
+        var s = EntryStore(identityMode: .objectID)
+        var batch = Batch(generation: .initial)
+        for (i, r) in rows.enumerated() {
+            let ext = r.0.split(separator: ".").count > 1 ? r.0.split(separator: ".").last! : ""
+            let type = r.1 == .directory ? TypeRegistry.folderIndex : registry.index(forExtension: ext, isDirectory: false)
+            let e = Entry(rowID: UInt64(i + 1), fileID: UInt64(i + 1), size: r.2, allocSize: 0, mtime: r.3, ctime: -r.3,
+                          nameOffset: 0, nameLen: 0, kind: r.1, flags: r.4, typeIndex: type)
+            Array(r.0.utf8).withUnsafeBufferPointer { batch.append(e, nameBytes: $0) }
+        }
+        s.append(batch)
+        return s
+    }
+
+    private func names(_ s: EntryStore, _ query: ViewQuery) -> [String] {
+        let keys = SortKeys.nameKeys(s, range: 0..<s.count)
+        let perm = Sorter.permutation(s, nameKeys: keys, searchKeys: SortKeys.searchKeys(s), query: query, kindRanks: registry.kindRanks().ranks)
+        return perm.map { s.name($0) }
+    }
+
+    private lazy var sample = store([
+        ("b.txt", .file, 30, 300, []), ("A.pdf", .file, 10, 100, []), ("zeta", .directory, 2, 50, []),
+        ("alpha", .directory, 9, 900, []), (".hidden", .file, 1, 1, .dotName), ("secret.txt", .file, 5, 5, .bsdHidden),
+        ("Tool.app", .package, 0, 400, []), ("c10.txt", .file, 20, 200, []), ("c9.txt", .file, 20, 250, []),
+    ])
+
+    func testNameAscendingFoldersFirstHiddenExcluded() {
+        XCTAssertEqual(names(sample, ViewQuery()), ["alpha", "zeta", "A.pdf", "b.txt", "c9.txt", "c10.txt", "Tool.app"])
+    }
+
+    func testShowHiddenIncludesDotAndFlagHidden() {
+        XCTAssertEqual(names(sample, ViewQuery(showHidden: true)),
+                       ["alpha", "zeta", ".hidden", "A.pdf", "b.txt", "c9.txt", "c10.txt", "secret.txt", "Tool.app"])
+    }
+
+    func testDescendingKeepsFoldersFirst() {
+        XCTAssertEqual(names(sample, ViewQuery(sort: SortDescriptor(field: .name, ascending: false))),
+                       ["zeta", "alpha", "Tool.app", "c10.txt", "c9.txt", "b.txt", "A.pdf"])
+    }
+
+    func testSizeSortOrdersFoldersByName() {
+        XCTAssertEqual(names(sample, ViewQuery(sort: SortDescriptor(field: .size, ascending: true))),
+                       ["alpha", "zeta", "Tool.app", "A.pdf", "c9.txt", "c10.txt", "b.txt"])
+    }
+
+    func testDateSortsWithNameTieBreak() {
+        XCTAssertEqual(names(sample, ViewQuery(sort: SortDescriptor(field: .dateModified, ascending: true))),
+                       ["zeta", "alpha", "A.pdf", "c10.txt", "c9.txt", "b.txt", "Tool.app"])
+        XCTAssertEqual(names(sample, ViewQuery(sort: SortDescriptor(field: .dateCreated, ascending: true))),
+                       ["alpha", "zeta", "Tool.app", "b.txt", "c9.txt", "c10.txt", "A.pdf"])
+    }
+
+    func testKindSortUsesRanksThenName() {
+        let order = names(sample, ViewQuery(sort: SortDescriptor(field: .kind, ascending: true)))
+        XCTAssertEqual(Array(order.prefix(2)), ["alpha", "zeta"])
+        let txt = order.filter { $0.hasSuffix(".txt") }
+        XCTAssertEqual(txt, ["b.txt", "c9.txt", "c10.txt"], "same kind: name order")
+        let ranks = registry.kindRanks().ranks
+        let ranked = order.dropFirst(2).map { n -> UInt16 in
+            let i = (0..<UInt32(sample.count)).first { sample.name($0) == n }!
+            return ranks[Int(sample.entry(i).typeIndex)]
+        }
+        XCTAssertEqual(ranked, ranked.sorted())
+    }
+
+    func testExtensionSort() {
+        XCTAssertEqual(names(sample, ViewQuery(sort: SortDescriptor(field: .fileExtension, ascending: true))),
+                       ["alpha", "zeta", "Tool.app", "A.pdf", "b.txt", "c9.txt", "c10.txt"])
+    }
+
+    func testFilterIsCaseAndDiacriticInsensitiveSubstring() {
+        let s = store([("Résumé.pdf", .file, 0, 0, []), ("resume-old", .directory, 0, 0, []), ("notes", .file, 0, 0, [])])
+        XCTAssertEqual(names(s, ViewQuery(filter: "RESUME")), ["resume-old", "Résumé.pdf"])
+        XCTAssertEqual(names(s, ViewQuery(filter: "sum")), ["resume-old", "Résumé.pdf"])
+        XCTAssertEqual(names(s, ViewQuery(filter: "zzz")), [])
+    }
+
+    func testFilterWithoutSearchKeysFallsBackToFoldingNames() {
+        let s = store([("Résumé.pdf", .file, 0, 0, []), ("notes", .file, 0, 0, [])])
+        let perm = Sorter.permutation(s, nameKeys: SortKeys.nameKeys(s, range: 0..<s.count), searchKeys: nil,
+                                      query: ViewQuery(filter: "resu"), kindRanks: [])
+        XCTAssertEqual(perm.map { s.name($0) }, ["Résumé.pdf"])
+    }
+
+    func testMergeOfSortedRunsEqualsFullSort() {
+        var s = EntryStore(identityMode: .objectID)
+        var keys = SortKeyColumn()
+        var merged: [UInt32] = []
+        let query = ViewQuery()
+        var rng = SystemRandomNumberGenerator()
+        for b in 0..<5 {
+            var batch = Batch(generation: .initial)
+            for i in 0..<400 {
+                let n = "item \(Int.random(in: 0..<10_000, using: &rng)) \(b)-\(i)"
+                let e = Entry(rowID: UInt64(b * 1_000 + i), fileID: 0, size: 0, allocSize: 0, mtime: 0, ctime: 0, nameOffset: 0,
+                              nameLen: 0, kind: i.isMultiple(of: 9) ? .directory : .file, flags: [], typeIndex: 0)
+                Array(n.utf8).withUnsafeBufferPointer { batch.append(e, nameBytes: $0) }
+            }
+            let start = s.count
+            s.append(batch)
+            keys.append(contentsOf: SortKeys.nameKeys(batch))
+            let run = Sorter.sortedRun(s, range: start..<s.count, nameKeys: keys, searchKeys: nil, query: query, kindRanks: [])
+            merged = Sorter.merge(merged, run, store: s, nameKeys: keys, query: query, kindRanks: [])
+        }
+        XCTAssertEqual(merged, Sorter.permutation(s, nameKeys: keys, searchKeys: nil, query: query, kindRanks: []))
+    }
+
+    func testSortKeyColumnRemoveAndReplaceMirrorStore() {
+        var column = SortKeyColumn()
+        for k in [[1], [2, 2], [3, 3, 3]] as [[UInt8]] { k.withUnsafeBytes { column.append($0) } }
+        column.remove([1])
+        XCTAssertEqual(column.count, 2)
+        XCTAssertEqual(column.withKey(1) { Array($0) }, [3, 3, 3])
+        column.replace(0, with: [9])
+        XCTAssertEqual(column.withKey(0) { Array($0) }, [9])
+    }
+
+    func testParallelKeysEqualSerialKeys() {
+        let s = store((0..<5_000).map { ("name \($0 * 7919 % 5_000)", Kind.file, 0, 0, EntryFlags()) })
+        let parallel = SortKeys.nameKeys(s, range: 0..<s.count)
+        for i in stride(from: 0, to: s.count, by: 97) {
+            XCTAssertEqual(parallel.withKey(i) { Array($0) }, SortKeys.nameKey(s.name(UInt32(i)), isFolder: false))
+        }
+    }
+
+    /// §4.4 smoke: 100k re-sort per field. Debug: sanity bound; release (-c release -Xswiftc -enable-testing): 4 × 30 ms.
+    func testResort100kSmoke() {
+        var rows: [(String, Kind, Int64, Int64, EntryFlags)] = []
+        rows.reserveCapacity(100_000)
+        for i in 0..<100_000 {
+            let kind: Kind = i.isMultiple(of: 50) ? .directory : .file
+            rows.append(("file \(i * 7_919 % 100_000).txt", kind, Int64(i * 31 % 9_973), Int64(i * 17 % 100_003), []))
+        }
+        let s = store(rows)
+        let keys = SortKeys.nameKeys(s, range: 0..<s.count)
+        let ranks = registry.kindRanks().ranks
+        #if DEBUG
+        let budget = Duration.seconds(10)   // sanity only: -Onone and swift test --parallel contention
+        #else
+        let budget = Duration.milliseconds(120)
+        #endif
+        for field in SortField.allCases {
+            let clock = ContinuousClock()
+            let elapsed = clock.measure {
+                _ = Sorter.permutation(s, nameKeys: keys, searchKeys: nil, query: ViewQuery(sort: SortDescriptor(field: field, ascending: true)), kindRanks: ranks)
+            }
+            print("resort100k \(field): \(elapsed)")
+            XCTAssertLessThan(elapsed, budget, "\(field)")
+        }
+    }
+}
