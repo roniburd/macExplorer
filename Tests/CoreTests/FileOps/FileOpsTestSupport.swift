@@ -69,7 +69,32 @@ class FileOpsTestCase: XCTestCase {
         return image.mountPoint
     }
 
-    // MARK: queue — makeQueue/run(_:on:) are added with FileOpQueue in P1-18.
+    // MARK: queue
+
+    func makeQueue(interaction: ScriptedInteraction = ScriptedInteraction(),
+                   tuning: FileOpTuning = FileOpTuning(),
+                   trash: (any TrashService)? = nil) -> (FileOpQueue, Journal) {
+        let journal = Journal(fileURL: journalURL)
+        let queue = FileOpQueue(lanes: LanePool(), trash: trash ?? SandboxTrash(directory: trashDir),
+                                journal: journal, interaction: interaction, tuning: tuning)
+        return (queue, journal)
+    }
+
+    /// The only way FileOps tests start jobs: refuses (fails the test, does not enqueue) any URL outside the sandbox.
+    func run(_ kind: JobKind, on queue: FileOpQueue, file: StaticString = #filePath, line: UInt = #line) async throws -> JobOutcome {
+        // standardizedFileURL drops "/private" only for paths that exist, so compare /private-free forms.
+        func plain(_ u: URL) -> String {
+            let p = u.standardizedFileURL.path
+            return p.hasPrefix("/private/") ? String(p.dropFirst("/private".count)) : p
+        }
+        let rootPath = plain(root) + "/"
+        for u in kind.allURLs where !(plain(u) + "/").hasPrefix(rootPath) {
+            XCTFail("URL outside the sandbox: \(u.path)", file: file, line: line)
+            throw XCTSkip("refused to run a job outside the sandbox")
+        }
+        let id = await queue.enqueue(JobRequest(kind))
+        return await queue.outcome(of: id)
+    }
 
     // MARK: inspection (read-only)
 

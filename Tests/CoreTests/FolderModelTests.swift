@@ -18,7 +18,7 @@ final class FolderModelTests: XCTestCase {
         for name in ["b.txt", "a.txt", "C.txt", "file10", "file9"] { try w.file("f/" + name) }
         try w.dir("f/zeta")
         let m = w.model(w.url("f"))
-        let log = EventLog(m)
+        let log = FolderEventLog(m)
         XCTAssertEqual(m.state, .loading)
         m.start()
         try await w.waitUntil("complete") { m.state == .complete }
@@ -43,7 +43,7 @@ final class FolderModelTests: XCTestCase {
         for name in ["1", "2", "3"] { try w.file("s/" + name) }
         w.pacer = ManualFramePacer()             // no frame elapses before the read completes
         let m = w.model(w.url("s"))
-        let log = EventLog(m)
+        let log = FolderEventLog(m)
         m.start()
         try await w.waitUntil("complete") { m.state == .complete }
         await w.settle()
@@ -66,7 +66,7 @@ final class FolderModelTests: XCTestCase {
         let m = try await w.open("h")
         XCTAssertEqual(m.rowNames, ["a.txt", "b.txt"])
         m.select(.names(["b.txt"]))
-        let log = EventLog(m)
+        let log = FolderEventLog(m)
         m.setQuery(ViewQuery(showHidden: true))
         XCTAssertEqual(m.query.showHidden, true)
         try await w.waitUntil("re-sorted") { m.rowCount == 4 }
@@ -135,16 +135,16 @@ final class FolderModelTests: XCTestCase {
         for name in ["x", "y", "z"] { try w.file("small/" + name) }
 
         let big = w.model(w.url("big"))
-        let bigLog = EventLog(big)
+        let bigLog = FolderEventLog(big)
         big.start()
         try await w.waitUntil("big streaming") { big.rowCount > 0 || big.state != .loading }
         var previous = big
-        var logs: [EventLog] = []
+        var logs: [FolderEventLog] = []
         var current = big
         for _ in 0..<20 {
             previous.close()
             current = w.model(w.url("small"))
-            logs.append(EventLog(current))
+            logs.append(FolderEventLog(current))
             current.start()
             previous = current
         }
@@ -183,7 +183,7 @@ final class FolderModelTests: XCTestCase {
         let w = try await FolderTestWorld.make(self)
         let reads = ScriptedReads()
         let m = w.model(w.url(""))
-        let log = EventLog(m)
+        let log = FolderEventLog(m)
         m.readSource = reads.source()
         m.start()
         try await w.waitUntil("read started") { reads.reads.count == 1 }
@@ -218,7 +218,7 @@ final class FolderModelTests: XCTestCase {
         w.pacer = pacer
         let reads = ScriptedReads()
         let m = w.model(w.url(""))
-        let log = EventLog(m)
+        let log = FolderEventLog(m)
         m.readSource = reads.source()
         m.start()
         try await w.waitUntil("read started") { !reads.reads.isEmpty }
@@ -265,7 +265,7 @@ final class FolderModelTests: XCTestCase {
         w.pacer = pacer
         let reads = ScriptedReads()
         let m = w.model(w.url(""))
-        let log = EventLog(m)
+        let log = FolderEventLog(m)
         m.readSource = reads.source()
         m.start()
         try await w.waitUntil("read started") { !reads.reads.isEmpty }
@@ -356,7 +356,7 @@ final class FolderModelTests: XCTestCase {
         let w = try await FolderTestWorld.make(self)
         w.pacer = ManualFramePacer()             // no frame elapses before the one-file read completes
         let m = w.model(w.url("later"))
-        let log = EventLog(m)
+        let log = FolderEventLog(m)
         m.start()
         try await w.waitUntil("error") { m.state == .error(.notFound) }
         let firstGeneration = m.generation
@@ -409,7 +409,7 @@ final class FolderModelTests: XCTestCase {
         for name in ["a", "b"] { try w.file("d/" + name) }
         let m = try await w.open("d")
         m.select(.names(["b"]))
-        let log = EventLog(m)
+        let log = FolderEventLog(m)
         try w.remove("d/a")
         try w.file("d/c")
         let generation = m.generation
@@ -495,7 +495,7 @@ final class FolderModelTests: XCTestCase {
         }
         m.applyLocalChange(LocalChange(directory: w.url("hs"), modified: ["a"]))
         try await w.waitUntil("item read issued") { gate.waiting > 0 }
-        let log = EventLog(m)
+        let log = FolderEventLog(m)
         m.setQuery(ViewQuery(sort: SortDescriptor(field: .name, ascending: false)))
         try await w.waitUntil("re-sorted behind a hung item read") { m.rowNames == ["c", "b", "a"] }
         XCTAssertEqual(log.changeSets, [.reset])
@@ -533,7 +533,7 @@ final class FolderModelTests: XCTestCase {
         try w.dir("n")
         try w.file("n/a.txt")
         let m = try await w.open("n")
-        let log = EventLog(m)
+        let log = FolderEventLog(m)
         try w.dir("n/New Folder")
         m.applyLocalChange(LocalChange(directory: w.url("n"), added: ["New Folder"], select: ["New Folder"], beginRename: "New Folder"))
         try await w.waitUntil("inserted") { m.row(named: "New Folder") != nil }
@@ -578,7 +578,7 @@ final class FolderModelTests: XCTestCase {
         for name in ["a", "b", "c"] { try w.file("rm/" + name) }
         let m = try await w.open("rm")
         m.select(.names(["b"]))
-        let log = EventLog(m)
+        let log = FolderEventLog(m)
         try w.remove("rm/b")
         m.applyLocalChange(LocalChange(directory: w.url("rm"), removed: ["b"]))
         try await w.waitUntil("removed") { m.row(named: "b") == nil }
@@ -620,7 +620,7 @@ final class FolderModelTests: XCTestCase {
         m.select(.names(["doc.txt"]))
         let oldID = m.identity(atRow: 1)
         m.scrollAnchor = oldID
-        let log = EventLog(m)
+        let log = FolderEventLog(m)
         try w.file("save/.doc.tmp", "new contents")
         try w.rename("save/.doc.tmp", "save/doc.txt")
         m.applyLocalChange(LocalChange(directory: w.url("save"), modified: ["doc.txt"]))
@@ -688,7 +688,7 @@ final class FolderModelTests: XCTestCase {
         try w.file("sum/dir/inner", "1234567")
         let m = try await w.open("sum")
         XCTAssertEqual(m.rowNames, ["dir", "a", "b"])
-        let log = EventLog(m)
+        let log = FolderEventLog(m)
         m.select(.all)
         XCTAssertEqual(m.selectionSummary, SelectionSummary(count: 3, files: 2, folders: 1, bytes: 8))
         XCTAssertEqual(m.selectedNames, ["dir", "a", "b"], "display order")

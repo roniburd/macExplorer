@@ -20,7 +20,7 @@ final class FolderWatchTests: XCTestCase {
         try w.dir("inc")
         try w.file("inc/a.txt")
         let m = try await w.open("inc")
-        let log = EventLog(m)
+        let log = FolderEventLog(m)
         try w.file("inc/b.txt")
         try w.remove("inc/a.txt")
         try watcher(w).send(.items(["b.txt", "a.txt"]))
@@ -106,7 +106,7 @@ final class FolderWatchTests: XCTestCase {
         try w.dir("a/b")
         try w.dir("a/b/c")
         let m = try await w.open("a/b/c")
-        let log = EventLog(m)
+        let log = FolderEventLog(m)
         guard rmdir(w.url("a/b/c").path) == 0, rmdir(w.url("a/b").path) == 0 else { return XCTFail("rmdir") }
         let rec = try watcher(w)
         rec.send(.rootChanged)
@@ -124,7 +124,7 @@ final class FolderWatchTests: XCTestCase {
         let w = try await FolderTestWorld.make(self)
         try w.dir("still")
         let m = try await w.open("still")
-        let log = EventLog(m)
+        let log = FolderEventLog(m)
         try w.file("still/new.txt")
         try watcher(w).send(.rootChanged)
         try await w.waitUntil("re-read") { m.rowNames == ["new.txt"] }
@@ -139,7 +139,7 @@ final class FolderWatchTests: XCTestCase {
         await w.volumes.refresh()
         let m = try await w.open("vol/x")
         XCTAssertEqual(m.volume?.id, VolumeID(raw: "test-vol"))
-        let log = EventLog(m)
+        let log = FolderEventLog(m)
         let rec = try watcher(w)
         w.scanner.removeVolume("test-vol")
         await w.volumes.refresh()
@@ -215,7 +215,7 @@ final class FolderWatchTests: XCTestCase {
         try await w.waitUntil("complete") { m.state == .complete }
         guard case .name = m.store.identityMode else { return XCTFail("name identity on a non-idStable volume") }
         XCTAssertEqual(m.rowNames, ["old.txt"])
-        let log = EventLog(m)
+        let log = FolderEventLog(m)
         try await Task.sleep(for: .milliseconds(300))
         try w.rename("\(image.relativeMountPath)/old.txt", "\(image.relativeMountPath)/new.txt")
         do {

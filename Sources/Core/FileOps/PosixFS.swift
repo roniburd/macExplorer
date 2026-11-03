@@ -69,13 +69,14 @@ enum PosixFS {
         }
     }
 
-    /// Pre-order fts walk (FTS_PHYSICAL | FTS_NOCHDIR). `body(path, entry)` returns false to skip a directory's contents.
+    /// Pre-order fts walk (FTS_PHYSICAL | FTS_NOCHDIR), siblings in byte order of their names (deterministic plans).
+    /// `body(path, entry)` returns false to skip a directory's contents.
     static func walk(_ root: String, _ body: (String, UnsafeMutablePointer<FTSENT>) -> Bool) {
         assertOffMain()
         guard let cRoot = strdup(root) else { return }
         defer { free(cRoot) }
         var argv: [UnsafeMutablePointer<CChar>?] = [cRoot, nil]
-        guard let fts = fts_open(&argv, FTS_PHYSICAL | FTS_NOCHDIR, nil) else { return }
+        guard let fts = fts_open(&argv, FTS_PHYSICAL | FTS_NOCHDIR, byName) else { return }
         defer { fts_close(fts) }
         while let ent = fts_read(fts) {
             let info = Int32(ent.pointee.fts_info)
@@ -83,6 +84,14 @@ enum PosixFS {
             let path = String(cString: ent.pointee.fts_path)
             if !body(path, ent), info == FTS_D { fts_set(fts, ent, FTS_SKIP) }
         }
+    }
+
+    /// fts_name is a flexible array member, so it is read in place through its offset, never copied.
+    private static let byName: @convention(c) (UnsafeMutablePointer<UnsafePointer<FTSENT>?>?,
+                                                UnsafeMutablePointer<UnsafePointer<FTSENT>?>?) -> Int32 = { a, b in
+        guard let a = a?.pointee, let b = b?.pointee, let off = MemoryLayout<FTSENT>.offset(of: \.fts_name) else { return 0 }
+        return strcmp((UnsafeRawPointer(a) + off).assumingMemoryBound(to: CChar.self),
+                      (UnsafeRawPointer(b) + off).assumingMemoryBound(to: CChar.self))
     }
 
     /// Item count (every entry, links counted once) and total logical bytes of regular files. Used by move verification.

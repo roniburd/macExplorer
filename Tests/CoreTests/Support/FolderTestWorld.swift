@@ -232,7 +232,7 @@ struct WaitTimeout: Error, CustomStringConvertible {
 
 /// Records a model's events.
 @MainActor
-final class EventLog {
+final class FolderEventLog {
     private(set) var events: [FolderEvent] = []
     private var token: ObserverToken?
 
