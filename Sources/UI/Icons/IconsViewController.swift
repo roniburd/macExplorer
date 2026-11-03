@@ -96,6 +96,7 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
     private var isRestoringScroll = false
     let mouse = ListMouseHandler()
     let typeSelect = TypeSelect()
+    private(set) var renameController: InlineRenameController?
     var focusView: NSView { collectionView }
     private var settings: Settings { context.environment.settings }
     private var points: Double { layout.iconSize.points }
@@ -134,6 +135,8 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
     // MARK: FileListView
 
     func bind(_ folder: FolderModel?) {
+        renameController?.cancel()
+        renameController = nil
         self.folder = folder
         layout.itemCount = folder?.rowCount ?? 0
         collectionView.reloadData()
@@ -153,6 +156,7 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
             collectionView.reloadData()
             restoreScroll(anchor: anchor)
         }
+        renameController?.relayout()
         reloadSelectionDrawing()
         context.icons.cancelFileIcons(notIn: Set(visibleRows().filter { $0 < folder.rowCount }.map { folder.identity(atRow: $0) }))
     }
@@ -167,7 +171,16 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
     }
 
     func beginInlineRename(row: Int) {
-        scrollToRow(row)   // P1-34 replaces this body with InlineRenameController
+        guard let folder else { return }
+        renameController?.cancel()
+        let controller = InlineRenameController(list: self, folder: folder, environment: context.environment)
+        controller.origin = view.window.map { OriginID(raw: $0.windowNumber) }
+        controller.onEnd = { [weak self] in
+            guard let self, let window = self.view.window, window.firstResponder === window else { return }
+            window.makeFirstResponder(self.collectionView)
+        }
+        renameController = controller
+        controller.begin(row: row)
     }
 
     func scrollToRow(_ row: Int) {
@@ -296,5 +309,18 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
             guard let item, item.rowID == rowID else { return }
             item.setIcon(image, points: points)
         }
+    }
+}
+
+extension IconsViewController: InlineRenameHost {
+    var renameContainer: NSView { collectionView }
+    var renameFont: NSFont { CellStyle.smallFont }
+    var renameIsMultiline: Bool { true }
+
+    func renameFieldFrame(forRow row: Int) -> NSRect? {
+        guard row >= 0, row < layout.itemCount else { return nil }
+        let item = layout.frame(forItem: row)
+        let top = item.minY + 6 + CGFloat(layout.iconSize.points) + 2
+        return NSRect(x: item.minX + 2, y: top, width: item.width - 4, height: GridMetrics.labelHeight + 4)
     }
 }

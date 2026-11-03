@@ -169,6 +169,9 @@ final class ContentViewController: CommandHandlingViewController {
         guard let controller = view.window?.windowController as? BrowserWindowController else { return }
         controller.scenarioHooks.emptyStateText = { [weak self] in self?.emptyState.currentText }
         controller.scenarioHooks.bannerText = { [weak self] in self?.banner.currentText }
+        controller.scenarioHooks.renameText = { [weak self] in
+            (self?.activeList as? InlineRenameHost)?.renameController?.currentText
+        }
     }
 
     // MARK: view mode

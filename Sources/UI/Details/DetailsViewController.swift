@@ -43,6 +43,7 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     private var lastCutNames: Set<String> = []
     let mouse = ListMouseHandler()
     let typeSelect = TypeSelect()
+    private(set) var renameController: InlineRenameController?
 
     var focusView: NSView { tableView }
     var iconPoints: Double { settings.density == .comfortable ? 20 : 16 }
@@ -98,6 +99,8 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     // MARK: FileListView
 
     func bind(_ folder: FolderModel?) {
+        renameController?.cancel()
+        renameController = nil
         self.folder = folder
         didPaintFirstRows = false
         lastCutNames = folder?.cutNames ?? []
@@ -114,6 +117,7 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
         let anchor = folder.scrollAnchor
         let animate = !changes.requiresReloadData && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         ChangeApplier.apply(changes, to: TableUpdateSink(tableView: tableView, animate: animate))
+        renameController?.relayout()
         if changes.requiresReloadData { restoreScroll(anchor: anchor) }
         reloadSelectionDrawing()
         if !didPaintFirstRows, folder.rowCount > 0 {
@@ -137,7 +141,16 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     }
 
     func beginInlineRename(row: Int) {
-        scrollToRow(row)   // P1-34 replaces this body with InlineRenameController
+        guard let folder else { return }
+        renameController?.cancel()
+        let controller = InlineRenameController(list: self, folder: folder, environment: context.environment)
+        controller.origin = view.window.map { OriginID(raw: $0.windowNumber) }
+        controller.onEnd = { [weak self] in
+            guard let self, let window = self.view.window, window.firstResponder === window else { return }
+            window.makeFirstResponder(self.tableView)
+        }
+        renameController = controller
+        controller.begin(row: row)
     }
 
     func scrollToRow(_ row: Int) {
@@ -344,5 +357,20 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
         let rows = visibleRows()
         guard !rows.isEmpty else { return }
         tableView.reloadData(forRowIndexes: IndexSet(integersIn: rows), columnIndexes: IndexSet(integersIn: 0..<tableView.numberOfColumns))
+    }
+}
+
+extension DetailsViewController: InlineRenameHost {
+    var renameContainer: NSView { tableView }
+    var renameFont: NSFont { CellStyle.font }
+    var renameIsMultiline: Bool { false }
+
+    func renameFieldFrame(forRow row: Int) -> NSRect? {
+        let column = tableView.column(withIdentifier: DetailsColumns.identifier(.name))
+        guard column >= 0, row >= 0, row < tableView.numberOfRows else { return nil }
+        let cell = tableView.frameOfCell(atColumn: column, row: row)
+        let inset = CGFloat(iconPoints) + 5
+        let height: CGFloat = max(20, min(cell.height, 22))
+        return NSRect(x: cell.minX + inset, y: cell.midY - height / 2, width: max(cell.width - inset, 60), height: height)
     }
 }

@@ -177,6 +177,28 @@
         }
       }
     },
+    "A name can't be empty." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A name can't be empty."
+          }
+        }
+      }
+    },
+    "A name can't contain '/'." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A name can't contain '/'."
+          }
+        }
+      }
+    },
     "About macExplorer" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -228,6 +250,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Applications"
+          }
+        }
+      }
+    },
+    "Are you sure you want to change the extension?" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Are you sure you want to change the extension?"
           }
         }
       }
@@ -1057,6 +1090,17 @@
         }
       }
     },
+    "Keep .%@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep .%@"
+          }
+        }
+      }
+    },
     "Keep Both" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1262,6 +1306,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Name"
+          }
+        }
+      }
+    },
+    "Names that begin with a dot are hidden." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Names that begin with a dot are hidden."
           }
         }
       }
@@ -2058,6 +2113,50 @@
         }
       }
     },
+    "The file may open in a different app, or not at all." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The file may open in a different app, or not at all."
+          }
+        }
+      }
+    },
+    "The item will be hidden unless hidden items are shown." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The item will be hidden unless hidden items are shown."
+          }
+        }
+      }
+    },
+    "The name '%@' is already taken." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The name '%@' is already taken."
+          }
+        }
+      }
+    },
+    "The name is too long." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The name is too long."
+          }
+        }
+      }
+    },
     "The operation couldn't be completed for '%@'" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2153,6 +2252,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Up"
+          }
+        }
+      }
+    },
+    "Use .%@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use .%@"
+          }
+        }
+      }
+    },
+    "Use Name" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use Name"
           }
         }
       }
