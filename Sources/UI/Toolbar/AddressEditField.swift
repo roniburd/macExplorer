@@ -1,8 +1,8 @@
 import AppKit
 
 /// Edit mode of the address bar (§5.2): the path text field with a debounced autocomplete dropdown of subfolders and
-/// recent locations. ↓/↑ move the highlight, Return accepts the highlighted row (or submits the text), Tab completes it,
-/// Esc closes the list first and then cancels. Every other key, including the colliding ones (⌘↑, ⌘⌫, ⌥←, …),
+/// recent locations. ↓/↑ move the highlight, Return accepts the highlighted row (or submits the text), Tab completes it
+/// (with no list showing, Tab / ⇧Tab move along the focus cycle), Esc closes the list first and then cancels. Every other key, including the colliding ones (⌘↑, ⌘⌫, ⌥←, …),
 /// is plain text editing (§5.6 rule 1).
 @MainActor
 final class AddressEditField: NSTextField, NSTextFieldDelegate {
@@ -13,6 +13,8 @@ final class AddressEditField: NSTextField, NSTextFieldDelegate {
     var onTextChange: (() -> Void)?
     /// The field editor resigned (focus moved elsewhere).
     var onEndEditing: (() -> Void)?
+    /// Tab (no list showing) / ⇧Tab: the §5.6 focus cycle moves on (`true` = forward).
+    var onCycleFocus: ((Bool) -> Void)?
     var debounce: Duration = .milliseconds(120)
 
     private(set) var suggestions: [AddressSuggestion] = []
@@ -145,8 +147,16 @@ final class AddressEditField: NSTextField, NSTextFieldDelegate {
             }
             return true
         case #selector(NSResponder.insertTab(_:)):
-            guard list.isVisible, !suggestions.isEmpty else { return false }
-            accept(list.selectedIndex ?? 0, submit: false)
+            if list.isVisible, !suggestions.isEmpty {
+                accept(list.selectedIndex ?? 0, submit: false)
+            } else {
+                hideSuggestions()
+                onCycleFocus?(true)
+            }
+            return true
+        case #selector(NSResponder.insertBacktab(_:)):
+            hideSuggestions()
+            onCycleFocus?(false)
             return true
         case #selector(NSResponder.cancelOperation(_:)):
             if list.isVisible {

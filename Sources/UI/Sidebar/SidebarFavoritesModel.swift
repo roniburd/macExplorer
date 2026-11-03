@@ -13,12 +13,15 @@ final class SidebarFavoritesModel {
     var onChange: (() -> Void)?
 
     private let environment: CoreEnvironment
+    private let confinement: SandboxConfinement
     private var settings: Settings { environment.settings }
     private var generation = 0
     private var refreshTask: Task<Void, Never>?
 
-    init(environment: CoreEnvironment) {
+    /// `confinement`: in sandbox mode rows outside the root (Applications, old bookmarks) are left out.
+    init(environment: CoreEnvironment, confinement: SandboxConfinement = SandboxConfinement(root: nil)) {
         self.environment = environment
+        self.confinement = confinement
     }
 
     // MARK: defaults
@@ -51,9 +54,10 @@ final class SidebarFavoritesModel {
         let current = generation
         let kinds = DefaultFavorite.allCases.filter { !settings.hiddenDefaultFavorites.contains($0) }
         let home = settings.home
+        let confinement = self.confinement
         let defaults = kinds.map { kind in
             (kind, FavoritesResolver.defaultFavoriteURL(kind, home: home))
-        }
+        }.filter { confinement.allows($0.1) }
         let favorites = settings.favorites
         let lanes = environment.lanes, volumes = environment.volumes
         let lanesForDefaults = defaults.map { volumes.volume(for: $0.1)?.id ?? .unknown }
@@ -67,13 +71,18 @@ final class SidebarFavoritesModel {
             }
             let resolved = await FavoritesResolver.resolve(favorites, lanes: lanes, mountTable: mountTable)
             guard current == self.generation else { return }
-            rows += resolved.map { SidebarFavorite(resolved: $0, defaultKind: nil) }
+            rows += resolved.filter { confinement.allows(Self.location(of: $0)) }.map { SidebarFavorite(resolved: $0, defaultKind: nil) }
             self.persistRefreshedBookmarks(resolved)
             if rows != self.rows {
                 self.rows = rows
                 self.onChange?()
             }
         }
+    }
+
+    /// Where a bookmark points (its last known path when stale).
+    private static func location(of favorite: ResolvedFavorite) -> URL {
+        favorite.url ?? URL(filePath: favorite.favorite.lastKnownPath, directoryHint: .isDirectory)
     }
 
     /// Tests: waits for the latest refresh.

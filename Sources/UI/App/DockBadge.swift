@@ -28,7 +28,7 @@ final class DockBadgeController {
     }
 
     convenience init(operations: OperationsCenter, sink: @escaping @MainActor (String?) -> Void) {
-        self.init(read: { (operations.visibleJobs.count, operations.overallFraction) }, sink: sink)
+        self.init(read: { (operations.visibleJobs.count, operations.visibleFraction) }, sink: sink)
     }
 
     /// Stops following and clears the badge.

@@ -88,13 +88,32 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
 
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
                  willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
-        switch itemIdentifier {
+        // Customize Toolbar… asks for palette copies: never hand out the live items (their views would move).
+        guard flag else { return Self.paletteItem(for: itemIdentifier) }
+        return switch itemIdentifier {
         case Self.navigationID: navigation.group
         case Self.addressID: addressItem
         case Self.searchID: searchItem
         case Self.viewSwitcherID: viewSwitcher
         default: nil
         }
+    }
+
+    /// A view-less stand-in (label and symbol) for the customization palette.
+    static func paletteItem(for identifier: NSToolbarItem.Identifier) -> NSToolbarItem? {
+        let spec: (label: String, symbol: String)
+        switch identifier {
+        case navigationID: spec = (L10n.string("Navigation"), "chevron.left.chevron.right")
+        case addressID: spec = (L10n.string("Address"), "link")
+        case searchID: spec = (L10n.string("Filter"), "magnifyingglass")
+        case viewSwitcherID: spec = (L10n.string("View"), "list.bullet")
+        default: return nil
+        }
+        let item = NSToolbarItem(itemIdentifier: identifier)
+        item.label = spec.label
+        item.paletteLabel = spec.label
+        item.image = NSImage(systemSymbolName: spec.symbol, accessibilityDescription: spec.label)
+        return item
     }
 
     // MARK: private

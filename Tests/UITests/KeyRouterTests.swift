@@ -246,6 +246,24 @@ final class FocusCycleTests: XCTestCase {
         XCTAssertEqual(controller.probeFocus, .content, "⇧Tab: sidebar → content")
     }
 
+    func testTabInTheAddressBarMovesToTheContentAndShiftTabToTheSidebar() async throws {
+        let h = try await ShellHarness.make(self)
+        let controller = try await h.openWindow()
+        let bar = controller.addressBar
+        controller.focus(.addressBar)
+        var editor = try XCTUnwrap(controller.window?.firstResponder as? NSTextView)
+        editor.doCommand(by: #selector(NSResponder.insertTab(_:)))
+        XCTAssertFalse(bar.isEditing, "Tab ends the edit")
+        XCTAssertEqual(controller.probeFocus, .content, "Tab: address bar → content")
+
+        controller.focus(.addressBar)
+        editor = try XCTUnwrap(controller.window?.firstResponder as? NSTextView)
+        editor.doCommand(by: #selector(NSResponder.insertBacktab(_:)))
+        XCTAssertFalse(bar.isEditing, "⇧Tab ends the edit")
+        XCTAssertTrue([.sidebarFavorites, .sidebarLocations, .sidebarFolders, .sidebarVolumeRoot].contains(controller.probeFocus),
+                      "⇧Tab: address bar → sidebar, got \(controller.probeFocus)")
+    }
+
     func testTabLeavesTheSidebarWithNoRowSelected() async throws {
         let h = try await ShellHarness.make(self)
         h.environment.settings.autoRevealInTree = false

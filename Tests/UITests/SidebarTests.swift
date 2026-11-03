@@ -192,6 +192,28 @@ final class SidebarTests: XCTestCase {
         try await h.waitUntil("external back") { h.names(in: .locations) == ["Macintosh HD", "USB"] }
     }
 
+    func testSandboxRootKeepsEveryRowInsideTheRoot() async throws {
+        let h = try await SidebarHarness.make(self, root: "home") { h in
+            try h.dir("home/Desktop")
+            try h.dir("home/Library/Mobile Documents/com~apple~CloudDocs")
+            h.settings.hiddenDefaultFavorites = []          // Applications (/Applications) would leave the root
+        }
+        let outside = try await FavoritesResolver.makeFavorite(for: h.usb, lanes: h.environment.lanes)
+        h.settings.favorites = [outside]
+        let image = try h.dir("home/image")
+        h.scanner.set(h.scanner.volumes.withLock { $0 } + [SandboxVolumeScanner.volume("uuid:img", name: "Image", at: image, boot: false)])
+        await h.environment.volumes.refresh()
+        try await h.waitUntil("image listed") { h.names(in: .locations).contains("Image") }
+        await h.settle()
+        XCTAssertEqual(h.names(in: .favorites), ["Home", "Desktop"], "Applications and outside bookmarks are dropped")
+        XCTAssertEqual(h.names(in: .locations), ["iCloud Drive", "Image"], "only volumes mounted inside the root")
+        let root = ChangeBus.key(for: h.home)
+        for item in h.rows(in: .favorites) + h.rows(in: .locations) + h.rows(in: .folders) {
+            let key = try XCTUnwrap(item.url.map(ChangeBus.key(for:)), "\(item.identity)")
+            XCTAssertTrue(key == root || key.hasPrefix(root + "/"), "\(key) is outside \(root)")
+        }
+    }
+
     func testLocationsUpdateLiveWithTheVolumeList() async throws {
         let h = try await SidebarHarness.make(self)
         let disk = try h.sandbox.createDirectory("disk2")

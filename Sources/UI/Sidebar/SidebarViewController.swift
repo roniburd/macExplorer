@@ -36,7 +36,8 @@ final class SidebarViewController: CommandHandlingViewController {
         self.context = context
         self.session = session
         self.tree = FolderTreeController(readers: context.environment.readers, showHidden: context.environment.settings.showHidden)
-        self.favorites = SidebarFavoritesModel(environment: context.environment)
+        self.favorites = SidebarFavoritesModel(environment: context.environment,
+                                               confinement: SandboxConfinement(root: context.options.root))
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -382,13 +383,16 @@ final class SidebarViewController: CommandHandlingViewController {
     }
 
     /// Boot volume first, then the others (Volumes order), iCloud Drive after the boot volume (§5.4 LOCATIONS).
+    /// In sandbox mode only volumes mounted inside the root (disk images a test mounted there) are listed.
     func rebuildLocations() {
         let showExternal = settings.showExternalVolumesInSidebar
+        let confinement = SandboxConfinement(root: context.options.root)
         var items = environment.volumes.browsable
-            .filter { $0.isBoot || $0.isInternal || showExternal }
+            .filter { ($0.isBoot || $0.isInternal || showExternal) && confinement.allows($0.mountPoint) }
             .map(SidebarItem.location)
-        if settings.showICloudInSidebar, let iCloudDrive {
-            items.insert(.iCloudDrive(iCloudDrive), at: min(1, items.count))
+        if settings.showICloudInSidebar, let iCloudDrive, confinement.allows(iCloudDrive) {
+            let afterBoot = if case .location(let first)? = items.first, first.isBoot { 1 } else { 0 }
+            items.insert(.iCloudDrive(iCloudDrive), at: afterBoot)
         }
         guard items != locationItems else { return }
         locationItems = items

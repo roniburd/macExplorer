@@ -28,6 +28,8 @@ public final class OperationsCenter {
 
     public var visibleJobs: [JobSnapshot] { jobs.filter { $0.state == .waitingForUser || revealed.contains($0.id) } }
     public var overallFraction: Double? { Self.overallFraction(of: jobs) }
+    /// The Dock badge's %: over the visible jobs only (jobs under 1 s don't count, §6.2/§6.7).
+    public var visibleFraction: Double? { Self.overallFraction(of: visibleJobs) }
     public var hasActiveJobs: Bool { !jobs.isEmpty }
 
     /// Bytes-weighted over jobs that know their byte total; otherwise the mean of the known fractions.

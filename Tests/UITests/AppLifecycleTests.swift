@@ -242,6 +242,27 @@ final class DockBadgeTests: XCTestCase {
         controller.stop()
     }
 
+    func testBadgeCountsOnlyTheVisibleJobs() async throws {
+        let h = try await ShellHarness.make(self)
+        let ops = h.environment.operations
+        ops.revealDelay = .seconds(30)              // the running job stays hidden (under 1 s so far)
+        func snap(_ state: JobState, done: Int64) -> JobSnapshot {
+            var p = JobProgress.zero
+            p.bytesDone = done; p.bytesTotal = 100
+            let description = JobDescription(verb: .copying, itemCount: 1, firstItemName: "a", sourceFolderName: nil,
+                                             destinationFolderName: nil)
+            return JobSnapshot(id: JobID(), description: description, state: state,
+                               progress: p, origin: nil, startedAt: .now)
+        }
+        await ops.handle(.added(snap(.waitingForUser, done: 20)))   // visible at once
+        await ops.handle(.added(snap(.running, done: 100)))         // hidden
+        XCTAssertEqual(ops.visibleJobs.count, 1)
+        var badges: [String?] = []
+        let controller = DockBadgeController(operations: ops, sink: { badges.append($0) })
+        XCTAssertEqual(badges.last, .some("20%"), "the hidden job doesn't count")
+        controller.stop()
+    }
+
     private func waitUntil(_ condition: () -> Bool) async throws {
         let deadline = ContinuousClock.now + .seconds(3)
         while !condition() {

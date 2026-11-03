@@ -78,9 +78,10 @@ final class SidebarHarness {
 
     var settings: Settings { environment.settings }
 
-    static func make(_ testCase: XCTestCase, folder: String = "home", prepare: (SidebarHarness) throws -> Void = { _ in })
-        async throws -> SidebarHarness {
-        let h = try SidebarHarness()
+    /// `root`: a --root (relative to boot) for sandbox-mode sidebars.
+    static func make(_ testCase: XCTestCase, folder: String = "home", root: String? = nil,
+                     prepare: (SidebarHarness) throws -> Void = { _ in }) async throws -> SidebarHarness {
+        let h = try SidebarHarness(root: root)
         testCase.addTeardownBlock { @MainActor in await h.tearDown() }
         try prepare(h)
         _ = await h.environment.start()
@@ -91,7 +92,7 @@ final class SidebarHarness {
         return h
     }
 
-    private init() throws {
+    private init(root: String?) throws {
         _ = NSApplication.shared
         sandbox = try Sandbox(prefix: "macx-tests")
         boot = try sandbox.createDirectory("boot")
@@ -116,6 +117,8 @@ final class SidebarHarness {
         options.pasteboardName = "macx-tests-\(UUID().uuidString)"
         options.fakeLaunchServices = true
         options.skipOnboarding = true
+        let bootURL = boot
+        options.root = root.map { bootURL.appending(path: $0, directoryHint: .isDirectory) }
         context = UIContext(environment: environment, options: options)
         context.installInteraction(ScriptedInteraction())
         context.ejectPrompts = prompts

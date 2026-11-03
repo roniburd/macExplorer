@@ -11,6 +11,8 @@ final class AddressBarView: NSView {
     var onNavigate: ((URL, String?) -> Void)?
     /// Edit mode ended by Return or Esc (not by focus moving elsewhere): the window focuses the content.
     var onEndEditing: (() -> Void)?
+    /// Tab / ⇧Tab while editing: the edit reverts and the window moves along the §5.6 cycle (`true` = forward).
+    var onCycleFocus: ((Bool) -> Void)?
 
     let breadcrumb = BreadcrumbView(frame: .zero)
     let editField = AddressEditField()
@@ -142,6 +144,11 @@ final class AddressBarView: NSView {
             Task { @MainActor [weak self] in await self?.submit(text) }
         }
         editField.onCancel = { [weak self] in self?.cancelEditing() }
+        editField.onCycleFocus = { [weak self] forward in
+            guard let self else { return }
+            if self.isEditing { self.finishEditing() }
+            self.onCycleFocus?(forward)
+        }
         editField.onTextChange = { [weak self] in self?.setError(nil) }
         editField.onEndEditing = { [weak self] in
             // Focus moved elsewhere (click in the content, Tab): revert quietly.

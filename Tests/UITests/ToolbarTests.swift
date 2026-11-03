@@ -25,6 +25,26 @@ final class ToolbarTests: XCTestCase {
         XCTAssertFalse(toolbar.autosavesConfiguration, "no autosave in sandbox mode")
     }
 
+    func testCustomizationPaletteGetsPlaceholdersNotTheLiveItems() async throws {
+        let h = try await ShellHarness.make(self)
+        let controller = try await h.openWindow()
+        let toolbar = try XCTUnwrap(controller.window?.toolbar)
+        let delegate = controller.toolbarController
+        for id in delegate.toolbarDefaultItemIdentifiers(toolbar) {
+            let live = try XCTUnwrap(toolbar.items.first { $0.itemIdentifier == id })
+            let palette = try XCTUnwrap(delegate.toolbar(toolbar, itemForItemIdentifier: id, willBeInsertedIntoToolbar: false))
+            XCTAssertFalse(palette === live, "\(id.rawValue): a fresh palette item")
+            XCTAssertNil(palette.view, "\(id.rawValue): no shared view")
+            XCTAssertEqual(palette.itemIdentifier, id)
+            XCTAssertFalse(palette.label.isEmpty, "\(id.rawValue) has a label")
+            XCTAssertNotNil(palette.image, "\(id.rawValue) has an image")
+            XCTAssertTrue(delegate.toolbar(toolbar, itemForItemIdentifier: id, willBeInsertedIntoToolbar: true) === live)
+        }
+        let address = try XCTUnwrap(toolbar.items.first { $0.itemIdentifier == ToolbarController.addressID })
+        XCTAssertTrue(address.view === controller.addressBar, "the live address bar stays in the toolbar")
+        XCTAssertTrue(controller.toolbarController.searchItem.searchField === controller.toolbarController.search.field)
+    }
+
     // MARK: navigation buttons
 
     func testNavigationButtonsFollowHistory() async throws {

@@ -72,11 +72,13 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
     /// The toolbar's address bar (Phase 4 tests submit through it).
     var addressBar: AddressBarView { toolbarController.addressBar }
 
-    /// ⌘L / ⌥D / F4 edit the address; Return/Esc hand the keyboard back to the content; scenario address hooks.
+    /// ⌘L / ⌥D / F4 edit the address; Return/Esc hand the keyboard back to the content; Tab/⇧Tab follow the focus
+    /// cycle; scenario address hooks.
     private func installToolbarHooks() {
         let bar = toolbarController.addressBar
         focusAddressBar = { [weak bar] in bar?.beginEditing() }
         bar.onEndEditing = { [weak self] in self?.focus(.content) }
+        bar.onCycleFocus = { [weak self] forward in self?.focus(FocusCycle.next(after: .addressBar, forward: forward)) }
         scenarioHooks.addressText = { [weak bar] in bar?.displayText ?? "" }
         scenarioHooks.isEditingAddress = { [weak bar] in bar?.isEditing ?? false }
     }
