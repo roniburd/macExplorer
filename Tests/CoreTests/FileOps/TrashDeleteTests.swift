@@ -1,4 +1,5 @@
 import XCTest
+import Synchronization
 import Darwin
 @testable import Core
 import MacxFS
@@ -127,6 +128,21 @@ final class TrashDeleteTests: FileOpsTestCase {
         XCTAssertEqual(q.record.actions, [.attributesChanged(a, old: AttributeSnapshot(quarantine: Data(quarantine)), new: AttributeSnapshot(quarantine: Data()))])
     }
 
+    func testPermissionsOnSymlinkNeverFollowTheLink() async throws {
+        let target = try file("target.txt")
+        XCTAssertEqual(chmod(target.path, 0o644), 0)
+        let link = url("link")
+        XCTAssertEqual(symlink(target.path, link.path), 0)
+        let linkMode = lst(link).st_mode & 0o7777
+        let (queue, _) = makeQueue()
+        let o = try await run(.setAttributes([link], .permissions(0o600)), on: queue)
+        XCTAssertEqual(lst(target).st_mode & 0o7777, 0o644, "the link's target is untouched")
+        XCTAssertEqual(lst(link).st_mode & 0o7777, 0o600)
+        _ = try await run(.undo(o.record), on: queue)
+        XCTAssertEqual(lst(target).st_mode & 0o7777, 0o644, "undo does not follow the link either")
+        XCTAssertEqual(lst(link).st_mode & 0o7777, linkMode)
+    }
+
     func testChmodRecursiveAppliesChildrenFirstAndRecords() async throws {
         try file("T/sub/f"); try file("T/g")
         let (queue, _) = makeQueue()
@@ -137,6 +153,30 @@ final class TrashDeleteTests: FileOpsTestCase {
               case .modeChanged(let last, let old, let new)? = o.record.actions.last else { return XCTFail() }
         XCTAssertNotEqual(first, url("T"), "children first")
         XCTAssertEqual(last, url("T")); XCTAssertEqual(old, 0o755); XCTAssertEqual(new, 0o700)
+    }
+
+    func testCancelledChmodRecursiveRecordsOnlyAppliedChanges() async throws {
+        for i in 0..<600 { try file("T/f\(i)") }
+        final class Holder: Sendable {
+            let queue = Mutex<FileOpQueue?>(nil)
+            let calls = Mutex(0)
+        }
+        let holder = Holder()
+        let tuning = FileOpTuning(faultHook: { point, id in
+            guard point == .modeBatchCheckpoint, holder.calls.withLock({ $0 += 1; return $0 }) == 2,
+                  let queue = holder.queue.withLock({ $0 }) else { return }
+            Task { await queue.cancel(id) }
+            usleep(300_000)                                                // let the cancel land before the checkpoint
+        })
+        let (queue, _) = makeQueue(tuning: tuning)
+        holder.queue.withLock { $0 = queue }
+        let o = try await run(.chmodRecursive(url("T"), ModeChange(mode: 0o700)), on: queue)
+        XCTAssertTrue(o.wasCancelled)
+        XCTAssertEqual(o.record.actions.count, 256, "only the changes tried before the cancel")
+        let changed = (0..<600).filter { lst(url("T/f\($0)")).st_mode & 0o777 == 0o700 }.count
+        XCTAssertEqual(changed, 256)
+        let undone = try await run(.undo(o.record), on: queue)
+        XCTAssertEqual(undone.skipped, [])
     }
 
     func testChmodRecursiveFilesOnly() async throws {

@@ -5,6 +5,27 @@ enum CopyJob {
     /// Copy (destination == source parent → duplicate naming) and Duplicate.
     static func run(_ ctx: JobContext, sources: [URL], destination: URL, duplicate: Bool) async {
         guard let plan = await ctx.plan(sources: sources, destination: destination, mode: .copy) else { return }
+        await copy(ctx, plan, to: destination, duplicate: duplicate)
+    }
+
+    /// Duplicate of items from several folders: one plan per parent, all planned first so the job's totals cover
+    /// every group.
+    static func duplicate(_ ctx: JobContext, _ urls: [URL]) async {
+        let groups = Dictionary(grouping: urls) { $0.deletingLastPathComponent().standardizedFileURL.path }
+        var plans: [(JobPlan, URL)] = []
+        for parent in groups.keys.sorted() {
+            let destination = URL(filePath: parent, directoryHint: .isDirectory)
+            guard let plan = await ctx.plan(sources: groups[parent]!, destination: destination, mode: .copy) else { return }
+            plans.append((plan, destination))
+        }
+        ctx.setTotals(items: plans.reduce(0) { $0 + $1.0.totalItems },
+                      bytes: plans.reduce(Int64(0)) { $0 + $1.0.totalBytes })
+        for (plan, destination) in plans where !ctx.control.isCancelled {
+            await copy(ctx, plan, to: destination, duplicate: true)
+        }
+    }
+
+    static func copy(_ ctx: JobContext, _ plan: JobPlan, to destination: URL, duplicate: Bool) async {
         var pending = plan.topLevelConflicts
         var first = true
         for item in plan.items {

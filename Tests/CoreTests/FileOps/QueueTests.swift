@@ -26,8 +26,8 @@ final class QueueTests: FileOpsTestCase {
         tuning.bodyOverride = timedBody(log, .milliseconds(150))
         let (queue, _) = makeQueue(tuning: tuning)
         let a = try file("a"), b = try file("b"), d = try dir("d")
-        let ida = await queue.enqueue(JobRequest(.copy(sources: [a], destination: d)))
-        let idb = await queue.enqueue(JobRequest(.copy(sources: [b], destination: d)))
+        let ida = await queue.enqueue(request(.copy(sources: [a], destination: d)))
+        let idb = await queue.enqueue(request(.copy(sources: [b], destination: d)))
         _ = await queue.outcome(of: ida)
         _ = await queue.outcome(of: idb)
         XCTAssertEqual(log.all, ["start a", "end a", "start b", "end b"])
@@ -43,8 +43,8 @@ final class QueueTests: FileOpsTestCase {
         let b = mnt.appending(path: "b"); try Data("b".utf8).write(to: b)
         let d2 = mnt.appending(path: "d2", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: d2, withIntermediateDirectories: false)
-        let ida = await queue.enqueue(JobRequest(.copy(sources: [a], destination: d)))
-        let idb = await queue.enqueue(JobRequest(.copy(sources: [b], destination: d2)))
+        let ida = await queue.enqueue(request(.copy(sources: [a], destination: d)))
+        let idb = await queue.enqueue(request(.copy(sources: [b], destination: d2)))
         _ = await queue.outcome(of: ida)
         _ = await queue.outcome(of: idb)
         XCTAssertEqual(Set(log.all.prefix(2)), ["start a", "start b"], "both started before either ended: \(log.all)")
@@ -61,7 +61,7 @@ final class QueueTests: FileOpsTestCase {
             }
         }
         let (queue, _) = makeQueue(tuning: tuning)
-        let id = await queue.enqueue(JobRequest(.copy(sources: [try file("a")], destination: try dir("d"))))
+        let id = await queue.enqueue(request(.copy(sources: [try file("a")], destination: try dir("d"))))
         await waitUntil { await queue.snapshots().first?.progress.itemsDone ?? 0 > 5 }
         await queue.pause(id)
         try await Task.sleep(for: .milliseconds(60))
@@ -96,7 +96,7 @@ final class QueueTests: FileOpsTestCase {
             }
         }
         let start = ContinuousClock.now
-        let id = await queue.enqueue(JobRequest(.copy(sources: [try file("a")], destination: try dir("d"))))
+        let id = await queue.enqueue(request(.copy(sources: [try file("a")], destination: try dir("d"))))
         _ = await queue.outcome(of: id)
         await consumer.value
         let elapsed = (ContinuousClock.now - start).inSeconds
@@ -107,14 +107,45 @@ final class QueueTests: FileOpsTestCase {
         XCTAssertLessThanOrEqual(Double(updates), elapsed * 10 + 2, "\(updates) updates in \(elapsed) s")
     }
 
+    func testDuplicateFromSeveralFoldersReportsTheWholeJobTotals() async throws {
+        let a = try file("p/a", "AAAA"), b = try file("q/b", "BB"), c = try file("q/c", "C")
+        let (queue, _) = makeQueue()
+        let last = Task { () -> JobSnapshot? in
+            for await e in queue.events { if case .finished(let s, _) = e { return s } }
+            return nil
+        }
+        let o = try await run(.duplicate([a, b, c]), on: queue)
+        XCTAssertEqual(o.created.count, 3)
+        let s = await last.value
+        XCTAssertEqual(s?.progress.itemsTotal, 3, "all groups, not just the last one")
+        XCTAssertEqual(s?.progress.itemsDone, 3)
+        XCTAssertEqual(s?.progress.bytesTotal, 7)
+    }
+
+    func testResumeRestoresTheStateTheJobHadBeforePausing() async throws {
+        try file("src/a"); try file("d/a")
+        let gate = Gate()
+        let (queue, _) = world.makeQueue(interaction: HeldInteraction(gate: gate))
+        let id = await queue.enqueue(request(.copy(sources: [url("src/a")], destination: url("d"))))
+        await waitUntil { await queue.snapshots().first?.state == .waitingForUser }
+        await queue.pause(id)
+        let paused = await queue.snapshots().first?.state
+        XCTAssertEqual(paused, .paused)
+        await queue.resume(id)
+        let resumed = await queue.snapshots().first?.state
+        XCTAssertEqual(resumed, .waitingForUser, "the dialog badge comes back")
+        gate.open()
+        _ = await queue.outcome(of: id)
+    }
+
     func testCancelQueuedJobFinishesWithoutRunning() async throws {
         let log = EventLog()
         var tuning = FileOpTuning()
         tuning.bodyOverride = timedBody(log, .milliseconds(200))
         let (queue, _) = makeQueue(tuning: tuning)
         let d = try dir("d")
-        let ida = await queue.enqueue(JobRequest(.copy(sources: [try file("a")], destination: d)))
-        let idb = await queue.enqueue(JobRequest(.copy(sources: [try file("b")], destination: d)))
+        let ida = await queue.enqueue(request(.copy(sources: [try file("a")], destination: d)))
+        let idb = await queue.enqueue(request(.copy(sources: [try file("b")], destination: d)))
         await queue.cancel(idb)
         let ob = await queue.outcome(of: idb)
         XCTAssertTrue(ob.wasCancelled)
@@ -127,7 +158,7 @@ final class QueueTests: FileOpsTestCase {
         tuning.bodyOverride = { ctx in while await ctx.checkpoint() { try? await Task.sleep(for: .milliseconds(5)) } }
         let (queue, _) = makeQueue(tuning: tuning)
         let d = try dir("d")
-        for n in ["a", "b", "c"] { await queue.enqueue(JobRequest(.copy(sources: [try file(n)], destination: d))) }
+        for n in ["a", "b", "c"] { await queue.enqueue(request(.copy(sources: [try file(n)], destination: d))) }
         await queue.cancelAll()
         let active = await queue.hasActiveJobs
         XCTAssertFalse(active)
@@ -144,8 +175,8 @@ final class QueueTests: FileOpsTestCase {
         }
         let (queue, _) = makeQueue(tuning: tuning)
         let d = try dir("d")
-        let ida = await queue.enqueue(JobRequest(.copy(sources: [try file("a")], destination: d)))
-        let idb = await queue.enqueue(JobRequest(.copy(sources: [try file("b")], destination: d)))
+        let ida = await queue.enqueue(request(.copy(sources: [try file("a")], destination: d)))
+        let idb = await queue.enqueue(request(.copy(sources: [try file("b")], destination: d)))
         await waitUntil { gate.all.contains("run a") }
         let running = await queue.suspendJobs(touching: root)
         XCTAssertEqual(running, [ida])
@@ -164,8 +195,8 @@ final class QueueTests: FileOpsTestCase {
         var tuning = FileOpTuning()
         tuning.bodyOverride = { _ in }
         let (queue, _) = makeQueue(tuning: tuning)
-        let id1 = await queue.enqueue(JobRequest(.trash([try file("a")]), registersUndo: false))
-        let id2 = await queue.enqueue(JobRequest(.trash([try file("b")])))
+        let id1 = await queue.enqueue(request(.trash([try file("a")]), registersUndo: false))
+        let id2 = await queue.enqueue(request(.trash([try file("b")])))
         _ = await queue.outcome(of: id1); _ = await queue.outcome(of: id2)
         let r1 = await queue.registersUndo(id1), r2 = await queue.registersUndo(id2)
         XCTAssertFalse(r1); XCTAssertTrue(r2)
@@ -197,7 +228,7 @@ final class QueueTests: FileOpsTestCase {
         var tuning = FileOpTuning()
         tuning.bodyOverride = { ctx in _ = await ctx.plan(sources: [big], destination: mnt, mode: .copy) }
         let (queue, _) = makeQueue(interaction: scripted, tuning: tuning)
-        let id = await queue.enqueue(JobRequest(.copy(sources: [big], destination: mnt)))
+        let id = await queue.enqueue(request(.copy(sources: [big], destination: mnt)))
         let outcome = await queue.outcome(of: id)
         XCTAssertTrue(outcome.wasCancelled)
         XCTAssertEqual(scripted.askedSpace().count, 1)
@@ -213,8 +244,8 @@ final class QueueTests: FileOpsTestCase {
         }
         let (queue, _) = makeQueue(tuning: tuning)
         let d = try dir("d")
-        let ida = await queue.enqueue(JobRequest(.copy(sources: [try file("a")], destination: d)))
-        let idb = await queue.enqueue(JobRequest(.copy(sources: [try file("b")], destination: d)))
+        let ida = await queue.enqueue(request(.copy(sources: [try file("a")], destination: d)))
+        let idb = await queue.enqueue(request(.copy(sources: [try file("b")], destination: d)))
         await waitUntil { await queue.snapshots().first { $0.id == ida }?.state == .running }
         let running = await queue.suspendJobs(touching: URL(filePath: "/", directoryHint: .isDirectory))
         XCTAssertEqual(running, [ida])

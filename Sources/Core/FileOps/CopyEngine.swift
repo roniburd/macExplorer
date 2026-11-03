@@ -23,6 +23,8 @@ final class CopyProgressBox {
     var nextMark: Int64
     /// errno of a failed read/write reported through COPYFILE_ERR (copyfile would otherwise retry forever).
     var failure: Int32 = 0
+    /// Identity of the destination copyfile opened (COPYFILE_STATE_DST_FD), seen from inside a callback.
+    var created: FileIdentity?
     let onBytes: (Int64) -> Void
     let onChunk: () -> Void
     init(lane: LaneContext, control: JobControl, chunk: Int64, onBytes: @escaping (Int64) -> Void, onChunk: @escaping () -> Void) {
@@ -45,8 +47,9 @@ enum CopyEngine {
     }
     static let metadataFlags = copyfile_flags_t(COPYFILE_ACL | COPYFILE_STAT | COPYFILE_XATTR)
 
-    /// One file or symlink. Never leaves a half-written destination behind (it is created exclusively,
-    /// so on failure other than EEXIST it is ours to unlink).
+    /// One file or symlink. Never leaves a half-written destination behind: on failure the destination is
+    /// unlinked only when it is the file this copyfile call opened (identity captured through
+    /// COPYFILE_STATE_DST_FD), never one another process put at that path.
     static func copyFile(from src: String, to dst: String, expectedSize: Int64, clone: Bool, chunkBytes: Int,
                          lane: LaneContext, control: JobControl,
                          onBytes: @escaping (Int64) -> Void, onChunk: @escaping () -> Void) -> CopyResult {
@@ -58,6 +61,13 @@ enum CopyEngine {
             let callback: copyfile_callback_t = { what, stage, state, _, _, ctx in
                 guard let ctx else { return COPYFILE_CONTINUE }
                 let box = Unmanaged<CopyProgressBox>.fromOpaque(ctx).takeUnretainedValue()
+                if box.created == nil {
+                    var fd: Int32 = -1
+                    var st = stat()
+                    if copyfile_state_get(state, UInt32(COPYFILE_STATE_DST_FD), &fd) == 0, fd >= 0, fstat(fd, &st) == 0 {
+                        box.created = FileIdentity(device: UInt64(UInt32(bitPattern: st.st_dev)), inode: st.st_ino)
+                    }
+                }
                 if stage == COPYFILE_ERR {
                     // CONTINUE here makes copyfile retry the failed write (e.g. ENOSPC) in an endless loop.
                     box.failure = errno != 0 ? errno : EIO
@@ -78,7 +88,7 @@ enum CopyEngine {
                 return .copied
             }
             let e = box.failure != 0 ? box.failure : errno
-            if e != EEXIST { _ = unlink(dst) }
+            if let created = box.created, PosixFS.info(dst)?.identity == created { _ = unlink(dst) }
             if control.isCancelled || (box.failure == 0 && e == ECANCELED) { return .cancelled }
             return .failed(e)
         }
@@ -93,6 +103,20 @@ enum CopyEngine {
     static func finalizeDirectory(from src: String, to dst: String) -> Int32 {
         assertOffMain()
         return copyfile(src, dst, nil, metadataFlags) == 0 ? 0 : errno
+    }
+
+    /// A partial copied from a locked item carries UF_IMMUTABLE (COPYFILE_STAT copies st_flags), and rename(2)
+    /// of an immutable item fails with EPERM. Clears it on the partial's root only; true = it was set, so the
+    /// final item must get it back (`relock`) once renamed into place.
+    static func unlockPartialRoot(_ path: String) -> Bool {
+        assertOffMain()
+        guard let i = PosixFS.info(path), i.flags & UInt32(UF_IMMUTABLE) != 0 else { return false }
+        return lchflags(path, i.flags & ~UInt32(UF_IMMUTABLE)) == 0
+    }
+
+    static func relock(_ path: String) {
+        assertOffMain()
+        if let i = PosixFS.info(path) { _ = lchflags(path, i.flags | UInt32(UF_IMMUTABLE)) }
     }
 
     static func isUnder(_ rel: String, _ dirRel: String) -> Bool { dirRel.isEmpty || rel.hasPrefix(dirRel + "/") }

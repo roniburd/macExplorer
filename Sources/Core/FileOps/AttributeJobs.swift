@@ -52,7 +52,7 @@ enum AttributeJobs {
         }
         if s.locked == false, case let rc = setFlag(UInt32(UF_IMMUTABLE), false), rc != 0 { return rc }
         if let h = s.hidden, case let rc = setFlag(UInt32(UF_HIDDEN), h), rc != 0 { return rc }
-        if let m = s.mode, chmod(path, mode_t(m & 0o7777)) != 0 { return errno }
+        if let m = s.mode, case let rc = PosixFS.setMode(path, m), rc != 0 { return rc }
         if let e = s.extensionHidden {
             var rv = URLResourceValues(); rv.hasHiddenExtension = e
             var u = URL(filePath: path)
@@ -110,24 +110,33 @@ enum AttributeJobs {
             return Change(url: e.relativePath.isEmpty ? url : url.appending(path: e.relativePath), old: e.mode, new: new)
         }
         let control = ctx.control
-        // One lane call for the whole batch; failures come back for per-item questions.
-        let failures = (try? await ctx.onLane { lane -> [Int: Int32] in
+        let hook = ctx.tuning.faultHook, jobID = ctx.id
+        // One lane call for the whole batch; failures come back for per-item questions. A cancel stops the
+        // lane at `applied`: only changes[..<applied] were tried, so only those can be recorded.
+        let (applied, failures) = (try? await ctx.onLane { lane -> (Int, [Int: Int32]) in
             var failed: [Int: Int32] = [:]
             for (i, c) in changes.enumerated() {
-                if i % 256 == 0 { lane.heartbeat(); if !control.laneCheckpoint(lane) { break } }
-                if chmod(c.url.path, mode_t(c.new)) != 0 { failed[i] = errno }
+                if i % 256 == 0 {
+                    hook?(.modeBatchCheckpoint, jobID)
+                    lane.heartbeat()
+                    if !control.laneCheckpoint(lane) { return (i, failed) }
+                }
+                if case let rc = PosixFS.setMode(c.url.path, c.new), rc != 0 { failed[i] = rc }
             }
-            return failed
-        }) ?? [:]
-        for (i, c) in changes.enumerated() {
+            return (changes.count, failed)
+        }) ?? (0, [:])
+        var asking = true
+        for (i, c) in changes[..<applied].enumerated() {
             if var code = failures[i] {
+                if control.isCancelled { asking = false }
+                guard asking else { continue }
                 retry: while true {
                     switch await ctx.resolveFailure(code, url: c.url) {
                     case .retry:
-                        code = (try? await ctx.onLane { _ in chmod(c.url.path, mode_t(c.new)) == 0 ? 0 : errno }) ?? EIO
+                        code = (try? await ctx.onLane { _ in PosixFS.setMode(c.url.path, c.new) }) ?? EIO
                         if code == 0 { break retry }
                     case .skipped: break retry
-                    case .cancelled: return
+                    case .cancelled: asking = false; break retry
                     }
                 }
                 if code != 0 { continue }

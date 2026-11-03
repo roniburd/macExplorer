@@ -123,10 +123,40 @@ final class RenameTests: FileOpsTestCase {
         XCTAssertEqual(entries, [], "two-step journal entry cleared")
     }
 
+    func testCaseOnlyRenameNeverReplacesADistinctFileWhenCaseLookupIsWrong() async throws {
+        let mnt = try image(.apfsCaseSensitive, sizeMB: 32)
+        let a = mnt.appending(path: "a"), upper = mnt.appending(path: "A")
+        try Data("lower".utf8).write(to: a)
+        try Data("upper".utf8).write(to: upper)
+        var tuning = FileOpTuning(); tuning.forceCaseInsensitive = true
+        let scripted = ScriptedInteraction(errors: [.skip])
+        let (queue, _) = makeQueue(interaction: scripted, tuning: tuning)
+        let outcome = try await run(.rename(a, to: "A"), on: queue)
+        XCTAssertEqual(text(a), "lower")
+        XCTAssertEqual(text(upper), "upper", "the other file is never overwritten")
+        XCTAssertEqual(scripted.askedErrors().first?.kind, .other(code: EEXIST, message: String(cString: strerror(EEXIST))))
+        XCTAssertEqual(outcome.record.actions, [])
+    }
+
+    func testTwoStepRenameNeverReplacesAnOccupiedTarget() async throws {
+        let mnt = try image(.apfsCaseSensitive, sizeMB: 32)
+        let a = mnt.appending(path: "a"), upper = mnt.appending(path: "A")
+        try Data("lower".utf8).write(to: a)
+        try Data("upper".utf8).write(to: upper)
+        let ctx = JobContext(id: JobID(), request: request(.rename(a, to: "A")), lanes: LanePool(),
+                             trash: SandboxTrash(directory: trashDir), journal: Journal(fileURL: journalURL),
+                             interaction: ScriptedInteraction(errors: [.skip]), tuning: FileOpTuning())
+        let r = await CreateOps.twoStepRename(ctx, from: a, to: upper)
+        XCTAssertEqual(r, .skipped)
+        XCTAssertEqual(text(a), "lower", "put back")
+        XCTAssertEqual(text(upper), "upper")
+        XCTAssertEqual(names(mnt).filter { $0.contains("macx-rename") }, [])
+    }
+
     func testTwoStepRenameLandsAndClearsJournal() async throws {
         let a = try file("d/a.txt", "A")
         let journal = Journal(fileURL: journalURL)
-        let ctx = JobContext(id: JobID(), request: JobRequest(.rename(a, to: "A.txt")), lanes: LanePool(),
+        let ctx = JobContext(id: JobID(), request: request(.rename(a, to: "A.txt")), lanes: LanePool(),
                              trash: SandboxTrash(directory: trashDir), journal: journal,
                              interaction: ScriptedInteraction(), tuning: FileOpTuning())
         let r = await CreateOps.twoStepRename(ctx, from: a, to: url("d/A.txt"))

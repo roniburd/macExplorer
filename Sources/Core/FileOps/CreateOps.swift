@@ -57,14 +57,22 @@ enum CreateOps {
         guard url.lastPathComponent != newName else { return .done }
         let target = url.deletingLastPathComponent().appending(path: newName)
         let parent = url.deletingLastPathComponent()
-        let caps = (try? await ctx.onLane { _ in VolumeIdentity.capabilities(of: parent) })
+        var caps = (try? await ctx.onLane { _ in VolumeIdentity.capabilities(of: parent) })
             ?? VolumeIdentity.Capabilities(clone: false, renameExcl: false, caseSensitive: false)
-        let result: StepResult
+        if ctx.tuning.forceCaseInsensitive { caps.caseSensitive = false }
+        let renameExcl = caps.renameExcl
+        // Same-item renames go in place only while `target` is absent or this very item (the name rules can be
+        // wrong about the volume's folding); anything else takes the primitive, which never overwrites.
+        var inPlaceResult: StepResult?
         if RenamePrimitive.isSameItemRename(url.lastPathComponent, newName, caseSensitive: caps.caseSensitive) {
-            result = await inPlace(ctx, from: url, to: target)
+            inPlaceResult = await inPlace(ctx, from: url, to: target)
+        }
+        let result: StepResult
+        if let inPlaceResult {
+            result = inPlaceResult
         } else {
             result = await ctx.attempt(url, destination: target) { _ in
-                switch RenamePrimitive.rename(url.path, target.path, renameExcl: caps.renameExcl) {
+                switch RenamePrimitive.rename(url.path, target.path, renameExcl: renameExcl) {
                 case .renamed: 0
                 case .exists: EEXIST
                 case .crossDevice: EXDEV
@@ -80,11 +88,13 @@ enum CreateOps {
         return .done
     }
 
-    private static func inPlace(_ ctx: JobContext, from: URL, to: URL) async -> StepResult {
+    /// nil = `to` is a different item; use the exclusive rename primitive instead.
+    private static func inPlace(_ ctx: JobContext, from: URL, to: URL) async -> StepResult? {
         while true {
             let r = (try? await ctx.onLane { _ in RenamePrimitive.renameInPlace(from.path, to.path) }) ?? .failed(EIO)
             switch r {
             case .applied: return .done
+            case .occupied: return nil
             case .needsTwoStep: return await twoStepRename(ctx, from: from, to: to)
             case .failed(let e):
                 switch await ctx.resolveFailure(e, url: from, destination: to) {
@@ -108,7 +118,13 @@ enum CreateOps {
         let r = await ctx.attempt(from, destination: to) { _ in
             let first = PosixFS.rename(from.path, temp.path)
             guard first == 0 else { return first }
-            let second = PosixFS.rename(temp.path, to.path)
+            // `to` was free for this item before step one; refuse whatever holds it now.
+            let second: Int32 = switch RenamePrimitive.rename(temp.path, to.path, renameExcl: true) {
+            case .renamed: 0
+            case .exists: EEXIST
+            case .crossDevice: EXDEV
+            case .failed(let e): e
+            }
             if second != 0 { _ = PosixFS.rename(temp.path, from.path) }
             return second
         }

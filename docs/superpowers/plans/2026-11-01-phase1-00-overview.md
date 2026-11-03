@@ -1850,6 +1850,13 @@ public final class CoreEnvironment {
     /// Undo menu names are user-visible text, which Core never produces. Default: the verb's raw value ("copying").
     /// P1-26 (AppBootstrap) MUST install a localized formatter at launch (S3 Contract note 7).
     public var undoActionName: @MainActor (JobDescription) -> String
+    /// Additive (S3 review fix, §4.2): the volume release handler pauses queued jobs touching the volume and calls this
+    /// with the ones still running (only when non-empty). S4 (P1-28 eject) / S5 (P1-38 InteractionRouter) install it and
+    /// own the cancel/wait prompt; nil = nothing asks (the running jobs keep running).
+    public var onRunningJobsOnReleasedVolume: (@MainActor (VolumeID, [JobID]) async -> Void)?
+    /// Additive (S3 review fix): running jobs touching `volume`, no state change. EjectCoordinator callers (P1-28) query
+    /// it before unmounting and ask cancel/wait when it is not empty.
+    public func runningJobs(on volume: VolumeID) async -> [JobID]
     /// Wires readers/volumes/watchers into a FolderContext.
     public func folderContext() -> FolderContext
     public func makeFolderModel(_ directory: URL, query: ViewQuery? = nil) -> FolderModel
@@ -2131,6 +2138,8 @@ public actor FileOpQueue {
     public var hasActiveJobs: Bool { get }
     /// Volumes.release: queued jobs touching the volume pause; returns running ones (UI asks cancel/wait).
     public func suspendJobs(touching mountPoint: URL) -> [JobID]
+    /// Additive (S3 review fix): started, unfinished jobs touching the volume at `mountPoint`; no state change.
+    public func runningJobs(touching mountPoint: URL) -> [JobID]
     public nonisolated var events: AsyncStream<JobEvent> { get }    // single consumer: OperationsCenter
     /// Additive (S3 note 3): whether a finished job's request asked for an undo entry (false for undo/redo jobs).
     public func registersUndo(_ id: JobID) -> Bool

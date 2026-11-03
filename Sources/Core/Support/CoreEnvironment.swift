@@ -33,6 +33,10 @@ public final class CoreEnvironment {
         var format: @MainActor (JobDescription) -> String = { $0.verb.rawValue }
     }
 
+    /// §4.2: called by the volume release path with the jobs still running on the released volume (queued ones are
+    /// paused). The UI (P1-28 eject, P1-38 InteractionRouter) installs it and asks the user to cancel or wait.
+    public var onRunningJobsOnReleasedVolume: (@MainActor (VolumeID, [JobID]) async -> Void)?
+
     private let actionNamer: ActionNamer
     private var tokens: [ObserverToken] = []
     private var startTask: Task<RecoveryReport, Never>?
@@ -87,12 +91,20 @@ public final class CoreEnvironment {
 
         // §4.2 release (S1 contract note 15): cancel this volume's reads first, then pause the jobs touching it.
         // Watchers stop through FolderModel's volume-gone path (P1-11); windows move home in WindowManager (P1-26).
-        tokens.append(volumes.addReleaseHandler { [weak volumes] id in
+        // Running jobs go to onRunningJobsOnReleasedVolume (the UI asks cancel/wait).
+        tokens.append(volumes.addReleaseHandler { [weak self, weak volumes] id in
             await readers.cancelAll(on: id)
             if let mountPoint = volumes?.list.first(where: { $0.id == id })?.mountPoint {
-                _ = await queue.suspendJobs(touching: mountPoint)
+                let running = await queue.suspendJobs(touching: mountPoint)
+                if !running.isEmpty, let report = self?.onRunningJobsOnReleasedVolume { await report(id, running) }
             }
         })
+    }
+
+    /// Jobs running now that touch `volume` (no state change). Eject asks cancel/wait with these before unmounting.
+    public func runningJobs(on volume: VolumeID) async -> [JobID] {
+        guard let mountPoint = volumes.list.first(where: { $0.id == volume })?.mountPoint else { return [] }
+        return await fileOps.runningJobs(touching: mountPoint)
     }
 
     public func folderContext() -> FolderContext {

@@ -157,7 +157,7 @@ final class CopyTests: FileOpsTestCase {
         })
         tuning.allowClone = false
         let (queue, _) = makeQueue(tuning: tuning)
-        let id = await queue.enqueue(JobRequest(.copy(sources: [big], destination: d)))
+        let id = await queue.enqueue(request(.copy(sources: [big], destination: d)))
         await waitUntil { reached.all.contains("chunk") }
         await queue.pause(id)
         proceed.signal()
@@ -186,7 +186,7 @@ final class CopyTests: FileOpsTestCase {
         })
         tuning.allowClone = false
         let (queue, _) = makeQueue(tuning: tuning)
-        let id = await queue.enqueue(JobRequest(.copy(sources: [url("T")], destination: try dir("d"))))
+        let id = await queue.enqueue(request(.copy(sources: [url("T")], destination: try dir("d"))))
         await waitUntil { reached.all.contains("chunk") }
         await queue.cancel(id)
         proceed.signal()
@@ -196,6 +196,21 @@ final class CopyTests: FileOpsTestCase {
         XCTAssertEqual(lst(url("d/T")).st_mode & 0o7777, 0o750, "directory finalized, not left at 0700")
         guard case .created(let u, _)? = o.record.actions.first else { return XCTFail() }
         XCTAssertEqual(u, url("d/T"))
+    }
+
+    /// A failed copyfile unlinks the destination only when it is the file copyfile created.
+    func testFailedCopyNeverUnlinksADestinationItDidNotCreate() async throws {
+        let src = try file("src", "S")
+        XCTAssertEqual(chmod(src.path, 0), 0)                             // open(src) fails before dst is touched
+        let dst = try file("dst", "someone else's")                       // appeared after our existence check
+        let control = JobControl()
+        let (srcPath, dstPath) = (src.path, dst.path)
+        let r = try await LanePool().perform(on: .unknown, .fileOp) { lane in
+            CopyEngine.copyFile(from: srcPath, to: dstPath, expectedSize: 1, clone: false, chunkBytes: 1 << 20,
+                                lane: lane, control: control, onBytes: { _ in }, onChunk: {})
+        }
+        XCTAssertEqual(r, .failed(EACCES))
+        XCTAssertEqual(text(dst), "someone else's")
     }
 
     func testUnreadableEntryReportsPermissionAndOtherEntriesCopy() async throws {

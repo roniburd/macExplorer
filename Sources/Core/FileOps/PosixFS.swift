@@ -52,6 +52,12 @@ enum PosixFS {
         }
     }
 
+    /// chmod that never follows a symlink (a link's own mode changes, never its target's). 0 or errno.
+    static func setMode(_ path: String, _ mode: UInt16) -> Int32 {
+        assertOffMain()
+        return fchmodat(AT_FDCWD, path, mode_t(mode & 0o7777), AT_SYMLINK_NOFOLLOW) == 0 ? 0 : errno
+    }
+
     /// Recursive delete of a file or tree (removefile). `unlock` first clears uchg. 0 or errno.
     static func removeTree(_ path: String, unlock: Bool = false) -> Int32 {
         assertOffMain()

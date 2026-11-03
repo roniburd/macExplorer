@@ -269,7 +269,8 @@ enum UndoPlanner {
                 if i % 256 == 0 { lane.heartbeat(); if !control.laneCheckpoint(lane) { break } }
                 guard let info = PosixFS.info(m.url.path) else { out.append(.gone); continue }
                 guard info.mode == m.expected else { out.append(.changed); continue }
-                out.append(chmod(m.url.path, mode_t(m.restore)) == 0 ? .done : .failed(errno))
+                let rc = PosixFS.setMode(m.url.path, m.restore)
+                out.append(rc == 0 ? .done : .failed(rc))
             }
             return out
         }) ?? items.map { _ in .failed(EIO) }
@@ -280,7 +281,10 @@ enum UndoPlanner {
             retry: while case .failed(let code) = outcome {
                 switch await ctx.resolveFailure(code, url: m.url) {
                 case .retry:
-                    outcome = (try? await ctx.onLane { _ in chmod(m.url.path, mode_t(m.restore)) == 0 ? ModeResult.done : .failed(errno) }) ?? .failed(EIO)
+                    outcome = (try? await ctx.onLane { _ in
+                        let rc = PosixFS.setMode(m.url.path, m.restore)
+                        return rc == 0 ? ModeResult.done : .failed(rc)
+                    }) ?? .failed(EIO)
                 case .skipped: break retry
                 case .cancelled: return false
                 }

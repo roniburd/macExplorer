@@ -4,6 +4,7 @@ import Synchronization
 
 public enum DiskImageFormat: String, Sendable, CaseIterable {
     case apfs = "APFS"
+    case apfsCaseSensitive = "Case-sensitive APFS"
     case hfsPlus = "HFS+"
     case exfat = "ExFAT"
     case msdos = "MS-DOS"      // FAT16/FAT32 chosen by hdiutil from the size
@@ -60,7 +61,7 @@ public final class DiskImage: Sendable {
 
     private func attach(readOnly: Bool) throws {
         var args = ["attach", "-nobrowse", "-noautoopen", "-noverify", "-mountpoint", mountPoint.path(percentEncoded: false)]
-        if format == .apfs || format == .hfsPlus { args += ["-owners", "on"] }
+        if format == .apfs || format == .apfsCaseSensitive || format == .hfsPlus { args += ["-owners", "on"] }
         if readOnly { args.append("-readonly") }
         args.append(imageURL.path(percentEncoded: false))
         try DiskImage.hdiutil(args)

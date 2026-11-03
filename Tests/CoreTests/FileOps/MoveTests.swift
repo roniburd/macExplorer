@@ -73,7 +73,7 @@ final class MoveTests: FileOpsTestCase {
             Planner.plan(sources: [a], destination: nil, mode: .shallow, forceCrossVolume: false, lane: lane).items[0]
         }
         XCTAssertTrue(item.sameVolume, "planned as same-volume, so the rename will hit EXDEV")
-        let ctx = JobContext(id: JobID(), request: JobRequest(.move(sources: [a], destination: mnt)), lanes: lanes,
+        let ctx = JobContext(id: JobID(), request: request(.move(sources: [a], destination: mnt)), lanes: lanes,
                              trash: SandboxTrash(directory: trashDir), journal: Journal(fileURL: journalURL),
                              interaction: ScriptedInteraction(), tuning: FileOpTuning())
         let r = await MoveJob.moveItem(ctx, item, to: mnt.appending(path: "a.txt"), renameExcl: true)

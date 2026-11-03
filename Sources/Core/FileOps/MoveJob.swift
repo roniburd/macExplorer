@@ -104,7 +104,7 @@ enum MoveJob {
                 }
             }
             ctx.fault(.beforePartialRename)
-            let renamed = (try? await ctx.onLane { _ in RenamePrimitive.rename(partial.path, target.path, renameExcl: true) }) ?? .failed(EIO)
+            let renamed = await renamePartial(ctx, partial, to: target)
             guard renamed == .renamed else {
                 await removePartial(ctx, partial, entry)
                 let code: Int32 = switch renamed { case .exists: EEXIST; case .crossDevice: EXDEV; case .failed(let e): e; case .renamed: 0 }
@@ -139,6 +139,17 @@ enum MoveJob {
         if let id { ctx.record(removed ? .moved(from: src, to: target, id) : .created(target, id)) }
         if removed { ctx.noteRemoved(src) }
         ctx.landed(target)
+    }
+
+    /// Renames the verified partial into place (never overwriting). A locked source's uchg is lifted from the
+    /// partial for the rename and put back on the final item.
+    static func renamePartial(_ ctx: JobContext, _ partial: URL, to target: URL) async -> RenameOutcome {
+        (try? await ctx.onLane { _ -> RenameOutcome in
+            let locked = CopyEngine.unlockPartialRoot(partial.path)
+            let r = RenamePrimitive.rename(partial.path, target.path, renameExcl: true)
+            if locked { CopyEngine.relock(r == .renamed ? target.path : partial.path) }
+            return r
+        }) ?? .failed(EIO)
     }
 
     static func removePartial(_ ctx: JobContext, _ partial: URL, _ entry: JournalEntry) async {

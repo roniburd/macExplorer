@@ -8,6 +8,8 @@ public struct FileOpTuning: Sendable {
     /// Test knobs (`@testable import Core`).
     var allowClone = true
     var forceCrossVolume = false
+    /// Pretends every volume's case-sensitivity lookup failed (falls back to case-insensitive).
+    var forceCaseInsensitive = false
     var bodyOverride: (@Sendable (JobContext) async -> Void)? = nil
     public init(progressInterval: Duration = .milliseconds(100), copyChunkBytes: Int = 1 << 20,
                 faultHook: (@Sendable (FaultPoint, JobID) -> Void)? = nil) {
@@ -160,14 +162,14 @@ public actor FileOpQueue {
     public func pause(_ id: JobID) {
         guard let e = entries[id] else { return }
         e.ctx.control.pause()
-        e.ctx.setState(.paused)
+        e.ctx.pauseState()
         if !e.started { entries[id]!.suspended = true }
     }
 
     public func resume(_ id: JobID) {
         guard let e = entries[id] else { return }
         e.ctx.control.resume()
-        e.ctx.setState(e.started ? .running : .queued)
+        e.ctx.resumeState(fallback: e.started ? .running : .queued)
         entries[id]!.suspended = false
         schedule()
     }
@@ -201,17 +203,25 @@ public actor FileOpQueue {
     public var hasActiveJobs: Bool { !entries.isEmpty }
 
     public func suspendJobs(touching mountPoint: URL) -> [JobID] {
-        let base = mountPoint.standardizedFileURL.path
-        let prefix = base.hasSuffix("/") ? base : base + "/"            // "/" (boot volume) must match every path
-        func touches(_ e: Entry) -> Bool {
-            e.ctx.kind.allURLs.contains { u in let p = u.standardizedFileURL.path; return p == base || p.hasPrefix(prefix) }
-        }
         var running: [JobID] = []
-        for id in order {
-            guard let e = entries[id], touches(e) else { continue }
-            if e.started { running.append(id) } else { pause(id) }
+        for id in jobs(touching: mountPoint) {
+            if entries[id]!.started { running.append(id) } else { pause(id) }
         }
         return running
+    }
+
+    /// Started, unfinished jobs touching the volume at `mountPoint` (no state change).
+    public func runningJobs(touching mountPoint: URL) -> [JobID] {
+        jobs(touching: mountPoint).filter { entries[$0]!.started }
+    }
+
+    private func jobs(touching mountPoint: URL) -> [JobID] {
+        let base = mountPoint.standardizedFileURL.path
+        let prefix = base.hasSuffix("/") ? base : base + "/"            // "/" (boot volume) must match every path
+        return order.filter { id in
+            guard let e = entries[id] else { return false }
+            return e.ctx.kind.allURLs.contains { u in let p = u.standardizedFileURL.path; return p == base || p.hasPrefix(prefix) }
+        }
     }
 
     /// Whether the request asked for an undo entry (OperationsCenter checks it on .finished).

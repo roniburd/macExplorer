@@ -3,7 +3,7 @@ import Darwin
 import MacxFS
 
 enum RenameOutcome: Sendable, Equatable { case renamed, exists, crossDevice, failed(Int32) }
-enum InPlaceRename: Sendable, Equatable { case applied, needsTwoStep, failed(Int32) }
+enum InPlaceRename: Sendable, Equatable { case applied, needsTwoStep, occupied, failed(Int32) }
 
 /// §6.3 rename primitive. Same vs cross volume is decided by callers with st_dev (VolumeIdentity).
 enum RenamePrimitive {
@@ -40,8 +40,10 @@ enum RenamePrimitive {
 
     /// Plain rename(2) (atomic on APFS/HFS+), then read the name back. Volumes that reject it or keep
     /// the old spelling (some SMB, exFAT, FAT) need the journaled two-step rename.
+    /// `.occupied`: `to` exists and is not `from` (distinct files on disk), so rename(2) would replace it.
     static func renameInPlace(_ from: String, _ to: String) -> InPlaceRename {
         assertOffMain()
+        if let existing = PosixFS.info(to), existing.identity != PosixFS.info(from)?.identity { return .occupied }
         if Darwin.rename(from, to) != 0 {
             let e = errno
             switch e {

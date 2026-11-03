@@ -20,7 +20,7 @@ final class DiskImageTests: XCTestCase {
     }
 
     func testEachFormatMountsInsideSandboxWithNoBrowse() throws {
-        let expected: [DiskImageFormat: String] = [.apfs: "apfs", .hfsPlus: "hfs", .exfat: "exfat", .msdos: "msdos"]
+        let expected: [DiskImageFormat: String] = [.apfs: "apfs", .apfsCaseSensitive: "apfs", .hfsPlus: "hfs", .exfat: "exfat", .msdos: "msdos"]
         for format in DiskImageFormat.allCases {
             let image = try DiskImage.create(in: sandbox, format: format, sizeMB: 16)
             XCTAssertTrue(sandbox.contains(image.mountPoint))

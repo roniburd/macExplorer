@@ -329,6 +329,38 @@ final class EnvironmentTests: FileOpsTestCase {
         _ = await queue.outcome(of: toImage)
     }
 
+    func testVolumeReleaseReportsRunningJobsTouchingThatVolume() async throws {
+        let w = world
+        let mnt = try image(.hfsPlus, sizeMB: 16)
+        let gate = Gate()
+        var tuning = FileOpTuning()
+        tuning.bodyOverride = { _ in await gate.wait() }
+        let lanes = LanePool()
+        let env = CoreEnvironment(statePaths: StatePaths(root: w.url("state")), lanes: lanes,
+                                  settingsStorage: InMemorySettingsStorage(), volumeScanner: SystemVolumeScanner(),
+                                  volumeEvents: nil, pasteboard: InMemoryPasteboard(), launchServices: FakeLaunchServices(),
+                                  ejector: SandboxEjector(root: w.root, lanes: lanes),
+                                  trash: SandboxTrash(directory: w.trashDir), fileOpTuning: tuning)
+        _ = await env.start()
+        await env.volumes.refresh()
+        let volume = try XCTUnwrap(env.volumes.volume(for: mnt))
+        let queue = env.fileOps
+        let local = try w.file("files/a")
+        let writing = await queue.enqueue(w.request(.copy(sources: [local], destination: mnt)))
+        await w.waitUntil { await queue.snapshots().first { $0.id == writing }?.state == .running }
+        let queried = await env.runningJobs(on: volume.id)
+        XCTAssertEqual(queried, [writing], "eject can ask cancel/wait before unmounting")
+        var reported: [(VolumeID, [JobID])] = []
+        env.onRunningJobsOnReleasedVolume = { id, jobs in reported.append((id, jobs)) }
+        await env.volumes.release(volume.id)
+        XCTAssertEqual(reported.map(\.0), [volume.id])
+        XCTAssertEqual(reported.map(\.1), [[writing]], "§4.2: running jobs are reported, not dropped")
+        let state = await queue.snapshots().first { $0.id == writing }?.state
+        XCTAssertEqual(state, .running, "a running job is left for the user's cancel/wait answer")
+        gate.open()
+        _ = await queue.outcome(of: writing)
+    }
+
     /// End to end through Core: browse a sandbox folder, paste-copy into it, see the posted LocalChange select the
     /// new row (FSEvents never select), undo, redo.
     func testEndToEndBrowsePasteCopySeeLocalChangeAndUndo() async throws {

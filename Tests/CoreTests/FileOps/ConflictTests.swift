@@ -75,6 +75,36 @@ final class ConflictTests: FileOpsTestCase {
         XCTAssertEqual(entries, [])
     }
 
+    func testReplaceAsksWhenThePartialCannotBeJournaled() async throws {
+        let a = try file("src/a", "new"); try file("d/a", "old")
+        XCTAssertEqual(chmod(url("state").path, 0o500), 0)                 // journal writes fail
+        let scripted = ScriptedInteraction(conflicts: [.one(.replace)], errors: [.skip])
+        let (queue, _) = makeQueue(interaction: scripted)
+        let o = try await run(.copy(sources: [a], destination: url("d")), on: queue)
+        XCTAssertEqual(text(url("d/a")), "old", "nothing replaced without a crash-safe journal")
+        XCTAssertEqual(partials(url("d")), [])
+        XCTAssertEqual(trashed("a"), [])
+        XCTAssertEqual(scripted.askedErrors().map(\.kind), [.other(code: EIO, message: String(cString: strerror(EIO)))])
+        XCTAssertEqual(o.skipped.map(\.url), [a])
+    }
+
+    func testReplaceRestoresTheDestinationWhenItsTrashURLCannotBeJournaled() async throws {
+        let a = try file("src/a", "new"); try file("d/a", "old")
+        let statePath = url("state").path
+        let tuning = FileOpTuning(faultHook: { point, _ in
+            if point == .afterPartialCopy { _ = chmod(statePath, 0o500) }   // the next journal write fails
+        })
+        let scripted = ScriptedInteraction(conflicts: [.one(.replace)], errors: [.skip])
+        let (queue, _) = makeQueue(interaction: scripted, tuning: tuning)
+        let o = try await run(.copy(sources: [a], destination: url("d")), on: queue)
+        XCTAssertEqual(text(url("d/a")), "old", "trashed destination put back")
+        XCTAssertEqual(trashed("a"), [])
+        XCTAssertEqual(partials(url("d")), [])
+        XCTAssertEqual(scripted.askedErrors().count, 1)
+        XCTAssertFalse(o.record.actions.contains { if case .replaced = $0 { true } else { false } })
+        XCTAssertEqual(o.skipped.map(\.url), [a])
+    }
+
     func testApplyToAllAnswersEveryRemainingConflict() async throws {
         for n in ["a", "b", "c"] { try file("src/\(n)", "new \(n)"); try file("d/\(n)", "old") }
         let scripted = ScriptedInteraction(conflicts: [.all(.keepBoth)])
@@ -96,6 +126,18 @@ final class ConflictTests: FileOpsTestCase {
         XCTAssertEqual(text(url("d/a")), "new a")
         XCTAssertEqual(text(url("d/b")), "old b")
         XCTAssertEqual(o.skipped, [SkippedItem(url: b, reason: nil)])
+    }
+
+    func testPerItemMergeStillAsksAboutConflictsInsideTheMerge() async throws {
+        let f = try dir("src/F"); try file("src/F/c", "new c"); let g = try file("src/g", "new g")
+        try file("d/F/c", "old c"); try file("d/g", "old g")
+        let scripted = ScriptedInteraction(conflicts: [.perItem([f: .merge, g: .skip]), .one(.replace)])
+        let (queue, _) = makeQueue(interaction: scripted)
+        let o = try await run(.copy(sources: [f, g], destination: url("d")), on: queue)
+        XCTAssertEqual(scripted.askedConflicts().map(\.isFolderMerge), [true, false], "the child conflict follows the dialog")
+        XCTAssertEqual(text(url("d/F/c")), "new c")
+        XCTAssertEqual(text(url("d/g")), "old g")
+        XCTAssertEqual(o.skipped, [SkippedItem(url: g, reason: nil)])
     }
 
     func testCancelJobFromConflictStopsEverything() async throws {

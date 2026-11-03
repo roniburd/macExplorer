@@ -34,7 +34,7 @@ enum ConflictExecutor {
         let info = ConflictInfo(pair: ConflictPair(source: s, destination: d), isFolderMerge: folder,
                                 knownRemaining: max(1, pairs.count), pendingPairs: pairs.isEmpty ? [ConflictPair(source: s, destination: d)] : pairs)
         let resolution = await ctx.askConflict(info)
-        ctx.rememberConflict(resolution, folder: folder)
+        ctx.rememberConflict(resolution, folder: folder, answering: pending + [source])
         switch resolution {
         case .one(let a), .all(let a): return normalize(a)
         case .perItem(let map): return normalize(map[source] ?? .skip)
@@ -93,7 +93,13 @@ extension ConflictExecutor {
             switch result {
             case .success(let (trashURL, id)):
                 let entry = JournalEntry.trashedDestination(job: ctx.id, original: target, trashURL: trashURL)
-                try? await ctx.journalRecord(entry)
+                // Without this entry a crash would leave the destination in the Trash: ask, and put it back unless retried.
+                guard await journalOrAsk(ctx, entry, about: target) else {
+                    _ = try? await ctx.onLane { _ in
+                        if !PosixFS.exists(target.path) { _ = PosixFS.rename(trashURL.path, target.path) }
+                    }
+                    return nil
+                }
                 if let id { ctx.record(.replaced(original: target, trashURL: trashURL, id)) }
                 return Trashed(original: target, trashURL: trashURL, entry: entry)
             case .failure(let e):
@@ -104,6 +110,21 @@ extension ConflictExecutor {
                     continue
                 case .cancel: ctx.cancelJob(); return nil
                 case .skip, .skipAll: return nil
+                }
+            }
+        }
+    }
+
+    /// Journals `entry`; on a write failure asks Retry/Skip/Cancel (EIO). false = not journaled (skipped or cancelled;
+    /// the caller lists the item).
+    static func journalOrAsk(_ ctx: JobContext, _ entry: JournalEntry, about url: URL) async -> Bool {
+        while true {
+            do { try await ctx.journalRecord(entry); return true } catch {
+                let e = FileOpError(kind: .other(code: EIO, message: String(cString: strerror(EIO))), url: url)
+                switch await ctx.askError(e) {
+                case .retry, .continueAnyway, .unlockAndContinue: continue
+                case .skip, .skipAll: return false
+                case .cancel: ctx.cancelJob(); return false
                 }
             }
         }
@@ -134,7 +155,10 @@ extension ConflictExecutor {
         // Copy or cross-volume move: partial → verify → trash existing → rename → (move) delete source.
         let partial = target.deletingLastPathComponent().appending(path: PartialName.make(for: target.lastPathComponent, job: ctx.id))
         let entry = JournalEntry.partial(job: ctx.id, url: partial)
-        try? await ctx.journalRecord(entry)
+        guard await journalOrAsk(ctx, entry, about: src) else {
+            if !ctx.control.isCancelled { ctx.skip(src, reason: nil) }
+            return ctx.control.isCancelled ? .cancelled : .skipped
+        }
         let copied = await TreeCopier.copy(ctx, item, to: partial)
         guard copied == .completed else {
             await MoveJob.removePartial(ctx, partial, entry)
@@ -161,7 +185,7 @@ extension ConflictExecutor {
         }
         ctx.fault(.afterTrashDestination)
         ctx.fault(.beforePartialRename)
-        let renamed = (try? await ctx.onLane { _ in RenamePrimitive.rename(partial.path, target.path, renameExcl: true) }) ?? .failed(EIO)
+        let renamed = await MoveJob.renamePartial(ctx, partial, to: target)
         guard renamed == .renamed else {
             await restore(ctx, trashed)
             await MoveJob.removePartial(ctx, partial, entry)

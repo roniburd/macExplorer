@@ -46,6 +46,7 @@ final class JobContext: Sendable {
 
     private struct State {
         var snapshot: JobSnapshot
+        var stateBeforePause: JobState?
         var laneVolume: VolumeID = .unknown
         var actions: [ItemAction] = []
         var skipped: [SkippedItem] = []
@@ -57,7 +58,9 @@ final class JobContext: Sendable {
         var meter = ThroughputMeter()
         var fileConflictAction: ConflictAction?
         var folderConflictAction: ConflictAction?
-        var perItemConflicts: [URL: ConflictAction]?
+        /// Compare answers, and the top-level sources that dialog answered (keys missing from the map = Skip).
+        var perItemConflicts: [URL: ConflictAction] = [:]
+        var perItemAnswered: Set<URL> = []
     }
     private let state: Mutex<State>
 
@@ -71,7 +74,35 @@ final class JobContext: Sendable {
 
     // MARK: snapshot and progress
     func snapshot() -> JobSnapshot { state.withLock { $0.snapshot } }
-    func setState(_ s: JobState) { state.withLock { $0.snapshot.state = s } }
+    /// While paused the snapshot keeps showing .paused; other states the job moves to (planning → running, a
+    /// dialog) are kept for `resumeState` instead. Cancelling and finishing always show.
+    func setState(_ s: JobState) {
+        state.withLock { st in
+            if st.snapshot.state == .paused, s != .paused, s != .cancelling, s != .finished {
+                st.stateBeforePause = s
+            } else {
+                st.snapshot.state = s
+                if s != .paused { st.stateBeforePause = nil }
+            }
+        }
+    }
+    /// The state the job is really in (the one behind .paused).
+    var effectiveState: JobState { state.withLock { $0.stateBeforePause ?? $0.snapshot.state } }
+    func pauseState() {
+        state.withLock { st in
+            guard st.snapshot.state != .paused else { return }
+            st.stateBeforePause = st.snapshot.state
+            st.snapshot.state = .paused
+        }
+    }
+    /// Back to the state the job had before pausing (a dialog's .waitingForUser included); `fallback` if none.
+    func resumeState(fallback: JobState) {
+        state.withLock { st in
+            guard st.snapshot.state == .paused else { return }
+            st.snapshot.state = st.stateBeforePause ?? fallback
+            st.stateBeforePause = nil
+        }
+    }
     var laneVolume: VolumeID {
         get { state.withLock { $0.laneVolume } }
     }
@@ -143,8 +174,10 @@ final class JobContext: Sendable {
 
     /// Records `jobStarted` before the job's first journal entry.
     func journalRecord(_ entry: JournalEntry) async throws {
-        let first = state.withLock { s -> Bool in defer { s.journaledStart = true }; return !s.journaledStart }
-        if first { try await journal.record(.jobStarted(job: id, description: snapshot().description)) }
+        if !state.withLock({ $0.journaledStart }) {
+            try await journal.record(.jobStarted(job: id, description: snapshot().description))   // retried after a failure
+            state.withLock { $0.journaledStart = true }
+        }
         try await journal.record(entry)
     }
     func journalClear(_ entry: JournalEntry) async { try? await journal.clear(entry) }
@@ -153,11 +186,11 @@ final class JobContext: Sendable {
     func checkpoint() async -> Bool { await control.checkpoint() }
     func cancelJob() { control.cancel(); setState(.cancelling) }
 
-    private func waitingForUser<T>(_ body: () async -> T) async -> T {
-        let previous = snapshot().state
+    fileprivate func waitingForUser<T>(_ body: () async -> T) async -> T {
+        let previous = effectiveState
         setState(.waitingForUser)
         let r = await body()
-        if snapshot().state == .waitingForUser { setState(previous) }
+        if effectiveState == .waitingForUser { setState(previous) }
         return r
     }
 
@@ -195,18 +228,22 @@ final class JobContext: Sendable {
     }
 
     // MARK: conflicts memory (used by ConflictExecutor, P1-22)
-    /// nil = nothing remembered for this class; ask the user.
+    /// nil = nothing remembered for this class; ask the user. A Compare answer covers only the items that
+    /// dialog listed; other conflicts (children inside a merge) use the per-class memory or ask (§6.4).
     func rememberedConflictAction(folder: Bool, source: URL) -> ConflictAction? {
         state.withLock { s in
-            if let map = s.perItemConflicts { return map[source] ?? .skip }
+            if s.perItemAnswered.contains(source) { return s.perItemConflicts[source] ?? .skip }
             return folder ? s.folderConflictAction : s.fileConflictAction
         }
     }
-    func rememberConflict(_ resolution: ConflictResolution, folder: Bool) {
+    /// `answering`: the sources the dialog listed (its pending pairs).
+    func rememberConflict(_ resolution: ConflictResolution, folder: Bool, answering: [URL]) {
         state.withLock { s in
             switch resolution {
             case .all(let a): if folder { s.folderConflictAction = a } else { s.fileConflictAction = a }
-            case .perItem(let m): s.perItemConflicts = m
+            case .perItem(let m):
+                s.perItemConflicts.merge(m) { _, new in new }
+                s.perItemAnswered.formUnion(answering)
             case .one, .cancelJob: break
             }
         }
@@ -285,10 +322,7 @@ enum JobRunner {
         case .copy(let sources, let destination):
             await CopyJob.run(ctx, sources: sources, destination: destination, duplicate: false)
         case .duplicate(let urls):
-            let groups = Dictionary(grouping: urls) { $0.deletingLastPathComponent().standardizedFileURL.path }
-            for parent in groups.keys.sorted() where !ctx.control.isCancelled {
-                await CopyJob.run(ctx, sources: groups[parent]!, destination: URL(filePath: parent, directoryHint: .isDirectory), duplicate: true)
-            }
+            await CopyJob.duplicate(ctx, urls)
         case .move(let sources, let destination):
             await MoveJob.run(ctx, sources: sources, destination: destination)
         case .trash(let urls):
@@ -334,11 +368,7 @@ extension JobContext {
 extension JobContext {
     /// "Delete permanently?" for items on volumes without a Trash.
     func askNoTrash(_ urls: [URL]) async -> Bool {
-        let previous = snapshot().state
-        setState(.waitingForUser)
-        let answer = await interaction.confirmPermanentDeleteWithoutTrash(urls, job: snapshot())
-        setState(previous)
-        return answer
+        await waitingForUser { await interaction.confirmPermanentDeleteWithoutTrash(urls, job: snapshot()) }
     }
 }
 

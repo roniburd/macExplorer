@@ -96,6 +96,12 @@ class FileOpsTestCase: XCTestCase {
         return await queue.outcome(of: id)
     }
 
+    /// Every direct `queue.enqueue` / `JobContext` in FileOps tests builds its request here: traps before anything is
+    /// enqueued if a URL is outside the sandbox (same guard as FileOpsWorld.request).
+    func request(_ kind: JobKind, registersUndo: Bool = true) -> JobRequest {
+        world.request(kind, registersUndo: registersUndo)
+    }
+
     // MARK: inspection (read-only)
 
     func text(_ u: URL) -> String? { (try? Data(contentsOf: u)).map { String(decoding: $0, as: UTF8.self) } }

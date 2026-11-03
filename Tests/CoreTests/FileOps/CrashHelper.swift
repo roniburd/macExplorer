@@ -39,6 +39,10 @@ final class CrashHelperEntry: XCTestCase {
         let destination = URL(filePath: spec.destination, directoryHint: .isDirectory)
         let kind: JobKind = spec.mode == "move" ? .move(sources: sources, destination: destination)
                                                 : .copy(sources: sources, destination: destination)
+        // Same guard on the request actually enqueued (the child has no FileOpsTestCase sandbox to delegate to).
+        for u in kind.allURLs where !u.resolvingSymlinksInPath().path.hasPrefix(tmp) && !u.path.hasPrefix(tmp) {
+            return XCTFail("crash helper refuses a job URL outside a test sandbox: \(u.path)")
+        }
         let id = await queue.enqueue(JobRequest(kind))
         _ = await queue.outcome(of: id)
         XCTFail("fault point \(spec.fault) was never reached")
