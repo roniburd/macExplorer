@@ -1210,11 +1210,13 @@ public struct FolderContext {
     public var makeWatcher: @MainActor (URL, UInt64, @escaping @Sendable (WatchEvent) -> Void) -> any ContentWatching
     public var permissionPending: @MainActor (URL) -> Bool     // Settings TCC outcome lookup
     public var recordPermissionOutcome: @MainActor (URL, Bool) -> Void   // granted true / EPERM false
+    public var home: URL       // P1-11: .relocate target when the volume goes away (pass Settings.home; sandbox root in sandbox mode)
     public init(readers: DirectoryReaders, lanes: LanePool, volumes: Volumes, changeBus: ChangeBus,
                 types: TypeRegistry = .shared, pacer: any FramePacer = TimerFramePacer(),
                 makeWatcher: @escaping @MainActor (URL, UInt64, @escaping @Sendable (WatchEvent) -> Void) -> any ContentWatching,
                 permissionPending: @escaping @MainActor (URL) -> Bool,
-                recordPermissionOutcome: @escaping @MainActor (URL, Bool) -> Void)
+                recordPermissionOutcome: @escaping @MainActor (URL, Bool) -> Void,
+                home: URL = FileManager.default.homeDirectoryForCurrentUser)
 }
 
 @MainActor

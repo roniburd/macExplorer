@@ -1,8 +1,7 @@
 import Foundation
 import MacxFS
 
-/// LocalChange posts (FileOps, §4.3) and the minimal watcher hookup (P1-11 replaces handleWatch with the
-/// buffered, classified path in FolderModel+Watch.swift).
+/// LocalChange posts (FileOps, §4.3) and the incremental patch path shared with the watcher (FolderModel+Watch).
 extension FolderModel {
     /// Stats every named item and patches the store (also wired automatically through ChangeBus). Posts for
     /// another directory are ignored; posts that arrive while the listing streams are applied once it completes.
@@ -15,23 +14,6 @@ extension FolderModel {
         case .complete: enqueuePatch(change.touchedNames, renames: change.renamed)
         case .loading, .partial, .unresponsive, .waitingForPermission: deferredChanges.append(change)
         case .error: break
-        }
-    }
-
-    /// Minimal P1-10 handling: names → incremental patch, rescan → full re-read. Root changes are P1-11's.
-    func handleWatch(_ event: WatchEvent) {
-        guard !closed else { return }
-        switch event {
-        case .items(let names):
-            if state == .complete {
-                enqueuePatch(names, renames: [])
-            } else {
-                deferredChanges.append(LocalChange(directory: directory, modified: names))
-            }
-        case .fullRescan:
-            beginReread()
-        case .rootChanged:
-            break
         }
     }
 

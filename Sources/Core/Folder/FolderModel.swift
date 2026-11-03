@@ -25,12 +25,16 @@ public struct FolderContext {
     public var makeWatcher: @MainActor (URL, UInt64, @escaping @Sendable (WatchEvent) -> Void) -> any ContentWatching
     public var permissionPending: @MainActor (URL) -> Bool     // Settings TCC outcome lookup
     public var recordPermissionOutcome: @MainActor (URL, Bool) -> Void   // granted true / EPERM false
+    /// Where a model relocates when its volume goes away (Settings.home: the sandbox root in sandbox mode).
+    public var home: URL
 
     public init(readers: DirectoryReaders, lanes: LanePool, volumes: Volumes, changeBus: ChangeBus,
                 types: TypeRegistry = .shared, pacer: any FramePacer = TimerFramePacer(),
                 makeWatcher: @escaping @MainActor (URL, UInt64, @escaping @Sendable (WatchEvent) -> Void) -> any ContentWatching,
                 permissionPending: @escaping @MainActor (URL) -> Bool,
-                recordPermissionOutcome: @escaping @MainActor (URL, Bool) -> Void) {
+                recordPermissionOutcome: @escaping @MainActor (URL, Bool) -> Void,
+                home: URL = FileManager.default.homeDirectoryForCurrentUser) {
+        self.home = home
         self.readers = readers
         self.lanes = lanes
         self.volumes = volumes
@@ -72,8 +76,15 @@ public final class FolderModel {
     private(set) var started = false
     private(set) var closed = false
     private var startEventID: UInt64 = 0
-    private var watcher: (any ContentWatching)?
+    private(set) var watcher: (any ContentWatching)?
     private var busToken: ObserverToken?
+    private var volumeToken: ObserverToken?
+    /// The volume the folder was opened on; when it leaves the volume list the model relocates home.
+    let openedVolume: VolumeID?
+
+    // Watcher (FolderModel+Watch)
+    var watchBuffer = WatchBuffer()
+    var relocated = false
 
     // The read in progress
     private var readTask: Task<Void, Never>?
@@ -100,6 +111,7 @@ public final class FolderModel {
         self.query = query
         let mode = context.volumes.volume(for: directory)?.capabilities.identityMode ?? .objectID
         self.store = EntryStore(identityMode: mode)
+        self.openedVolume = context.volumes.volume(for: directory)?.id
         self.worker = FolderWorker(types: context.types)
         let readers = context.readers
         readSource = { directory, generation, options in
@@ -120,6 +132,7 @@ public final class FolderModel {
         guard !started, !closed else { return }
         started = true
         busToken = context.changeBus.observe(directory: directory) { [weak self] change in self?.applyLocalChange(change) }
+        volumeToken = context.volumes.observe { [weak self] list in self?.volumesChanged(list) }
         startEventID = FSEventsGetCurrentEventId()
         beginLoad()
     }
@@ -155,10 +168,11 @@ public final class FolderModel {
         opTail?.cancel()
         readTask = nil
         pacerTask = nil
-        watcher?.stop()
-        watcher = nil
+        stopWatcher()
         busToken?.cancel()
         busToken = nil
+        volumeToken?.cancel()
+        volumeToken = nil
         let worker = self.worker
         Task { await worker.cancel() }
     }
@@ -396,6 +410,7 @@ public final class FolderModel {
             setState(.complete)
             startWatcher()
             flushDeferred()
+            flushWatchBuffer()
         case .failed(let failure):
             pacerTask?.cancel()
             pacerTask = nil
@@ -403,6 +418,7 @@ public final class FolderModel {
             guard !closed, generation == gen else { return }
             if failure.code == EPERM && failure.stage != .unresponsiveVolume { context.recordPermissionOutcome(directory, false) }
             if store.count > 0 || rowsPresented { clearRows() }
+            watchBuffer = WatchBuffer()
             setState(FolderState(failure))
         }
     }
@@ -486,8 +502,13 @@ public final class FolderModel {
         }
     }
 
+    func stopWatcher() {
+        watcher?.stop()
+        watcher = nil
+    }
+
     private func startWatcher() {
-        guard watcher == nil, !closed else { return }
+        guard watcher == nil, !closed, !relocated else { return }
         let w = context.makeWatcher(directory, startEventID) { [weak self] event in
             Task { @MainActor in self?.handleWatch(event) }
         }

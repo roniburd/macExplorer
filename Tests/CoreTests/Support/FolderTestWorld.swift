@@ -6,16 +6,27 @@ import MacxFixtures
 import Synchronization
 import XCTest
 
-/// One fake volume at "/" so every sandbox path maps to it, with the capabilities a test asks for.
+/// One fake volume at "/" so every sandbox path maps to it, with the capabilities a test asks for, plus any
+/// extra fake volumes a test mounts at sandbox paths (and later "unmounts").
 final class RootVolumeScanner: VolumeScanning {
     let caps: VolumeCapabilities
+    private let extra = Mutex<[VolumeInfo]>([])
     init(_ caps: VolumeCapabilities) { self.caps = caps }
     func scan() throws -> [VolumeInfo] {
         [VolumeInfo(id: VolumeID(raw: "test-root"), mountPoint: URL(filePath: "/", directoryHint: .isDirectory), name: "Root",
                     format: "APFS", isBoot: true, isInternal: true, isRemovable: false, isEjectable: false, isLocal: true,
-                    isReadOnly: false, isBrowsable: true, totalCapacity: nil, capabilities: caps)]
+                    isReadOnly: false, isBrowsable: true, totalCapacity: nil, capabilities: caps)] + extra.withLock { $0 }
     }
     func availableCapacity(of mountPoint: URL) -> Int64? { nil }
+
+    func addVolume(_ raw: String, at mountPoint: URL) {
+        let info = VolumeInfo(id: VolumeID(raw: raw), mountPoint: mountPoint, name: raw, format: "APFS", isBoot: false,
+                              isInternal: false, isRemovable: true, isEjectable: true, isLocal: true, isReadOnly: false,
+                              isBrowsable: true, totalCapacity: nil, capabilities: caps)
+        extra.withLock { $0.append(info) }
+    }
+
+    func removeVolume(_ raw: String) { extra.withLock { $0.removeAll { $0.id == VolumeID(raw: raw) } } }
 }
 
 /// Frames advance only when the test calls tick() (counts resets per frame).
@@ -38,11 +49,15 @@ final class ManualFramePacer: FramePacer {
     }
 }
 
-/// Records start/stop and the event ID it was created with.
+/// Records start/stop and the event ID it was created with; `send` plays the FSEvents side.
 final class RecordingWatcher: ContentWatching {
     let since: UInt64
     let log = Mutex<[String]>([])
-    init(since: UInt64) { self.since = since }
+    let send: @Sendable (WatchEvent) -> Void
+    init(since: UInt64, send: @escaping @Sendable (WatchEvent) -> Void = { _ in }) {
+        self.since = since
+        self.send = send
+    }
     func start() { log.withLock { $0.append("start") } }
     func stop() { log.withLock { $0.append("stop") } }
     var lastEventID: UInt64 { since }
@@ -108,6 +123,9 @@ final class FolderTestWorld {
     let readers: DirectoryReaders
     let bus = ChangeBus()
     var pacer: any FramePacer = TimerFramePacer(interval: .milliseconds(1))
+    /// true: models get a real FSEvents Watcher (50 ms latency) instead of a RecordingWatcher.
+    var realWatcher = false
+    let scanner: RootVolumeScanner
     var pending: Set<String> = []
     private(set) var outcomes: [(String, Bool)] = []
     private(set) var watchers: [RecordingWatcher] = []
@@ -126,7 +144,8 @@ final class FolderTestWorld {
     private init(caps: VolumeCapabilities) throws {
         sandbox = try Sandbox(prefix: "macx-tests")
         lanes = LanePool()
-        volumes = Volumes(lanes: lanes, scanner: RootVolumeScanner(caps), events: nil)
+        scanner = RootVolumeScanner(caps)
+        volumes = Volumes(lanes: lanes, scanner: scanner, events: nil)
         readers = DirectoryReaders(lanes: lanes, mountTable: volumes.mountTableStore)
     }
 
@@ -138,13 +157,17 @@ final class FolderTestWorld {
 
     var context: FolderContext {
         FolderContext(readers: readers, lanes: lanes, volumes: volumes, changeBus: bus, pacer: pacer,
-                      makeWatcher: { [weak self] _, since, _ in
-                          let w = RecordingWatcher(since: since)
+                      makeWatcher: { [weak self] directory, since, handler in
+                          if self?.realWatcher == true {
+                              return Watcher(directory: directory, since: since, latency: .milliseconds(50), handler: handler)
+                          }
+                          let w = RecordingWatcher(since: since, send: handler)
                           self?.watchers.append(w)
                           return w
                       },
                       permissionPending: { [weak self] url in self?.pending.contains(url.lastPathComponent) ?? false },
-                      recordPermissionOutcome: { [weak self] url, granted in self?.outcomes.append((url.lastPathComponent, granted)) })
+                      recordPermissionOutcome: { [weak self] url, granted in self?.outcomes.append((url.lastPathComponent, granted)) },
+                      home: sandbox.root)
     }
 
     var outcomeLog: [String] { outcomes.map { "\($0.0):\($0.1)" } }
@@ -225,6 +248,9 @@ final class EventLog {
     var selections: [Selection] { events.compactMap { if case .selection(let s) = $0 { s } else { nil } } }
     var renames: [Int] { events.compactMap { if case .beginRename(let r) = $0 { r } else { nil } } }
     var queries: [ViewQuery] { events.compactMap { if case .query(let q) = $0 { q } else { nil } } }
+    var relocations: [(URL, RelocationReason)] {
+        events.compactMap { if case .relocate(let url, let reason) = $0 { (url, reason) } else { nil } }
+    }
 }
 
 extension FolderModel {
