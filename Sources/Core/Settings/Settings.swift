@@ -48,8 +48,12 @@ public final class Settings {
     public var showFullPathInTitle: Bool { didSet { save(showFullPathInTitle, Key.showFullPathInTitle) } }
     public var onboardingCompleted: Bool { didSet { save(onboardingCompleted, Key.onboardingCompleted) } }
     public var lastLocation: URL? { didSet { save(lastLocation, Key.lastLocation) } }
-    /// ≤ 20, most recent first.
-    public private(set) var recentLocations: [String] { didSet { save(recentLocations, Key.recentLocations) } }
+    /// ≤ 20, most recent first. Settable (§3.9; e.g. "clear recents" assigns []); longer lists are clamped.
+    public var recentLocations: [String] {
+        get { recents }
+        set { recents = Array(newValue.prefix(Self.recentLocationsLimit)) }
+    }
+    private var recents: [String] { didSet { save(recents, Key.recentLocations) } }
     private var tccOutcomes: [ProtectedLocation: TCCOutcome] { didSet { save(tccOutcomes.map(TCCRecord.init), Key.tccOutcomes) } }
 
     public init(storage: any SettingsStorage, home: URL = FileManager.default.homeDirectoryForCurrentUser) {
@@ -79,7 +83,7 @@ public final class Settings {
         showFullPathInTitle = Self.load(Bool.self, Key.showFullPathInTitle, from: storage) ?? false
         onboardingCompleted = Self.load(Bool.self, Key.onboardingCompleted, from: storage) ?? false
         lastLocation = Self.load(URL.self, Key.lastLocation, from: storage)
-        recentLocations = Array((Self.load([String].self, Key.recentLocations, from: storage) ?? []).prefix(Self.recentLocationsLimit))
+        recents = Array((Self.load([String].self, Key.recentLocations, from: storage) ?? []).prefix(Self.recentLocationsLimit))
         let records = Self.load([TCCRecord].self, Key.tccOutcomes, from: storage) ?? []
         tccOutcomes = Dictionary(records.map { ($0.location, $0.outcome) }, uniquingKeysWith: { _, last in last })
         if (stored ?? 0) < Self.schemaVersion {
@@ -91,7 +95,7 @@ public final class Settings {
         guard !path.isEmpty else { return }
         var list = recentLocations.filter { $0 != path }
         list.insert(path, at: 0)
-        recentLocations = Array(list.prefix(Self.recentLocationsLimit))
+        recentLocations = list
     }
 
     public func tccOutcome(for location: ProtectedLocation) -> TCCOutcome? { tccOutcomes[location] }

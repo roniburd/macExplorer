@@ -6,7 +6,8 @@ import MacxFS
 /// bundles run on a read lane; open and set-default calls are asynchronous XPC requests and are awaited directly.
 /// Tests never use it for `open`/`setDefaultApplication` (Global Constraints): they use `FakeLaunchServices`.
 public final class WorkspaceLaunchServices: LaunchServicesProviding {
-    /// Lane key: LaunchServices lookups never share (or poison) a real volume's lanes.
+    /// Lane key: LaunchServices lookups never share (or poison) a real volume's lanes. Lookups use
+    /// `performRecovering`, so a slow cold query that returns late does not leave this key unresponsive.
     static let lane = VolumeID(raw: "system:launch-services")
 
     private let lanes: LanePool
@@ -14,21 +15,21 @@ public final class WorkspaceLaunchServices: LaunchServicesProviding {
     public init(lanes: LanePool) { self.lanes = lanes }
 
     public func applications(toOpen file: URL) async -> [AppInfo] {
-        (try? await lanes.perform(on: Self.lane, .read) { _ in
+        (try? await lanes.performRecovering(on: Self.lane, .read) { _ in
             assertOffMain()
             return NSWorkspace.shared.urlsForApplications(toOpen: file).map(Self.info)
         }) ?? []
     }
 
     public func defaultApplication(toOpen file: URL) async -> AppInfo? {
-        (try? await lanes.perform(on: Self.lane, .read) { _ in
+        (try? await lanes.performRecovering(on: Self.lane, .read) { _ in
             assertOffMain()
             return NSWorkspace.shared.urlForApplication(toOpen: file).map(Self.info)
         }) ?? nil
     }
 
     public func appInfo(at appURL: URL) async -> AppInfo? {
-        (try? await lanes.perform(on: Self.lane, .read) { _ in
+        (try? await lanes.performRecovering(on: Self.lane, .read) { _ in
             assertOffMain()
             return FileManager.default.fileExists(atPath: appURL.path(percentEncoded: false)) ? Self.info(appURL) : nil
         }) ?? nil

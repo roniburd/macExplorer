@@ -230,11 +230,33 @@ final class WorkspaceEjectorTests: XCTestCase {
         return mountPath(of: path).map { canonical(trimmed($0)) } == canonical(trimmed(path))
     }
 
+    private struct NotOurImage: Error, CustomStringConvertible { let description: String }
+
+    /// Throws (stopping the test) unless the image really is mounted at its sandbox mount point.
     private func image() throws -> DiskImage {
         let image = try DiskImage.create(in: sandbox, format: .hfsPlus, sizeMB: 16, volumeName: "MACXEJECT")
+        guard isMounted(image) else { throw NotOurImage(description: "image not mounted at \(image.mountPoint.path)") }
         try sandbox.createFile(image.relativeMountPath + "/held.txt")
-        XCTAssertTrue(isMounted(image))
         return image
+    }
+
+    /// The volume a test is about to eject must be the test's own image: same mount point (inside the sandbox) and
+    /// the same file system as the image's mount point. Anything else — e.g. the containing data volume after a
+    /// failed mount — throws before eject is called.
+    private func ourVolume(_ volumes: Volumes, _ image: DiskImage) throws -> VolumeInfo {
+        guard isMounted(image) else { throw NotOurImage(description: "image no longer mounted") }
+        let info = try XCTUnwrap(volumes.volume(for: image.mountPoint.appending(path: "held.txt")))
+        let key = { (url: URL) in ChangeBus.key(for: url) }
+        guard key(info.mountPoint) == key(image.mountPoint), sandbox.contains(info.mountPoint) else {
+            throw NotOurImage(description: "volume for the image path is \(info.mountPoint.path), not the test image")
+        }
+        var ours = statfs(), theirs = statfs()
+        guard statfs(image.mountPoint.path(percentEncoded: false), &ours) == 0,
+              statfs(info.mountPoint.path(percentEncoded: false), &theirs) == 0,
+              ours.f_fsid.val.0 == theirs.f_fsid.val.0, ours.f_fsid.val.1 == theirs.f_fsid.val.1 else {
+            throw NotOurImage(description: "file system at \(info.mountPoint.path) is not the test image's")
+        }
+        return info
     }
 
     private func ejectError(_ ejector: any Ejecting, _ url: URL) async -> EjectError? {
@@ -277,11 +299,21 @@ final class WorkspaceEjectorTests: XCTestCase {
         XCTAssertTrue(isMounted(image))
     }
 
+    func testGuardRefusesTheContainingVolumeWhenTheImageIsGone() async throws {
+        let image = try image()
+        try image.detach()
+        let volumes = Volumes(lanes: lanes, events: nil)
+        await volumes.refresh()
+        let containing = try XCTUnwrap(volumes.volume(for: image.mountPoint))
+        XCTAssertFalse(sandbox.contains(containing.mountPoint), "the lookup now lands on a real system volume")
+        XCTAssertThrowsError(try ourVolume(volumes, image), "never handed to eject")
+    }
+
     func testCoordinatorRetriesAfterReleasingOurOwnHold() async throws {
         let image = try image()
         let volumes = Volumes(lanes: lanes, events: nil)
         await volumes.refresh()
-        let info = try XCTUnwrap(volumes.volume(for: image.mountPoint.appending(path: "held.txt")))
+        let info = try ourVolume(volumes, image)
         let fd = open(image.mountPoint.appending(path: "held.txt").path(percentEncoded: false), O_RDONLY)
         XCTAssertGreaterThanOrEqual(fd, 0)
         var releases = 0
@@ -310,7 +342,7 @@ final class WorkspaceEjectorTests: XCTestCase {
         defer { sleeper.terminate(); sleeper.waitUntilExit() }
         let volumes = Volumes(lanes: lanes, events: nil)
         await volumes.refresh()
-        let info = try XCTUnwrap(volumes.volume(for: image.mountPoint.appending(path: "held.txt")))
+        let info = try ourVolume(volumes, image)
         var releases = 0
         tokens.append(volumes.addReleaseHandler { _ in releases += 1 })
         let coordinator = EjectCoordinator(volumes: volumes, ejector: WorkspaceEjector(lanes: lanes))

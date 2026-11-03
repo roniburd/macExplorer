@@ -29,11 +29,12 @@ public struct ResolvedFavorite: Sendable, Hashable {
     }
 }
 
-/// Each bookmark resolves in its own LanePool.perform on VolumeID.unknown, so one hung network bookmark
-/// poisons only its lane and the others still resolve.
+/// Each bookmark resolves in its own lane call on the volume of its lastKnownPath (through the mount table, when
+/// given), else on VolumeID.unknown: one hung network favorite poisons only its share's lanes, never the local
+/// favorites'. Calls on `.unknown` use `performRecovering`, so slow-but-finite resolutions don't leave it unresponsive.
 public enum FavoritesResolver {
     public static func makeFavorite(for url: URL, lanes: LanePool) async throws -> Favorite {
-        try await lanes.perform(on: .unknown, .read) { _ in
+        try await lanes.performRecovering(on: .unknown, .read) { _ in
             let bookmark = try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
             let values = try? url.resourceValues(forKeys: [.localizedNameKey])
             let name = values?.localizedName ?? url.lastPathComponent
@@ -41,12 +42,19 @@ public enum FavoritesResolver {
         }
     }
 
-    public static func resolve(_ favorites: [Favorite], lanes: LanePool) async -> [ResolvedFavorite] {
+    public static func resolve(_ favorites: [Favorite], lanes: LanePool, mountTable: MountTable = .empty) async -> [ResolvedFavorite] {
         await withTaskGroup(of: (Int, ResolvedFavorite).self) { group in
             for (index, favorite) in favorites.enumerated() {
+                let volume = lane(for: favorite, in: mountTable)
                 group.addTask {
                     do {
-                        return (index, try await lanes.perform(on: .unknown, .read) { _ in resolveNow(favorite) })
+                        let resolved: ResolvedFavorite
+                        if volume == .unknown {
+                            resolved = try await lanes.performRecovering(on: volume, .read) { _ in resolveNow(favorite) }
+                        } else {
+                            resolved = try await lanes.perform(on: volume, .read) { _ in resolveNow(favorite) }
+                        }
+                        return (index, resolved)
                     } catch {
                         return (index, ResolvedFavorite(favorite: favorite, url: nil, isStale: false))
                     }
@@ -56,6 +64,11 @@ public enum FavoritesResolver {
             for await (index, resolved) in group { results[index] = resolved }
             return results.compactMap { $0 }
         }
+    }
+
+    /// The lane volume a favorite resolves on: the mounted volume containing its last known path, else `.unknown`.
+    static func lane(for favorite: Favorite, in table: MountTable) -> VolumeID {
+        table.volume(containing: favorite.lastKnownPath)?.id ?? .unknown
     }
 
     public static func defaultFavoriteURL(_ f: DefaultFavorite, home: URL) -> URL {

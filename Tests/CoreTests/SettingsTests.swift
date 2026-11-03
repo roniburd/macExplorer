@@ -60,10 +60,12 @@ final class SettingsStorageTests: XCTestCase {
         XCTAssertNil(a.data(forKey: "k"), "a missing file is an empty store")
         a.set(Data("v1".utf8), forKey: "k")
         a.set(Data("w".utf8), forKey: "other")
+        a.flush()
         XCTAssertTrue(FileManager.default.fileExists(atPath: file.path(percentEncoded: false)), "creates the parent directory")
         let b = FileSettingsStorage(fileURL: file)
         XCTAssertEqual(b.data(forKey: "k"), Data("v1".utf8))
         b.set(nil, forKey: "k")
+        b.flush()
         let c = FileSettingsStorage(fileURL: file)
         XCTAssertNil(c.data(forKey: "k"))
         XCTAssertEqual(c.data(forKey: "other"), Data("w".utf8))
@@ -74,14 +76,45 @@ final class SettingsStorageTests: XCTestCase {
         let s = FileSettingsStorage(fileURL: sandbox.url("settings.json"))
         XCTAssertNil(s.data(forKey: "k"))
         s.set(Data("v".utf8), forKey: "k")
+        s.flush()
         XCTAssertEqual(FileSettingsStorage(fileURL: sandbox.url("settings.json")).data(forKey: "k"), Data("v".utf8))
     }
 
     func testFileStorageLeavesNoTemporaryFiles() throws {
         let s = FileSettingsStorage(fileURL: sandbox.url("settings.json"))
         for i in 0..<5 { s.set(Data([UInt8(i)]), forKey: "k\(i)") }
+        s.flush()
         let names = try FileManager.default.contentsOfDirectory(atPath: sandbox.root.path(percentEncoded: false))
         XCTAssertEqual(names, ["settings.json"])
+    }
+
+    /// §4.4: a set never writes on main; writes are coalesced and land off main after the debounce.
+    func testFileStorageCoalescesWritesOffMain() async throws {
+        let file = sandbox.url("settings.json")
+        let s = FileSettingsStorage(fileURL: file, debounce: .milliseconds(100))
+        for i in 0..<200 { s.set(Data([UInt8(i % 256)]), forKey: "width") }      // a column-resize drag
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path(percentEncoded: false)), "set does no file I/O")
+        let deadline = ContinuousClock.now + .seconds(5)
+        while s.writeCount == 0, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(s.writeCount, 1, "one write for the whole drag")
+        XCTAssertEqual(FileSettingsStorage(fileURL: file).data(forKey: "width"), Data([199]))
+        XCTAssertFalse(s.lastWriteWasOnMain)
+    }
+
+    func testFileStorageFlushWritesNowAndDeinitFlushesPending() throws {
+        let file = sandbox.url("settings.json")
+        let s = FileSettingsStorage(fileURL: file, debounce: .seconds(60))
+        s.set(Data("now".utf8), forKey: "k")
+        s.flush()
+        XCTAssertEqual(FileSettingsStorage(fileURL: file).data(forKey: "k"), Data("now".utf8))
+        s.flush()
+        XCTAssertEqual(s.writeCount, 1, "nothing pending → no write")
+        do {
+            let t = FileSettingsStorage(fileURL: file, debounce: .seconds(60))
+            t.set(Data("late".utf8), forKey: "k")
+        }
+        XCTAssertEqual(FileSettingsStorage(fileURL: file).data(forKey: "k"), Data("late".utf8), "a released store writes what it held")
     }
 }
 
@@ -208,9 +241,11 @@ final class SettingsTests: XCTestCase {
         let sandbox = try Sandbox()
         defer { sandbox.destroy() }
         let file = sandbox.url("state/settings.json")
-        let s = Settings(storage: FileSettingsStorage(fileURL: file), home: sandbox.root)
+        let storage = FileSettingsStorage(fileURL: file)
+        let s = Settings(storage: storage, home: sandbox.root)
         s.density = .comfortable
         s.recordTCCOutcome(.granted, for: .desktop)
+        storage.flush()
         let r = Settings(storage: FileSettingsStorage(fileURL: file), home: sandbox.root)
         XCTAssertEqual(r.density, .comfortable)
         XCTAssertEqual(r.tccOutcome(for: .desktop), .granted)
@@ -249,6 +284,18 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(Settings.recentLocationsLimit, 20)
         XCTAssertEqual(s.recentLocations.first, "/p29")
         XCTAssertEqual(s.recentLocations.last, "/p10")
+    }
+
+    /// §3.9: settable (P1-27 recents, P1-30 "clear recents"), clamped to the limit and persisted.
+    func testRecentLocationsAreSettableAndClamped() {
+        let storage = InMemorySettingsStorage()
+        let s = Settings(storage: storage, home: home)
+        s.recentLocations = (0..<25).map { "/r\($0)" }
+        XCTAssertEqual(s.recentLocations.count, Settings.recentLocationsLimit)
+        XCTAssertEqual(s.recentLocations.first, "/r0")
+        XCTAssertEqual(Settings(storage: storage, home: home).recentLocations.count, Settings.recentLocationsLimit)
+        s.recentLocations = []
+        XCTAssertEqual(Settings(storage: storage, home: home).recentLocations, [], "clear recents")
     }
 
     func testRecordingAnOutcomeOverwritesThePreviousOne() {

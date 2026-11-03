@@ -1323,7 +1323,10 @@ public final class TreeWatcher {
     func set(_ data: Data?, forKey key: String)
 }
 @MainActor public final class UserDefaultsStorage: SettingsStorage { public init(_ defaults: UserDefaults = .standard) }  // app only
-@MainActor public final class FileSettingsStorage: SettingsStorage { public init(fileURL: URL) }  // --state-dir
+@MainActor public final class FileSettingsStorage: SettingsStorage {  // --state-dir
+    public init(fileURL: URL, debounce: Duration = .milliseconds(250))  // sets coalesce; encode+write on a private writer queue
+    public func flush()                                                 // synchronous write of anything pending (termination; deinit flushes too)
+}
 @MainActor public final class InMemorySettingsStorage: SettingsStorage { public init() }           // tests
 
 // Settings/SettingsTypes.swift
@@ -1353,11 +1356,12 @@ public struct Favorite: Sendable, Codable, Hashable, Identifiable {
     public init(id: UUID = UUID(), bookmark: Data, displayName: String, lastKnownPath: String)
 }
 public struct ResolvedFavorite: Sendable, Hashable { public var favorite: Favorite; public var url: URL?; public var isStale: Bool }
-/// Each bookmark resolves in its own LanePool.perform on VolumeID.unknown, so one hung network bookmark
-/// poisons only its lane and the others still resolve.
+/// Each bookmark resolves in its own lane call on the volume of its lastKnownPath (mountTable, when given; pass
+/// volumes.mountTable), else on VolumeID.unknown with reset-after-late-return, so one hung network bookmark
+/// poisons only its share's lanes and the others still resolve.
 public enum FavoritesResolver {
     public static func makeFavorite(for url: URL, lanes: LanePool) async throws -> Favorite
-    public static func resolve(_ favorites: [Favorite], lanes: LanePool) async -> [ResolvedFavorite]
+    public static func resolve(_ favorites: [Favorite], lanes: LanePool, mountTable: MountTable = .empty) async -> [ResolvedFavorite]
     public static func defaultFavoriteURL(_ f: DefaultFavorite, home: URL) -> URL
 }
 
