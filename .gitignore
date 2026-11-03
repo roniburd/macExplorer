@@ -1,4 +1,8 @@
 .superpowers/
 .build/
+.swiftpm/
+*.xcodeproj
 *.app
+bench-*.json
 .DS_Store
+brainstorm

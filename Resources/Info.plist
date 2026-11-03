@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>macExplorer</string>
+	<key>CFBundleExecutable</key>
+	<string>macExplorer</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.macexplorer.app</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>macExplorer</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.productivity</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>26.0</string>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>macExplorer shows and manages the files in your Desktop folder when you browse it.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>macExplorer shows and manages the files in your Documents folder when you browse it.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>macExplorer shows and manages the files in your Downloads folder when you browse it.</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright © 2026 macExplorer contributors. MIT License.</string>
+	<key>NSNetworkVolumesUsageDescription</key>
+	<string>macExplorer shows and manages the files on network volumes when you browse them.</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>NSRemovableVolumesUsageDescription</key>
+	<string>macExplorer shows and manages the files on removable volumes when you browse them.</string>
+	<key>NSSupportsAutomaticTermination</key>
+	<false/>
+	<key>NSSupportsSuddenTermination</key>
+	<false/>
+</dict>
+</plist>
