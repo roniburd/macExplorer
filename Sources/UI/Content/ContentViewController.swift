@@ -16,6 +16,7 @@ final class ContentViewController: CommandHandlingViewController {
     let listContainer = NSView()
     let emptyState = EmptyStateView()
     let banner = BannerView()
+    private lazy var menuBuilder = ContextMenuBuilder(context: context)
     private lazy var externalOpener: any ExternalURLOpening = ExternalOpeners.opener(for: context.options)
     private(set) var activeList: FileListView
     private var mountedListView: NSView?
@@ -87,10 +88,14 @@ final class ContentViewController: CommandHandlingViewController {
         super.viewDidLoad()
         emptyState.onAction = { [weak self] action in self?.performEmptyStateAction(action) }
         addChild(details)
+        details.contextMenuProvider = { [weak self] row in self?.contextMenu(forRow: row) }
+        NotificationCenter.default.addObserver(self, selector: #selector(applicationDidBecomeActive(_:)),
+                                               name: NSApplication.didBecomeActiveNotification, object: nil)
         sessionToken = session.observe { [weak self] event in self?.handle(event) }
         volumesToken = context.environment.volumes.observe { [weak self] _ in self?.refreshFreeSpace(force: true) }
         finishedToken = context.environment.operations.onFinished { [weak self] _, _ in self?.refreshFreeSpace(force: true) }
-        clipboardToken = context.environment.clipboard.observe { [weak self] in self?.updateCommandBar() }   // Paste enablement
+        // Cut dimming and Paste enablement (§5.6)
+        clipboardToken = context.environment.clipboard.observe { [weak self] in self?.refreshCutNames() }
         settingsLoop = ObservationLoop { [weak self] in
             _ = self?.context.environment.settings.commandBarVisible
         } onChange: { [weak self] in
@@ -123,6 +128,7 @@ final class ContentViewController: CommandHandlingViewController {
             self.handle(event)
         }
         activeList.bind(folder)
+        refreshCutNames()
         refreshFreeSpace(force: false)
         updateStatus()
         updateCommandBar()
@@ -174,6 +180,29 @@ final class ContentViewController: CommandHandlingViewController {
         }
     }
 
+    // MARK: context menus and clipboard (P1-35)
+
+    /// Right-click rule (§5.6, Review Focus 1). S6's scenario driver calls this for `rightClick` steps.
+    func contextMenu(forRow row: Int?) -> NSMenu? {
+        guard let handler else { return nil }
+        let folder = session.folder
+        let rule = ContextMenuBuilder.contextRows(clickedRow: row, selectedRows: folder.selection.rows)
+        if let select = rule.select { folder.select(select) }
+        if let rows = rule.rows, !rows.isEmpty { return menuBuilder.itemMenu(for: rows, in: folder, handler: handler) }
+        return menuBuilder.emptySpaceMenu(for: folder, handler: handler)
+    }
+
+    func refreshCutNames() {
+        let folder = session.folder
+        folder.cutNames = context.environment.clipboard.cutNames(in: folder.directory)
+        activeList.reloadSelectionDrawing()
+        updateCommandBar()
+    }
+
+    @objc private func applicationDidBecomeActive(_ note: Notification) {
+        context.environment.clipboard.revalidate()   // §5.6: poll changeCount on activation
+    }
+
     // MARK: view mode
 
     func setViewMode(_ mode: ViewMode) {
@@ -195,6 +224,7 @@ final class ContentViewController: CommandHandlingViewController {
         if let icons { return icons }
         let created = IconsViewController(context: context)
         addChild(created)
+        created.contextMenuProvider = { [weak self] row in self?.contextMenu(forRow: row) }
         icons = created
         return created
     }

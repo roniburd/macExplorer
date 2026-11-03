@@ -12,7 +12,7 @@ enum CommandTarget {
     case location(URL)                                   // a LOCATIONS row that is a folder, not a volume (iCloud Drive)
 }
 
-/// Runs commands. P1-26 installs the interim `ShellCommandHandler`; P1-35's FileCommandController replaces it.
+/// Runs commands. BrowserWindowController installs one FileCommandController (P1-35) on the content and sidebar panes.
 @MainActor protocol CommandHandler: AnyObject {
     func canPerform(_ command: Command, target: CommandTarget) -> Bool
     func perform(_ command: Command, target: CommandTarget, sender: Any?)

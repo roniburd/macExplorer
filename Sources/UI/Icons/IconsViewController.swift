@@ -72,7 +72,17 @@ final class FileCollectionView: NSCollectionView {
 
     override func mouseDown(with event: NSEvent) {
         guard let owner else { return super.mouseDown(with: event) }
+        if event.modifierFlags.contains(.control) {   // ⌃-click opens the context menu immediately (§5.6)
+            if let menu = menu(for: event) { NSMenu.popUpContextMenu(menu, with: event, for: self) }
+            return
+        }
         owner.handleMouseDown(event)
+    }
+
+    /// Right-click rule (§5.6): ContentViewController.contextMenu(forRow:).
+    override func menu(for event: NSEvent) -> NSMenu? {
+        guard let owner else { return nil }
+        return owner.contextMenuProvider?(owner.layout.itemIndex(at: convert(event.locationInWindow, from: nil)))
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -97,6 +107,8 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
     let mouse = ListMouseHandler()
     let typeSelect = TypeSelect()
     private(set) var renameController: InlineRenameController?
+    /// Installed by ContentViewController (P1-35): item under the click, nil for empty space.
+    var contextMenuProvider: ((Int?) -> NSMenu?)?
     var focusView: NSView { collectionView }
     private var settings: Settings { context.environment.settings }
     private var points: Double { layout.iconSize.points }

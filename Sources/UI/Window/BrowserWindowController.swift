@@ -48,10 +48,10 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
         window.contentViewController = splitViewController
         window.setContentSize(NSSize(width: 1000, height: 640))
 
-        // Interim handler (P1-26): navigation and window commands. P1-35 installs FileCommandController instead.
-        let shell = ShellCommandHandler(context: context, window: self)
-        contentPane?.handler = shell
-        sidebarPane?.handler = shell
+        // One FileCommandController per window runs every command for the content and the sidebar (P1-35).
+        let fileCommands = FileCommandController(context: context, window: self)
+        contentPane?.handler = fileCommands
+        sidebarPane?.handler = fileCommands
 
         installToolbarHooks()
         sessionToken = session.observe { [weak self] event in self?.handle(event) }

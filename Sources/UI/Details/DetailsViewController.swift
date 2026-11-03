@@ -3,8 +3,8 @@ import os
 import Core
 import MacxFS
 
-/// NSTableView with the routing the content view needs. P1-35 adds context menus, P1-36 drags and right-drag.
-final class FileTableView: NSTableView {
+/// NSTableView with the routing the content view needs. P1-36 adds drags and right-drag.
+final class FileTableView: NSTableView, @MainActor NSServicesMenuRequestor {
     weak var owner: DetailsViewController?
 
     override func keyDown(with event: NSEvent) {
@@ -15,6 +15,10 @@ final class FileTableView: NSTableView {
     /// Model-owned selection (S5-C4): NSTableView's own click tracking never runs.
     override func mouseDown(with event: NSEvent) {
         guard let owner else { return super.mouseDown(with: event) }
+        if event.modifierFlags.contains(.control) {   // ⌃-click opens the context menu immediately (§5.6)
+            if let menu = menu(for: event) { NSMenu.popUpContextMenu(menu, with: event, for: self) }
+            return
+        }
         owner.handleMouseDown(event)
     }
 
@@ -26,6 +30,24 @@ final class FileTableView: NSTableView {
     /// ⌘A goes to the content controller's selectAll: (model selection), not NSTableView's built-in one.
     override func selectAll(_ sender: Any?) {
         _ = nextResponder?.tryToPerform(#selector(NSText.selectAll(_:)), with: sender)
+    }
+
+    /// Right-click rule (§5.6): ContentViewController.contextMenu(forRow:).
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let row = row(at: convert(event.locationInWindow, from: nil))
+        return owner?.contextMenuProvider?(row >= 0 ? row : nil)
+    }
+
+    // Services ▸ (§5.6): the selection as file URLs.
+    override func validRequestor(forSendType sendType: NSPasteboard.PasteboardType?, returnType: NSPasteboard.PasteboardType?) -> Any? {
+        if returnType == nil, sendType == .fileURL || sendType == .string, owner?.folder?.selection.isEmpty == false { return self }
+        return super.validRequestor(forSendType: sendType, returnType: returnType)
+    }
+
+    func writeSelection(to pboard: NSPasteboard, types: [NSPasteboard.PasteboardType]) -> Bool {
+        guard let urls = owner?.folder?.selectedURLs, !urls.isEmpty else { return false }
+        pboard.clearContents()
+        return pboard.writeObjects(urls.map { $0 as NSURL })
     }
 }
 
@@ -44,6 +66,8 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     let mouse = ListMouseHandler()
     let typeSelect = TypeSelect()
     private(set) var renameController: InlineRenameController?
+    /// Installed by ContentViewController (P1-35): row under the click, nil for empty space.
+    var contextMenuProvider: ((Int?) -> NSMenu?)?
 
     var focusView: NSView { tableView }
     var iconPoints: Double { settings.density == .comfortable ? 20 : 16 }
