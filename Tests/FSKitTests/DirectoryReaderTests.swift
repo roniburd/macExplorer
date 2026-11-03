@@ -173,5 +173,38 @@ final class DirectoryReaderTests: XCTestCase {
         XCTAssertEqual((0..<result.batch.count).map { result.batch.name(at: $0) }, ["a.txt", "link"])
         XCTAssertEqual(result.batch.entries[1].kind, .symlink, "never follows symlinks")
         XCTAssertEqual(result.missing, ["gone.txt"])
+        XCTAssertEqual(result.errors, [:])
+    }
+
+    func testReadItemsKeepsNamesThatFailForOtherReasons() async throws {
+        let dir = try sandbox.createDirectory("noexec")
+        try sandbox.createFile("noexec/a.txt")
+        try sandbox.setMode("noexec", 0o400)                          // readable, not searchable: stat → EACCES
+        let reader = DirectoryReader(volume: vol, lanes: LanePool(config: fastLanes))
+        let result = try await reader.readItems(["a.txt"], in: dir, generation: .initial)
+        try sandbox.setMode("noexec", 0o755)
+        XCTAssertEqual(result.batch.count, 0)
+        XCTAssertEqual(result.missing, [], "an unreadable name still exists")
+        XCTAssertEqual(result.errors, ["a.txt": EACCES])
+        let plain = try sandbox.createDirectory("plain")
+        let long = String(repeating: "n", count: 300)
+        let other = try await reader.readItems([long], in: plain, generation: .initial)
+        XCTAssertEqual(other.errors, [long: ENAMETOOLONG])
+    }
+
+    func testReadItemsThrowsWhenTheDirectoryCannotBeOpened() async throws {
+        let dir = try sandbox.createDirectory("locked")
+        try sandbox.createFile("locked/a.txt")
+        try sandbox.setMode("locked", 0o000)
+        let reader = DirectoryReader(volume: vol, lanes: LanePool(config: fastLanes))
+        do {
+            _ = try await reader.readItems(["a.txt"], in: dir, generation: .initial)
+            XCTFail("expected a ReadFailure")
+        } catch let failure as ReadFailure {
+            XCTAssertEqual(failure, ReadFailure(code: EACCES, stage: .open))
+        }
+        try sandbox.setMode("locked", 0o755)
+        let gone = try await reader.readItems(["a.txt", "b"], in: sandbox.url("vanished"), generation: .initial)
+        XCTAssertEqual(gone.missing, ["a.txt", "b"], "a vanished directory means its names are gone")
     }
 }

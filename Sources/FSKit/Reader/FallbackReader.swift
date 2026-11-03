@@ -11,7 +11,12 @@ public enum FallbackReader {
         let fd = try openDirectory(directory)
         let listFD = dup(fd)
         defer { close(fd) }
-        guard listFD >= 0, let dir = fdopendir(listFD) else { throw ReadFailure(code: errno, stage: .open) }
+        guard listFD >= 0 else { throw ReadFailure(code: errno, stage: .open) }
+        guard let dir = fdopendir(listFD) else {
+            let code = errno
+            close(listFD)
+            throw ReadFailure(code: code, stage: .open)
+        }
         defer { closedir(dir) }
         var converter = RecordConverter(types: types)
         var accumulator = BatchAccumulator(batchSize: options.batchSize, interval: options.batchInterval)
@@ -24,14 +29,16 @@ public enum FallbackReader {
                 if errno != 0 { throw ReadFailure(code: errno, stage: .read) }
                 break
             }
-            let name = withUnsafeBytes(of: dent.pointee.d_name) { raw in
-                Array(raw.prefix(Int(dent.pointee.d_namlen)).bindMemory(to: UInt8.self))
+            // Raw dirent bytes, NUL-terminated: never re-encode (SMB/NFS/FAT names may not be valid UTF-8).
+            var cName = withUnsafeBytes(of: dent.pointee.d_name) { raw in
+                Array(raw.prefix(Int(dent.pointee.d_namlen)).bindMemory(to: CChar.self))
             }
+            let name = cName.map { UInt8(bitPattern: $0) }
             if name == [0x2E] || name == [0x2E, 0x2E] { continue }
+            cName.append(0)
             var record = cfsk_record()
-            let rc = name.withUnsafeBufferPointer { nb -> Int32 in
-                let cName = String(decoding: nb, as: UTF8.self)
-                return buffer.withUnsafeMutableBytes { cfsk_stat_at(fd, cName, $0.baseAddress, $0.count, &record) }
+            let rc = cName.withUnsafeBufferPointer { nb -> Int32 in
+                buffer.withUnsafeMutableBytes { cfsk_stat_at(fd, nb.baseAddress, $0.baseAddress, $0.count, &record) }
             }
             if rc != 0 {
                 let code = errno

@@ -59,6 +59,8 @@ final class SortGoldenTests: XCTestCase {
     /// reference order that our keys invert must be listed, with its category, in Corpus/sort-allowed-divergences.json.
     /// Re-record after an intentional key change or an OS collation change:
     ///   MACX_RECORD_SORT_DIVERGENCES=1 swift test --filter FSKitTests.SortGoldenTests/testCorpusMatchesLocalizedStandardCompareExceptListed
+    /// Record mode writes only into a fresh $TMPDIR/macx-tests-* sandbox (kept so the file can be reviewed) and
+    /// prints its path; copy it into Tests/FSKitTests/Corpus by hand. It never writes into the source tree.
     func testCorpusMatchesLocalizedStandardCompareExceptListed() throws {
         let actual = sortDivergences(SortCorpus.names())
         XCTAssertFalse(actual.contains { $0.category == DivergenceCategory.other.rawValue },
@@ -70,9 +72,11 @@ final class SortGoldenTests: XCTestCase {
                 divergences: actual)
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-            let target = URL(filePath: #filePath).deletingLastPathComponent().appending(path: "Corpus/sort-allowed-divergences.json")
+            let target = try Sandbox().url("sort-allowed-divergences.json")
             try encoder.encode(file).write(to: target)
-            throw XCTSkip("recorded \(actual.count) divergences to \(target.path(percentEncoded: false)); review and commit")
+            let path = target.path(percentEncoded: false)
+            print("recorded \(actual.count) divergences to \(path)")
+            throw XCTSkip("recorded \(actual.count) divergences to \(path); review, copy into Tests/FSKitTests/Corpus, delete the sandbox")
         }
         let url = try XCTUnwrap(Bundle.module.url(forResource: "sort-allowed-divergences", withExtension: "json", subdirectory: "Corpus"))
         let listed = try JSONDecoder().decode(DivergenceFile.self, from: Data(contentsOf: url))

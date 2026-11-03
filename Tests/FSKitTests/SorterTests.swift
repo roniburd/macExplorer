@@ -76,6 +76,47 @@ final class SorterTests: XCTestCase {
                        ["alpha", "zeta", "Tool.app", "A.pdf", "b.txt", "c9.txt", "c10.txt"])
     }
 
+    func testExtensionSortComparesTheSuppliedExtensionKeys() {
+        let s = sample
+        let keys = SortKeys.nameKeys(s, range: 0..<s.count)
+        let query = ViewQuery(sort: SortDescriptor(field: .fileExtension, ascending: true))
+        let ext = SortKeys.extensionKeys(s, range: 0..<s.count)
+        XCTAssertEqual(ext.withKey(1) { Array($0) }, Array("pdf".utf8), "folded extension of A.pdf")
+        XCTAssertEqual(ext.withKey(2) { Array($0) }, [], "folders have no extension key")
+        XCTAssertEqual(Sorter.permutation(s, nameKeys: keys, searchKeys: nil, query: query, kindRanks: [], extensionKeys: ext),
+                       Sorter.permutation(s, nameKeys: keys, searchKeys: nil, query: query, kindRanks: []))
+        var custom = SortKeyColumn()                       // c9.txt first, then everything else by name
+        for i in 0..<s.count { (s.name(UInt32(i)) == "c9.txt" ? [1] : [2] as [UInt8]).withUnsafeBytes { custom.append($0) } }
+        let perm = Sorter.permutation(s, nameKeys: keys, searchKeys: nil, query: query, kindRanks: [], extensionKeys: custom)
+        XCTAssertEqual(perm.map { s.name($0) }, ["alpha", "zeta", "c9.txt", "A.pdf", "b.txt", "c10.txt", "Tool.app"])
+    }
+
+    func testExtensionSortedRunsMergeWithIncrementalExtensionKeys() {
+        var s = EntryStore(identityMode: .objectID)
+        var keys = SortKeyColumn(), ext = SortKeyColumn()
+        var merged: [UInt32] = []
+        let query = ViewQuery(sort: SortDescriptor(field: .fileExtension, ascending: false))
+        let exts = ["txt", "TXT", "longextension1", "longextension2", "", "Pdf", "tar.gz", "épub"]
+        for b in 0..<4 {
+            var batch = Batch(generation: .initial)
+            for i in 0..<300 {
+                let e = exts[(i * 7 + b) % exts.count]
+                let n = "f\((i * 31 + b) % 97)" + (e.isEmpty ? "" : "." + e)
+                let entry = Entry(rowID: UInt64(b * 1_000 + i), fileID: 0, size: 0, allocSize: 0, mtime: 0, ctime: 0, nameOffset: 0,
+                                  nameLen: 0, kind: i.isMultiple(of: 11) ? .directory : .file, flags: [], typeIndex: 0)
+                Array(n.utf8).withUnsafeBufferPointer { batch.append(entry, nameBytes: $0) }
+            }
+            let start = s.count
+            s.append(batch)
+            keys.append(contentsOf: SortKeys.nameKeys(batch))
+            ext.append(contentsOf: SortKeys.extensionKeys(batch))
+            let run = Sorter.sortedRun(s, range: start..<s.count, nameKeys: keys, searchKeys: nil, query: query, kindRanks: [], extensionKeys: ext)
+            merged = Sorter.merge(merged, run, store: s, nameKeys: keys, query: query, kindRanks: [], extensionKeys: ext)
+        }
+        XCTAssertEqual(merged, Sorter.permutation(s, nameKeys: keys, searchKeys: nil, query: query, kindRanks: []))
+        XCTAssertEqual(SortKeys.extensionKeys(s, range: 0..<s.count).withKey(2) { Array($0) }, ext.withKey(2) { Array($0) })
+    }
+
     func testFilterIsCaseAndDiacriticInsensitiveSubstring() {
         let s = store([("Résumé.pdf", .file, 0, 0, []), ("resume-old", .directory, 0, 0, []), ("notes", .file, 0, 0, [])])
         XCTAssertEqual(names(s, ViewQuery(filter: "RESUME")), ["resume-old", "Résumé.pdf"])

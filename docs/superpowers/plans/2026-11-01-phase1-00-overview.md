@@ -872,11 +872,15 @@ public enum FallbackReader {
 
 // Reader/ItemReader.swift (synchronous; lane only)
 public struct ItemReadResult: Sendable {
-    public var batch: Batch          // entries for names that exist
-    public var missing: [String]     // names that no longer exist
+    public var batch: Batch               // entries for names that exist
+    public var missing: [String]          // names that no longer exist (ENOENT / ENOTDIR only): delete their rows
+    public var errors: [String: Int32]    // names that failed for another reason (errno): keep their rows
 }
 public enum ItemReader {
-    public static func read(names: [String], in directory: URL, generation: Generation, types: TypeRegistry) -> ItemReadResult
+    /// Directory gone (ENOENT/ENOTDIR) → every name missing. Any other open failure (EACCES, EMFILE, EIO, …)
+    /// throws ReadFailure(stage: .open): the watcher falls back to a full re-read.
+    public static func read(names: [String], in directory: URL, generation: Generation,
+                            types: TypeRegistry) throws(ReadFailure) -> ItemReadResult
 }
 
 // Reader/DirectoryReader.swift
@@ -886,7 +890,8 @@ public actor DirectoryReader {
     /// One stream per read; ends after .completed or .failed (or when the consumer cancels iteration,
     /// which cancels the lane work at the next batch boundary).
     public func read(_ directory: URL, generation: Generation, options: ReadOptions = ReadOptions()) -> AsyncStream<ReadEvent>
-    /// Single-shot stat of names (watcher incremental path). Runs on a read lane.
+    /// Single-shot stat of names (watcher incremental path). Runs on a read lane. Throws ItemReader's
+    /// ReadFailure or a LaneError.
     public func readItems(_ names: [String], in directory: URL, generation: Generation) async throws -> ItemReadResult
     /// Volumes.release: cancel in-flight reads, wait ≤ 1 s for their fds to close.
     public func cancelAll() async
@@ -941,6 +946,10 @@ public enum SortKeys {
     /// Name keys for storage indices `range` of `store`, using concurrentPerform.
     public static func nameKeys(_ store: EntryStore, range: Range<Int>) -> SortKeyColumn
     public static func nameKeys(_ batch: Batch) -> SortKeyColumn
+    /// searchFold of the extension (none for folders): keep a column next to nameKeys for extension sorts.
+    public static func extensionKey(_ name: String, kind: Kind) -> [UInt8]
+    public static func extensionKeys(_ store: EntryStore, range: Range<Int>) -> SortKeyColumn
+    public static func extensionKeys(_ batch: Batch) -> SortKeyColumn
     public static func searchKeys(_ store: EntryStore) -> SortKeyColumn
 }
 
@@ -951,15 +960,17 @@ public enum Sorter {
     /// field (name: memcmp of nameKeys; dates/size: integer key, name tie-break; kind: TypeRegistry rank
     /// then name; extension: folded extension then name). Size sort orders folders by name (their size is
     /// "--"). Descending reverses within each folders/files group; folders stay first.
+    /// `extensionKeys` (one per storage index) feeds fileExtension sorts; nil folds the whole store on each call,
+    /// so the loading path (sortedRun + merge per batch) must pass an incrementally built column.
     public static func permutation(_ store: EntryStore, nameKeys: SortKeyColumn, searchKeys: SortKeyColumn?,
-                                   query: ViewQuery, kindRanks: [UInt16]) -> [UInt32]
+                                   query: ViewQuery, kindRanks: [UInt16], extensionKeys: SortKeyColumn? = nil) -> [UInt32]
     /// Filtered + sorted subset of storage indices `range` (same rules as permutation). FolderWorker uses it to
     /// sort each loading batch before `merge` (S1 Contract note 5; added by P1-07).
     public static func sortedRun(_ store: EntryStore, range: Range<Int>, nameKeys: SortKeyColumn, searchKeys: SortKeyColumn?,
-                                 query: ViewQuery, kindRanks: [UInt16]) -> [UInt32]
+                                 query: ViewQuery, kindRanks: [UInt16], extensionKeys: SortKeyColumn? = nil) -> [UInt32]
     /// Loading path: merge an already-sorted run of new indices into a sorted permutation.
     public static func merge(_ sorted: [UInt32], _ run: [UInt32], store: EntryStore, nameKeys: SortKeyColumn,
-                             query: ViewQuery, kindRanks: [UInt16]) -> [UInt32]
+                             query: ViewQuery, kindRanks: [UInt16], extensionKeys: SortKeyColumn? = nil) -> [UInt32]
 }
 ```
 
@@ -1004,7 +1015,8 @@ public struct MountTable: Sendable, Equatable {
     public init(_ volumes: [VolumeInfo])
     public static let empty: MountTable
     public var volumes: [VolumeInfo] { get }
-    /// Longest-prefix match of the standardized path against mount points (pure, in-memory).
+    /// Longest-prefix match of the standardized path against mount points (pure, in-memory). Both mount points and
+    /// queries drop a leading /private before var|tmp|etc, so /var/folders/… finds an image mounted at /private/var/folders/….
     public func volume(containing path: String) -> VolumeInfo?
     public func isSameVolume(_ a: String, _ b: String) -> Bool
 }
@@ -1039,7 +1051,9 @@ public final class Volumes {
     public var browsable: [VolumeInfo] { get }          // sidebar Locations
     public private(set) var mountTable: MountTable
     public let mountTableStore: MountTableStore
+    public nonisolated static let scanVolume: VolumeID  // "system:volume-scan": scans never share VolumeID.unknown's lanes
     public func start() async                           // initial scan on a lane + subscribe to events
+    /// Overlapping refreshes: a scan older than the last applied one is dropped; an unresponsive scan lane is reset.
     public func refresh() async
     public func handle(_ event: VolumeEvent) async      // rescan; willUnmount → release
     public func volume(for url: URL) -> VolumeInfo?     // in-memory
@@ -2519,7 +2533,7 @@ Format: ID [slice] deliverable (dependencies). Each task ships its own tests and
 Neither `2026-11-01-phase1-s2-core-model.md` nor `2026-11-01-phase1-s4-ui-shell.md` existed when S1, S3, S5 and S6 were written. Later tasks rely on these behaviours, so the S2/S4 tasks must include them (with a test where marked):
 
 - **P1-01:** each test-target stub contains one test method; `Corpus/sort-allowed-divergences.json` is `[]`; `Info.plist` `NSPrincipalClass` starts as `NSApplication` (P1-41 changes it); `LaunchOptions`/`StatePaths` exactly as §3.12 (S3, S5, S6 consume them).
-- **P1-09/P1-10:** `FolderWorker` sorts each loading batch with `Sorter.sortedRun` and then `Sorter.merge` (S1 note 5). `ReadFailure.stage == .unresponsiveVolume` → `FolderState.unresponsive`, checked before `Reason(errno:)` (S1 note 16). `ChangeBus` matches directories by standardized path without a trailing slash, `/private/var` ≡ `/var` (S3 note 16; test it).
+- **P1-09/P1-10:** `FolderWorker` sorts each loading batch with `Sorter.sortedRun` and then `Sorter.merge` (S1 note 5), keeping a `SortKeys.extensionKeys` column next to `nameKeys` and passing it to both. The watcher incremental path deletes rows only for `ItemReadResult.missing`, keeps rows named in `errors`, and does a full re-read when `readItems` throws. `ReadFailure.stage == .unresponsiveVolume` → `FolderState.unresponsive`, checked before `Reason(errno:)` (S1 note 16). `ChangeBus` matches directories by standardized path without a trailing slash, `/private/var` ≡ `/var` (S3 note 16; test it).
 - **P1-12:** `Settings(storage:home:)` stores `home` as given; `sandboxed(root:)` and sandbox-mode `AppBootstrap` pass the sandbox root.
 - **P1-14:** `EjectCoordinator` works with any `Ejecting`; `CoreEnvironment.sandboxed` passes the internal `SandboxEjector` (P1-25). The eject test uses only a disk image the test created.
 - **P1-16:** Properties reads mode bits with `lstat` (`Entry` has no mode, S1 note 4). `FolderCounter` counts a folder's contents, not the folder itself (S5 note 10; P1-37's test pins `files == 3, folders == 1` for `F/{a,b,sub/c}`). Sparse files may report full allocation on APFS (S1 note 13).

@@ -75,7 +75,7 @@ public actor DirectoryReader {
     public func readItems(_ names: [String], in directory: URL, generation: Generation) async throws -> ItemReadResult {
         let types = self.types
         return try await lanes.perform(on: volume, .read) { _ in
-            ItemReader.read(names: names, in: directory, generation: generation, types: types)
+            try ItemReader.read(names: names, in: directory, generation: generation, types: types)
         }
     }
 

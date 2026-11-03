@@ -21,6 +21,24 @@ final class FakeScanner: VolumeScanning {
     func set(_ v: [VolumeInfo]) { volumes.withLock { $0 = v } }
 }
 
+/// Snapshots its volumes when a scan starts; the first `blocked` scans then wait on `gate` before returning.
+final class GatedScanner: VolumeScanning {
+    let volumes: Mutex<[VolumeInfo]>
+    let blocked: Mutex<Int>
+    let started = Mutex(0)
+    let gate = Gate()
+    init(_ v: [VolumeInfo], blocked: Int) { volumes = Mutex(v); self.blocked = Mutex(blocked) }
+    func scan() throws -> [VolumeInfo] {
+        let snapshot = volumes.withLock { $0 }
+        started.withLock { $0 += 1 }
+        let block = blocked.withLock { b -> Bool in defer { b = max(0, b - 1) }; return b > 0 }
+        if block { gate.wait() }
+        return snapshot
+    }
+    func availableCapacity(of mountPoint: URL) -> Int64? { nil }
+    func set(_ v: [VolumeInfo]) { volumes.withLock { $0 = v } }
+}
+
 @MainActor
 final class FakeEvents: VolumeEventSource {
     var handler: (@MainActor (VolumeEvent) -> Void)?
@@ -40,6 +58,17 @@ final class MountTableTests: XCTestCase {
         XCTAssertEqual(table.volume(containing: "/Volumes/USB/../USB 2/x")?.id.raw, "usb2", "standardized first")
         XCTAssertEqual(table.volume(containing: "/System/Volumes/Data/Users")?.id.raw, "data")
         XCTAssertNil(MountTable.empty.volume(containing: "/x"))
+    }
+
+    func testPrivateFirmlinkSpellingsMatchEitherWay() {
+        let images = MountTable([volume("boot", "/", boot: true), volume("img", "/private/var/folders/T/mnt-x"),
+                                 volume("tmpimg", "/tmp/mnt-y")])
+        XCTAssertEqual(images.volume(containing: "/var/folders/T/mnt-x/f")?.id.raw, "img", "standardizedFileURL spelling")
+        XCTAssertEqual(images.volume(containing: "/private/var/folders/T/mnt-x/f")?.id.raw, "img")
+        XCTAssertEqual(images.volume(containing: "/private/tmp/mnt-y")?.id.raw, "tmpimg")
+        XCTAssertEqual(images.volume(containing: "/var/folders/T/other")?.id.raw, "boot")
+        XCTAssertEqual(images.volume(containing: "/private/varx/mnt-x")?.id.raw, "boot", "only whole components are mapped")
+        XCTAssertTrue(images.isSameVolume("/var/folders/T/mnt-x/a", "/private/var/folders/T/mnt-x/b"))
     }
 
     func testIsSameVolume() {
@@ -127,6 +156,56 @@ final class VolumesTests: XCTestCase {
         _ = try await hung.value
     }
 
+    func testOlderScanFinishingLastDoesNotOverwriteNewerResult() async {
+        let scanner = GatedScanner([volume("boot", "/", boot: true), volume("usb", "/Volumes/USB")], blocked: 1)
+        let volumes = Volumes(lanes: LanePool(), scanner: scanner, events: nil)
+        let first = Task { await volumes.refresh() }                  // sees usb mounted, then hangs
+        let firstStarted = await eventually { scanner.started.withLock { $0 } == 1 }
+        XCTAssertTrue(firstStarted)
+        scanner.set([volume("boot", "/", boot: true)])                // usb unmounted
+        await volumes.refresh()
+        XCTAssertEqual(volumes.list.map(\.id.raw), ["boot"])
+        scanner.gate.open()
+        await first.value
+        XCTAssertEqual(volumes.list.map(\.id.raw), ["boot"], "stale scan dropped: no ghost volume")
+        XCTAssertEqual(volumes.mountTableStore.current().volume(containing: "/Volumes/USB/f")?.id.raw, "boot")
+    }
+
+    func testHungUnmappedReadsDoNotStopRefresh() async throws {
+        let lanes = LanePool(config: WatchdogConfig(stallTimeout: .milliseconds(100), tick: .milliseconds(20), lanesPerClass: 4, poisonCap: 4))
+        let scanner = FakeScanner([volume("boot", "/Volumes/BootLike", boot: true)])
+        let volumes = Volumes(lanes: lanes, scanner: scanner, events: nil)
+        let gate = Gate()
+        let hung = (0..<4).map { _ in Task { try await lanes.perform(on: .unknown) { ctx in ctx.heartbeat(); gate.wait() } } }
+        let unresponsive = await eventually { await lanes.health(of: .unknown) == .unresponsive }
+        XCTAssertTrue(unresponsive)
+        await volumes.start()
+        XCTAssertEqual(volumes.list.map(\.id.raw), ["boot"], "the scan has its own lane")
+        scanner.set([volume("boot", "/Volumes/BootLike", boot: true), volume("cam", "/Volumes/CAM")])
+        await volumes.handle(.didMount(URL(filePath: "/Volumes/CAM")))
+        XCTAssertEqual(volumes.list.map(\.id.raw), ["boot", "cam"])
+        gate.open(count: 4)
+        for t in hung { _ = try? await t.value }
+    }
+
+    func testUnresponsiveScanLaneIsResetSoLaterRefreshesWork() async throws {
+        let lanes = LanePool(config: WatchdogConfig(stallTimeout: .milliseconds(100), tick: .milliseconds(20), lanesPerClass: 1, poisonCap: 1))
+        let scanner = GatedScanner([volume("boot", "/", boot: true), volume("nas", "/Volumes/NAS")], blocked: 1)
+        let volumes = Volumes(lanes: lanes, scanner: scanner, events: nil)
+        let hung = Task { await volumes.refresh() }                   // scan blocks on a dead mount
+        let poisoned = await eventually { await lanes.health(of: Volumes.scanVolume) == .unresponsive }
+        XCTAssertTrue(poisoned)
+        await volumes.refresh()                                       // fails fast, resets the scan lane
+        let health = await lanes.health(of: Volumes.scanVolume)
+        XCTAssertEqual(health, .healthy)
+        scanner.set([volume("boot", "/", boot: true)])
+        await volumes.refresh()
+        XCTAssertEqual(volumes.list.map(\.id.raw), ["boot"])
+        scanner.gate.open()
+        await hung.value
+        XCTAssertEqual(volumes.list.map(\.id.raw), ["boot"], "the late hung scan is stale")
+    }
+
     func testCapacityIsFetchedOnALaneAndCached() async {
         let scanner = FakeScanner([volume("boot", "/", boot: true)])
         let volumes = Volumes(lanes: LanePool(), scanner: scanner, events: nil)
@@ -192,6 +271,9 @@ final class SystemVolumeScannerTests: XCTestCase {
             XCTAssertFalse(info.isBoot)
             let table = MountTable(try await scan())
             XCTAssertEqual(table.volume(containing: image.mountPoint.path(percentEncoded: false) + "/x")?.id, info.id)
+            let standardized = image.mountPoint.standardizedFileURL.path(percentEncoded: false) + "/x"   // existing paths lose /private
+            XCTAssertTrue(standardized.hasPrefix("/var/"), "sandbox lives under /private/var: \(standardized)")
+            XCTAssertEqual(table.volume(containing: standardized)?.id, info.id, "\(format): /var spelling of the mount point")
             try image.detach()
             let after = try await scan().contains { $0.id == info.id }
             XCTAssertFalse(after, "\(format) still listed after detach")

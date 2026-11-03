@@ -54,6 +54,27 @@ public enum SortKeys {
         build(count: batch.count) { i in nameKey(batch.name(at: i), isFolder: batch.entries[i].isFolderForSorting) }
     }
 
+    /// Extension sort key: searchFold of the extension after the last "." (none for folders, ".bashrc", "name.").
+    /// Build incrementally next to nameKeys so extension sorts never re-fold the whole store per batch.
+    public static func extensionKey(_ name: String, kind: Kind) -> [UInt8] {
+        guard kind != .directory else { return [] }
+        var name = name
+        return name.withUTF8 { bytes in
+            fileExtensionRange(bytes).map { searchFold(String(decoding: UnsafeBufferPointer(rebasing: bytes[$0]), as: UTF8.self)) } ?? []
+        }
+    }
+
+    public static func extensionKeys(_ store: EntryStore, range: Range<Int>) -> SortKeyColumn {
+        build(count: range.count) { i in
+            let index = UInt32(range.lowerBound + i)
+            return extensionKey(store.name(index), kind: store.entry(index).kind)
+        }
+    }
+
+    public static func extensionKeys(_ batch: Batch) -> SortKeyColumn {
+        build(count: batch.count) { i in extensionKey(batch.name(at: i), kind: batch.entries[i].kind) }
+    }
+
     public static func searchKeys(_ store: EntryStore) -> SortKeyColumn {
         build(count: store.count) { i in searchFold(store.name(UInt32(i))) }
     }

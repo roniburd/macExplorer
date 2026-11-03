@@ -30,8 +30,10 @@ public struct MountTable: Sendable, Equatable {
         return x.id == y.id
     }
 
-    /// Lexical: removes "." / ".." / duplicate and trailing slashes; maps "/private/var|tmp|etc" to the
-    /// form mountedVolumeURLs reports is left as is (both spellings are on the same volume anyway).
+    /// Lexical: removes "." / ".." / duplicate and trailing slashes, then drops a leading "/private" before
+    /// var, tmp or etc. mountedVolumeURLs reports images mounted in $TMPDIR as /private/var/folders/…, while
+    /// URL.standardizedFileURL (LaunchOptions, the overview's "standardized URL") yields /var/folders/…; both
+    /// mount points and queries go through this, so either spelling finds the image's volume.
     static func standardize(_ path: String) -> String {
         guard path.hasPrefix("/") else { return path }
         var parts: [Substring] = []
@@ -40,8 +42,11 @@ public struct MountTable: Sendable, Equatable {
             if c == ".." { _ = parts.popLast(); continue }
             parts.append(c)
         }
+        if parts.count >= 2, parts[0] == "private", firmlinked.contains(parts[1]) { parts.removeFirst() }
         return "/" + parts.joined(separator: "/")
     }
+
+    private static let firmlinked: Set<Substring> = ["var", "tmp", "etc"]
 }
 
 /// Mutex-protected mirror of the main-actor table for off-main readers (DirectoryReaders, FileOps planning).

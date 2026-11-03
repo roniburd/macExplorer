@@ -4,6 +4,10 @@ import Observation
 /// Main-actor volume registry (§4.2 Volumes): list, mount table, capacity cache, release handlers.
 @MainActor @Observable
 public final class Volumes {
+    /// Lane key for volume scans: separate from VolumeID.unknown, so hung reads of unmapped paths never
+    /// block or poison the scan (and a hung scan never blocks those reads).
+    public nonisolated static let scanVolume = VolumeID(raw: "system:volume-scan")
+
     public private(set) var list: [VolumeInfo] = []          // all mounted
     public var browsable: [VolumeInfo] { list.filter(\.isBrowsable) }
     public private(set) var mountTable: MountTable = .empty
@@ -17,6 +21,8 @@ public final class Volumes {
     @ObservationIgnored private var nextHandler: UInt64 = 0
     @ObservationIgnored private let listObservers = Observers<[VolumeInfo]>()
     @ObservationIgnored private var started = false
+    @ObservationIgnored private var refreshesStarted: UInt64 = 0   // sequence number of the latest refresh() call
+    @ObservationIgnored private var refreshApplied: UInt64 = 0     // sequence number of the newest scan applied
 
     public init(lanes: LanePool, scanner: any VolumeScanning = SystemVolumeScanner(), events: (any VolumeEventSource)?) {
         self.lanes = lanes
@@ -34,15 +40,32 @@ public final class Volumes {
         }
     }
 
+    /// Scans on the dedicated scan lane. Refreshes may overlap (one Task per event); a scan that finishes
+    /// after a newer one has been applied is dropped, so an old result never brings back a ghost volume.
+    /// If the scan lane was marked unresponsive (a scan hung on a dead mount), it is reset so the next
+    /// refresh tries again instead of failing for the rest of the session.
     public func refresh() async {
+        refreshesStarted += 1
+        let sequence = refreshesStarted
         let scanner = self.scanner
-        guard let scanned = try? await lanes.perform(on: .unknown, .read, { _ in try scanner.scan() }) else { return }
+        let scanned: [VolumeInfo]
+        do {
+            scanned = try await lanes.perform(on: Volumes.scanVolume, .read) { _ in try scanner.scan() }
+        } catch LaneError.volumeUnresponsive {
+            await lanes.resetVolume(Volumes.scanVolume)
+            return
+        } catch {
+            return
+        }
+        guard sequence > refreshApplied else { return }   // a newer scan already landed
+        refreshApplied = sequence
         let sorted = scanned.sorted { a, b in
             if a.isBoot != b.isBoot { return a.isBoot }
             return a.name.localizedStandardCompare(b.name) == .orderedAscending
         }
         let old = Set(list.map(\.id))
         for v in sorted where !old.contains(v.id) { await lanes.resetVolume(v.id) }   // remounted / reappeared
+        guard refreshApplied == sequence else { return }   // a newer scan landed during the resets
         let gone = old.subtracting(sorted.map(\.id))
         for id in gone { capacity[id] = nil }
         guard sorted != list else { return }
