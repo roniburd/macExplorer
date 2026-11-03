@@ -56,6 +56,17 @@
         }
       }
     },
+    "%@, cut" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, cut"
+          }
+        }
+      }
+    },
     "%ld items" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -371,6 +382,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Close Window"
+          }
+        }
+      }
+    },
+    "Columns" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Columns"
           }
         }
       }
@@ -716,6 +738,17 @@
         }
       }
     },
+    "Extension" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extension"
+          }
+        }
+      }
+    },
     "External disks" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -954,6 +987,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "In a new window"
+          }
+        }
+      }
+    },
+    "In iCloud, not downloaded" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In iCloud, not downloaded"
           }
         }
       }
@@ -1992,6 +2036,17 @@
         }
       }
     },
+    "Today %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Today %@"
+          }
+        }
+      }
+    },
     "Try Again" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2098,6 +2153,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Window"
+          }
+        }
+      }
+    },
+    "Yesterday %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yesterday %@"
           }
         }
       }

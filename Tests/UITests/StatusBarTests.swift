@@ -60,11 +60,11 @@ final class StatusBarTests: XCTestCase {
         XCTAssertGreaterThan(bar.operationsSlot.frame.minX, 300)
     }
 
-    func testPlaceholderStatusShowsCountSelectionAndFreeSpace() async throws {
+    func testContentStatusShowsCountSelectionAndFreeSpace() async throws {
         let h = try await ShellHarness.make(self)
         try h.file("a.txt"); try h.file("b.txt")
         let controller = try await h.openWindow()
-        let content = try XCTUnwrap(controller.contentPane as? PlaceholderContentViewController)
+        let content = try XCTUnwrap(controller.contentPane as? ContentViewController)
         let count = try label(AXID.statusCount, in: content.statusBar)
         try await h.waitUntil("count") { count.stringValue == "2 items" }
         content.session.folder.select(.set(IndexSet([0, 1]), cursor: 1))

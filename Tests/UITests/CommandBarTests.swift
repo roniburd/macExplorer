@@ -124,11 +124,11 @@ final class CommandBarTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(bar.button(for: .copy)).isEnabled)
     }
 
-    func testPlaceholderContentHostsTheCommandBarAndStatusBar() async throws {
+    func testContentHostsTheCommandBarAndStatusBar() async throws {
         let h = try await ShellHarness.make(self)
         try h.file("a.txt")
         let controller = try await h.openWindow()
-        let content = try XCTUnwrap(controller.contentPane as? PlaceholderContentViewController)
+        let content = try XCTUnwrap(controller.contentPane as? ContentViewController)
         XCTAssertTrue(content.commandBar.isDescendant(of: content.view))
         XCTAssertTrue(content.statusBar.isDescendant(of: content.view))
         XCTAssertFalse(try XCTUnwrap(content.commandBar.button(for: .copy)).isEnabled)

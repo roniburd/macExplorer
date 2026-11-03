@@ -300,7 +300,7 @@ final class FocusCycleTests: XCTestCase {
         }
     }
 
-    func testContentPlaceholderRoutesAlternates() async throws {
+    func testContentRoutesAlternates() async throws {
         let h = try await ShellHarness.make(self)
         try h.dir("sub")
         let controller = try await h.openWindow()

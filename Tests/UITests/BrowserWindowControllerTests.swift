@@ -82,18 +82,18 @@ final class BrowserWindowControllerTests: XCTestCase {
         XCTAssertNil(split.splitView.autosaveName, "no autosave names in sandbox mode")
     }
 
-    func testPlaceholderContentShowsTheRowCount() async throws {
+    func testContentShowsTheRowCount() async throws {
         let h = try await ShellHarness.make(self)
         try h.file("a.txt"); try h.file("b.txt")
         let controller = try await h.openWindow()
-        let content = try XCTUnwrap(controller.contentPane as? PlaceholderContentViewController)
+        let content = try XCTUnwrap(controller.contentPane as? ContentViewController)
         XCTAssertEqual(content.focusContext, .content)
         guard case .contentSelection(let model)? = content.commandTarget else { return XCTFail("content target") }
         XCTAssertTrue(model === controller.session.folder)
-        try await h.waitUntil("count label") { content.countText == "2 items" }
+        try await h.waitUntil("count label") { content.statusBar.countText == "2 items" }
         try h.file("c.txt")
         controller.session.reload()
-        try await h.waitUntil("count label updates") { content.countText == "3 items" }
+        try await h.waitUntil("count label updates") { content.statusBar.countText == "3 items" }
     }
 
     func testFocusAndProbeFocus() async throws {

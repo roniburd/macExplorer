@@ -83,7 +83,7 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
         scenarioHooks.isEditingAddress = { [weak bar] in bar?.isEditing ?? false }
     }
 
-    /// The content split item's controller (P1-26 placeholder, P1-31 ContentViewController).
+    /// The content split item's controller (ContentViewController).
     var contentPane: CommandHandlingViewController? {
         splitViewController.splitViewItems.last?.viewController as? CommandHandlingViewController
     }
