@@ -20,7 +20,7 @@ final class BrowserSplitViewController: NSSplitViewController {
         sidebarItem.canCollapse = true
         addSplitViewItem(sidebarItem)
 
-        let content = PlaceholderContentViewController(session: session)   // P1-31 replaces it with ContentViewController
+        let content = PlaceholderContentViewController(context: context, session: session)   // P1-31 replaces it with ContentViewController
         let contentItem = NSSplitViewItem(viewController: content)
         contentItem.minimumThickness = 320
         addSplitViewItem(contentItem)

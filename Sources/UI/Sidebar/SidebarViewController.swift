@@ -86,6 +86,10 @@ final class SidebarViewController: CommandHandlingViewController {
         outlineView.action = #selector(rowClicked(_:))
         outlineView.onActivate = { [weak self] row in self?.activateRow(row) }
         outlineView.menuProvider = { [weak self] row in self?.menu(forRow: row) }
+        outlineView.keyHandler = { [weak self] event in
+            guard let self else { return false }
+            return KeyRouter.handle(event, focus: self.focusContext, returnKey: .open, from: self.outlineView)
+        }
 
         let scroll = NSScrollView()
         scroll.documentView = outlineView

@@ -81,6 +81,8 @@ final class SidebarCellView: NSTableCellView {
 final class SidebarOutlineView: NSOutlineView {
     var onActivate: ((Int) -> Void)?
     var menuProvider: ((Int) -> NSMenu?)?
+    /// KeyRouter alternates (P1-29), after Return.
+    var keyHandler: ((NSEvent) -> Bool)?
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -90,6 +92,7 @@ final class SidebarOutlineView: NSOutlineView {
             if selectedRow >= 0 { onActivate?(selectedRow) }
             return
         }
+        if keyHandler?(event) == true { return }
         super.keyDown(with: event)
     }
 

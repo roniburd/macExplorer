@@ -4,7 +4,7 @@ import MacxFS
 
 /// Interim CommandHandler (P1-26): navigation, window, view-mode and undo commands, so the shell is usable before
 /// the file commands exist; P1-28 adds the sidebar row commands (Open, Open in New Window, Eject, Remove from
-/// Favorites). P1-35's FileCommandController replaces it on every pane.
+/// Favorites), P1-29 the Tab focus cycle and Show Command Bar. P1-35's FileCommandController replaces it on every pane.
 @MainActor
 final class ShellCommandHandler: CommandHandler {
     private let context: UIContext
@@ -19,6 +19,7 @@ final class ShellCommandHandler: CommandHandler {
         .back, .forward, .up, .refresh, .newWindow, .closeWindow, .focusAddressBar, .focusSearch,
         .viewAsDetails, .viewAsIcons, .undo, .redo,
         .open, .openInNewWindow, .eject, .removeFromFavorites,
+        .cycleFocusForward, .cycleFocusBackward, .toggleCommandBar,
     ]
 
     /// Open and Open in New Window only for sidebar rows here (content items open in P1-35).
@@ -52,6 +53,16 @@ final class ShellCommandHandler: CommandHandler {
         return CommandAvailability.isEnabled(command, focus: focus, state: state)
     }
 
+    /// The focus a command target comes from (Tab cycle origin).
+    private static func focus(of target: CommandTarget) -> FocusContext {
+        switch target {
+        case .contentSelection, .currentFolder: .content
+        case .favorite: .sidebarFavorites
+        case .volume: .sidebarLocations
+        case .folder: .sidebarFolders
+        }
+    }
+
     private static func url(of target: CommandTarget) -> URL? {
         switch target {
         case .favorite(let favorite): favorite.url
@@ -75,6 +86,9 @@ final class ShellCommandHandler: CommandHandler {
         case .closeWindow: window.window?.performClose(sender)
         case .focusAddressBar: window.focus(.addressBar)
         case .focusSearch: window.toolbarController.beginSearch()
+        case .cycleFocusForward: window.focus(FocusCycle.next(after: Self.focus(of: target), forward: true))
+        case .cycleFocusBackward: window.focus(FocusCycle.next(after: Self.focus(of: target), forward: false))
+        case .toggleCommandBar: context.environment.settings.commandBarVisible.toggle()
         case .viewAsDetails: setViewMode(.details)
         case .viewAsIcons: setViewMode(.icons)
         case .undo: context.environment.undo.undoManager.undo()

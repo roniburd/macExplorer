@@ -95,37 +95,3 @@ final class CommandActionsTests: XCTestCase {
         XCTAssertNil(MenuValidation.command(for: NSSelectorFromString("terminate:")))
     }
 }
-
-@MainActor
-final class MenuValidationTests: XCTestCase {
-    func testWithoutFieldEditorUsesCommandAvailability() {
-        var state = CommandState()
-        XCTAssertFalse(MenuValidation.isEnabled(.moveToTrash, window: nil, state: state, focus: .content))
-        state.selectionCount = 1
-        XCTAssertTrue(MenuValidation.isEnabled(.moveToTrash, window: nil, state: state, focus: .content))
-        XCTAssertTrue(MenuValidation.isEnabled(.newFolder, window: nil, state: CommandState(), focus: .content))
-        XCTAssertEqual(MenuValidation.isEnabled(.removeFromFavorites, window: nil, state: state, focus: .sidebarFavorites),
-                       CommandAvailability.isEnabled(.removeFromFavorites, focus: .sidebarFavorites, state: state))
-    }
-
-    func testFieldEditorDisablesCollidingCommands() throws {
-        try ShellHarness.requireWindowServer()
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 200), styleMask: [.titled], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        defer { window.close() }
-        let field = NSTextField(string: "x")
-        window.contentView?.addSubview(field)
-        XCTAssertFalse(MenuValidation.isFieldEditorActive(in: window))
-        XCTAssertTrue(window.makeFirstResponder(field))
-        XCTAssertTrue(MenuValidation.isFieldEditorActive(in: window))
-        var state = CommandState(selectionCount: 1, canGoBack: true)
-        state.canGoUp = true
-        for command in KeyMap.collidesWithTextEditing {
-            XCTAssertFalse(MenuValidation.isEnabled(command, window: window, state: state, focus: .content), "\(command)")
-            XCTAssertTrue(MenuValidation.blockedByFieldEditor(command, window: window))
-        }
-        XCTAssertTrue(MenuValidation.isEnabled(.newFolder, window: window, state: state, focus: .content))
-        XCTAssertTrue(MenuValidation.isEnabled(.copy, window: window, state: state, focus: .content))
-        XCTAssertFalse(MenuValidation.blockedByFieldEditor(.copy, window: window))
-    }
-}

@@ -16,7 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.mainMenu = makeMainMenu()
+        MainMenuBuilder.install(in: NSApp)
         do {
             try FileManager.default.createDirectory(at: statePaths.root, withIntermediateDirectories: true)
         } catch {
@@ -70,30 +70,5 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             exit(0)
         }
-    }
-
-    /// Interim menu (P1-29's MainMenuBuilder replaces it): Quit, New Window (⌘N), Close Window (⌘W), Edit basics.
-    private func makeMainMenu() -> NSMenu {
-        let main = NSMenu()
-        func submenu(_ title: String, _ items: [NSMenuItem]) {
-            let item = NSMenuItem()
-            let menu = NSMenu(title: title)
-            for child in items { menu.addItem(child) }
-            item.submenu = menu
-            main.addItem(item)
-        }
-        func item(_ title: String, _ action: String, _ key: String) -> NSMenuItem {
-            NSMenuItem(title: L10n.string(title), action: NSSelectorFromString(action), keyEquivalent: key)
-        }
-        submenu("macExplorer", [item("Quit macExplorer", "terminate:", "q")])
-        submenu(L10n.string("File"), [item("New Window", Command.newWindow.selectorName, "n"),
-                                      item("Close Window", "performClose:", "w")])
-        let redo = item("Redo", "redo:", "z")
-        redo.keyEquivalentModifierMask = [.command, .shift]
-        submenu(L10n.string("Edit"), [item("Undo", "undo:", "z"), redo, .separator(),
-                                      item("Cut", "cut:", "x"), item("Copy", "copy:", "c"), item("Paste", "paste:", "v"),
-                                      item("Select All", "selectAll:", "a")])
-        submenu(L10n.string("Window"), [item("Minimize", "performMiniaturize:", "m")])
-        return main
     }
 }

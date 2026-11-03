@@ -2291,6 +2291,10 @@ enum CommandTarget {
 enum KeyEventTranslator { static func chord(for event: NSEvent) -> KeyChord? }
 // Menus/MainMenuBuilder.swift
 @MainActor public enum MainMenuBuilder { public static func build() -> NSMenu }   // App, File, Edit, View, Go, Window, Help
+// Additive (P1-29): MainMenuBuilder.install(in: NSApplication) (main + Services/Window/Help menus; AppDelegate calls it),
+// internal notInMenu: Set<Command> = [.cancelOperation], keyEquivalent(for: KeyChord) (⌫ = "\u{8}", ⌘⇧. = "." + [.command, .shift]),
+// items carry identifier "macx.menu.<rawValue>", titles from MainMenuTitles; KeyRouter.command(for: NSEvent, focus:, returnKey:)
+// (pure), FocusCycle.next(after:forward:); StatusBarView.init(); CommandBarView pull-downs are PullDownButtons.
 
 // Content/FileListView.swift
 @MainActor protocol FileListView: AnyObject {

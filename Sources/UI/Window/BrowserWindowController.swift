@@ -101,6 +101,14 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
         }
     }
 
+    /// Commands from the menu bar (or a key equivalent) reach the content pane when the first responder is outside both
+    /// panes (the window itself, a toolbar control). Field editors and the panes precede this in the responder chain,
+    /// so they still handle (and validate) their commands first.
+    public override func supplementalTarget(forAction action: Selector, sender: Any?) -> Any? {
+        if MenuValidation.command(for: action) != nil, let pane = contentPane, pane.responds(to: action) { return pane }
+        return super.supplementalTarget(forAction: action, sender: sender)
+    }
+
     private func makeFirstResponder(in pane: NSViewController?) {
         guard let window, let view = pane?.view, let responder = Self.firstAcceptingView(in: view) else { return }
         window.makeFirstResponder(responder)
