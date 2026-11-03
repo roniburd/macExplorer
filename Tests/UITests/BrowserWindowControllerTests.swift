@@ -27,6 +27,7 @@ final class BrowserWindowControllerTests: XCTestCase {
     func testUninstalledHooksReturnDefaultsAndInstalledHooksAreUsed() async throws {
         let h = try await ShellHarness.make(self)
         let controller = try await h.openWindow()
+        controller.scenarioHooks = ScenarioHooks()   // P1-27+ install hooks; check the uninstalled defaults
         XCTAssertEqual(controller.probeAddressText, "")
         XCTAssertFalse(controller.probeIsEditingAddress)
         XCTAssertNil(controller.probeRenameText)

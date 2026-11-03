@@ -54,6 +54,22 @@ final class BrowserSession {
         observers.send(.historyChanged)
     }
 
+    /// Back-history menu: `index` into `history.backList` (0 = oldest).
+    func goBack(toIndex index: Int) {
+        guard !closed, let url = history.jump(toBackIndex: index) else { return }
+        showBanner(nil)
+        open(url, selecting: nil)
+        observers.send(.historyChanged)
+    }
+
+    /// Forward-history menu: `index` into `history.forwardList` (0 = next).
+    func goForward(toIndex index: Int) {
+        guard !closed, let url = history.jump(toForwardIndex: index) else { return }
+        showBanner(nil)
+        open(url, selecting: nil)
+        observers.send(.historyChanged)
+    }
+
     /// Opens the parent and selects the folder we came from (Explorer). Nothing above "/".
     func goUp() {
         let path = folder.directory.standardizedFileURL.path(percentEncoded: false)

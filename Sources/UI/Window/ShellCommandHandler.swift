@@ -15,7 +15,7 @@ final class ShellCommandHandler: CommandHandler {
     }
 
     static let handled: Set<Command> = [
-        .back, .forward, .up, .refresh, .newWindow, .closeWindow, .focusAddressBar,
+        .back, .forward, .up, .refresh, .newWindow, .closeWindow, .focusAddressBar, .focusSearch,
         .viewAsDetails, .viewAsIcons, .undo, .redo,
     ]
 
@@ -41,6 +41,7 @@ final class ShellCommandHandler: CommandHandler {
         case .newWindow: context.windows.openWindow(at: window.session.folder.directory)
         case .closeWindow: window.window?.performClose(sender)
         case .focusAddressBar: window.focus(.addressBar)
+        case .focusSearch: window.toolbarController.beginSearch()
         case .viewAsDetails: setViewMode(.details)
         case .viewAsIcons: setViewMode(.icons)
         case .undo: context.environment.undo.undoManager.undo()

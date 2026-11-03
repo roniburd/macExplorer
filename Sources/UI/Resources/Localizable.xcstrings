@@ -45,6 +45,50 @@
         }
       }
     },
+    "Address" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Address"
+          }
+        }
+      }
+    },
+    "Back" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back"
+          }
+        }
+      }
+    },
+    "Can't find '%@'" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can't find '%@'"
+          }
+        }
+      }
+    },
+    "Can't open '%@'" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can't open '%@'"
+          }
+        }
+      }
+    },
     "Cancel" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -133,6 +177,17 @@
         }
       }
     },
+    "Details" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Details"
+          }
+        }
+      }
+    },
     "Duplicate" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -162,6 +217,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "File"
+          }
+        }
+      }
+    },
+    "Filter" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filter"
+          }
+        }
+      }
+    },
+    "Filter This Folder" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filter This Folder"
+          }
+        }
+      }
+    },
+    "Forward" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forward"
+          }
+        }
+      }
+    },
+    "Icons" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Icons"
           }
         }
       }
@@ -243,6 +342,17 @@
         }
       }
     },
+    "Navigation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Navigation"
+          }
+        }
+      }
+    },
     "New Item" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -261,6 +371,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "New Window"
+          }
+        }
+      }
+    },
+    "No Subfolders" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Subfolders"
           }
         }
       }
@@ -331,6 +452,17 @@
         }
       }
     },
+    "Show Enclosing Folders" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Enclosing Folders"
+          }
+        }
+      }
+    },
     "Skip" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -349,6 +481,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Skip All"
+          }
+        }
+      }
+    },
+    "Subfolders of '%@'" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Subfolders of '%@'"
           }
         }
       }
@@ -426,6 +569,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Unlock and Continue"
+          }
+        }
+      }
+    },
+    "Up" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Up"
+          }
+        }
+      }
+    },
+    "View" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View"
           }
         }
       }

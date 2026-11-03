@@ -2,12 +2,13 @@ import AppKit
 import Core
 import MacxFS
 
-/// One browser window (§5.1): unified toolbar (items arrive in P1-27), sidebar + content split, per-window session.
+/// One browser window (§5.1): unified toolbar (ToolbarController, P1-27), sidebar + content split, per-window session.
 @MainActor
 public final class BrowserWindowController: NSWindowController, NSWindowDelegate, ScenarioProbe {
     let context: UIContext
     let session: BrowserSession
     let splitViewController: BrowserSplitViewController
+    let toolbarController: ToolbarController
     var scenarioHooks = ScenarioHooks()
     /// Installed by the address bar (P1-27): ⌘L / ⌥D / F4 begin editing it.
     var focusAddressBar: (() -> Void)?
@@ -21,6 +22,7 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
         self.context = context
         self.session = BrowserSession(environment: context.environment, initialURL: initialURL)
         self.splitViewController = BrowserSplitViewController(context: context, session: session)
+        self.toolbarController = ToolbarController(context: context, session: session)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1000, height: 640),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                               backing: .buffered, defer: false)
@@ -33,8 +35,11 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
         let toolbar = NSToolbar(identifier: "macx.browser.toolbar")
         toolbar.displayMode = .iconOnly
         if !context.options.isSandboxed { toolbar.autosavesConfiguration = true }
+        toolbar.delegate = toolbarController
+        toolbar.allowsUserCustomization = true
         window.toolbar = toolbar
         window.toolbarStyle = .unified
+        window.titleVisibility = .hidden     // the address bar shows where we are; the title still names the window
         window.isRestorable = !context.options.isSandboxed
         window.restorationClass = BrowserWindowRestoration.self
         window.delegate = self
@@ -46,6 +51,7 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
         contentPane?.handler = shell
         sidebarPane?.handler = shell
 
+        installToolbarHooks()
         sessionToken = session.observe { [weak self] event in self?.handle(event) }
         folderDidChange()
     }
@@ -57,6 +63,18 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
 
     public func navigate(to url: URL, selecting name: String? = nil) {
         session.navigate(to: url, selecting: name)
+    }
+
+    /// The toolbar's address bar (Phase 4 tests submit through it).
+    var addressBar: AddressBarView { toolbarController.addressBar }
+
+    /// ⌘L / ⌥D / F4 edit the address; Return/Esc hand the keyboard back to the content; scenario address hooks.
+    private func installToolbarHooks() {
+        let bar = toolbarController.addressBar
+        focusAddressBar = { [weak bar] in bar?.beginEditing() }
+        bar.onEndEditing = { [weak self] in self?.focus(.content) }
+        scenarioHooks.addressText = { [weak bar] in bar?.displayText ?? "" }
+        scenarioHooks.isEditingAddress = { [weak bar] in bar?.isEditing ?? false }
     }
 
     /// The content split item's controller (P1-26 placeholder, P1-31 ContentViewController).
