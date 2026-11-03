@@ -112,11 +112,20 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
 
     func outlineView(_ outlineView: NSOutlineView, validateDrop info: any NSDraggingInfo, proposedItem item: Any?,
                      proposedChildIndex index: Int) -> NSDragOperation {
-        guard case .favoritesHeader? = item as? SidebarItem, index != NSOutlineViewDropOnItemIndex else { return [] }
-        return favoritesDropOperation(info.draggingPasteboard, childIndex: index)
+        if case .favoritesHeader? = item as? SidebarItem, index != NSOutlineViewDropOnItemIndex {
+            return favoritesDropOperation(info.draggingPasteboard, childIndex: index)
+        }
+        // P1-36 (§5.4, §5.6): drops onto a tree node, favorite or volume row go through DropTarget.
+        if index == NSOutlineViewDropOnItemIndex, let url = folderURL(forDropOnto: item) {
+            return fileDropTarget.validate(info, destination: url)
+        }
+        return []
     }
 
     func outlineView(_ outlineView: NSOutlineView, acceptDrop info: any NSDraggingInfo, item: Any?, childIndex index: Int) -> Bool {
+        if index == NSOutlineViewDropOnItemIndex, let url = folderURL(forDropOnto: item) {
+            return fileDropTarget.perform(info, destination: url, in: outlineView)
+        }
         guard case .favoritesHeader? = item as? SidebarItem, index != NSOutlineViewDropOnItemIndex,
               favoritesDropOperation(info.draggingPasteboard, childIndex: index) != [] else { return false }
         let pasteboard = info.draggingPasteboard
@@ -127,6 +136,12 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
             Task { await self.addFavorites(urls, atChildIndex: index) }
         }
         return true
+    }
+
+    /// The folder a drop *onto* this row lands in: a tree node's URL, a resolved favorite (nil when stale), a volume's
+    /// mount point or iCloud Drive; nil for section headers.
+    func folderURL(forDropOnto item: Any?) -> URL? {
+        (item as? SidebarItem)?.url
     }
 
     /// Between favorites: a dragged favorite moves (reorder), dragged folders link (add). Anything else is refused.

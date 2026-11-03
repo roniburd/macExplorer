@@ -28,6 +28,7 @@ final class AddressBarView: NSView {
     init(context: UIContext) {
         environment = context.environment
         super.init(frame: NSRect(x: 0, y: 0, width: 480, height: 28))
+        breadcrumb.dropTarget = DropTarget(context: context, originView: breadcrumb)
         setAccessibilityIdentifier(AXID.addressBar)
         setAccessibilityElement(true)
         setAccessibilityRole(.group)

@@ -60,8 +60,8 @@ final class RubberBandView: NSView {
 }
 
 /// NSCollectionView with model-owned selection; clicks and keys go through SelectionController. P1-35 adds
-/// context menus, P1-36 drags.
-final class FileCollectionView: NSCollectionView {
+/// context menus, P1-36 drags, right-drag and spring-loading.
+final class FileCollectionView: NSCollectionView, NSSpringLoadingDestination {
     weak var owner: IconsViewController?
     override var acceptsFirstResponder: Bool { true }
 
@@ -93,6 +93,42 @@ final class FileCollectionView: NSCollectionView {
     override func selectAll(_ sender: Any?) {
         _ = nextResponder?.tryToPerform(#selector(NSText.selectAll(_:)), with: sender)
     }
+
+    // MARK: drags and right-drag (P1-36)
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let owner else { return super.mouseDragged(with: event) }
+        owner.handleMouseDragged(event)
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        guard let owner else { return super.rightMouseDown(with: event) }
+        owner.handleRightMouseDown(event)   // no menu yet (§5.6)
+    }
+
+    override func rightMouseDragged(with event: NSEvent) {
+        guard let owner else { return super.rightMouseDragged(with: event) }
+        owner.handleRightMouseDragged(event)
+    }
+
+    override func rightMouseUp(with event: NSEvent) {
+        guard let owner else { return super.rightMouseUp(with: event) }
+        owner.handleRightMouseUp(event)
+    }
+
+    func springLoadingEntered(_ draggingInfo: any NSDraggingInfo) -> NSSpringLoadingOptions {
+        owner?.springLoadTarget(draggingInfo) == nil ? .disabled : .enabled
+    }
+
+    func springLoadingUpdated(_ draggingInfo: any NSDraggingInfo) -> NSSpringLoadingOptions {
+        owner?.springLoadTarget(draggingInfo) == nil ? .disabled : .enabled
+    }
+
+    func springLoadingActivated(_ activated: Bool, draggingInfo: any NSDraggingInfo) {
+        if activated, let url = owner?.springLoadTarget(draggingInfo) { owner?.onSpringLoad?(url) }
+    }
+
+    func springLoadingHighlightChanged(_ draggingInfo: any NSDraggingInfo) {}
 }
 
 @MainActor
@@ -109,6 +145,12 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
     private(set) var renameController: InlineRenameController?
     /// Installed by ContentViewController (P1-35): item under the click, nil for empty space.
     var contextMenuProvider: ((Int?) -> NSMenu?)?
+    /// Installed by ContentViewController (P1-36).
+    var dropTarget: DropTarget?
+    var onSpringLoad: ((URL) -> Void)?
+    lazy var dragSource = DragSourceController(icons: context.icons)
+    var rightDrag = RightDragTracker()
+    var rightDownEvent: NSEvent?
     var focusView: NSView { collectionView }
     private var settings: Settings { context.environment.settings }
     private var points: Double { layout.iconSize.points }
@@ -130,6 +172,9 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
         collectionView.backgroundColors = [.controlBackgroundColor]
         collectionView.register(IconItem.self, forItemWithIdentifier: IconItem.reuseID)
         collectionView.setAccessibilityIdentifier(AXID.iconsGrid)
+        collectionView.registerForDraggedTypes(DropTarget.acceptedTypes)
+        collectionView.setDraggingSourceOperationMask([.copy, .move, .link, .generic], forLocal: true)
+        collectionView.setDraggingSourceOperationMask([.copy, .move, .link, .generic], forLocal: false)
         scrollView.documentView = collectionView
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true

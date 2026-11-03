@@ -628,6 +628,17 @@
         }
       }
     },
+    "Copy Here" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy Here"
+          }
+        }
+      }
+    },
     "Copy as Path" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -639,6 +650,17 @@
         }
       }
     },
+    "Create Alias Here" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Create Alias Here"
+          }
+        }
+      }
+    },
     "Create Symbolic Link" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -646,6 +668,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Create Symbolic Link"
+          }
+        }
+      }
+    },
+    "Create Symbolic Link Here" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Create Symbolic Link Here"
           }
         }
       }
@@ -822,6 +855,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Downloads"
+          }
+        }
+      }
+    },
+    "Drop" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drop"
           }
         }
       }
@@ -1416,6 +1460,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Move %lld items to the Trash?"
+          }
+        }
+      }
+    },
+    "Move Here" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move Here"
           }
         }
       }

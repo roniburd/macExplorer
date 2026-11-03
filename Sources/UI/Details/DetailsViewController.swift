@@ -3,8 +3,8 @@ import os
 import Core
 import MacxFS
 
-/// NSTableView with the routing the content view needs. P1-36 adds drags and right-drag.
-final class FileTableView: NSTableView, @MainActor NSServicesMenuRequestor {
+/// NSTableView with the routing the content view needs, incl. drags, right-drag and spring-loading (P1-36).
+final class FileTableView: NSTableView, @MainActor NSServicesMenuRequestor, NSSpringLoadingDestination {
     weak var owner: DetailsViewController?
 
     override func keyDown(with event: NSEvent) {
@@ -26,6 +26,42 @@ final class FileTableView: NSTableView, @MainActor NSServicesMenuRequestor {
         guard let owner else { return super.mouseUp(with: event) }
         owner.handleMouseUp(event)
     }
+
+    // MARK: drags and right-drag (P1-36)
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let owner else { return super.mouseDragged(with: event) }
+        owner.handleMouseDragged(event)
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        guard let owner else { return super.rightMouseDown(with: event) }
+        owner.handleRightMouseDown(event)   // no menu yet (§5.6)
+    }
+
+    override func rightMouseDragged(with event: NSEvent) {
+        guard let owner else { return super.rightMouseDragged(with: event) }
+        owner.handleRightMouseDragged(event)
+    }
+
+    override func rightMouseUp(with event: NSEvent) {
+        guard let owner else { return super.rightMouseUp(with: event) }
+        owner.handleRightMouseUp(event)
+    }
+
+    func springLoadingEntered(_ draggingInfo: any NSDraggingInfo) -> NSSpringLoadingOptions {
+        owner?.springLoadTarget(draggingInfo) == nil ? .disabled : .enabled
+    }
+
+    func springLoadingUpdated(_ draggingInfo: any NSDraggingInfo) -> NSSpringLoadingOptions {
+        owner?.springLoadTarget(draggingInfo) == nil ? .disabled : .enabled
+    }
+
+    func springLoadingActivated(_ activated: Bool, draggingInfo: any NSDraggingInfo) {
+        if activated, let url = owner?.springLoadTarget(draggingInfo) { owner?.onSpringLoad?(url) }
+    }
+
+    func springLoadingHighlightChanged(_ draggingInfo: any NSDraggingInfo) {}
 
     /// ⌘A goes to the content controller's selectAll: (model selection), not NSTableView's built-in one.
     override func selectAll(_ sender: Any?) {
@@ -68,6 +104,12 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     private(set) var renameController: InlineRenameController?
     /// Installed by ContentViewController (P1-35): row under the click, nil for empty space.
     var contextMenuProvider: ((Int?) -> NSMenu?)?
+    /// Installed by ContentViewController (P1-36).
+    var dropTarget: DropTarget?
+    var onSpringLoad: ((URL) -> Void)?
+    lazy var dragSource = DragSourceController(icons: context.icons)
+    var rightDrag = RightDragTracker()
+    var rightDownEvent: NSEvent?
 
     var focusView: NSView { tableView }
     var iconPoints: Double { settings.density == .comfortable ? 20 : 16 }
@@ -107,6 +149,9 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
                            object: scrollView.contentView)
         center.addObserver(self, selector: #selector(columnsChanged(_:)), name: NSTableView.columnDidMoveNotification, object: tableView)
         center.addObserver(self, selector: #selector(columnsChanged(_:)), name: NSTableView.columnDidResizeNotification, object: tableView)
+        tableView.registerForDraggedTypes(DropTarget.acceptedTypes)
+        tableView.setDraggingSourceOperationMask([.copy, .move, .link, .generic], forLocal: false)
+        tableView.draggingDestinationFeedbackStyle = .regular
         view = scrollView
         rebuildColumns()
         applyDensity()

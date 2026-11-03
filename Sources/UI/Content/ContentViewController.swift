@@ -17,6 +17,8 @@ final class ContentViewController: CommandHandlingViewController {
     let emptyState = EmptyStateView()
     let banner = BannerView()
     private lazy var menuBuilder = ContextMenuBuilder(context: context)
+    /// Drops onto the lists (P1-36); its origin is this window.
+    private(set) lazy var dropTarget = DropTarget(context: context, originView: view)
     private lazy var externalOpener: any ExternalURLOpening = ExternalOpeners.opener(for: context.options)
     private(set) var activeList: FileListView
     private var mountedListView: NSView?
@@ -89,6 +91,8 @@ final class ContentViewController: CommandHandlingViewController {
         emptyState.onAction = { [weak self] action in self?.performEmptyStateAction(action) }
         addChild(details)
         details.contextMenuProvider = { [weak self] row in self?.contextMenu(forRow: row) }
+        details.dropTarget = dropTarget
+        details.onSpringLoad = { [weak self] url in self?.session.navigate(to: url) }
         NotificationCenter.default.addObserver(self, selector: #selector(applicationDidBecomeActive(_:)),
                                                name: NSApplication.didBecomeActiveNotification, object: nil)
         sessionToken = session.observe { [weak self] event in self?.handle(event) }
@@ -178,6 +182,22 @@ final class ContentViewController: CommandHandlingViewController {
         controller.scenarioHooks.renameText = { [weak self] in
             (self?.activeList as? InlineRenameHost)?.renameController?.currentText
         }
+        controller.scenarioHooks.performDrop = { [weak self] sources, onto, modifiers, secondary, choice in
+            await self?.scenarioDrop(sources: sources, onto: onto, modifiers: modifiers, secondary: secondary, choice: choice)
+        }
+    }
+
+    /// Scenario drop entry point (overview §3.14 ScenarioProbe.probePerformDrop). Drag sessions can't be synthesized
+    /// in-process, so this runs the same DropPolicy → menu choice → job path as a real drop.
+    func scenarioDrop(sources: [URL], onto: String, modifiers: DragModifiers, secondary: Bool, choice: DragOperation?) async {
+        let folder = session.folder
+        guard let destination = DropDestinationResolver.resolve(onto, folder: folder, favorites: context.environment.settings.favorites) else {
+            return
+        }
+        let op = dropTarget.operation(sources: sources, destination: destination, modifiers: modifiers, secondary: secondary)
+        let picked: DropChoice? = op == .menu ? DropChoice(menuChoice: choice) : DropChoice(operation: op)
+        guard let picked, let kind = picked.jobKind(sources: sources, destination: destination) else { return }
+        _ = await context.environment.operations.perform(JobRequest(kind, origin: dropTarget.origin))
     }
 
     // MARK: context menus and clipboard (P1-35)
@@ -225,6 +245,8 @@ final class ContentViewController: CommandHandlingViewController {
         let created = IconsViewController(context: context)
         addChild(created)
         created.contextMenuProvider = { [weak self] row in self?.contextMenu(forRow: row) }
+        created.dropTarget = dropTarget
+        created.onSpringLoad = { [weak self] url in self?.session.navigate(to: url) }
         icons = created
         return created
     }

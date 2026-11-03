@@ -2,10 +2,19 @@ import AppKit
 import Core
 import MacxFS
 
-/// One clickable breadcrumb segment. P1-36 adds its drop forwarding (segments accept drops, §5.6).
+/// One clickable breadcrumb segment. Segments accept drops (§5.6, P1-36) through their FolderDropForwarder.
 @MainActor
 final class BreadcrumbSegmentButton: NSButton {
     var segmentURL: URL?
+    var dropForwarder: FolderDropForwarder? {
+        didSet {
+            if dropForwarder == nil { unregisterDraggedTypes() } else { registerForDraggedTypes(DropTarget.acceptedTypes) }
+        }
+    }
+
+    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation { dropForwarder?.validate(sender) ?? [] }
+    override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation { dropForwarder?.validate(sender) ?? [] }
+    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool { dropForwarder?.perform(sender, in: self) ?? false }
 }
 
 /// Breadcrumb mode of the address bar (§5.2): `Volume › a › b`. Clicking a segment navigates; the › after a segment
@@ -17,6 +26,8 @@ final class BreadcrumbView: NSView {
     var onEmptySpaceClick: (() -> Void)?
     /// Lists a folder's subfolders off main for the › menus (installed by AddressBarView).
     var listSubfolders: ((URL) async -> [String])?
+    /// Drops onto segments (P1-36); installed by AddressBarView, which has the UIContext.
+    var dropTarget: DropTarget?
 
     private(set) var segments: [BreadcrumbSegment] = []
     private(set) var segmentButtons: [BreadcrumbSegmentButton] = []
@@ -163,6 +174,8 @@ final class BreadcrumbView: NSView {
     private func makeSegmentButton(_ segment: BreadcrumbSegment, index: Int) -> BreadcrumbSegmentButton {
         let button = BreadcrumbSegmentButton(title: segment.title, target: self, action: #selector(segmentClicked(_:)))
         button.segmentURL = segment.url
+        let segmentURL = segment.url
+        button.dropForwarder = dropTarget.map { FolderDropForwarder(target: $0, destination: { segmentURL }) }
         button.bezelStyle = .accessoryBarAction
         button.showsBorderOnlyWhileMouseInside = true
         button.lineBreakMode = .byTruncatingMiddle

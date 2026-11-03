@@ -28,6 +28,8 @@ final class SidebarViewController: CommandHandlingViewController {
     private var revealTask: Task<Void, Never>?
     /// Programmatic selection/expansion: no navigation, no settings writes.
     var isSyncing = false
+    /// P1-36 (§5.4, §5.6): drops onto a tree node, favorite or volume row go through DropTarget.
+    private(set) lazy var fileDropTarget = DropTarget(context: context, originView: outlineView)
 
     var environment: CoreEnvironment { context.environment }
     var settings: Settings { environment.settings }
@@ -106,7 +108,7 @@ final class SidebarViewController: CommandHandlingViewController {
         outlineView.allowsEmptySelection = true
         outlineView.allowsMultipleSelection = false
         outlineView.setAccessibilityLabel(L10n.string("Sidebar"))
-        outlineView.registerForDraggedTypes([.fileURL, Self.favoritePasteboardType])
+        outlineView.registerForDraggedTypes([Self.favoritePasteboardType] + DropTarget.acceptedTypes)
         outlineView.setDraggingSourceOperationMask(.move, forLocal: true)
         outlineView.dataSource = self
         outlineView.delegate = self

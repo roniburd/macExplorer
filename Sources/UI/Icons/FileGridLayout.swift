@@ -129,6 +129,19 @@ final class FileGridLayout: NSCollectionViewLayout {
         return attributes(indexPath.item, frame(forItem: indexPath.item))
     }
 
+    /// Drops (P1-36): onto the item under the point; elsewhere (gaps, empty space, an empty folder) a zero-sized
+    /// gap so the drop is still offered and IconsViewController retargets it to the displayed folder.
+    override func layoutAttributesForDropTarget(at pointInCollectionView: NSPoint) -> NSCollectionViewLayoutAttributes? {
+        if let index = itemIndex(at: pointInCollectionView) { return attributes(index, frame(forItem: index)) }
+        return layoutAttributesForInterItemGap(before: IndexPath(item: itemCount, section: 0))
+    }
+
+    override func layoutAttributesForInterItemGap(before indexPath: IndexPath) -> NSCollectionViewLayoutAttributes? {
+        let gap = NSCollectionViewLayoutAttributes(forInterItemGapBefore: IndexPath(item: indexPath.item, section: 0))
+        gap.frame = .zero
+        return gap
+    }
+
     override func shouldInvalidateLayout(forBoundsChange newBounds: NSRect) -> Bool {
         abs(newBounds.width - preparedWidth) > 0.5
     }
