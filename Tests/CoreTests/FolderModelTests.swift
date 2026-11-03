@@ -354,6 +354,7 @@ final class FolderModelTests: XCTestCase {
 
     func testRetryFromErrorReadsAgainWithNewGeneration() async throws {
         let w = try await FolderTestWorld.make(self)
+        w.pacer = ManualFramePacer()             // no frame elapses before the one-file read completes
         let m = w.model(w.url("later"))
         let log = EventLog(m)
         m.start()
@@ -431,6 +432,98 @@ final class FolderModelTests: XCTestCase {
         try w.dir("gone")
         m.refresh()
         try await w.waitUntil("complete") { m.state == .complete }
+    }
+
+    func testRefreshWhileAReReadIsStalledStartsANewRead() async throws {
+        let w = try await FolderTestWorld.make(self)
+        try w.dir("st")
+        try w.file("st/a")
+        let m = try await w.open("st")
+        let reads = ScriptedReads()
+        m.readSource = reads.source()
+        m.refresh()
+        try await w.waitUntil("re-read started") { reads.reads.count == 1 }
+        let hung = reads.last
+        hung.continuation.yield(.stalled)
+        await w.settle()
+        XCTAssertEqual(m.state, .complete, "the rows on screen stay")
+        m.refresh()
+        try await w.waitUntil("a new re-read replaces the stalled one") { reads.reads.count == 2 }
+        let fresh = reads.last
+        XCTAssertGreaterThan(fresh.generation, hung.generation)
+        // The stalled read answers late: ignored.
+        hung.continuation.yield(.resumed)
+        hung.continuation.yield(.batch(TestBatch.files(hung.generation, ["late"], firstID: 90)))
+        hung.continuation.yield(.completed(ReadSummary(entryCount: 1, degradedCount: 0, usedFallback: false, elapsed: .zero)))
+        fresh.continuation.yield(.batch(TestBatch.files(fresh.generation, ["a", "b"], firstID: 80)))
+        fresh.continuation.yield(.completed(ReadSummary(entryCount: 2, degradedCount: 0, usedFallback: false, elapsed: .zero)))
+        try await w.waitUntil("fresh result applied") { m.rowNames == ["a", "b"] }
+        await w.settle()
+        XCTAssertEqual(m.rowNames, ["a", "b"])
+        XCTAssertEqual(m.state, .complete)
+        m.refresh()
+        try await w.waitUntil("not stuck: refresh reads again") { reads.reads.count == 3 }
+    }
+
+    func testRefreshWhileAReReadMakesProgressOnlyQueuesOnePending() async throws {
+        let w = try await FolderTestWorld.make(self)
+        try w.dir("pp")
+        let m = try await w.open("pp")
+        let reads = ScriptedReads()
+        m.readSource = reads.source()
+        m.refresh()
+        try await w.waitUntil("re-read started") { reads.reads.count == 1 }
+        reads.last.continuation.yield(.stalled)
+        reads.last.continuation.yield(.resumed)
+        await w.settle()
+        m.refresh()
+        m.refresh()
+        await w.settle()
+        XCTAssertEqual(reads.reads.count, 1, "a read that resumed is not restarted")
+    }
+
+    func testHungItemReadDoesNotBlockAReSort() async throws {
+        let w = try await FolderTestWorld.make(self)
+        try w.dir("hs")
+        for name in ["a", "b", "c"] { try w.file("hs/" + name) }
+        let m = try await w.open("hs")
+        let gate = HoldGate()
+        defer { gate.open() }
+        m.itemSource = { _, _, _ in
+            await gate.wait()
+            throw CancellationError()
+        }
+        m.applyLocalChange(LocalChange(directory: w.url("hs"), modified: ["a"]))
+        try await w.waitUntil("item read issued") { gate.waiting > 0 }
+        let log = EventLog(m)
+        m.setQuery(ViewQuery(sort: SortDescriptor(field: .name, ascending: false)))
+        try await w.waitUntil("re-sorted behind a hung item read") { m.rowNames == ["c", "b", "a"] }
+        XCTAssertEqual(log.changeSets, [.reset])
+    }
+
+    func testALateItemReadDoesNotOverwriteANewerOne() async throws {
+        let w = try await FolderTestWorld.make(self)
+        try w.dir("lr")
+        for name in ["a", "b"] { try w.file("lr/" + name) }
+        let m = try await w.open("lr")
+        let gate = HoldGate()
+        defer { gate.open() }
+        var calls = 0
+        m.itemSource = { names, _, generation in
+            calls += 1
+            if calls == 1 {                          // slow: answers after the newer read, with what it saw first
+                await gate.wait()
+                return ItemReadResult(batch: TestBatch.files(generation, names, firstID: 60), missing: [], errors: [:])
+            }
+            return ItemReadResult(batch: Batch(generation: generation), missing: names, errors: [:])
+        }
+        m.applyLocalChange(LocalChange(directory: w.url("lr"), modified: ["a", "b"]))
+        try await w.waitUntil("slow read issued") { gate.waiting == 1 }
+        m.applyLocalChange(LocalChange(directory: w.url("lr"), removed: ["A"]))
+        try await w.waitUntil("removed") { m.rowNames == ["b"] }
+        gate.open()
+        try await w.waitUntil("slow read applied") { m.entry(atRow: 0).fileID == 61 }
+        XCTAssertEqual(m.rowNames, ["b"], "the late answer for a is superseded; b is still applied")
     }
 
     // MARK: local changes
@@ -676,5 +769,23 @@ final class FolderModelTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(10))
         }
         return await condition()
+    }
+}
+
+/// Holds callers until `open()` (a lane call that never returns while the test runs).
+@MainActor
+final class HoldGate {
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var isOpen = false
+    var waiting: Int { waiters.count }
+    func wait() async {
+        if isOpen { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+    func open() {
+        isOpen = true
+        let all = waiters
+        waiters = []
+        for c in all { c.resume() }
     }
 }

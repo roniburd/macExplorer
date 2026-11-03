@@ -9,8 +9,32 @@ public enum PathCompletion {
     /// Subfolder names of the parent of `partial` starting with its last component (case-insensitive), ≤ 50.
     /// Directories and symlinks to directories only, sorted like Finder. Dot-folders appear only when the last
     /// component starts with ".". Empty input, "~" and unreadable parents give [].
+    /// Runs on a read lane of the volume containing that parent (longest match in `mounts`, `.unknown` when none),
+    /// so completing under a hung share never blocks the current folder's volume (`performRecovering`, as resolve).
+    public static func complete(_ partial: String, current: URL, home: URL, lanes: LanePool, mounts: MountTable) async -> [String] {
+        guard let (path, prefix) = target(partial, current: current, home: home) else { return [] }
+        let volume = mounts.volume(containing: path)?.id ?? .unknown
+        let names = try? await lanes.performRecovering(on: volume, .read) { context in
+            assertOffMain()
+            return withNoMaterialization { subfolders(of: path, prefix: prefix, context: context) }
+        }
+        return names ?? []
+    }
+
+    /// As `complete(_:current:home:lanes:mounts:)` on a lane of `volume`, which must be the volume of the typed
+    /// path's parent, not the current folder's.
     public static func complete(_ partial: String, current: URL, home: URL, lanes: LanePool, volume: VolumeID) async -> [String] {
-        guard !partial.isEmpty, partial != "~" else { return [] }
+        guard let (path, prefix) = target(partial, current: current, home: home) else { return [] }
+        let names = try? await lanes.perform(on: volume, .read) { context in
+            assertOffMain()
+            return withNoMaterialization { subfolders(of: path, prefix: prefix, context: context) }
+        }
+        return names ?? []
+    }
+
+    /// The parent folder to list (normalized absolute path) and the last-component prefix to match.
+    private static func target(_ partial: String, current: URL, home: URL) -> (String, String)? {
+        guard !partial.isEmpty, partial != "~" else { return nil }
         let head: String
         let prefix: String
         if let slash = partial.lastIndex(of: "/") {
@@ -20,13 +44,8 @@ public enum PathCompletion {
             head = "."
             prefix = partial
         }
-        guard let parent = AddressResolver.absolutePath(head, current: current, home: home) else { return [] }
-        let path = AddressResolver.normalize(parent)
-        let names = try? await lanes.perform(on: volume, .read) { context in
-            assertOffMain()
-            return withNoMaterialization { subfolders(of: path, prefix: prefix, context: context) }
-        }
-        return names ?? []
+        guard let parent = AddressResolver.absolutePath(head, current: current, home: home) else { return nil }
+        return (AddressResolver.normalize(parent), prefix)
     }
 
     /// Runs on a lane thread.

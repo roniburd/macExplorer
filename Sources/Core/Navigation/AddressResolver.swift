@@ -21,19 +21,26 @@ public enum AddressResolver {
         return URL(filePath: normalized, directoryHint: normalized == "/" ? .isDirectory : .notDirectory)
     }
 
-    /// parse + lstat/stat on a read lane. A folder whose contents can't be listed (POSIX) is `.noAccess`; a package
-    /// (e.g. an `.app`) is reported as a file so the caller selects it in its parent, as Finder's Go to Folder does.
-    /// An unresponsive volume or failed lane reports `.noAccess`.
-    public static func resolve(_ input: String, current: URL, home: URL, lanes: LanePool, volume: VolumeID) async -> AddressResult {
+    /// parse + lstat/stat on a read lane of the volume containing the parsed path (longest mount-point match in
+    /// `mounts`, `.unknown` when none). The address bar uses this: a typed path on a hung share then blocks only that
+    /// share's lane, never the current folder's. A folder whose contents can't be listed (POSIX) is `.noAccess`; a
+    /// package (e.g. an `.app`) is reported as a file so the caller selects it in its parent, as Finder's Go to
+    /// Folder does. An unresponsive volume or failed lane reports `.noAccess`. Like FavoritesResolver, a call that
+    /// stalls and then returns late resets that volume's poisoned count (`performRecovering`).
+    public static func resolve(_ input: String, current: URL, home: URL, lanes: LanePool, mounts: MountTable) async -> AddressResult {
         guard let url = parse(input, current: current, home: home) else { return .notFound(input) }
         let path = url.path(percentEncoded: false)
-        do {
-            return try await lanes.perform(on: volume, .read) { _ in
-                assertOffMain()
-                return withNoMaterialization { classify(path, input: input) }
-            }
-        } catch {
-            return .noAccess(input)
+        let volume = mounts.volume(containing: path)?.id ?? .unknown
+        return await classifyOnLane(path, input: input) { work in try await lanes.performRecovering(on: volume, .read, work) }
+    }
+
+    /// As `resolve(_:current:home:lanes:mounts:)` on a lane of `volume`, which must be the volume of the parsed
+    /// target (`parse` + `Volumes.volume(for:)`), not the current folder's: a target on another, hung volume would
+    /// otherwise poison the current volume's lanes.
+    public static func resolve(_ input: String, current: URL, home: URL, lanes: LanePool, volume: VolumeID) async -> AddressResult {
+        guard let url = parse(input, current: current, home: home) else { return .notFound(input) }
+        return await classifyOnLane(url.path(percentEncoded: false), input: input) { work in
+            try await lanes.perform(on: volume, .read, work)
         }
     }
 
@@ -78,6 +85,20 @@ public enum AddressResolver {
     static func plainPath(_ url: URL) -> String {
         let path = url.path(percentEncoded: false)
         return path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
+    }
+
+    private static func classifyOnLane(
+        _ path: String, input: String,
+        _ run: (@escaping @Sendable (LaneContext) throws -> AddressResult) async throws -> AddressResult
+    ) async -> AddressResult {
+        do {
+            return try await run { _ in
+                assertOffMain()
+                return withNoMaterialization { classify(path, input: input) }
+            }
+        } catch {
+            return .noAccess(input)
+        }
     }
 
     /// Runs on a lane thread.

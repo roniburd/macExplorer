@@ -96,10 +96,17 @@ public final class FolderModel {
     /// Keys tag of `store` in the worker (FolderWorker.KeysTag).
     var keysTag: FolderWorker.KeysTag = 0
 
-    // Serialized store mutations after the first listing (re-sorts, patches, re-read results)
+    // Serialized store mutations after the first listing (re-sorts, patch and re-read results). No I/O runs in
+    // this queue: item reads happen before their patch is enqueued, so a hung lane cannot hold up a re-sort.
     private var opTail: Task<Void, Never>?
+    /// Item reads (FolderModel+Changes): issue counter and, per identity name, the newest read that covers it.
+    var itemReadSeq = 0
+    var latestItemRead: [String: Int] = [:]
+    var itemReadsInFlight = 0
     var rereadInFlight = false
     var rereadPending = false
+    /// The re-read in flight reported .stalled/.waitingForPermission and has not resumed.
+    var rereadStalled = false
     var namesPatchedDuringReread: Set<String> = []
     var deferredChanges: [LocalChange] = []
     var pendingSelect: [String] = []
@@ -138,10 +145,13 @@ public final class FolderModel {
     }
 
     /// F5/⌘R: re-read + diff, keeps rows, never → .loading. From an error or unresponsive state it retries.
+    /// A re-read that stalled (hung volume, pending permission) is abandoned and a new one starts.
     public func refresh() {
         guard started, !closed else { return }
         switch state {
-        case .complete: beginReread()
+        case .complete:
+            if rereadInFlight && rereadStalled { abandonReread() }
+            beginReread()
         case .loading, .partial: break
         case .error, .unresponsive, .waitingForPermission: retry()
         }
@@ -167,6 +177,7 @@ public final class FolderModel {
         pacerTask?.cancel()
         opTail?.cancel()
         readTask = nil
+        resetItemReads()
         pacerTask = nil
         stopWatcher()
         busToken?.cancel()
@@ -321,6 +332,12 @@ public final class FolderModel {
         }
     }
 
+    /// A fresh load drops every item read in flight (their epoch is stale and they never claim).
+    func resetItemReads() {
+        latestItemRead = [:]
+        itemReadsInFlight = 0
+    }
+
     private func clearRows() {
         store = EntryStore(identityMode: store.identityMode)
         keysTag = 0
@@ -339,6 +356,8 @@ public final class FolderModel {
         rowsPresented = false
         rereadInFlight = false
         rereadPending = false
+        rereadStalled = false
+        resetItemReads()
         let gen = generation, directory = self.directory, worker = self.worker, query = self.query
         let identityMode = store.identityMode
         var options = ReadOptions()
@@ -446,6 +465,7 @@ public final class FolderModel {
         guard !closed, state == .complete else { return }
         if rereadInFlight { rereadPending = true; return }
         rereadInFlight = true
+        rereadStalled = false
         namesPatchedDuringReread = []
         generation = generation.next()
         let gen = generation, directory = self.directory, worker = self.worker, query = self.query
@@ -468,8 +488,10 @@ public final class FolderModel {
         case .batch(let batch):
             guard batch.generation == gen else { return }
             await worker.ingest(batch)
-        case .stalled, .waitingForPermission, .resumed:
-            break                                   // the rows on screen stay; nothing is pending for the user
+        case .stalled, .waitingForPermission:
+            rereadStalled = true                    // the rows on screen stay; refresh() abandons this read
+        case .resumed:
+            rereadStalled = false
         case .completed:
             let epoch = self.epoch
             enqueue { [weak self] in
@@ -486,13 +508,25 @@ public final class FolderModel {
             guard !closed, generation == gen else { return }
             rereadInFlight = false
             rereadPending = false
+            rereadStalled = false
             clearRows()
             setState(FolderState(failure))
         }
     }
 
+    /// Drops a stalled re-read: its stream is no longer consumed and its late results carry a stale generation.
+    /// The worker's half-built listing is replaced by the next `begin` (cancelling it here could race that begin).
+    private func abandonReread() {
+        readTask?.cancel()
+        readTask = nil
+        rereadInFlight = false
+        rereadPending = false
+        rereadStalled = false
+    }
+
     private func rereadDone() {
         rereadInFlight = false
+        rereadStalled = false
         let names = namesPatchedDuringReread
         namesPatchedDuringReread = []
         if !names.isEmpty { enqueuePatch(names.sorted(), renames: []) }

@@ -1537,13 +1537,21 @@ public enum AddressResult: Sendable, Equatable {
 public enum AddressResolver {
     /// Pure: /abs, ~, ~/rel, file:// URLs, relative to `current`; standardizes "." and "..".
     public static func parse(_ input: String, current: URL, home: URL) -> URL?
-    /// parse + lstat/stat on a read lane.
+    /// parse + lstat/stat on a read lane of the volume containing the parsed target (longest match in `mounts`,
+    /// `.unknown` when none). S4's address bar uses this one (mounts: `Volumes.mountTable`), so a typed path on a
+    /// hung share never blocks or poisons the current folder's volume.
+    public static func resolve(_ input: String, current: URL, home: URL, lanes: LanePool, mounts: MountTable) async -> AddressResult
+    /// Same on a lane of `volume`, which MUST be the parsed target's volume (`parse` + `Volumes.volume(for:)`),
+    /// never the current folder's.
     public static func resolve(_ input: String, current: URL, home: URL, lanes: LanePool, volume: VolumeID) async -> AddressResult
 }
 
 // Navigation/PathCompletion.swift
 public enum PathCompletion {
     /// Subfolder names of the parent of `partial` starting with its last component (case-insensitive), ≤ 50.
+    /// Lists on a lane of the volume containing that parent (longest match in `mounts`); S4 uses this one.
+    public static func complete(_ partial: String, current: URL, home: URL, lanes: LanePool, mounts: MountTable) async -> [String]
+    /// Same on a lane of `volume`, which MUST be the volume of the typed path's parent, never the current folder's.
     public static func complete(_ partial: String, current: URL, home: URL, lanes: LanePool, volume: VolumeID) async -> [String]
 }
 ```
