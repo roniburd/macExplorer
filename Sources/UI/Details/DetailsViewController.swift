@@ -3,14 +3,24 @@ import os
 import Core
 import MacxFS
 
-/// NSTableView with the routing the content view needs. P1-33 adds mouse and arrow handling, P1-35 context menus,
-/// P1-36 drags and right-drag.
+/// NSTableView with the routing the content view needs. P1-35 adds context menus, P1-36 drags and right-drag.
 final class FileTableView: NSTableView {
     weak var owner: DetailsViewController?
 
     override func keyDown(with event: NSEvent) {
         if owner?.handleKeyDown(event) == true { return }
         super.keyDown(with: event)
+    }
+
+    /// Model-owned selection (S5-C4): NSTableView's own click tracking never runs.
+    override func mouseDown(with event: NSEvent) {
+        guard let owner else { return super.mouseDown(with: event) }
+        owner.handleMouseDown(event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard let owner else { return super.mouseUp(with: event) }
+        owner.handleMouseUp(event)
     }
 
     /// ⌘A goes to the content controller's selectAll: (model selection), not NSTableView's built-in one.
@@ -31,6 +41,8 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     private var isRestoringScroll = false
     private var didPaintFirstRows = false
     private var lastCutNames: Set<String> = []
+    let mouse = ListMouseHandler()
+    let typeSelect = TypeSelect()
 
     var focusView: NSView { tableView }
     var iconPoints: Double { settings.density == .comfortable ? 20 : 16 }
@@ -58,8 +70,7 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
         tableView.rowSizeStyle = .custom
         tableView.intercellSpacing = NSSize(width: 6, height: 0)
         tableView.headerView = NSTableHeaderView()
-        tableView.target = nil                      // double-click goes up the responder chain
-        tableView.doubleAction = Selector(Command.open.selectorName)
+        tableView.doubleAction = nil                // double-click is handled in handleMouseDown (clickCount 2)
         tableView.setAccessibilityIdentifier(AXID.detailsTable)
         scrollView.documentView = tableView
         scrollView.hasVerticalScroller = true
@@ -177,7 +188,28 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     // MARK: keys
 
     func handleKeyDown(_ event: NSEvent) -> Bool {
-        KeyRouter.handle(event, focus: .content, returnKey: settings.returnKey, from: tableView)
+        if KeyRouter.handle(event, focus: .content, returnKey: settings.returnKey, from: tableView) {
+            typeSelect.reset()
+            return true
+        }
+        guard let folder else { return false }
+        defer { reloadSelectionDrawing() }   // mirror at once, also when hosted without ContentViewController
+        return ListKeys.handle(event, folder: folder, list: self, pageSize: max(1, visibleRows().count - 1),
+                               navigate: SelectionController.linearNavigator(rowCount: folder.rowCount), typeSelect: typeSelect)
+    }
+
+    func handleMouseDown(_ event: NSEvent) {
+        view.window?.makeFirstResponder(tableView)
+        guard let folder else { return }
+        let row = tableView.row(at: tableView.convert(event.locationInWindow, from: nil))
+        mouse.mouseDown(row: row >= 0 ? row : nil, event: event, folder: folder, from: tableView)
+        reloadSelectionDrawing()
+    }
+
+    func handleMouseUp(_ event: NSEvent) {
+        guard let folder else { return }
+        mouse.mouseUp(folder: folder)
+        reloadSelectionDrawing()
     }
 
     // MARK: columns
@@ -265,10 +297,9 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
         return cell
     }
 
+    /// Only the model's own mirror writes are accepted; built-in proposals never reach the model (S5-C4).
     func tableView(_ tableView: NSTableView, selectionIndexesForProposedSelection proposed: IndexSet) -> IndexSet {
-        if isSyncingSelection { return proposed }
-        folder?.select(.set(proposed, cursor: proposed.last))   // P1-33 replaces this with model-only mouse handling
-        return folder?.selection.rows ?? proposed
+        isSyncingSelection ? proposed : (folder?.selection.rows ?? [])
     }
 
     // MARK: helpers

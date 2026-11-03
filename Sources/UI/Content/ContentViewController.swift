@@ -14,6 +14,9 @@ final class ContentViewController: CommandHandlingViewController {
     let statusBar = StatusBarView()
     let stack = NSStackView()
     let listContainer = NSView()
+    let emptyState = EmptyStateView()
+    let banner = BannerView()
+    private lazy var externalOpener: any ExternalURLOpening = ExternalOpeners.opener(for: context.options)
     private(set) var activeList: FileListView
     private var mountedListView: NSView?
     private var folderToken: ObserverToken?
@@ -66,11 +69,23 @@ final class ContentViewController: CommandHandlingViewController {
             root.widthAnchor.constraint(greaterThanOrEqualToConstant: 320),
             root.heightAnchor.constraint(greaterThanOrEqualToConstant: 200),
         ])
+        stack.insertArrangedSubview(banner, at: 1)
+        banner.translatesAutoresizingMaskIntoConstraints = false
+        banner.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        emptyState.translatesAutoresizingMaskIntoConstraints = false
+        listContainer.addSubview(emptyState)
+        NSLayoutConstraint.activate([
+            emptyState.topAnchor.constraint(equalTo: listContainer.topAnchor),
+            emptyState.bottomAnchor.constraint(equalTo: listContainer.bottomAnchor),
+            emptyState.leadingAnchor.constraint(equalTo: listContainer.leadingAnchor),
+            emptyState.trailingAnchor.constraint(equalTo: listContainer.trailingAnchor),
+        ])
         view = root
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        emptyState.onAction = { [weak self] action in self?.performEmptyStateAction(action) }
         addChild(details)
         sessionToken = session.observe { [weak self] event in self?.handle(event) }
         volumesToken = context.environment.volumes.observe { [weak self] _ in self?.refreshFreeSpace(force: true) }
@@ -98,7 +113,7 @@ final class ContentViewController: CommandHandlingViewController {
         case .folderChanged(let model): bind(model)
         case .viewModeChanged(let mode): setViewMode(mode)
         case .historyChanged: updateCommandBar()
-        case .banner: break   // P1-33 shows the banner
+        case .banner(let text): showBanner(text)
         }
     }
 
@@ -111,17 +126,49 @@ final class ContentViewController: CommandHandlingViewController {
         refreshFreeSpace(force: false)
         updateStatus()
         updateCommandBar()
+        updateEmptyState()
     }
 
     func handle(_ event: FolderEvent) {
         switch event {
-        case .changes(let changes): activeList.apply(changes); updateStatus()
+        case .changes(let changes): activeList.apply(changes); updateStatus(); updateEmptyState()
         case .selection: activeList.reloadSelectionDrawing(); updateStatus(); updateCommandBar()
-        case .state: updateStatus()
+        case .state: updateStatus(); updateEmptyState()
         case .beginRename(let row): activeList.beginInlineRename(row: row)
-        case .relocate: break   // BrowserSession navigates (P1-26)
-        case .query: updateStatus()
+        case .relocate: break   // BrowserSession navigates (P1-26) and emits .banner
+        case .query: updateStatus(); updateEmptyState()
         }
+    }
+
+    // MARK: empty state, banner, scenario hooks (P1-33)
+
+    func updateEmptyState() {
+        let folder = session.folder
+        emptyState.show(EmptyStateContent.make(state: folder.state, folderName: folder.directory.lastPathComponent,
+                                               visibleCount: folder.rowCount, filter: folder.query.filter))
+    }
+
+    func showBanner(_ text: String?) {
+        if let text { banner.show(text) } else { banner.hide() }
+    }
+
+    func performEmptyStateAction(_ action: EmptyStateAction) {
+        switch action {
+        case .retry: session.folder.retry()
+        case .openPrivacySettings: externalOpener.open(SystemSettingsLinks.privacyAllFiles)
+        case .properties: handler?.perform(.properties, target: .currentFolder(session.folder), sender: emptyState)
+        }
+    }
+
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        installScenarioHooks()
+    }
+
+    func installScenarioHooks() {
+        guard let controller = view.window?.windowController as? BrowserWindowController else { return }
+        controller.scenarioHooks.emptyStateText = { [weak self] in self?.emptyState.currentText }
+        controller.scenarioHooks.bannerText = { [weak self] in self?.banner.currentText }
     }
 
     // MARK: view mode

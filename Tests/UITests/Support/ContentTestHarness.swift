@@ -148,6 +148,7 @@ final class ContentTestHarness {
         for path in lockedPaths { _ = chflags(path, 0) }
         for path in restrictedPaths { _ = chmod(path, 0o755) }
         NSPasteboard(name: NSPasteboard.Name(pasteboardName)).releaseGlobally()
+        RecordingURLOpener.shared.reset()
         sandbox.destroy()
     }
 }

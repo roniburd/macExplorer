@@ -639,6 +639,17 @@
         }
       }
     },
+    "Dismiss" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dismiss"
+          }
+        }
+      }
+    },
     "Documents" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1112,6 +1123,17 @@
         }
       }
     },
+    "Location not responding" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Location not responding"
+          }
+        }
+      }
+    },
     "Locations" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1343,6 +1365,17 @@
         }
       }
     },
+    "No items match '%@'" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No items match '%@'"
+          }
+        }
+      }
+    },
     "OK" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1383,6 +1416,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Open Privacy & Security"
+          }
+        }
+      }
+    },
+    "Open Privacy Settings" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Privacy Settings"
           }
         }
       }
@@ -1625,6 +1669,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Restored the original names of %ld items."
+          }
+        }
+      }
+    },
+    "Retry" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retry"
           }
         }
       }
@@ -2036,6 +2091,17 @@
         }
       }
     },
+    "This folder is empty" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This folder is empty"
+          }
+        }
+      }
+    },
     "Today %@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2135,6 +2201,17 @@
         }
       }
     },
+    "Waiting for macOS permission…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for macOS permission…"
+          }
+        }
+      }
+    },
     "Welcome to macExplorer" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2175,6 +2252,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "You can't undo this action."
+          }
+        }
+      }
+    },
+    "You don't have permission to view '%@'" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You don't have permission to view '%@'"
           }
         }
       }
@@ -2274,6 +2362,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "macOS asks before an app reads Desktop, Documents, Downloads, other apps' data and external disks. With Full Disk Access, macExplorer can browse and search everywhere without a prompt for each folder. You can grant it in Privacy & Security at any time."
+          }
+        }
+      }
+    },
+    "macOS is blocking access to '%@'" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS is blocking access to '%@'"
           }
         }
       }

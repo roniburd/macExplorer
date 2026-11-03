@@ -59,7 +59,7 @@ final class RubberBandView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
-/// NSCollectionView with model-owned selection. P1-33 adds SelectionController clicks and type-select, P1-35
+/// NSCollectionView with model-owned selection; clicks and keys go through SelectionController. P1-35 adds
 /// context menus, P1-36 drags.
 final class FileCollectionView: NSCollectionView {
     weak var owner: IconsViewController?
@@ -73,6 +73,11 @@ final class FileCollectionView: NSCollectionView {
     override func mouseDown(with event: NSEvent) {
         guard let owner else { return super.mouseDown(with: event) }
         owner.handleMouseDown(event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard let owner else { return super.mouseUp(with: event) }
+        owner.handleMouseUp(event)
     }
 
     override func selectAll(_ sender: Any?) {
@@ -89,6 +94,8 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
     private(set) var folder: FolderModel?
     private var settingsLoop: ObservationLoop?
     private var isRestoringScroll = false
+    let mouse = ListMouseHandler()
+    let typeSelect = TypeSelect()
     var focusView: NSView { collectionView }
     private var settings: Settings { context.environment.settings }
     private var points: Double { layout.iconSize.points }
@@ -199,25 +206,15 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
     }
 
     func handleKeyDown(_ event: NSEvent) -> Bool {
-        if KeyRouter.handle(event, focus: .content, returnKey: settings.returnKey, from: collectionView) { return true }
-        guard let folder, let direction = Self.direction(event.specialKey) else { return false }
-        if event.modifierFlags.contains(.command) { return true }   // ⌘-arrows never change the selection (§5.5)
-        let cursor = folder.selection.cursor.flatMap { folder.row(of: $0) }
-        let target: Int? = if let cursor { layout.neighbor(of: cursor, direction) } else { folder.rowCount > 0 ? 0 : nil }
-        guard let target else { return true }
-        folder.select(event.modifierFlags.contains(.shift) ? .extend(to: target) : .set(IndexSet(integer: target), cursor: target))
-        scrollToRow(target)
-        return true
-    }
-
-    static func direction(_ key: NSEvent.SpecialKey?) -> GridDirection? {
-        switch key {
-        case .upArrow?: .up
-        case .downArrow?: .down
-        case .leftArrow?: .left
-        case .rightArrow?: .right
-        default: nil
+        if KeyRouter.handle(event, focus: .content, returnKey: settings.returnKey, from: collectionView) {
+            typeSelect.reset()
+            return true
         }
+        guard let folder else { return false }
+        let page = max(1, visibleRows().count - layout.columns)
+        defer { reloadSelectionDrawing() }   // mirror at once, also when hosted without ContentViewController
+        return ListKeys.handle(event, folder: folder, list: self, pageSize: page,
+                               navigate: SelectionController.gridNavigator(layout), typeSelect: typeSelect)
     }
 
     func handleMouseDown(_ event: NSEvent) {
@@ -225,14 +222,18 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
         view.window?.makeFirstResponder(collectionView)
         let point = collectionView.convert(event.locationInWindow, from: nil)
         if let index = layout.itemIndex(at: point) {
-            if event.clickCount >= 2 {
-                NSApp.sendAction(Selector(Command.open.selectorName), to: nil, from: collectionView)
-            } else {
-                folder.select(.set(IndexSet(integer: index), cursor: index))   // P1-33: SelectionController.click
-            }
+            mouse.mouseDown(row: index, event: event, folder: folder, from: collectionView)
+            reloadSelectionDrawing()
             return
         }
+        if event.clickCount >= 2 { return }
         trackRubberBand(from: point, event: event)
+    }
+
+    func handleMouseUp(_ event: NSEvent) {
+        guard let folder else { return }
+        mouse.mouseUp(folder: folder)
+        reloadSelectionDrawing()
     }
 
     private func trackRubberBand(from start: NSPoint, event: NSEvent) {
