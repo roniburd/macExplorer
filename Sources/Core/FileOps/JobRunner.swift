@@ -282,6 +282,13 @@ enum JobRunner {
             await CreateOps.newItem(ctx, kind: kind, in: directory)
         case .rename(let url, let newName):
             await CreateOps.rename(ctx, url, to: newName)
+        case .copy(let sources, let destination):
+            await CopyJob.run(ctx, sources: sources, destination: destination, duplicate: false)
+        case .duplicate(let urls):
+            let groups = Dictionary(grouping: urls) { $0.deletingLastPathComponent().standardizedFileURL.path }
+            for parent in groups.keys.sorted() where !ctx.control.isCancelled {
+                await CopyJob.run(ctx, sources: groups[parent]!, destination: URL(filePath: parent, directoryHint: .isDirectory), duplicate: true)
+            }
         default:
             // Kinds are wired one by one in P1-19 … P1-24; P1-24 removes this branch.
             for u in ctx.kind.allURLs { ctx.skip(u, reason: .other(code: ENOTSUP, message: String(cString: strerror(ENOTSUP)))) }
