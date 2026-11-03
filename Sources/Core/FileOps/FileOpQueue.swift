@@ -36,6 +36,7 @@ public actor FileOpQueue {
     private let interaction: any FileOpInteraction
     private let tuning: FileOpTuning
     private var order: [JobID] = []
+    private var held = false
     private var entries: [JobID: Entry] = [:]
     private var outcomes: [JobID: JobOutcome] = [:]
     private var undoFlags: [JobID: Bool] = [:]
@@ -46,8 +47,21 @@ public actor FileOpQueue {
 
     public init(lanes: LanePool, trash: any TrashService, journal: Journal, interaction: any FileOpInteraction,
                 tuning: FileOpTuning = FileOpTuning()) {
+        self.init(lanes: lanes, trash: trash, journal: journal, interaction: interaction, tuning: tuning, startsHeld: false)
+    }
+
+    /// `startsHeld`: jobs stay queued until `releaseHold()`. CoreEnvironment uses it so LaunchRecovery sees the
+    /// journal before any job of this session writes to it.
+    init(lanes: LanePool, trash: any TrashService, journal: Journal, interaction: any FileOpInteraction,
+         tuning: FileOpTuning, startsHeld: Bool) {
         self.lanes = lanes; self.trash = trash; self.journal = journal; self.interaction = interaction; self.tuning = tuning
+        self.held = startsHeld
         (eventStream, continuation) = AsyncStream.makeStream(of: JobEvent.self, bufferingPolicy: .unbounded)
+    }
+
+    func releaseHold() {
+        held = false
+        schedule()
     }
 
     public nonisolated var events: AsyncStream<JobEvent> { eventStream }
@@ -80,6 +94,7 @@ public actor FileOpQueue {
 
     /// A job starts when no earlier unfinished job has an unknown or overlapping device set (FIFO per volume set).
     private func schedule() {
+        guard !held else { return }
         var earlier: [Set<UInt64>?] = []
         for id in order {
             guard let e = entries[id], !e.finished else { continue }
@@ -186,9 +201,10 @@ public actor FileOpQueue {
     public var hasActiveJobs: Bool { !entries.isEmpty }
 
     public func suspendJobs(touching mountPoint: URL) -> [JobID] {
-        let prefix = mountPoint.standardizedFileURL.path
+        let base = mountPoint.standardizedFileURL.path
+        let prefix = base.hasSuffix("/") ? base : base + "/"            // "/" (boot volume) must match every path
         func touches(_ e: Entry) -> Bool {
-            e.ctx.kind.allURLs.contains { u in let p = u.standardizedFileURL.path; return p == prefix || p.hasPrefix(prefix + "/") }
+            e.ctx.kind.allURLs.contains { u in let p = u.standardizedFileURL.path; return p == base || p.hasPrefix(prefix) }
         }
         var running: [JobID] = []
         for id in order {

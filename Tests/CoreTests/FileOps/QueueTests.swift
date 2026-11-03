@@ -203,4 +203,26 @@ final class QueueTests: FileOpsTestCase {
         XCTAssertEqual(scripted.askedSpace().count, 1)
         XCTAssertGreaterThan(scripted.askedSpace()[0].needed, scripted.askedSpace()[0].available)
     }
+
+    /// The boot volume's mount point is "/": every absolute path is on it (P1-18's prefix test missed it).
+    func testSuspendJobsTouchingTheRootMountPointPausesQueuedJobs() async throws {
+        let gate = EventLog()
+        var tuning = FileOpTuning()
+        tuning.bodyOverride = { ctx in
+            while await ctx.checkpoint(), !gate.all.contains("go") { try? await Task.sleep(for: .milliseconds(5)) }
+        }
+        let (queue, _) = makeQueue(tuning: tuning)
+        let d = try dir("d")
+        let ida = await queue.enqueue(JobRequest(.copy(sources: [try file("a")], destination: d)))
+        let idb = await queue.enqueue(JobRequest(.copy(sources: [try file("b")], destination: d)))
+        await waitUntil { await queue.snapshots().first { $0.id == ida }?.state == .running }
+        let running = await queue.suspendJobs(touching: URL(filePath: "/", directoryHint: .isDirectory))
+        XCTAssertEqual(running, [ida])
+        let stateB = await queue.snapshots().first { $0.id == idb }?.state
+        XCTAssertEqual(stateB, .paused)
+        gate.add("go")
+        _ = await queue.outcome(of: ida)
+        await queue.resume(idb)
+        _ = await queue.outcome(of: idb)
+    }
 }
