@@ -6,13 +6,14 @@ import MacxFS
 /// `Ejecting` for sandboxed environments (tests, macx-scenarios): only disk images mounted under `root` are
 /// detached (`hdiutil detach` without -force, so a busy volume reports busy). Everything else is refused before
 /// any tool runs. Tools run on a fileOp lane of the image's volume and heartbeat while they wait.
-struct SandboxEjector: Ejecting {
+public struct SandboxEjector: Ejecting {
     struct Holder: Sendable, Equatable { var pid: Int32; var command: String }
 
     let root: URL
     let lanes: LanePool
 
-    init(root: URL, lanes: LanePool) { self.root = root; self.lanes = lanes }
+    /// Public for the app's sandbox mode (P1-26 AppBootstrap): only images mounted under `root` can be ejected.
+    public init(root: URL, lanes: LanePool) { self.root = root; self.lanes = lanes }
 
     func isInside(_ mountPoint: URL) -> Bool {
         let r = CoreEnvironment.canonicalTempPath(root.standardizedFileURL.path)
@@ -22,7 +23,7 @@ struct SandboxEjector: Ejecting {
 
     private func lane(_ mountPoint: URL) -> VolumeID { VolumeID(raw: "mnt:" + mountPoint.standardizedFileURL.path) }
 
-    func eject(_ mountPoint: URL) async throws(EjectError) {
+    public func eject(_ mountPoint: URL) async throws(EjectError) {
         guard isInside(mountPoint) else { throw EjectError.failed(code: EPERM, message: "") }
         let path = mountPoint.standardizedFileURL.path
         let result: (status: Int32, output: String)
@@ -40,7 +41,7 @@ struct SandboxEjector: Ejecting {
         throw EjectError.failed(code: result.status, message: result.output.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
-    func blockingProcesses(_ mountPoint: URL, timeout: Duration) async -> [String] {
+    public func blockingProcesses(_ mountPoint: URL, timeout: Duration) async -> [String] {
         let me = getpid()
         var names: [String] = []
         for h in await holders(mountPoint, timeout: timeout) where h.pid != me && !names.contains(h.command) {
@@ -49,7 +50,7 @@ struct SandboxEjector: Ejecting {
         return names
     }
 
-    func onlyOwnProcessHolds(_ mountPoint: URL, timeout: Duration) async -> Bool {
+    public func onlyOwnProcessHolds(_ mountPoint: URL, timeout: Duration) async -> Bool {
         let me = getpid()
         let h = await holders(mountPoint, timeout: timeout)
         return h.contains { $0.pid == me } && h.allSatisfy { $0.pid == me }

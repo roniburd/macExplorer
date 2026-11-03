@@ -87,4 +87,20 @@ final class AppSmokeTests: XCTestCase {
         let leftovers = try FileManager.default.contentsOfDirectory(atPath: root.path(percentEncoded: false))
         XCTAssertEqual(leftovers, [], "the app writes nothing into the browsed folder")
     }
+
+    @MainActor func testSandboxRunKeepsSettingsInTheStateDirectory() throws {
+        _ = NSApplication.shared
+        if NSScreen.screens.isEmpty { throw XCTSkip("needs a GUI login session (window server)") }
+        let root = sandbox.appending(path: "Root", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+        let state = sandbox.appending(path: "state", directoryHint: .isDirectory)
+        let r = try run(sandboxArguments(root: root, state: state) + ["--smoke-exit-after", "1.5"])
+        XCTAssertEqual(r.status, 0, r.stderr)
+        let settings = state.appending(path: "settings.json")
+        let data = try Data(contentsOf: settings)
+        let values = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertNotNil(values["lastLocation"], "AppBootstrap uses FileSettingsStorage in <state-dir> (window navigation saved it)")
+        let leftovers = try FileManager.default.contentsOfDirectory(atPath: root.path(percentEncoded: false))
+        XCTAssertEqual(leftovers, [])
+    }
 }
