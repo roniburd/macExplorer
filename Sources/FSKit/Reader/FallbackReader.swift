@@ -1,0 +1,65 @@
+import CFSKit
+import Darwin
+import Foundation
+
+public enum FallbackReader {
+    public static func read(_ directory: URL, generation: Generation, options: ReadOptions,
+                            types: TypeRegistry, context: LaneContext,
+                            emit: (Batch) -> Bool) throws(ReadFailure) -> ReadSummary {
+        assertOffMain()
+        let start = ContinuousClock.now
+        let fd = try openDirectory(directory)
+        let listFD = dup(fd)
+        defer { close(fd) }
+        guard listFD >= 0, let dir = fdopendir(listFD) else { throw ReadFailure(code: errno, stage: .open) }
+        defer { closedir(dir) }
+        var converter = RecordConverter(types: types)
+        var accumulator = BatchAccumulator(batchSize: options.batchSize, interval: options.batchInterval)
+        var batch = Batch(generation: generation)
+        var buffer = [UInt8](repeating: 0, count: 2048)
+        var total = 0, degraded = 0, stopped = false
+        while true {
+            errno = 0
+            guard let dent = readdir(dir) else {
+                if errno != 0 { throw ReadFailure(code: errno, stage: .read) }
+                break
+            }
+            let name = withUnsafeBytes(of: dent.pointee.d_name) { raw in
+                Array(raw.prefix(Int(dent.pointee.d_namlen)).bindMemory(to: UInt8.self))
+            }
+            if name == [0x2E] || name == [0x2E, 0x2E] { continue }
+            var record = cfsk_record()
+            let rc = name.withUnsafeBufferPointer { nb -> Int32 in
+                let cName = String(decoding: nb, as: UTF8.self)
+                return buffer.withUnsafeMutableBytes { cfsk_stat_at(fd, cName, $0.baseAddress, $0.count, &record) }
+            }
+            if rc != 0 {
+                let code = errno
+                if code == ENOENT { continue }      // vanished between readdir and stat
+                // Degraded row: name + d_type only, errno in the side table (§4.2 rule 3).
+                var fake = cfsk_record()
+                fake.fields = CFSK_HAS_NAME | CFSK_HAS_ERROR | CFSK_HAS_OBJTYPE
+                fake.error = UInt32(bitPattern: code)
+                fake.obj_type = dent.pointee.d_type == DT_DIR ? RecordConverter.VDIR : dent.pointee.d_type == DT_LNK ? RecordConverter.VLNK : RecordConverter.VREG
+                fake.name_len = UInt32(name.count)
+                let r = name.withUnsafeBufferPointer { nb -> (appended: Bool, degraded: Bool) in
+                    fake.name = UnsafeRawPointer(nb.baseAddress!).assumingMemoryBound(to: CChar.self)
+                    return converter.append(fake, to: &batch, directoriesOnly: options.directoriesOnly)
+                }
+                if r.appended { total += 1; degraded += 1 }
+            } else {
+                // record.name points into `buffer`; still valid here.
+                let r = buffer.withUnsafeBytes { _ in converter.append(record, to: &batch, directoriesOnly: options.directoriesOnly) }
+                if r.appended { total += 1 }
+                if r.degraded { degraded += 1 }
+            }
+            if accumulator.shouldFlush(count: batch.count) {
+                context.heartbeat()
+                if context.isCancelled || !emit(batch) { stopped = true; break }
+                batch = Batch(generation: generation)
+            }
+        }
+        if !stopped && batch.count > 0 { _ = emit(batch) }
+        return ReadSummary(entryCount: total, degradedCount: degraded, usedFallback: true, elapsed: ContinuousClock.now - start)
+    }
+}
