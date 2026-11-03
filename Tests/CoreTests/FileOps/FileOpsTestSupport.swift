@@ -113,3 +113,65 @@ class FileOpsTestCase: XCTestCase {
         XCTFail("condition not met within \(timeout)", file: file, line: line)
     }
 }
+
+/// Sendable view of a FileOpsTestCase's sandbox, for @MainActor test classes: `let w = world`, then
+/// `try await w.run(...)`, `await w.waitUntil { @MainActor in ... }`. Same sandbox guard as FileOpsTestCase.run.
+struct FileOpsWorld: Sendable {
+    let sandbox: Sandbox
+    var root: URL { sandbox.root }
+    var trashDir: URL { root.appending(path: ".trash", directoryHint: .isDirectory) }
+    var journalURL: URL { root.appending(path: "state/journal.json") }
+
+    func url(_ rel: String) -> URL { sandbox.url(rel) }
+    @discardableResult func file(_ rel: String, _ text: String = "x") throws -> URL {
+        try sandbox.createFile(rel, contents: Data(text.utf8))
+    }
+    @discardableResult func dir(_ rel: String) throws -> URL { try sandbox.createDirectory(rel) }
+    func text(_ u: URL) -> String? { (try? Data(contentsOf: u)).map { String(decoding: $0, as: UTF8.self) } }
+    func names(_ u: URL) -> [String] { ((try? FileManager.default.contentsOfDirectory(atPath: u.path)) ?? []).sorted() }
+    func exists(_ u: URL) -> Bool { var st = stat(); return lstat(u.path, &st) == 0 }
+
+    func makeQueue(interaction: any FileOpInteraction = ScriptedInteraction(), tuning: FileOpTuning = FileOpTuning(),
+                   trash: (any TrashService)? = nil) -> (FileOpQueue, Journal) {
+        let journal = Journal(fileURL: journalURL)
+        let queue = FileOpQueue(lanes: LanePool(), trash: trash ?? SandboxTrash(directory: trashDir),
+                                journal: journal, interaction: interaction, tuning: tuning)
+        return (queue, journal)
+    }
+
+    /// The only way @MainActor tests build requests: traps before anything is enqueued if a URL is outside the sandbox.
+    func request(_ kind: JobKind, registersUndo: Bool = true) -> JobRequest {
+        // standardizedFileURL drops "/private" only for paths that exist, so compare /private-free forms.
+        func plain(_ u: URL) -> String {
+            let p = u.standardizedFileURL.path
+            return p.hasPrefix("/private/") ? String(p.dropFirst("/private".count)) : p
+        }
+        let rootPath = plain(root) + "/"
+        for u in kind.allURLs {
+            precondition((plain(u) + "/").hasPrefix(rootPath), "URL outside the sandbox: \(u.path)")
+        }
+        return JobRequest(kind, registersUndo: registersUndo)
+    }
+
+    func run(_ kind: JobKind, on queue: FileOpQueue) async -> JobOutcome {
+        let id = await queue.enqueue(request(kind))
+        return await queue.outcome(of: id)
+    }
+
+    func waitUntil(timeout: Duration = .seconds(5), _ condition: @escaping @Sendable () async -> Bool,
+                   file: StaticString = #filePath, line: UInt = #line) async {
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline {
+            if await condition() { return }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        XCTFail("condition not met within \(timeout)", file: file, line: line)
+    }
+}
+
+extension FileOpsTestCase {
+    var world: FileOpsWorld { FileOpsWorld(sandbox: sandbox) }
+}
+
+/// lstat existence by path (usable inside @Sendable wait conditions).
+func onDisk(_ path: String) -> Bool { var st = stat(); return lstat(path, &st) == 0 }

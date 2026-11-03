@@ -40,13 +40,21 @@ enum CreateOps {
     static func rename(_ ctx: JobContext, _ url: URL, to newName: String) async {
         ctx.setTotals(items: 1, bytes: 0)
         ctx.setState(.running)
+        await performRename(ctx, url, to: newName)
+    }
+
+    /// Validation, same-item rename in place (or journaled two-step), otherwise the rename primitive.
+    /// Records `.renamed` and posts old → new. Undo reuses it without touching the job's totals.
+    @discardableResult
+    static func performRename(_ ctx: JobContext, _ url: URL, to newName: String) async -> StepResult {
         if newName.isEmpty || newName.contains("/") || newName.utf8.count > 255 {
             let kind: FileOpErrorKind = newName.utf8.count > 255 ? .nameTooLong
                 : .other(code: EINVAL, message: String(cString: strerror(EINVAL)))
-            if await ctx.askError(FileOpError(kind: kind, url: url)) == .cancel { ctx.cancelJob() } else { ctx.skip(url, reason: kind) }
-            return
+            if await ctx.askError(FileOpError(kind: kind, url: url)) == .cancel { ctx.cancelJob(); return .cancelled }
+            ctx.skip(url, reason: kind)
+            return .skipped
         }
-        guard url.lastPathComponent != newName else { return }
+        guard url.lastPathComponent != newName else { return .done }
         let target = url.deletingLastPathComponent().appending(path: newName)
         let parent = url.deletingLastPathComponent()
         let caps = (try? await ctx.onLane { _ in VolumeIdentity.capabilities(of: parent) })
@@ -64,11 +72,12 @@ enum CreateOps {
                 }
             }
         }
-        guard result == .done else { return }
+        guard result == .done else { return result }
         let id = (try? await ctx.onLane { _ in FileIdentity.of(path: target.path) }) ?? nil
         if let id { ctx.record(.renamed(from: url, to: target, id)) }
         ctx.noteRenamed(from: url, to: target)
         ctx.addProgress(items: 1, current: newName)
+        return .done
     }
 
     private static func inPlace(_ ctx: JobContext, from: URL, to: URL) async -> StepResult {

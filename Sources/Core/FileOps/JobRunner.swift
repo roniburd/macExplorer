@@ -303,9 +303,8 @@ enum JobRunner {
             await AttributeJobs.chmodRecursive(ctx, url, change)
         case .setAttributes(let urls, let edit):
             await AttributeJobs.setAttributes(ctx, urls, edit)
-        default:
-            // Kinds are wired one by one in P1-19 … P1-24; P1-24 removes this branch.
-            for u in ctx.kind.allURLs { ctx.skip(u, reason: .other(code: ENOTSUP, message: String(cString: strerror(ENOTSUP)))) }
+        case .undo(let record), .redo(let record):
+            await UndoPlanner.run(ctx, record)
         }
         try? await ctx.journal.finish(job: ctx.id)
         return ctx.outcome()
@@ -341,4 +340,12 @@ extension JobContext {
         setState(previous)
         return answer
     }
+}
+
+extension JobContext {
+    /// Undo/redo count one item per step, whatever the reused helpers added (they add their own item counts).
+    func setItemsDone(_ n: Int) { state.withLock { $0.snapshot.progress.itemsDone = n } }
+
+    /// A folder appeared without becoming part of the selection or `JobOutcome.created` (undo re-creating a parent).
+    func noteAdded(_ url: URL) { mutateChange(url.deletingLastPathComponent()) { $0.added.append(url.lastPathComponent) } }
 }

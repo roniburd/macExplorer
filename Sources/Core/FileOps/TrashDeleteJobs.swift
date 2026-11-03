@@ -10,38 +10,48 @@ final class RemoveProgressBox {
 }
 
 enum TrashDeleteJobs {
+    enum TrashOne: Sendable, Equatable { case done, noTrash, skipped, cancelled }
+
+    /// Trashes one item, asking on errors (Unlock and Continue clears uchg). Records `.trashed` with the
+    /// resulting URL and posts the removal. `.noTrash`: the volume has no Trash; the caller decides.
+    static func trashOne(_ ctx: JobContext, _ src: URL, identity: FileIdentity) async -> TrashOne {
+        let trash = ctx.trash
+        while true {
+            let result: Result<URL, FileOpError> = (try? await ctx.onLane { _ in
+                do { return .success(try trash.trash(src)) }
+                catch let e as FileOpError { return .failure(e) }
+                catch { return .failure(FileOpError(kind: FileOpErrorKind(error: error, isLockedItem: PosixFS.info(src.path)?.isLocked ?? false), url: src)) }
+            }) ?? .failure(FileOpError(kind: .other(code: EIO, message: String(cString: strerror(EIO))), url: src))
+            switch result {
+            case .success(let trashURL):
+                ctx.record(.trashed(original: src, trashURL: trashURL, identity))
+                ctx.noteRemoved(src)
+                ctx.addProgress(items: 1, current: src.lastPathComponent)
+                return .done
+            case .failure(let e) where e.kind == .noTrash:
+                return .noTrash
+            case .failure(let e):
+                switch await ctx.askError(e) {
+                case .retry, .continueAnyway: continue
+                case .unlockAndContinue:
+                    _ = try? await ctx.onLane { _ in PosixFS.clearImmutable(src.path, recursive: false) }
+                    continue
+                case .skip, .skipAll: ctx.skip(src, reason: e.kind); return .skipped
+                case .cancel: ctx.cancelJob(); return .cancelled
+                }
+            }
+        }
+    }
+
     static func trash(_ ctx: JobContext, _ urls: [URL]) async {
         guard let plan = await ctx.plan(sources: urls, destination: nil, mode: .shallow) else { return }
         var noTrash: [URL] = []
-        let trash = ctx.trash
-        items: for item in plan.items {
+        for item in plan.items {
             guard await ctx.checkpoint() else { break }
-            let src = item.source
-            while true {
-                let result: Result<URL, FileOpError> = (try? await ctx.onLane { _ in
-                    do { return .success(try trash.trash(src)) }
-                    catch let e as FileOpError { return .failure(e) }
-                    catch { return .failure(FileOpError(kind: FileOpErrorKind(error: error, isLockedItem: PosixFS.info(src.path)?.isLocked ?? false), url: src)) }
-                }) ?? .failure(FileOpError(kind: .other(code: EIO, message: String(cString: strerror(EIO))), url: src))
-                switch result {
-                case .success(let trashURL):
-                    ctx.record(.trashed(original: src, trashURL: trashURL, item.info.identity))
-                    ctx.noteRemoved(src)
-                    ctx.addProgress(items: 1, current: src.lastPathComponent)
-                    continue items
-                case .failure(let e) where e.kind == .noTrash:
-                    noTrash.append(src)
-                    continue items
-                case .failure(let e):
-                    switch await ctx.askError(e) {
-                    case .retry, .continueAnyway: continue
-                    case .unlockAndContinue:
-                        _ = try? await ctx.onLane { _ in PosixFS.clearImmutable(src.path, recursive: false) }
-                        continue
-                    case .skip, .skipAll: ctx.skip(src, reason: e.kind); continue items
-                    case .cancel: ctx.cancelJob(); return
-                    }
-                }
+            switch await trashOne(ctx, item.source, identity: item.info.identity) {
+            case .noTrash: noTrash.append(item.source)
+            case .cancelled: return
+            case .done, .skipped: continue
             }
         }
         guard !noTrash.isEmpty, !ctx.control.isCancelled else { return }
