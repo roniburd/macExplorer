@@ -206,6 +206,20 @@ final class VolumesTests: XCTestCase {
         XCTAssertEqual(volumes.list.map(\.id.raw), ["boot"], "the late hung scan is stale")
     }
 
+    func testStartReturnsAndSubscribesWhileTheInitialScanHangs() async {
+        let scanner = GatedScanner([volume("boot", "/", boot: true)], blocked: 1)   // dead SMB mount at launch
+        let events = FakeEvents()
+        let volumes = Volumes(lanes: LanePool(), scanner: scanner, events: events)
+        let start = ContinuousClock.now
+        await volumes.start(initialScanTimeout: .milliseconds(100))
+        XCTAssertLessThan(ContinuousClock.now - start, .seconds(2))
+        XCTAssertNotNil(events.handler, "events are subscribed even though the scan has not finished")
+        XCTAssertEqual(volumes.list, [])
+        scanner.gate.open()
+        let applied = await eventuallyMain { volumes.list.map(\.id.raw) == ["boot"] }
+        XCTAssertTrue(applied, "the late initial scan is applied when it finishes")
+    }
+
     func testCapacityIsFetchedOnALaneAndCached() async {
         let scanner = FakeScanner([volume("boot", "/", boot: true)])
         let volumes = Volumes(lanes: LanePool(), scanner: scanner, events: nil)

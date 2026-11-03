@@ -32,7 +32,8 @@ public actor DirectoryReader {
     var inFlightCount: Int { inFlight.count }
 
     /// One stream per read; ends after .completed or .failed (or when the consumer cancels iteration,
-    /// which cancels the lane work at the next batch boundary).
+    /// which cancels the lane work at the next batch boundary). A cancelled read (consumer gone or
+    /// cancelAll) never yields .completed: the stream just finishes.
     public func read(_ directory: URL, generation: Generation, options: ReadOptions = ReadOptions()) -> AsyncStream<ReadEvent> {
         let (stream, continuation) = AsyncStream<ReadEvent>.makeStream(bufferingPolicy: .unbounded)
         let id = UUID()
@@ -54,6 +55,8 @@ public actor DirectoryReader {
                         return true
                     }
                 }
+                // cancelAll()/consumer cancel: the reader stopped early with a partial count. Not a full listing.
+                if Task.isCancelled { throw LaneError.cancelled }
                 continuation.yield(.completed(summary))
             } catch let failure as ReadFailure {
                 continuation.yield(.failed(failure))
@@ -74,8 +77,8 @@ public actor DirectoryReader {
     /// Single-shot stat of names (watcher incremental path). Runs on a read lane.
     public func readItems(_ names: [String], in directory: URL, generation: Generation) async throws -> ItemReadResult {
         let types = self.types
-        return try await lanes.perform(on: volume, .read) { _ in
-            try ItemReader.read(names: names, in: directory, generation: generation, types: types)
+        return try await lanes.perform(on: volume, .read) { ctx in
+            try ItemReader.read(names: names, in: directory, generation: generation, types: types, context: ctx)
         }
     }
 

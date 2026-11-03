@@ -88,7 +88,8 @@ public struct EntryStore: Sendable {
     }
 
     /// Replaces the entry with the same identity (keeping its storage index and row) or appends a new one
-    /// (not displayed until the next setOrder). Returns the storage index.
+    /// (not displayed until the next setOrder). Returns the storage index. The entry comes from a successful
+    /// stat, so a replaced entry's errno side-table value is cleared.
     @discardableResult
     public mutating func upsert(_ entry: Entry, name: String) -> UInt32 {
         var e = entry
@@ -102,6 +103,7 @@ public struct EntryStore: Sendable {
             if identity(of: old, name: self.name(index)) != id { identities[identity(index)] = nil }
             entries[Int(index)] = e
             identities[id] = index
+            errors[index] = nil
             version &+= 1
             return index
         }
@@ -144,7 +146,10 @@ public struct EntryStore: Sendable {
 
     private func identity(of entry: Entry, name: @autoclosure () -> String) -> RowID {
         switch identityMode {
-        case .objectID: return .object(entry.rowID)
+        case .objectID:
+            // No file ID (degraded record whose error omitted FILEID): the exact name keeps rows apart.
+            if entry.rowID == 0 { return .name(NameNormalizer.identityName(name(), caseSensitive: true)) }
+            return .object(entry.rowID)
         case .name(let caseSensitive): return .name(NameNormalizer.identityName(name(), caseSensitive: caseSensitive))
         }
     }

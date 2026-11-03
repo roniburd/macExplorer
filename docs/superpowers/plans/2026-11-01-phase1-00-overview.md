@@ -755,7 +755,7 @@ public struct NameArena: Sendable {
 
 // Store/RowID.swift
 public enum IdentityMode: Sendable, Hashable {
-    case objectID                         // idStable volume: identity = Entry.rowID
+    case objectID                         // idStable volume: identity = Entry.rowID (rowID 0, i.e. no file ID: .name(exact NFC name))
     case name(caseSensitive: Bool)        // other volumes: identity = normalized name
 }
 public enum RowID: Hashable, Sendable {
@@ -816,7 +816,7 @@ public struct EntryStore: Sendable {
     public mutating func append(_ batch: Batch)              // O(batch); leaves `order` unchanged
     public mutating func setOrder(_ order: [UInt32])         // rebuilds inverse permutation
     @discardableResult
-    public mutating func upsert(_ entry: Entry, name: String) -> UInt32   // replaces same identity or appends
+    public mutating func upsert(_ entry: Entry, name: String) -> UInt32   // replaces same identity (clearing its errno) or appends
     public mutating func remove(_ indices: Set<UInt32>)      // compacts storage; remaps order; O(n)
     public mutating func setError(_ code: Int32?, at index: UInt32)
 }
@@ -879,8 +879,9 @@ public struct ItemReadResult: Sendable {
 public enum ItemReader {
     /// Directory gone (ENOENT/ENOTDIR) → every name missing. Any other open failure (EACCES, EMFILE, EIO, …)
     /// throws ReadFailure(stage: .open): the watcher falls back to a full re-read.
+    /// `context`: heartbeat per stat (DirectoryReader.readItems passes its lane context).
     public static func read(names: [String], in directory: URL, generation: Generation,
-                            types: TypeRegistry) throws(ReadFailure) -> ItemReadResult
+                            types: TypeRegistry, context: LaneContext? = nil) throws(ReadFailure) -> ItemReadResult
 }
 
 // Reader/DirectoryReader.swift
@@ -888,7 +889,8 @@ public actor DirectoryReader {
     public init(volume: VolumeID, lanes: LanePool, types: TypeRegistry = .shared)
     public nonisolated let volume: VolumeID
     /// One stream per read; ends after .completed or .failed (or when the consumer cancels iteration,
-    /// which cancels the lane work at the next batch boundary).
+    /// which cancels the lane work at the next batch boundary). A cancelled read (consumer gone, cancelAll)
+    /// never yields .completed: the stream just finishes, so a partial listing is never taken as complete.
     public func read(_ directory: URL, generation: Generation, options: ReadOptions = ReadOptions()) -> AsyncStream<ReadEvent>
     /// Single-shot stat of names (watcher incremental path). Runs on a read lane. Throws ItemReader's
     /// ReadFailure or a LaneError.
@@ -1052,7 +1054,9 @@ public final class Volumes {
     public private(set) var mountTable: MountTable
     public let mountTableStore: MountTableStore
     public nonisolated static let scanVolume: VolumeID  // "system:volume-scan": scans never share VolumeID.unknown's lanes
-    public func start() async                           // initial scan on a lane + subscribe to events
+    /// Subscribes to events first, then waits for the initial lane scan at most `initialScanTimeout`: a scan hung
+    /// on a dead mount never blocks launch (list stays empty until the scan lands).
+    public func start(initialScanTimeout: Duration = .seconds(2)) async
     /// Overlapping refreshes: a scan older than the last applied one is dropped; an unresponsive scan lane is reset.
     public func refresh() async
     public func handle(_ event: VolumeEvent) async      // rescan; willUnmount → release

@@ -24,6 +24,7 @@ public enum FallbackReader {
         var buffer = [UInt8](repeating: 0, count: 2048)
         var total = 0, degraded = 0, stopped = false
         while true {
+            context.heartbeat()       // per entry: directoriesOnly reads of file-only folders may never flush a batch
             errno = 0
             guard let dent = readdir(dir) else {
                 if errno != 0 { throw ReadFailure(code: errno, stage: .read) }
@@ -45,8 +46,10 @@ public enum FallbackReader {
                 if code == ENOENT { continue }      // vanished between readdir and stat
                 // Degraded row: name + d_type only, errno in the side table (§4.2 rule 3).
                 var fake = cfsk_record()
-                fake.fields = CFSK_HAS_NAME | CFSK_HAS_ERROR | CFSK_HAS_OBJTYPE
+                // d_ino is the inode = ATTR_CMN_FILEID, so degraded rows keep distinct object identities.
+                fake.fields = CFSK_HAS_NAME | CFSK_HAS_ERROR | CFSK_HAS_OBJTYPE | CFSK_HAS_FILEID
                 fake.error = UInt32(bitPattern: code)
+                fake.file_id = UInt64(dent.pointee.d_ino)
                 fake.obj_type = dent.pointee.d_type == DT_DIR ? RecordConverter.VDIR : dent.pointee.d_type == DT_LNK ? RecordConverter.VLNK : RecordConverter.VREG
                 fake.name_len = UInt32(name.count)
                 let r = name.withUnsafeBufferPointer { nb -> (appended: Bool, degraded: Bool) in
@@ -61,7 +64,6 @@ public enum FallbackReader {
                 if r.degraded { degraded += 1 }
             }
             if accumulator.shouldFlush(count: batch.count) {
-                context.heartbeat()
                 if context.isCancelled || !emit(batch) { stopped = true; break }
                 batch = Batch(generation: generation)
             }

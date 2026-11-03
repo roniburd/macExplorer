@@ -30,13 +30,37 @@ public final class Volumes {
         self.events = events
     }
 
-    /// Initial scan on a lane + subscribe to events.
-    public func start() async {
-        await refresh()
-        guard !started else { return }
-        started = true
-        events?.start { [weak self] event in
-            Task { @MainActor in await self?.handle(event) }
+    /// Subscribes to events first, then runs the initial scan on the scan lane and waits for it at most
+    /// `initialScanTimeout`. A scan hung on a dead mount (SMB/NFS/automount at launch) never blocks app
+    /// launch: start() returns with the list still empty and the scan is applied whenever it finishes.
+    public func start(initialScanTimeout: Duration = .seconds(2)) async {
+        if !started {
+            started = true
+            events?.start { [weak self] event in
+                Task { @MainActor in await self?.handle(event) }
+            }
+        }
+        let scan = Task { await self.refresh() }
+        await Self.wait(for: scan, atMost: initialScanTimeout)
+    }
+
+    /// Returns when `task` finishes or `timeout` elapses, whichever comes first; `task` keeps running.
+    private static func wait(for task: Task<Void, Never>, atMost timeout: Duration) async {
+        final class Once { var continuation: CheckedContinuation<Void, Never>? }
+        let once = Once()
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            once.continuation = c
+            let timer = Task { @MainActor in
+                try? await Task.sleep(for: timeout)
+                once.continuation?.resume()
+                once.continuation = nil
+            }
+            Task { @MainActor in
+                await task.value
+                timer.cancel()
+                once.continuation?.resume()
+                once.continuation = nil
+            }
         }
     }
 

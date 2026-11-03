@@ -12,8 +12,9 @@ public enum ItemReader {
     /// Stats each name in `directory` without following symlinks (watcher incremental path, §4.3).
     /// A directory that no longer exists (ENOENT/ENOTDIR) reports every name missing; any other open
     /// failure (EACCES, EMFILE, EIO, ...) throws, so the caller can fall back to a full re-read.
+    /// `context` (lane work) gets a heartbeat per stat, so a long name list on a slow volume is not taken for a stall.
     public static func read(names: [String], in directory: URL, generation: Generation,
-                            types: TypeRegistry) throws(ReadFailure) -> ItemReadResult {
+                            types: TypeRegistry, context: LaneContext? = nil) throws(ReadFailure) -> ItemReadResult {
         assertOffMain()
         var result = ItemReadResult(batch: Batch(generation: generation), missing: [], errors: [:])
         let fd: Int32
@@ -28,6 +29,7 @@ public enum ItemReader {
         var converter = RecordConverter(types: types)
         var buffer = [UInt8](repeating: 0, count: 2048)
         for name in names {
+            context?.heartbeat()
             var record = cfsk_record()
             let rc = buffer.withUnsafeMutableBytes { cfsk_stat_at(fd, name, $0.baseAddress, $0.count, &record) }
             if rc != 0 {

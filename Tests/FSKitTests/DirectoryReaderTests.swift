@@ -161,7 +161,73 @@ final class DirectoryReaderTests: XCTestCase {
         XCTAssertLessThan(elapsed, .milliseconds(1_500))
         XCTAssertGreaterThanOrEqual(elapsed, .milliseconds(900), "a hung read keeps cancelAll waiting the full second")
         gate.open()
-        _ = await consumer.value
+        let (_, others) = await consumer.value
+        XCTAssertFalse(others.contains { $0.hasPrefix("completed") }, "a cancelled read is not reported as complete")
+    }
+
+    func testCancelledReadThatStopsEarlyNeverYieldsCompleted() async throws {
+        let reader = DirectoryReader(volume: vol, lanes: LanePool(config: fastLanes), types: .shared) { _, gen, _, _, ctx, emit in
+            var n = 0
+            while !ctx.isCancelled {                 // cooperative reader: stops with a partial count
+                n += 1
+                ctx.heartbeat()
+                if !emit(Batch(generation: gen)) { break }
+                usleep(2_000)
+            }
+            return ReadSummary(entryCount: n, degradedCount: 0, usedFallback: false, elapsed: .zero)
+        }
+        let stream = await reader.read(URL(filePath: "/unused"), generation: .initial)
+        let consumer = Task { await collect(stream) }
+        try await Task.sleep(for: .milliseconds(50))
+        await reader.cancelAll()
+        let (batches, others) = await consumer.value
+        XCTAssertFalse(batches.isEmpty)
+        XCTAssertEqual(others, [], "partial listing: the stream just ends")
+    }
+
+    func testFallbackHeartbeatsWhileSkippingFilesForDirectoriesOnly() async throws {
+        let dir = try FixtureTree.flat(in: sandbox, at: "files-only", count: 200)
+        let job = LaneJob(id: 1, volume: vol, laneClass: .read, policy: .poison, onStall: nil)
+        var options = ReadOptions()
+        options.directoriesOnly = true
+        let summary = try await Task.detached { [options] in               // readers never run on main
+            try FallbackReader.read(dir, generation: .initial, options: options, types: .shared,
+                                    context: LaneContext(job: job)) { _ in true }
+        }.value
+        XCTAssertEqual(summary.entryCount, 0)
+        XCTAssertNotEqual(job.lastBeat.load(ordering: .relaxed), 0, "progress is reported even when no batch fills")
+    }
+
+    func testItemReaderHeartbeatsPerStat() async throws {
+        let dir = try sandbox.createDirectory("beats")
+        try sandbox.createFile("beats/a.txt")
+        let job = LaneJob(id: 1, volume: vol, laneClass: .read, policy: .poison, onStall: nil)
+        _ = try await Task.detached {
+            try ItemReader.read(names: ["a.txt", "b"], in: dir, generation: .initial, types: .shared, context: LaneContext(job: job))
+        }.value
+        XCTAssertNotEqual(job.lastBeat.load(ordering: .relaxed), 0)
+    }
+
+    func testFallbackDegradedRowsKeepDistinctIdentities() async throws {
+        let dir = try sandbox.createDirectory("unsearchable")
+        try sandbox.createFile("unsearchable/a.txt")
+        try sandbox.createFile("unsearchable/b.txt")
+        try sandbox.setMode("unsearchable", 0o400)                    // readdir works, fstatat → EACCES
+        defer { try? sandbox.setMode("unsearchable", 0o755) }
+        let job = LaneJob(id: 1, volume: vol, laneClass: .read, policy: .poison, onStall: nil)
+        let (summary, batches) = try await Task.detached {
+            var batches: [Batch] = []
+            let summary = try FallbackReader.read(dir, generation: .initial, options: ReadOptions(), types: .shared,
+                                                  context: LaneContext(job: job)) { batches.append($0); return true }
+            return (summary, batches)
+        }.value
+        XCTAssertEqual(summary.degradedCount, 2)
+        var store = EntryStore(identityMode: .objectID)
+        for b in batches { store.append(b) }
+        XCTAssertEqual(store.count, 2)
+        XCTAssertTrue((0..<2).allSatisfy { store.entry(UInt32($0)).fileID != 0 }, "d_ino is the file ID")
+        XCTAssertNotEqual(store.identity(0), store.identity(1))
+        XCTAssertEqual(store.errno(0), EACCES)
     }
 
     func testReadItemsReportsPresentAndMissing() async throws {

@@ -1,3 +1,4 @@
+import Darwin
 import MacxFS
 import XCTest
 
@@ -86,6 +87,24 @@ final class EntryStoreTests: XCTestCase {
         let appended = store.upsert(makeEntry(3), name: "c")
         XCTAssertEqual(appended, 2)
         XCTAssertNil(store.row(ofStorageIndex: 2), "new entries are not displayed until setOrder")
+    }
+
+    func testUpsertClearsTheErrorOfTheReplacedEntry() {
+        // The watcher re-stats a row that failed earlier; the successful stat replaces it, error and all.
+        var store = EntryStore(identityMode: .objectID)
+        store.append(makeBatch([("a", makeEntry(1)), ("b", makeEntry(2))], errors: [EntryError(index: 0, code: EACCES)]))
+        XCTAssertEqual(store.errno(0), EACCES)
+        XCTAssertEqual(store.upsert(makeEntry(1, size: 3), name: "a"), 0)
+        XCTAssertNil(store.errno(0))
+    }
+
+    func testEntriesWithoutObjectIDNeverShareAnIdentity() {
+        // Degraded rows with no file ID (rowID 0) fall back to their exact name on objectID volumes.
+        var store = EntryStore(identityMode: .objectID)
+        store.append(makeBatch([("x", makeEntry(0, flags: .degraded)), ("y", makeEntry(0, flags: .degraded)), ("z", makeEntry(7))]))
+        XCTAssertNotEqual(store.identity(0), store.identity(1))
+        XCTAssertEqual(store.firstIndex(of: store.identity(1)), 1)
+        XCTAssertEqual(store.identity(2), .object(7))
     }
 
     func testUpsertInNameModeRenameIsANewIdentity() {
