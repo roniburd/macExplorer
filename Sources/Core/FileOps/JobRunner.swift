@@ -278,11 +278,35 @@ enum JobRunner {
     static func run(_ ctx: JobContext) async -> JobOutcome {
         ctx.setState(.planning)
         switch ctx.kind {
+        case .newItem(let kind, let directory):
+            await CreateOps.newItem(ctx, kind: kind, in: directory)
+        case .rename(let url, let newName):
+            await CreateOps.rename(ctx, url, to: newName)
         default:
             // Kinds are wired one by one in P1-19 … P1-24; P1-24 removes this branch.
             for u in ctx.kind.allURLs { ctx.skip(u, reason: .other(code: ENOTSUP, message: String(cString: strerror(ENOTSUP)))) }
         }
         try? await ctx.journal.finish(job: ctx.id)
         return ctx.outcome()
+    }
+}
+
+enum FailureResolution: Sendable, Equatable { case retry, skipped, cancelled }
+
+extension JobContext {
+    /// Asks about one failed step (errno). Skip records the item; Unlock and Continue clears uchg first.
+    func resolveFailure(_ code: Int32, url: URL, destination: URL? = nil) async -> FailureResolution {
+        let locked = code == EPERM ? ((try? await onLane { _ in
+            (PosixFS.info(url.path)?.isLocked ?? false) || (PosixFS.info(url.deletingLastPathComponent().path)?.isLocked ?? false)
+        }) ?? false) : false
+        let kind = FileOpErrorKind(errno: code, isLockedItem: locked)
+        switch await askError(FileOpError(kind: kind, url: url, destination: destination)) {
+        case .retry, .continueAnyway: return .retry
+        case .unlockAndContinue:
+            _ = try? await onLane { _ in PosixFS.clearImmutable(url.path, recursive: false) }
+            return .retry
+        case .skip, .skipAll: skip(url, reason: kind); return .skipped
+        case .cancel: cancelJob(); return .cancelled
+        }
     }
 }
