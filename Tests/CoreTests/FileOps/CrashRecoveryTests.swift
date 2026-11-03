@@ -64,4 +64,18 @@ final class CrashRecoveryTests: FileOpsTestCase {
         XCTAssertEqual(names(d), [])
         XCTAssertEqual(text(url("src/f")), "F")
     }
+
+    func testKillAfterTrashingDestinationRestoresIt() async throws {
+        try file("src/a", "new"); try file("d/a", "old")
+        let d = url("d")
+        let killed = try await runCrashingChild(spec([url("src/a")], d, fault: .afterTrashDestination, conflict: .replace, force: true))
+        XCTAssertTrue(killed)
+        XCTAssertFalse(exists(url("d/a")), "destination was in the trash at the moment of the kill")
+        let report = await LaunchRecovery.run(journal: Journal(fileURL: journalURL), lanes: LanePool())
+        XCTAssertEqual(report.restoredDestinations, [url("d/a")])
+        XCTAssertEqual(report.removedPartials.count, 1)
+        XCTAssertEqual(text(url("d/a")), "old")
+        XCTAssertEqual(text(url("src/a")), "new")
+        XCTAssertEqual(names(d), ["a"])
+    }
 }

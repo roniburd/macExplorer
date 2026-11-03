@@ -30,8 +30,9 @@ enum CopyJob {
                         NameGenerator.keepBoth(src.lastPathComponent, isDirectory: isDir) { PosixFS.exists(destination.appending(path: $0).path) }
                     }) ?? name
                 case .replace, .merge:
-                    // P1-22 replaces this case with ConflictExecutor.execute(...).
-                    ctx.skip(src, reason: nil)
+                    let r = await ConflictExecutor.execute(ctx, action: action, item: item, destinationDir: destination, name: name,
+                                                           operation: .copy, renameExcl: plan.capabilities.renameExcl)
+                    if r == .cancelled { return }
                     continue
                 }
             }

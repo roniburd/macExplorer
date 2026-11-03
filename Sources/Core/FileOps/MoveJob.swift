@@ -26,8 +26,9 @@ enum MoveJob {
                         NameGenerator.keepBoth(src.lastPathComponent, isDirectory: isDir) { PosixFS.exists(destination.appending(path: $0).path) }
                     }) ?? name
                 case .replace, .merge:
-                    // P1-22 replaces this case with ConflictExecutor.execute(...).
-                    ctx.skip(src, reason: nil)
+                    let r = await ConflictExecutor.execute(ctx, action: action, item: item, destinationDir: destination, name: name,
+                                                           operation: .move, renameExcl: plan.capabilities.renameExcl)
+                    if r == .cancelled { return }
                     continue
                 }
             }
@@ -115,23 +116,29 @@ enum MoveJob {
             }
             await ctx.journalClear(entry)
             ctx.fault(.beforeSourceDelete)
-            let id = (try? await ctx.onLane({ _ in FileIdentity.of(path: target.path) })) ?? nil
-            var removed = false
-            var unlock = false
-            deleting: while true {
-                let u = unlock
-                let rc = (try? await ctx.onLane { _ in PosixFS.removeTree(src.path, unlock: u) }) ?? EIO
-                if rc == 0 { removed = true; break deleting }
-                switch await ctx.resolveFailure(rc, url: src) {
-                case .retry: unlock = true; continue deleting
-                case .skipped, .cancelled: break deleting
-                }
-            }
-            if let id { ctx.record(removed ? .moved(from: src, to: target, id) : .created(target, id)) }
-            if removed { ctx.noteRemoved(src) }
-            ctx.landed(target)
+            await finishMove(ctx, source: src, target: target)
             return .done
         }
+    }
+
+    /// After the verified copy is at `target`: delete the source (asking on failure; Retry also clears
+    /// uchg), record moved (or created if the user skipped the deletion), post the changes.
+    static func finishMove(_ ctx: JobContext, source src: URL, target: URL) async {
+        let id = (try? await ctx.onLane({ _ in FileIdentity.of(path: target.path) })) ?? nil
+        var removed = false
+        var unlock = false
+        deleting: while true {
+            let u = unlock
+            let rc = (try? await ctx.onLane { _ in PosixFS.removeTree(src.path, unlock: u) }) ?? EIO
+            if rc == 0 { removed = true; break deleting }
+            switch await ctx.resolveFailure(rc, url: src) {
+            case .retry: unlock = true; continue deleting
+            case .skipped, .cancelled: break deleting
+            }
+        }
+        if let id { ctx.record(removed ? .moved(from: src, to: target, id) : .created(target, id)) }
+        if removed { ctx.noteRemoved(src) }
+        ctx.landed(target)
     }
 
     static func removePartial(_ ctx: JobContext, _ partial: URL, _ entry: JournalEntry) async {
