@@ -50,9 +50,14 @@ final class IconsViewTests: XCTestCase {
 
     func testTruncationIsFast() {
         let names = (0..<200).map { "document-\($0)-" + String(repeating: "x", count: 120) + ".pdf" }
-        let start = ContinuousClock.now
-        for name in names { _ = LabelTruncation.twoLineMiddle(name, width: 104, font: CellStyle.smallFont) }
-        XCTAssertLessThan((ContinuousClock.now - start) / names.count, .milliseconds(2))
+        // Best of 5 passes: the intrinsic cost, not scheduling noise when `swift test --parallel` loads every core.
+        var best = Duration.seconds(60)
+        for _ in 0..<5 {
+            let start = ContinuousClock.now
+            for name in names { _ = LabelTruncation.twoLineMiddle(name, width: 104, font: CellStyle.smallFont) }
+            best = min(best, ContinuousClock.now - start)
+        }
+        XCTAssertLessThan(best / names.count, .milliseconds(2))
     }
 
     // MARK: AppKit (offscreen window)
