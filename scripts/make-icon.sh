@@ -1,7 +1,7 @@
 #!/bin/bash
 # scripts/make-icon.sh: rebuilds Resources/AppIcon.icns from the checked-in PNGs in Resources/AppIcon.iconset.
-# The PNGs are exported from the design source docs/design/icon-concepts/refine.html (variant R2, "Glass Tree —
-# labelled"): open it in a browser and call `await exportPNG('R2', px, px <= 64)` for each size. 16–64 px use the
+# The PNGs are exported from the design source docs/design/icon-concepts/folder.html (variant F3, "Glass folder —
+# 72% + halo"): open it in a browser and call `await exportPNG('F3', px, px <= 64)` for each size. 16–64 px use the
 # simplified small artwork; 128 px and up use the full artwork.
 # Usage: scripts/make-icon.sh
 set -euo pipefail
