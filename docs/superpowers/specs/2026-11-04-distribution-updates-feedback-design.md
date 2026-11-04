@@ -38,7 +38,7 @@ Layering stays `App → UI → Core → MacxFS → CFSKit` and must pass `script
 | `Core/Updates/UpdateState.swift` | State machine: `idle`, `checking(userInitiated:)`, `upToDate(version)`, `downloading(fraction?)`, `readyToRestart(version, notesURL)`, `failed(UpdateError, userInitiated:)`. Pure transition function `reduce(state, event) -> state`; illegal transitions are ignored and logged. |
 | `Core/Diagnostics/EnvironmentSummary.swift` | App version, build, channel, macOS version, hardware model (`hw.model`), architecture. Injected providers for tests. |
 | `Core/Diagnostics/IssueURLBuilder.swift` | Builds `https://github.com/roniburd/macExplorer/issues/new?template=<bug.yml|feature.yml>&<field-id>=<value>…`. Field IDs are constants shared with the YAML forms. Total URL length ≤ 7,500 characters; truncates the crash excerpt first and appends `… [truncated — full report on clipboard]`. |
-| `Core/Diagnostics/DirtyExitMarker.swift` | Writes `~/Library/Application Support/MacExplorer/session.marker` (JSON: pid, version, build, launch time) at launch; removes it on clean termination; reports the previous session's marker if present. Base directory is injected. |
+| `Core/Diagnostics/DirtyExitMarker.swift` | Writes `<StatePaths.root>/session.marker` (`~/Library/Application Support/macExplorer/session.marker`; `--state-dir` in sandbox runs) (JSON: pid, version, build, launch time) at launch; removes it on clean termination; reports the previous session's marker if present. Base directory is injected. |
 | `Core/Diagnostics/CrashReportLocator.swift` | Lists `*.ips` in an injected directory (default `~/Library/Logs/DiagnosticReports`) whose header JSON has our bundle ID, whose timestamp is after the marker's launch time, and whose filename is not in `lastReportedCrashes`. Returns the newest match. |
 | `Core/Diagnostics/CrashExcerpt.swift` | Parses an `.ips` (line 1 = header JSON, remainder = body JSON) into: exception type, signal, termination reason, crashed-thread top 20 frames (symbol if present, else `image + offset`), version, build. Replaces the user's home path with `~` everywhere. Malformed input returns `nil`, never traps. |
 
@@ -65,7 +65,7 @@ All new strings go through `scripts/l10n-add.sh`; new controls get AX identifier
 - `scripts/bundle.sh` copies `Sparkle.framework` into `Contents/Frameworks`, sets `@executable_path/../Frameworks` rpath, and signs inside-out (framework's XPC services and `Autoupdate`, then framework, then app). Final check: `codesign --verify --deep --strict`.
 - `bundle.sh` gains `--version X.Y.Z[-beta.N]` and `--build N`, stamping `CFBundleShortVersionString` and `CFBundleVersion`. Build number = `git rev-list --count HEAD` on the tagged commit (monotonic on `main`).
 - `Info.plist` gains `SUFeedURL` = `https://roniburd.github.io/macExplorer/appcast.xml`, `SUPublicEDKey`, `SUEnableAutomaticChecks` = YES, `SUScheduledCheckInterval` = 86400.
-- Debug builds and the scenario bundle (`com.macexplorer.app.scenarios`) do not start the updater (`UpdateController` is inert unless the bundle ID is `com.macexplorer.app` and the build is release).
+- Debug builds and the scenario bundle (`com.macexplorer.app.scenarios`) do not start the updater (`UpdateController.live` returns nil for debug builds, sandbox runs, bundle IDs ending in `.scenarios`, and an unset `SUPublicEDKey`).
 
 ## 3. Update experience
 
