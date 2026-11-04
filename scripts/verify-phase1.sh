@@ -93,6 +93,8 @@ bench() {
 macx_tmp_entries() { ls -1 "$TMPBASE" 2>/dev/null | grep '^macx-' | grep -vx "$(basename "$RUN")" | sort; }
 macx_mounts() { mount | sed -n 's/^.* on \(.*\) (.*)$/\1/p' | grep '/macx-' | sort; }
 general_changecount() { "$(swift build --show-bin-path)/macx-scenarios" --general-pasteboard-changecount; }
+# defaults_digest: hash of the exported domain (stderr dropped: "does not exist" carries a timestamp and pid).
+defaults_digest() { defaults export com.macexplorer.app - 2>/dev/null | shasum; }
 
 # safety: overview working definition 6, checked from the outside after every runner finished.
 safety() {
@@ -104,21 +106,21 @@ safety() {
   while IFS= read -r p; do echo "NEW IN TMPDIR: $TMPBASE/$p"; bad=1; done < <(comm -13 "$RUN/tmp-before.txt" "$RUN/tmp-after.txt")
   macx_mounts > "$RUN/mounts-after.txt"
   while IFS= read -r p; do echo "STILL MOUNTED: $p"; bad=1; done < <(comm -13 "$RUN/mounts-before.txt" "$RUN/mounts-after.txt")
-  if pgrep -f 'macExplorer-scenarios.app/Contents/MacOS/macExplorer' >/dev/null; then echo "scenario app still running"; bad=1; fi
+  if LC_ALL=C pgrep -f 'macExplorer-scenarios.app/Contents/MacOS/macExplorer' >/dev/null; then echo "scenario app still running"; bad=1; fi
   local after
   after="$(general_changecount)"
   if [ "$after" != "$GENERAL_BEFORE" ]; then
     echo "general pasteboard changeCount changed ($GENERAL_BEFORE -> $after). If you copied something during the run, rerun."
     bad=1
   fi
-  [ "$(defaults read com.macexplorer.app 2>&1 | shasum)" = "$DEFAULTS_BEFORE" ] || { echo "the com.macexplorer.app defaults domain changed"; bad=1; }
+  [ "$(defaults_digest)" = "$DEFAULTS_BEFORE" ] || { echo "the com.macexplorer.app defaults domain changed"; bad=1; }
   return $bad
 }
 
 echo "run directory: $RUN"
 macx_tmp_entries > "$RUN/tmp-before.txt"
 macx_mounts > "$RUN/mounts-before.txt"
-DEFAULTS_BEFORE="$(defaults read com.macexplorer.app 2>&1 | shasum)"
+DEFAULTS_BEFORE="$(defaults_digest)"
 
 gate layering scripts/check-layering.sh
 gate layering-selftest scripts/test-check-layering.sh
