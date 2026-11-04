@@ -21,4 +21,23 @@ final class ScenarioDriverLogicTests: XCTestCase {
         XCTAssertNil(ScenarioDriver.relativePath("/var/folders/x/T/macx-scenario-1/a/macx-scenario-rootless", roots: roots))
         XCTAssertNil(ScenarioDriver.relativePath("/Library", roots: roots))
     }
+
+    /// QA round 2: a drop destination must resolve inside --root too, not only its sources ("crumb:<n>" above the
+    /// root resolved to /var, $TMPDIR, …; a sidebar favorite can point anywhere).
+    @MainActor
+    func testDropDestinationsOutsideTheRootAreRejected() throws {
+        let root = "/private/var/folders/x/T/macx-scenario-1/a/macx-scenario-root"
+        let roots = [String(root.dropFirst("/private".count)), root]
+        let folder = URL(filePath: root + "/sub", directoryHint: .isDirectory)
+        let crumb0 = DropDestinationResolver.crumbURL(0, of: folder, volumeRoot: nil)
+        XCTAssertThrowsError(try ScenarioDriver.confinedDropDestination(crumb0, onto: "crumb:0", roots: roots), "/")
+        let crumb5 = DropDestinationResolver.crumbURL(5, of: folder, volumeRoot: nil)
+        XCTAssertThrowsError(try ScenarioDriver.confinedDropDestination(crumb5, onto: "crumb:5", roots: roots), "$TMPDIR")
+        let favorite = URL(filePath: "/Users/someone/Documents", directoryHint: .isDirectory)
+        XCTAssertThrowsError(try ScenarioDriver.confinedDropDestination(favorite, onto: "sidebar:Documents", roots: roots))
+        XCTAssertThrowsError(try ScenarioDriver.confinedDropDestination(nil, onto: "crumb:99", roots: roots), "unresolvable")
+        let atRoot = DropDestinationResolver.crumbURL(8, of: folder, volumeRoot: nil)
+        XCTAssertEqual(try ScenarioDriver.confinedDropDestination(atRoot, onto: "crumb:8", roots: roots).path, root)
+        XCTAssertEqual(try ScenarioDriver.confinedDropDestination(folder, onto: "", roots: roots).lastPathComponent, "sub")
+    }
 }

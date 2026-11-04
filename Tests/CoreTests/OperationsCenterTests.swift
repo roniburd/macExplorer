@@ -87,9 +87,12 @@ final class OperationsCenterTests: FileOpsTestCase {
         }
         XCTAssertNil(OperationsCenter.overallFraction(of: []))
         XCTAssertNil(OperationsCenter.overallFraction(of: [snap(items: (0, nil), bytes: (0, nil))]), "still planning")
-        XCTAssertEqual(OperationsCenter.overallFraction(of: [snap(items: (1, 4), bytes: (25, 100)),
-                                                             snap(items: (0, 1), bytes: (275, 300)),
-                                                             snap(items: (0, nil), bytes: (0, nil))]), 0.75)
+        let k = JobProgress.itemCost
+        XCTAssertEqual(OperationsCenter.overallFraction(of: [snap(items: (1, 4), bytes: (0, 0)),
+                                                             snap(items: (1, 1), bytes: (2 * k, 4 * k)),
+                                                             snap(items: (0, nil), bytes: (0, nil))])!,
+                       Double(1 * k + 1 * k + 2 * k) / Double(4 * k + 1 * k + 4 * k), accuracy: 1e-9,
+                       "weighted by each job's work (items × itemCost + bytes)")
         XCTAssertEqual(OperationsCenter.overallFraction(of: [snap(items: (1, 4), bytes: (0, 0)),
                                                              snap(items: (3, 4), bytes: (0, nil))]), 0.5)
     }

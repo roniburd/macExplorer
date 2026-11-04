@@ -67,6 +67,33 @@ final class CopyTests: FileOpsTestCase {
         XCTAssertEqual(scripted.askedErrors().map(\.kind), [.intoItself])
     }
 
+    /// QA round 2: fts reports an unreadable folder twice (FTS_D, then FTS_DNR); the copy used to create the folder
+    /// for the first before failing on the second, so Skip left an empty folder behind (and reported it created).
+    func testSkippingAnUnreadableTopLevelFolderLeavesNothingBehind() async throws {
+        let denied = try file("denied/s.txt", "x")
+        XCTAssertEqual(chmod(denied.deletingLastPathComponent().path, 0), 0)
+        defer { chmod(url("denied").path, 0o755) }
+        let dest = try dir("dest")
+        let scripted = ScriptedInteraction(errors: [.skip])
+        let (queue, _) = makeQueue(interaction: scripted)
+        let o = try await run(.copy(sources: [url("denied")], destination: dest), on: queue)
+        XCTAssertEqual(scripted.askedErrors().map(\.kind), [.permissionDenied])
+        XCTAssertEqual(o.skipped.map(\.url), [url("denied")])
+        XCTAssertEqual(o.created, [], "a skipped item is never also created")
+        XCTAssertEqual(names(dest), [], "no empty folder left at the destination")
+    }
+
+    func testSkippingAnUnreadableSubfolderLeavesNoEmptyCopyOfIt() async throws {
+        try file("T/a", "A"); try file("T/closed/x", "X")
+        XCTAssertEqual(chmod(url("T/closed").path, 0), 0)
+        defer { chmod(url("T/closed").path, 0o755) }
+        let scripted = ScriptedInteraction(errors: [.skip])
+        let (queue, _) = makeQueue(interaction: scripted)
+        _ = try await run(.copy(sources: [url("T")], destination: try dir("d")), on: queue)
+        XCTAssertEqual(scripted.askedErrors().map(\.kind), [.permissionDenied])
+        XCTAssertEqual(names(url("d/T")), ["a"])
+    }
+
     /// Review Focus 2 (mandatory name).
     func testCopyTreeWithSymlinkLoopCopiesLinksAndTerminates() async throws {
         try file("A/f", "F"); try dir("A/sub")
@@ -211,6 +238,24 @@ final class CopyTests: FileOpsTestCase {
         }
         XCTAssertEqual(r, .failed(EACCES))
         XCTAssertEqual(text(dst), "someone else's")
+    }
+
+    /// A clone writes no data: its bytes are reported as cloned, so rate and fraction ignore them (QA round 2).
+    func testCloneReportsItsBytesAsCloned() async throws {
+        let src = try file("src", String(repeating: "x", count: 100_000))
+        let dst = url("cloned")
+        let control = JobControl()
+        let (srcPath, dstPath) = (src.path, dst.path)
+        let reported = try await LanePool().perform(on: .unknown, .fileOp) { lane -> (Int64, Int64) in
+            var plain: Int64 = 0, cloned: Int64 = 0
+            let r = CopyEngine.copyFile(from: srcPath, to: dstPath, expectedSize: 100_000, clone: true, chunkBytes: 1 << 20,
+                                        lane: lane, control: control, onBytes: { plain += $0 }, onChunk: {},
+                                        onCloned: { cloned += $0 })
+            precondition(r == .copied)
+            return (plain, cloned)
+        }
+        XCTAssertEqual(reported.0, 0, "no bytes written")
+        XCTAssertEqual(reported.1, 100_000, "the sandbox is on APFS: copyfile clones")
     }
 
     /// Another process takes the target between the conflict check and the copy; Cancel must not record its item.

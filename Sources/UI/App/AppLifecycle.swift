@@ -8,6 +8,8 @@ import Core
 public final class AppLifecycle {
     /// §6.7: after this long the app quits anyway and launch cleanup uses the journal.
     public static let stopTimeout: Duration = .seconds(10)
+    /// How often an open quit question checks whether the jobs finished on their own.
+    static let quitWatchInterval: Duration = .milliseconds(100)
 
     let context: UIContext
     private let terminator: any JobTerminating
@@ -63,11 +65,27 @@ public final class AppLifecycle {
         guard quitTask == nil else { return .terminateCancel }
         let count = terminator.activeCount
         guard count > 0 else { return .terminateNow }
+        // While the question shows, keep watching the queue: once no job is active or blocked any more, close it
+        // and quit (QA round 2: the prompt used to outlive the jobs).
+        let watcher = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: Self.quitWatchInterval)
+                guard let self, !Task.isCancelled else { return }
+                if self.terminator.activeCount == 0 {
+                    self.prompts.dismiss()
+                    return
+                }
+            }
+        }
         quitTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            switch await prompts.confirmQuit(activeCount: count) {
+            let choice = await prompts.confirmQuit(activeCount: count)
+            watcher.cancel()
+            switch choice {
             case .cancel:
                 reply(false)
+            case .jobsFinished:
+                reply(true)
             case .stopAndQuit:
                 // Cancel every job through the §6.1 cancel path; quit even if that times out (journal cleanup).
                 context.operationsUI.router.stopAnswering()

@@ -23,10 +23,29 @@ private final class FakeTerminator: JobTerminating {
 private final class ScriptedQuitPrompts: QuitPrompting {
     var answer: QuitChoice
     private(set) var asked: [Int] = []
+    private(set) var dismissals = 0
     init(_ answer: QuitChoice) { self.answer = answer }
     func confirmQuit(activeCount: Int) async -> QuitChoice {
         asked.append(activeCount)
         return answer
+    }
+    func dismiss() { dismissals += 1 }
+}
+
+/// A prompt the user never answers: it returns only when the lifecycle dismisses it (QA round 2).
+@MainActor
+private final class UnansweredQuitPrompts: QuitPrompting {
+    private(set) var asked: [Int] = []
+    private(set) var dismissals = 0
+    private var continuation: CheckedContinuation<QuitChoice, Never>?
+    func confirmQuit(activeCount: Int) async -> QuitChoice {
+        asked.append(activeCount)
+        return await withCheckedContinuation { continuation = $0 }
+    }
+    func dismiss() {
+        dismissals += 1
+        continuation?.resume(returning: .jobsFinished)
+        continuation = nil
     }
 }
 
@@ -99,6 +118,36 @@ final class AppLifecycleTests: XCTestCase {
         XCTAssertEqual(l.shouldTerminate(), .terminateLater, "after the answer, a new quit asks again")
         await l.quitTask?.value
         XCTAssertEqual(prompts.asked.count, 2)
+    }
+
+    func testAnUnansweredPromptClosesAndQuitsWhenTheLastJobFinishes() async throws {
+        let h = try await ShellHarness.make(self)
+        let terminator = FakeTerminator(activeCount: 1), prompts = UnansweredQuitPrompts(), r = Recorder()
+        let l = lifecycle(h, terminator, prompts, r)
+        XCTAssertEqual(l.shouldTerminate(), .terminateLater)
+        try await h.waitUntil("asked") { prompts.asked == [1] }
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertEqual(r.replies, [], "still asking while the job runs")
+        terminator.activeCount = 0                  // the job finished in the background
+        try await h.waitUntil("quit", timeout: .seconds(5)) { r.replies == [true] }
+        XCTAssertEqual(prompts.dismissals, 1, "the prompt closed itself")
+        XCTAssertEqual(terminator.stopCalls, [], "nothing to stop")
+        await l.quitTask?.value
+        XCTAssertNil(l.quitTask)
+    }
+
+    func testAlertQuitPromptDoesNotBlockTheMainActor() async throws {
+        let prompts = AlertQuitPrompts()
+        var ticks = 0
+        let answer = Task { @MainActor in await prompts.confirmQuit(activeCount: 1) }
+        for _ in 0..<5 {
+            try await Task.sleep(for: .milliseconds(20))
+            ticks += 1
+        }
+        XCTAssertEqual(ticks, 5, "main-actor work keeps running while the question shows")
+        prompts.dismiss()
+        let choice = await answer.value
+        XCTAssertEqual(choice, .jobsFinished)
     }
 
     func testQuitPromptText() {

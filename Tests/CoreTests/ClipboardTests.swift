@@ -130,8 +130,25 @@ final class ClipboardTests: XCTestCase {
         XCTAssertFalse(clipboard.cutURLs.isEmpty, "planning alone does not clear")
         clipboard.didPaste(plan)
         XCTAssertTrue(clipboard.cutURLs.isEmpty)
-        XCTAssertEqual(clipboard.pastePlan(into: d("/dst"), moveItemHere: false)?.operation, .copy,
-                       "a second paste after the move never moves again")
+        XCTAssertNil(clipboard.pastePlan(into: d("/dst"), moveItemHere: false),
+                     "a used-up cut empties the pasteboard: a second paste neither moves nor copies the moved-away paths")
+        XCTAssertFalse(clipboard.canPaste)
+    }
+
+    func testMoveItemHereEmptiesThePasteboardToo() throws {
+        clipboard.copy([u("/w/a.txt")])
+        let plan = try XCTUnwrap(clipboard.pastePlan(into: d("/dst"), moveItemHere: true))
+        XCTAssertEqual(plan.operation, .move)
+        clipboard.didPaste(plan)
+        XCTAssertFalse(clipboard.canPaste)
+    }
+
+    func testDidPasteOfAMoveLeavesNewerContentsAlone() throws {
+        clipboard.cut([u("/w/a.txt")])
+        let plan = try XCTUnwrap(clipboard.pastePlan(into: d("/dst"), moveItemHere: false))
+        board.simulateExternalCopy([u("/other/z.txt")])
+        clipboard.didPaste(plan)
+        XCTAssertEqual(board.readFileURLs(), [u("/other/z.txt")], "someone else's later copy survives")
     }
 
     func testDidPasteOfCopyKeepsCut() throws {

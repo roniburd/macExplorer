@@ -72,10 +72,13 @@ struct GeneralTab: View {
                 }
             }
             if item.kind == .directory {
-                LabeledContent(L10n.string("Size"), value: model.folderCount.map { PropertiesFormat.size($0.bytes) } ?? L10n.string("Counting…"))
-                LabeledContent(L10n.string("Contains"), value: model.folderCount.map {
-                    PropertiesFormat.contains(files: $0.files, folders: $0.folders, finished: $0.finished)
-                } ?? L10n.string("Counting…"))
+                LabeledContent(L10n.string("Size"), value: PropertiesFormat.countedSize(model.folderCount))
+                LabeledContent(L10n.string("Contains"), value: model.folderCount.map { PropertiesFormat.contains($0) }
+                               ?? L10n.string("Counting…"))
+            } else if item.kind == .package {
+                // A package is one item to the user: its contents' size, no Contains line (QA round 2).
+                LabeledContent(L10n.string("Size"), value: PropertiesFormat.countedSize(model.folderCount))
+                LabeledContent(L10n.string("Size on disk"), value: PropertiesFormat.countedDiskSize(model.folderCount))
             } else {
                 LabeledContent(L10n.string("Size"), value: PropertiesFormat.size(item.logicalSize))
                 LabeledContent(L10n.string("Size on disk"), value: PropertiesFormat.size(item.physicalSize))

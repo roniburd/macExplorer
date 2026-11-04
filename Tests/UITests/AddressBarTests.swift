@@ -144,6 +144,10 @@ final class AddressBarTests: XCTestCase {
         XCTAssertTrue(controller.session.folder === before)
         XCTAssertEqual(bar.errorText, "Can't find 'does-not-exist'")
         XCTAssertFalse(bar.errorLabel.isHidden)
+        bar.layoutSubtreeIfNeeded()
+        XCTAssertGreaterThanOrEqual(bar.errorLabel.frame.width, bar.errorLabel.intrinsicContentSize.width - 0.5,
+                                    "the red text is readable, not squeezed by the field (QA round 2)")
+        XCTAssertLessThanOrEqual(bar.editField.frame.maxX, bar.errorLabel.frame.minX, "the field ends before the text")
         XCTAssertEqual(bar.editField.stringValue, "does-not-exist")
         XCTAssertEqual(controller.probeFocus, .addressBar, "the field keeps the keyboard")
         editor.insertText("x", replacementRange: NSRange(location: (editor.string as NSString).length, length: 0))

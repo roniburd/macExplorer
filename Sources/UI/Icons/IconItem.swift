@@ -4,10 +4,19 @@ import Core
 import MacxFS
 
 /// Two-line label with a middle ellipsis (§5.5). Works on Characters, so graphemes are never split, and keeps the
-/// extension visible. Measured with the same text system the label uses.
+/// extension visible. Measured with a wrapping text field laid out like the label (its cell insets the text from the
+/// frame, so NSString measuring at the full width let candidates overflow and the cell added a second, tail
+/// ellipsis: QA round 2). `width` is the label's alignment width (its constraints' width).
 @MainActor
 enum LabelTruncation {
     private static var twoLineHeights: [NSFont: CGFloat] = [:]
+    private static let measuring: NSTextField = {
+        let field = NSTextField(wrappingLabelWithString: "")
+        field.alignment = .center
+        field.lineBreakMode = .byWordWrapping
+        field.maximumNumberOfLines = 0
+        return field
+    }()
 
     static func twoLineMiddle(_ name: String, width: CGFloat, font: NSFont) -> String {
         let limit = twoLineHeight(font) + 0.5
@@ -35,8 +44,12 @@ enum LabelTruncation {
     }
 
     private static func height(of text: String, width: CGFloat, font: NSFont) -> CGFloat {
-        (text as NSString).boundingRect(with: NSSize(width: width, height: .greatestFiniteMagnitude),
-                                        options: [.usesLineFragmentOrigin], attributes: [.font: font]).height
+        let field = measuring
+        field.font = font
+        field.stringValue = text
+        let insets = field.alignmentRectInsets
+        let frameWidth = width + insets.left + insets.right
+        return field.cell?.cellSize(forBounds: NSRect(x: 0, y: 0, width: frameWidth, height: .greatestFiniteMagnitude)).height ?? 0
     }
 
     private static func twoLineHeight(_ font: NSFont) -> CGFloat {
@@ -57,6 +70,7 @@ final class IconItem: NSCollectionViewItem {
     private var iconSide: NSLayoutConstraint!
     private var shownName = ""
     private var shownWidth: Double = 0
+    private var shownCut = false
 
     override func loadView() {
         let root = NSView()
@@ -99,10 +113,12 @@ final class IconItem: NSCollectionViewItem {
                    emphasized: Bool, isDataless: Bool, rowID: RowID) {
         self.rowID = rowID
         setIcon(icon, points: points)
-        if name != shownName || labelWidth != shownWidth {
-            label.stringValue = LabelTruncation.twoLineMiddle(name, width: CGFloat(labelWidth), font: CellStyle.smallFont)
+        if name != shownName || labelWidth != shownWidth || isCut != shownCut {
+            let font = isCut ? CellStyle.smallItalicFont : CellStyle.smallFont
+            label.stringValue = LabelTruncation.twoLineMiddle(name, width: CGFloat(labelWidth), font: font)
             shownName = name
             shownWidth = labelWidth
+            shownCut = isCut
         }
         label.toolTip = name
         cloudBadge.isHidden = !isDataless

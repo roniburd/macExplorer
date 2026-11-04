@@ -54,7 +54,8 @@ enum CopyEngine {
     /// COPYFILE_STATE_DST_FD), never one another process put at that path.
     static func copyFile(from src: String, to dst: String, expectedSize: Int64, clone: Bool, chunkBytes: Int,
                          lane: LaneContext, control: JobControl,
-                         onBytes: @escaping (Int64) -> Void, onChunk: @escaping () -> Void) -> CopyResult {
+                         onBytes: @escaping (Int64) -> Void, onChunk: @escaping () -> Void,
+                         onCloned: (Int64) -> Void = { _ in }) -> CopyResult {
         assertOffMain()
         guard let state = copyfile_state_alloc() else { return .failed(ENOMEM) }
         defer { copyfile_state_free(state) }
@@ -86,7 +87,12 @@ enum CopyEngine {
             copyfile_state_set(state, UInt32(COPYFILE_STATE_STATUS_CB), unsafeBitCast(callback, to: UnsafeRawPointer.self))
             copyfile_state_set(state, UInt32(COPYFILE_STATE_STATUS_CTX), Unmanaged.passUnretained(box).toOpaque())
             if copyfile(src, dst, state, fileFlags(clone: clone)) == 0 {
-                if expectedSize > box.reported { onBytes(expectedSize - box.reported) }   // clone: no callbacks
+                if expectedSize > box.reported {
+                    // A clone sends no callbacks and writes no data: report it as cloned (rate and fraction skip it).
+                    var cloned: Int32 = 0
+                    let wasCloned = clone && copyfile_state_get(state, UInt32(COPYFILE_STATE_WAS_CLONED), &cloned) == 0 && cloned != 0
+                    if wasCloned && box.reported == 0 { onCloned(expectedSize) } else { onBytes(expectedSize - box.reported) }
+                }
                 return .copied
             }
             let e = box.failure != 0 ? box.failure : errno
@@ -129,7 +135,8 @@ enum CopyEngine {
     /// open directory on finish and on cancel.
     static func copyTree(_ item: PlanItem, to destinationRoot: String, state: inout TreeCopyState, clone: Bool,
                          chunkBytes: Int, lane: LaneContext, control: JobControl,
-                         progress: @escaping (Int, Int64, String?) -> Void, onChunk: @escaping () -> Void) -> TreeStep {
+                         progress: @escaping (Int, Int64, String?) -> Void, onChunk: @escaping () -> Void,
+                         cloned: @escaping (Int64) -> Void = { _ in }) -> TreeStep {
         assertOffMain()
         let srcRoot = item.source.path
         while state.next < item.entries.count {
@@ -159,7 +166,8 @@ enum CopyEngine {
                 var fileBytes: Int64 = 0
                 let r = copyFile(from: src, to: dst, expectedSize: e.type == .file ? e.size : 0, clone: clone,
                                  chunkBytes: chunkBytes, lane: lane, control: control,
-                                 onBytes: { fileBytes += $0; progress(0, $0, nil) }, onChunk: onChunk)
+                                 onBytes: { fileBytes += $0; progress(0, $0, nil) }, onChunk: onChunk,
+                                 onCloned: cloned)
                 // A failed or cancelled file is unlinked, so its bytes are taken back (a retry counts them again).
                 if r != .copied, fileBytes != 0 { progress(0, -fileBytes, nil) }
                 switch r {
@@ -215,7 +223,8 @@ enum TreeCopier {
                 let step = CopyEngine.copyTree(item, to: destination.path, state: &st, clone: clone, chunkBytes: chunk,
                                                lane: lane, control: control,
                                                progress: { items, bytes, current in ctx.addProgress(items: items, bytes: bytes, current: current) },
-                                               onChunk: { hook?(.midCopyChunk, jobID) })
+                                               onChunk: { hook?(.midCopyChunk, jobID) },
+                                               cloned: { ctx.addProgress(bytes: $0, cloned: $0) })
                 return (step, st)
             }
             let (step, newState) = result ?? (.failed(index: state.next, code: EIO), state)

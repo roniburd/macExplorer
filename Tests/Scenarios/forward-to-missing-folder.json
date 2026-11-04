@@ -1,0 +1,9 @@
+{"name": "forward-to-missing-folder",
+ "fixture": {"files": ["a/x.txt", "b.txt"], "dirs": ["a"]},
+ "steps": [
+  {"click": "a"}, {"key": "return"}, {"waitFor": {"folder": "a", "rows": ["x.txt"]}},
+  {"key": "cmd+["}, {"waitFor": {"folder": "", "rows": ["a", "b.txt"]}},
+  {"click": "a"}, {"command": "moveToTrash"}, {"waitFor": {"rows": ["b.txt"], "filesAbsent": ["a"]}, "timeoutMs": 5000},
+  {"key": "cmd+]"},
+  {"waitFor": {"folder": "", "rows": ["b.txt"], "banner": "'a' was moved or deleted"}, "timeoutMs": 5000}
+ ]}

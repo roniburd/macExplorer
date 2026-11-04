@@ -136,6 +136,9 @@ final class BrowserSession {
             case .movedOrDeleted(let name): showBanner(String(format: L10n.string("'%@' was moved or deleted"), name))
             case .volumeGone: showBanner(L10n.string("The volume was disconnected"))
             }
+        case .state(.error(.notFound)), .state(.error(.volumeGone)):
+            applyPendingSelection()
+            folder.relocateIfGone()
         case .changes, .state:
             applyPendingSelection()
         case .selection:

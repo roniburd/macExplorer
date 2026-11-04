@@ -48,6 +48,39 @@ final class IconsViewTests: XCTestCase {
         XCTAssertTrue(cutEmoji.hasSuffix(".png"))
     }
 
+    /// QA round 2: the label lays text out narrower than its frame (cell inset), so a candidate measured at the full
+    /// width still overflowed and the cell added a second, tail ellipsis that hid the extension.
+    func testIconLabelsShowOneMiddleEllipsisAndTheExtensionAtEverySize() throws {
+        let name = "a very long file name that should wrap onto two lines and then ellipsize in the middle.txt"
+        for size in IconSize.allCases {
+            let metrics = GridMetrics.forIconSize(size)
+            let item = IconItem()
+            item.loadView()
+            item.view.frame = NSRect(origin: .zero, size: metrics.itemSize)
+            let icon = try XCTUnwrap(CGContext(data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                                               space: CGColorSpaceCreateDeviceRGB(),
+                                               bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)?.makeImage())
+            let labelWidth = Double(metrics.itemSize.width - 8)
+            item.configure(name: name, icon: icon, points: size.points, labelWidth: labelWidth, isCut: false,
+                           isSelected: false, emphasized: false, isDataless: false, rowID: .object(1))
+            item.view.layoutSubtreeIfNeeded()
+            let shown = item.label.stringValue
+            XCTAssertEqual(shown.filter { $0 == "…" }.count, 1, "\(size): \(shown)")
+            XCTAssertTrue(shown.hasSuffix(".txt"), "\(size): \(shown)")
+            XCTAssertEqual(item.label.alignmentRect(forFrame: item.label.frame).width, CGFloat(labelWidth), accuracy: 0.5)
+            // Laid out by the label's own cell without a line limit, the text needs at most two lines: the cell
+            // never has to truncate it again.
+            let probe = NSTextField(wrappingLabelWithString: shown)
+            probe.font = item.label.font
+            probe.alignment = item.label.alignment
+            let bounds = NSRect(x: 0, y: 0, width: item.label.frame.width, height: 1_000)
+            let needed = try XCTUnwrap(probe.cell).cellSize(forBounds: bounds).height
+            probe.stringValue = "X\nX"
+            let twoLines = try XCTUnwrap(probe.cell).cellSize(forBounds: bounds).height
+            XCTAssertLessThanOrEqual(needed, twoLines + 0.5, "\(size): '\(shown)' needs more than two lines")
+        }
+    }
+
     func testTruncationIsFast() {
         let names = (0..<200).map { "document-\($0)-" + String(repeating: "x", count: 120) + ".pdf" }
         // Best of 5 passes: the intrinsic cost, not scheduling noise when `swift test --parallel` loads every core.

@@ -62,6 +62,32 @@ final class PropertiesViewModelTests: XCTestCase {
         m.close()
     }
 
+    /// QA round 2: packages (.app, .rtfd) showed Size "--": they are counted like folders.
+    func testPackagesAreCountedForTheirSize() async throws {
+        let h = try await ContentTestHarness.make(self)
+        try h.file("Pkg.app/Contents/MacOS/bin", bytes: 5_000)
+        try h.file("Pkg.app/Contents/Info.plist", bytes: 100)
+        let m = model(h, ["Pkg.app"])
+        await m.load()
+        XCTAssertEqual(item(m)?.kind, .package)
+        try await h.waitUntil("count finished") { m.folderCount?.finished == true }
+        XCTAssertEqual(m.folderCount?.bytes, 5_100)
+        XCTAssertEqual(PropertiesFormat.countedSize(m.folderCount, locale: en), "5 KB (5,100 bytes)")
+        XCTAssertNotEqual(PropertiesFormat.countedDiskSize(m.folderCount, locale: en), "--")
+        m.close()
+    }
+
+    func testCountedSizesSayWhenAFolderCannotBeRead() {
+        let unreadable = CountProgress(files: 0, folders: 0, bytes: 0, finished: true, rootUnreadable: true)
+        XCTAssertEqual(PropertiesFormat.countedSize(unreadable, locale: en), "--")
+        XCTAssertEqual(PropertiesFormat.contains(unreadable, locale: en), "Can't be read")
+        let partly = CountProgress(files: 2, folders: 1, bytes: 10, finished: true, unreadableFolders: 1)
+        XCTAssertEqual(PropertiesFormat.contains(partly, locale: en), "2 files, 1 folders (some folders couldn't be read)")
+        let fine = CountProgress(files: 2, folders: 1, bytes: 10, finished: true)
+        XCTAssertEqual(PropertiesFormat.contains(fine, locale: en), "2 files, 1 folders")
+        XCTAssertEqual(PropertiesFormat.countedSize(nil, locale: en), "Counting…")
+    }
+
     func testLockToggleRunsUndoableJobAndUndoRestores() async throws {
         let h = try await ContentTestHarness.make(self)
         try h.file("a.txt")

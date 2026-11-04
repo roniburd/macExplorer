@@ -144,6 +144,12 @@ enum Planner {
                 case FTS_SL, FTS_SLNONE: .symlink
                 default: .other
                 }
+                // fts reports an unreadable folder twice: FTS_D (errno 0), then FTS_DNR in place of FTS_DP. Fold the
+                // error into the first so the copy fails on it before creating the folder (QA round 2).
+                if ftsInfo == FTS_DNR, let last = out.indices.last, out[last].relativePath == rel, out[last].type == .directory {
+                    out[last].errorCode = ent.pointee.fts_errno
+                    return true
+                }
                 let flags = st?.st_flags ?? 0
                 out.append(PlanEntry(relativePath: rel, type: type, size: Int64(st?.st_size ?? 0),
                                      allocSize: Int64(st?.st_blocks ?? 0) * 512, mode: UInt16((st?.st_mode ?? 0) & 0o7777),

@@ -166,6 +166,26 @@ final class BrowserSessionTests: XCTestCase {
         XCTAssertEqual(banners.last ?? "not cleared", nil, "a user navigation clears the banner")
     }
 
+    func testGoingForwardToAMissingFolderRelocatesToTheNearestAncestorWithABanner() async throws {
+        let h = try await ShellHarness.make(self)
+        try h.file("a/deep/x.txt")
+        let session = try await makeSession(h)
+        var banners: [String?] = []
+        let token = session.observe { if case .banner(let text) = $0 { banners.append(text) } }
+        defer { token.cancel() }
+        session.navigate(to: h.url("a/deep"))
+        try await h.waitUntil("deep complete") { session.folder.state == .complete }
+        session.goBack()
+        try await h.waitUntil("root complete") { session.folder.state == .complete }
+        try h.sandbox.rename("files/a/deep", to: "files/moved")
+        session.goForward()
+        try await h.waitUntil("relocated to the nearest ancestor", timeout: .seconds(10)) {
+            session.folder.directory.lastPathComponent == "a" && session.folder.state == .complete
+        }
+        XCTAssertEqual(banners.last ?? nil, "'deep' was moved or deleted")
+        XCTAssertTrue(session.history.canGoBack, "the root stays reachable with Back")
+    }
+
     func testCloseClosesTheModel() async throws {
         let h = try await ShellHarness.make(self)
         try h.file("a.txt")

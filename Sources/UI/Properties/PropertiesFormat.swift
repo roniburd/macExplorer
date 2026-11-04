@@ -24,6 +24,25 @@ enum PropertiesFormat {
         return finished ? text : String(format: L10n.string("Counting… %@"), text)
     }
 
+    /// Size of a counted folder or package: "Counting…" until the first update, "--" when it can't be read.
+    static func countedSize(_ count: CountProgress?, locale: Locale = .current) -> String {
+        guard let count else { return L10n.string("Counting…") }
+        return count.rootUnreadable ? Formatters.folderSize : size(count.bytes, locale: locale)
+    }
+
+    static func countedDiskSize(_ count: CountProgress?, locale: Locale = .current) -> String {
+        guard let count else { return L10n.string("Counting…") }
+        return count.rootUnreadable ? Formatters.folderSize : size(count.diskBytes, locale: locale)
+    }
+
+    /// Contains line of a counted folder; never a confident total for a folder that couldn't be read (QA round 2).
+    static func contains(_ count: CountProgress, locale: Locale = .current) -> String {
+        if count.rootUnreadable { return L10n.string("Can't be read") }
+        let text = contains(files: count.files, folders: count.folders, finished: count.finished, locale: locale)
+        guard count.unreadableFolders > 0 else { return text }
+        return String(format: L10n.string("%@ (some folders couldn't be read)"), text)
+    }
+
     /// Multiple selection header: "3 items (2 files, 1 folders)".
     static func items(count: Int, files: Int, folders: Int, locale: Locale = .current) -> String {
         String(format: L10n.string("%@ items (%@ files, %@ folders)"), grouped(Int64(count), locale: locale),

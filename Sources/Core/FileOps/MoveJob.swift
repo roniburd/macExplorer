@@ -51,7 +51,8 @@ enum MoveJob {
                 }
                 ctx.noteRemoved(src)
                 ctx.landed(target)
-                ctx.addProgress(items: item.itemCount, bytes: item.byteCount, current: src.lastPathComponent)
+                // A rename writes no data: its bytes count as cloned (QA round 2).
+                ctx.addProgress(items: item.itemCount, bytes: item.byteCount, cloned: item.byteCount, current: src.lastPathComponent)
                 return .done
             case .crossDevice:
                 let info = item.info

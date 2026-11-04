@@ -24,6 +24,8 @@ enum ClipboardScenarios {
             _ = await ctx.perform(.move(sources: plan.sources, destination: plan.destination))
             clipboard.didPaste(plan)
             try ctx.expect(clipboard.cutURLs.isEmpty, "cut state cleared after the move")
+            try ctx.expect(clipboard.pastePlan(into: ctx.work, moveItemHere: false) == nil,
+                           "a used-up cut leaves nothing to paste (no copy of the moved-away path)")
             try ctx.expect(!ctx.exists(a) && ctx.exists(ctx.path("dst/a.txt")), "moved")
         },
         CoreScenario("clip.staleCutPastesAsCopy") { ctx in

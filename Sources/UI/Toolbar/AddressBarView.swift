@@ -24,6 +24,7 @@ final class AddressBarView: NSView {
     private let environment: CoreEnvironment
     private var editToken = 0
     private var fieldBeforeError: NSLayoutConstraint?
+    private var fieldTrailing: NSLayoutConstraint?
 
     init(context: UIContext) {
         environment = context.environment
@@ -127,7 +128,14 @@ final class AddressBarView: NSView {
         errorText = text
         errorLabel.stringValue = text ?? ""
         errorLabel.isHidden = text == nil
-        fieldBeforeError?.isActive = text != nil
+        // Swap the field's trailing edge so the label gets its full width (it was squeezed to 4 pt: QA round 2).
+        if text == nil {
+            fieldBeforeError?.isActive = false
+            fieldTrailing?.isActive = true
+        } else {
+            fieldTrailing?.isActive = false
+            fieldBeforeError?.isActive = true
+        }
     }
 
     private func wire() {
@@ -167,14 +175,15 @@ final class AddressBarView: NSView {
         errorLabel.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
         errorLabel.lineBreakMode = .byTruncatingTail
         errorLabel.isHidden = true
-        errorLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+        errorLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        editField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         editField.isHidden = true
         for view in [breadcrumb, editField, errorLabel] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
         let fieldTrailing = editField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6)
-        fieldTrailing.priority = .defaultHigh
+        self.fieldTrailing = fieldTrailing
         let fieldBeforeError = editField.trailingAnchor.constraint(equalTo: errorLabel.leadingAnchor, constant: -6)
         self.fieldBeforeError = fieldBeforeError
         NSLayoutConstraint.activate([

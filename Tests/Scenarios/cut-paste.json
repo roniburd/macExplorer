@@ -5,6 +5,8 @@
   {"doubleClick": "dest"}, {"waitFor": {"folder": "dest", "rows": []}},
   {"key": "cmd+v"}, {"waitFor": {"rows": ["a.txt"]}, "timeoutMs": 5000},
   {"expect": {"filesExist": ["dest/a.txt"], "filesAbsent": ["a.txt"], "cut": []}},
+  {"key": "cmd+v"}, {"sleepMs": 800},
+  {"expect": {"rows": ["a.txt"], "sheetPresent": false}},
   {"key": "cmd+["}, {"waitFor": {"folder": "", "rows": ["dest", "b.txt"]}},
   {"click": "b.txt"}, {"key": "ctrl+x"}, {"waitFor": {"cut": ["b.txt"]}},
   {"key": "esc"}, {"waitFor": {"cut": []}}

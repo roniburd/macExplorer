@@ -55,7 +55,8 @@ final class JobContext: Sendable {
         var changeOrder: [URL] = []
         var skipAll: Set<String> = []
         var journaledStart = false
-        var meter = ThroughputMeter()
+        var meter = ThroughputMeter()          // written bytes: the speed text and graph
+        var workMeter = ThroughputMeter()      // work units (JobProgress.workDone): the ETA
         var fileConflictAction: ConflictAction?
         var folderConflictAction: ConflictAction?
         /// Compare answers, and the top-level sources that dialog answered (keys missing from the map = Skip).
@@ -110,20 +111,24 @@ final class JobContext: Sendable {
     func setTotals(items: Int, bytes: Int64?) {
         state.withLock { $0.snapshot.progress.itemsTotal = items; $0.snapshot.progress.bytesTotal = bytes }
     }
-    func addProgress(items: Int = 0, bytes: Int64 = 0, current: String? = nil) {
+    /// `cloned`: the part of `bytes` that finished without writing data (clone, same-volume rename).
+    func addProgress(items: Int = 0, bytes: Int64 = 0, cloned: Int64 = 0, current: String? = nil) {
         state.withLock { s in
             s.snapshot.progress.itemsDone += items
             s.snapshot.progress.bytesDone += bytes
+            s.snapshot.progress.bytesCloned += cloned
             if let current { s.snapshot.progress.currentItem = current }
         }
     }
-    /// Called by the queue's ticker every progressInterval.
+    /// Called by the queue's ticker every progressInterval. The rate counts written bytes; the ETA follows the work
+    /// (items and written bytes), like the fraction.
     func tickThroughput(now: ContinuousClock.Instant) {
         state.withLock { s in
-            s.meter.sample(bytesDone: s.snapshot.progress.bytesDone, at: now)
+            let p = s.snapshot.progress
+            s.meter.sample(bytesDone: p.bytesTransferred, at: now)
+            s.workMeter.sample(bytesDone: p.workDone, at: now)
             s.snapshot.progress.throughput = s.meter.samples
-            s.snapshot.progress.estimatedRemaining = s.meter.estimatedRemaining(bytesDone: s.snapshot.progress.bytesDone,
-                                                                                bytesTotal: s.snapshot.progress.bytesTotal)
+            s.snapshot.progress.estimatedRemaining = s.workMeter.estimatedRemaining(bytesDone: p.workDone, bytesTotal: p.workTotal)
         }
     }
 
@@ -378,11 +383,15 @@ extension JobContext {
 
     /// Progress before a step that may be redone (a partial copy removed for Retry); `restoreProgress` takes back
     /// what the removed attempt counted, so "x of y" never exceeds the totals.
-    func progressMark() -> (items: Int, bytes: Int64) {
-        state.withLock { ($0.snapshot.progress.itemsDone, $0.snapshot.progress.bytesDone) }
+    func progressMark() -> (items: Int, bytes: Int64, cloned: Int64) {
+        state.withLock { ($0.snapshot.progress.itemsDone, $0.snapshot.progress.bytesDone, $0.snapshot.progress.bytesCloned) }
     }
-    func restoreProgress(_ mark: (items: Int, bytes: Int64)) {
-        state.withLock { $0.snapshot.progress.itemsDone = mark.items; $0.snapshot.progress.bytesDone = mark.bytes }
+    func restoreProgress(_ mark: (items: Int, bytes: Int64, cloned: Int64)) {
+        state.withLock {
+            $0.snapshot.progress.itemsDone = mark.items
+            $0.snapshot.progress.bytesDone = mark.bytes
+            $0.snapshot.progress.bytesCloned = mark.cloned
+        }
     }
 
     /// Reason of the most recently listed item (a child skipped inside a top-level item's copy).

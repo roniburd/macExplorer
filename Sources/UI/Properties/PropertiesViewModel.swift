@@ -125,8 +125,9 @@ final class PropertiesViewModel {
         guard case .item(let item) = loaded else { return }
         if nameDraft == (loadedName ?? "") { nameDraft = item.name }   // don't clobber a name being typed
         loadedName = item.name
-        if item.kind == .directory {
+        if item.kind == .directory || item.kind == .package {
             if folderCount == nil { startCount(item.url) }
+            if item.kind == .package, showsOpensWith { await reloadDefaultApp() }
         } else if showsOpensWith {
             await reloadDefaultApp()
         }

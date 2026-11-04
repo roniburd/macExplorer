@@ -61,6 +61,18 @@ final class ScenarioDriver {
         return nil
     }
 
+    /// A drop's resolved destination (DropDestinationResolver) must be --root or inside it (QA round 2: "crumb:<n>"
+    /// above the root and sidebar favorites resolved to real folders outside the sandbox).
+    nonisolated static func confinedDropDestination(_ url: URL?, onto: String, roots: [String]) throws(DriverError) -> URL {
+        guard let url else { throw DriverError("drop target '\(onto)' does not resolve to a folder") }
+        let path = url.standardizedFileURL.path(percentEncoded: false)
+        let trimmed = path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
+        guard relativePath(trimmed, roots: roots) != nil else {
+            throw DriverError("drop target '\(onto)' resolves to \(trimmed), outside --root")
+        }
+        return url
+    }
+
     // MARK: run
 
     func run() async -> Bool {
@@ -420,6 +432,12 @@ final class ScenarioDriver {
         for source in sources where Self.relativePath(source.path, roots: rootPrefixes) == nil {
             throw DriverError("drop source \(source.path) is outside --root")
         }
+        // The destination too, lexically and after resolving symlinks (a link row inside the root may point out).
+        let resolved = DropDestinationResolver.resolve(drop.onto, folder: controller.session.folder,
+                                                       favorites: context.environment.settings.favorites)
+        let destination = try Self.confinedDropDestination(resolved, onto: drop.onto, roots: rootPrefixes)
+        let real = try await lanes.perform(on: .unknown) { _ in destination.resolvingSymlinksInPath() }
+        _ = try Self.confinedDropDestination(real, onto: drop.onto, roots: rootPrefixes)
         await controller.probePerformDrop(sources: sources, onto: drop.onto,
                                           modifiers: mods, secondary: drop.secondary ?? false, menuChoice: choice)
         await fence()

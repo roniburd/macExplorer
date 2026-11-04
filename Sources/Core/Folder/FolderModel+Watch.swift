@@ -115,6 +115,15 @@ extension FolderModel {
         }
     }
 
+    /// The window opened a folder that isn't there (history, breadcrumb, › menu, a stale path) and it ended in
+    /// .error(.notFound | .volumeGone): relocate to the nearest existing ancestor (or Home) like a removed root,
+    /// so the window never shows a silent blank list (§4.3, QA round 2).
+    public func relocateIfGone() {
+        guard !closed, !relocated, case .error(let reason) = state, reason == .notFound || reason == .volumeGone
+        else { return }
+        checkRoot()
+    }
+
     /// Volume list changed: the folder's volume is no longer mounted → Home.
     func volumesChanged(_ list: [VolumeInfo]) {
         guard !closed, !relocated, let volume = openedVolume, !list.isEmpty else { return }

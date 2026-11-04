@@ -34,6 +34,17 @@
         }
       }
     },
+    "%@ (some folders couldn't be read)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (some folders couldn't be read)"
+          }
+        }
+      }
+    },
     "%@ Properties" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -703,6 +714,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Browse…"
+          }
+        }
+      }
+    },
+    "Can't be read" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can't be read"
           }
         }
       }

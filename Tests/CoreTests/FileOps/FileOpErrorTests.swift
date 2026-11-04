@@ -39,10 +39,25 @@ final class FileOpErrorTests: XCTestCase {
         XCTAssertNil(p.fraction)
         p.itemsTotal = 4; p.itemsDone = 1
         XCTAssertEqual(p.fraction, 0.25)
-        p.bytesTotal = 200; p.bytesDone = 150
-        XCTAssertEqual(p.fraction, 0.75)          // bytes win when known
+        let k = JobProgress.itemCost
+        p.bytesTotal = 4 * k; p.bytesDone = 3 * k
+        XCTAssertEqual(p.fraction!, Double(k + 3 * k) / Double(4 * k + 4 * k), accuracy: 1e-9, "items and bytes both weigh")
         p.itemsTotal = 0; p.bytesTotal = nil
         XCTAssertEqual(p.fraction, 1)
+        var big = JobProgress.zero                  // one large file: the bar follows its bytes
+        big.itemsTotal = 1; big.bytesTotal = 1_000 * k; big.bytesDone = 500 * k
+        XCTAssertEqual(big.fraction!, 0.5, accuracy: 0.01)
+    }
+
+    /// QA round 2: 12,000 one-byte files plus six cloned 150 MB files. The clones finish instantly and must not
+    /// push the bar to 99% while most items are still to do; the rate counts only bytes actually written.
+    func testClonedBytesDoNotDominateTheFraction() {
+        var p = JobProgress.zero
+        let cloned: Int64 = 6 * 150_000_000
+        p.itemsTotal = 12_019; p.bytesTotal = cloned + 12_000
+        p.itemsDone = 3_507; p.bytesDone = cloned + 3_500; p.bytesCloned = cloned
+        XCTAssertEqual(p.fraction!, 3_507.0 / 12_019.0, accuracy: 0.01)
+        XCTAssertEqual(p.bytesTransferred, 3_500)
     }
 
     func testThroughputMeterKeeps60SamplesAndEstimates() {

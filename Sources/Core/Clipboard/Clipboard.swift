@@ -88,8 +88,13 @@ public final class Clipboard {
     }
 
     /// Move done (or no-op cut-paste) → clear cut state. A finished copy leaves the cut state alone.
+    /// A finished move also empties the pasteboard while it still holds exactly the moved URLs (Explorer and Finder
+    /// do the same), so a second paste is not a copy of moved-away paths (QA round 2). Newer contents stay.
     public func didPaste(_ plan: PastePlan) {
         guard plan.operation == .move else { return }
+        if !plan.isNoOp, backend.hasFileURLs(), backend.readFileURLs() == plan.sources {
+            backend.writeFileURLs([], cutMarker: false)
+        }
         resetCut()
     }
 

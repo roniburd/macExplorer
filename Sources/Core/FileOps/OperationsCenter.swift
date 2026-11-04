@@ -32,12 +32,13 @@ public final class OperationsCenter {
     public var visibleFraction: Double? { Self.overallFraction(of: visibleJobs) }
     public var hasActiveJobs: Bool { !jobs.isEmpty }
 
-    /// Bytes-weighted over jobs that know their byte total; otherwise the mean of the known fractions.
+    /// Work-weighted (JobProgress.workDone / workTotal: items and written bytes) over jobs that know their totals;
+    /// otherwise the mean of the known fractions.
     nonisolated static func overallFraction(of jobs: [JobSnapshot]) -> Double? {
-        let withBytes = jobs.filter { ($0.progress.bytesTotal ?? 0) > 0 }
-        if !withBytes.isEmpty {
-            let done = withBytes.reduce(Int64(0)) { $0 + $1.progress.bytesDone }
-            let total = withBytes.reduce(Int64(0)) { $0 + ($1.progress.bytesTotal ?? 0) }
+        let known = jobs.filter { ($0.progress.workTotal ?? 0) > 0 }
+        if !known.isEmpty {
+            let done = known.reduce(Int64(0)) { $0 + min($1.progress.workDone, $1.progress.workTotal ?? 0) }
+            let total = known.reduce(Int64(0)) { $0 + ($1.progress.workTotal ?? 0) }
             return min(1, Double(done) / Double(total))
         }
         let fractions = jobs.compactMap(\.progress.fraction)

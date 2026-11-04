@@ -5,15 +5,32 @@ public struct JobProgress: Sendable, Equatable {
     public var itemsTotal: Int? = nil            // nil while planning
     public var bytesDone: Int64 = 0
     public var bytesTotal: Int64? = nil
+    /// Part of bytesDone that finished without writing data (APFS clones, same-volume renames): it costs about as
+    /// much as an empty file, so neither the rate nor the fraction counts it (QA round 2).
+    public var bytesCloned: Int64 = 0
     public var currentItem: String? = nil
-    public var throughput: [Double] = []         // bytes/s, oldest first, ≤ 60
+    public var throughput: [Double] = []         // bytes/s actually written, oldest first, ≤ 60
     public var estimatedRemaining: Duration? = nil
     public init() {}
+
+    /// What one item (file, folder, link) costs beyond its bytes, in byte-equivalents: about the time a fast disk
+    /// writes 256 KB. Weighing items and bytes together keeps a bar of many small files from jumping to 99%
+    /// after a few large ones, and still lets one large file's bar follow its bytes.
+    public static let itemCost: Int64 = 256 * 1024
+
+    /// Bytes actually written (bytesDone without cloned bytes).
+    public var bytesTransferred: Int64 { max(0, bytesDone - bytesCloned) }
+
+    /// Work done and total in byte-equivalents (items × itemCost + written bytes); nil while the item total is unknown.
+    public var workDone: Int64 { Int64(itemsDone) * Self.itemCost + bytesTransferred }
+    public var workTotal: Int64? {
+        guard let items = itemsTotal else { return nil }
+        return Int64(items) * Self.itemCost + max(0, (bytesTotal ?? 0) - bytesCloned)
+    }
+
     public var fraction: Double? {
+        if let total = workTotal { return total <= 0 ? 1 : min(1, Double(workDone) / Double(total)) }
         if let bt = bytesTotal, bt > 0 { return min(1, Double(bytesDone) / Double(bt)) }
-        if let it = itemsTotal {
-            return it == 0 ? 1 : min(1, Double(itemsDone) / Double(it))
-        }
         return nil
     }
     public static let zero = JobProgress()

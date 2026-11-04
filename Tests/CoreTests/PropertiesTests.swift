@@ -149,7 +149,12 @@ final class FolderCounterTests: XCTestCase {
         try sandbox.createFile("F/sub/c.txt", contents: Data(count: 30))
         let all = await collect(FolderCounter.count(sandbox.url("F"), lanes: lanes, volume: volume))
         let last = try XCTUnwrap(all.last)
-        XCTAssertEqual(last, CountProgress(files: 3, folders: 1, bytes: 60, finished: true))
+        XCTAssertEqual([last.files, last.folders], [3, 1])
+        XCTAssertEqual(last.bytes, 60)
+        XCTAssertTrue(last.finished)
+        XCTAssertGreaterThanOrEqual(last.diskBytes, 60, "allocated bytes, for Size on disk")
+        XCTAssertEqual(last.unreadableFolders, 0)
+        XCTAssertFalse(last.rootUnreadable)
         XCTAssertEqual(all.filter(\.finished).count, 1, "exactly one final update, and it is the last")
     }
 
@@ -158,7 +163,20 @@ final class FolderCounterTests: XCTestCase {
         let empty = await collect(FolderCounter.count(sandbox.url("E"), lanes: lanes, volume: volume))
         XCTAssertEqual(empty.last, CountProgress(files: 0, folders: 0, bytes: 0, finished: true))
         let missing = await collect(FolderCounter.count(sandbox.url("nope"), lanes: lanes, volume: volume))
-        XCTAssertEqual(missing.last, CountProgress(files: 0, folders: 0, bytes: 0, finished: true))
+        XCTAssertEqual(missing.last, CountProgress(files: 0, folders: 0, bytes: 0, finished: true, rootUnreadable: true),
+                       "a folder that can't be read is not reported as empty")
+    }
+
+    /// QA round 2: a mode-000 folder used to finish as "0 files, 0 folders, Zero KB", as if it were empty.
+    func testUnreadableRootIsReportedAsUnreadable() async throws {
+        try sandbox.createFile("denied/s.txt", contents: Data(count: 100))
+        try sandbox.setMode("denied", 0)
+        let deniedPath = sandbox.url("denied").path(percentEncoded: false)
+        addTeardownBlock { _ = chmod(deniedPath, 0o700) }
+        let all = await collect(FolderCounter.count(sandbox.url("denied"), lanes: lanes, volume: volume))
+        let last = try XCTUnwrap(all.last)
+        XCTAssertTrue(last.finished)
+        XCTAssertTrue(last.rootUnreadable)
     }
 
     /// Review Focus 4: symlinks are never followed, counted once, and recursion terminates.
@@ -191,7 +209,12 @@ final class FolderCounterTests: XCTestCase {
         let lockedPath = sandbox.url("F/locked").path(percentEncoded: false)
         addTeardownBlock { _ = chmod(lockedPath, 0o700) }
         let all = await collect(FolderCounter.count(sandbox.url("F"), lanes: lanes, volume: volume))
-        XCTAssertEqual(all.last, CountProgress(files: 1, folders: 1, bytes: 1, finished: true))
+        let last = try XCTUnwrap(all.last)
+        XCTAssertEqual([last.files, last.folders], [1, 1])
+        XCTAssertEqual(last.bytes, 1)
+        XCTAssertTrue(last.finished)
+        XCTAssertEqual(last.unreadableFolders, 1, "the undercount is flagged (QA round 2)")
+        XCTAssertFalse(last.rootUnreadable)
     }
 
     func testReportsMonotonicProgressBeforeFinishing() async throws {
