@@ -1,0 +1,12 @@
+{"name": "right-drag-menu",
+ "fixture": {"files": ["a.txt", "b.txt", "c.txt"], "dirs": ["dest"]},
+ "steps": [
+  {"drop": {"sources": ["a.txt"], "onto": "dest", "secondary": true, "choose": "copy"}},
+  {"waitFor": {"filesExist": ["a.txt", "dest/a.txt"]}, "timeoutMs": 5000},
+  {"drop": {"sources": ["b.txt"], "onto": "dest", "secondary": true, "choose": "move"}},
+  {"waitFor": {"filesExist": ["dest/b.txt"], "filesAbsent": ["b.txt"]}, "timeoutMs": 5000},
+  {"drop": {"sources": ["c.txt"], "onto": "dest", "secondary": true, "choose": "cancel"}}, {"sleepMs": 300},
+  {"expect": {"filesExist": ["c.txt"], "filesAbsent": ["dest/c.txt"]}},
+  {"drop": {"sources": ["c.txt"], "onto": "dest", "choose": "move"}, "modifiers": ["ctrl"]},
+  {"waitFor": {"filesExist": ["dest/c.txt"], "filesAbsent": ["c.txt"]}, "timeoutMs": 5000}
+ ]}

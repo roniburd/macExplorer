@@ -1,0 +1,15 @@
+{"name": "keyboard-navigation",
+ "fixture": {"files": ["sub/inner.txt", "top.txt"], "dirs": ["sub"]},
+ "steps": [
+  {"click": "sub"}, {"key": "cmd+down"}, {"waitFor": {"folder": "sub", "rows": ["inner.txt"]}},
+  {"key": "cmd+up"}, {"waitFor": {"folder": ""}},
+  {"key": "opt+left"}, {"waitFor": {"folder": "sub"}},
+  {"key": "opt+right"}, {"waitFor": {"folder": ""}},
+  {"key": "delete"}, {"waitFor": {"folder": "sub"}},
+  {"key": "opt+up"}, {"waitFor": {"folder": ""}},
+  {"click": "sub"}, {"key": "return"}, {"waitFor": {"folder": "sub"}},
+  {"key": "cmd+["}, {"waitFor": {"folder": ""}},
+  {"key": "opt+d"}, {"waitFor": {"editingAddress": true}}, {"key": "esc"}, {"waitFor": {"editingAddress": false}},
+  {"key": "F4"}, {"waitFor": {"editingAddress": true}}, {"key": "esc"}, {"waitFor": {"editingAddress": false}},
+  {"key": "F5"}, {"sleepMs": 300}, {"expect": {"state": "complete", "rowCount": 2}}
+ ]}

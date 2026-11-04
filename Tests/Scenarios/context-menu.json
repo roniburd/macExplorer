@@ -1,0 +1,11 @@
+{"name": "context-menu",
+ "fixture": {"files": ["a.txt"], "dirs": ["dest"]},
+ "steps": [
+  {"rightClick": "a.txt"}, {"chooseMenuItem": "Duplicate"},
+  {"waitFor": {"rowsContain": ["a copy.txt"]}, "timeoutMs": 5000},
+  {"click": "a.txt"}, {"key": "cmd+c"},
+  {"rightClick": "dest"}, {"chooseMenuItem": "Paste"},
+  {"waitFor": {"filesExist": ["dest/a.txt"]}, "timeoutMs": 5000},
+  {"rightClick": ""}, {"chooseMenuItem": "Paste"},
+  {"waitFor": {"rowsContain": ["a copy 2.txt"]}, "timeoutMs": 5000}
+ ]}

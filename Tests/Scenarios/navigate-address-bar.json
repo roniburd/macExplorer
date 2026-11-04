@@ -1,0 +1,12 @@
+{"name": "navigate-address-bar",
+ "fixture": {"files": ["top.txt", "a/b/deep.txt"], "dirs": ["a", "a/b"]},
+ "steps": [
+  {"key": "cmd+l"}, {"waitFor": {"editingAddress": true}},
+  {"type": "a/b"}, {"key": "return"},
+  {"waitFor": {"folder": "a/b", "rows": ["deep.txt"], "editingAddress": false}},
+  {"key": "cmd+l"}, {"type": "../../top.txt"}, {"key": "return"},
+  {"waitFor": {"folder": "", "selection": ["top.txt"]}},
+  {"key": "cmd+l"}, {"type": "does-not-exist"}, {"key": "return"}, {"sleepMs": 300},
+  {"expect": {"editingAddress": true, "folder": ""}},
+  {"key": "esc"}, {"waitFor": {"editingAddress": false, "folder": ""}}
+ ]}

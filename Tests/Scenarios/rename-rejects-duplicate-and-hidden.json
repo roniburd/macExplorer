@@ -1,0 +1,12 @@
+{"name": "rename-rejects-duplicate-and-hidden",
+ "fixture": {"files": ["a.txt", "b.txt"], "dirs": [], "hidden": ["notes.txt"]},
+ "steps": [
+  {"click": "a.txt"}, {"key": "F2"}, {"waitFor": {"renameText": "a.txt"}},
+  {"type": "b"}, {"key": "return"}, {"sleepMs": 300},
+  {"expect": {"renameText": "b.txt", "filesExist": ["a.txt", "b.txt"]}},
+  {"key": "esc"}, {"waitFor": {"rows": ["a.txt", "b.txt"]}},
+  {"click": "a.txt"}, {"key": "cmd+shift+r"}, {"waitFor": {"renameText": "a.txt"}},
+  {"type": "notes"}, {"key": "return"}, {"sleepMs": 300},
+  {"expect": {"renameText": "notes.txt", "filesExist": ["a.txt", "notes.txt"]}},
+  {"key": "esc"}, {"waitFor": {"rows": ["a.txt", "b.txt"]}}
+ ]}

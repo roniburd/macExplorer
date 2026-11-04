@@ -1,0 +1,11 @@
+{"name": "conflict-dialog",
+ "fixture": {"files": ["a.txt", "dest/a.txt"], "dirs": ["dest"], "sizes": {"a.txt": 10, "dest/a.txt": 3}},
+ "steps": [
+  {"click": "a.txt"}, {"key": "cmd+c"},
+  {"doubleClick": "dest"}, {"waitFor": {"folder": "dest", "rows": ["a.txt"]}},
+  {"key": "cmd+v"}, {"answerConflict": "keepBoth", "timeoutMs": 5000},
+  {"waitFor": {"rowsContain": ["a.txt", "a 2.txt"], "sheetPresent": false}, "timeoutMs": 5000},
+  {"key": "cmd+v"}, {"answerConflict": "replace", "timeoutMs": 5000},
+  {"waitFor": {"fileSizes": {"dest/a.txt": 10}}, "timeoutMs": 5000},
+  {"key": "cmd+z"}, {"waitFor": {"fileSizes": {"dest/a.txt": 3}}, "timeoutMs": 5000}
+ ]}

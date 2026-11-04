@@ -1,0 +1,11 @@
+{"name": "filter-in-folder",
+ "fixture": {"files": ["Résumé.pdf", "resume-old.txt", "notes.txt"], "dirs": ["sub"]},
+ "steps": [
+  {"key": "cmd+f"}, {"waitFor": {"focus": "fieldEditor"}}, {"type": "RESUME"},
+  {"waitFor": {"rowCount": 2, "rowsContain": ["Résumé.pdf", "resume-old.txt"]}},
+  {"type": "zzz"}, {"waitFor": {"rowCount": 0, "emptyState": "No items match"}},
+  {"key": "esc"}, {"waitFor": {"rowCount": 4}},
+  {"type": "notes"}, {"waitFor": {"rows": ["notes.txt"]}},
+  {"key": "cmd+l"}, {"type": "sub"}, {"key": "return"}, {"waitFor": {"folder": "sub"}},
+  {"key": "cmd+["}, {"waitFor": {"folder": "", "rowCount": 4}}
+ ]}

@@ -1,0 +1,8 @@
+{"name": "empty-states",
+ "fixture": {"files": ["closed/inner.txt"], "dirs": ["empty", "closed"], "modes": {"closed": "000"}},
+ "steps": [
+  {"doubleClick": "empty"}, {"waitFor": {"folder": "empty", "emptyState": "This folder is empty"}},
+  {"key": "cmd+["}, {"waitFor": {"folder": ""}},
+  {"doubleClick": "closed"},
+  {"waitFor": {"folder": "closed", "state": "error.permissionPOSIX", "emptyState": "permission"}}
+ ]}

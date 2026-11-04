@@ -1,0 +1,20 @@
+{"name": "colliding-keys",
+ "fixture": {"files": ["sub/a.txt", "sub/b.txt"], "dirs": ["sub"]},
+ "steps": [
+  {"doubleClick": "sub"}, {"waitFor": {"folder": "sub", "rows": ["a.txt", "b.txt"]}},
+  {"click": "a.txt"}, {"expect": {"selection": ["a.txt"]}},
+  {"key": "cmd+l"}, {"waitFor": {"editingAddress": true}},
+  {"type": "abc"}, {"expect": {"fieldEditorText": "abc"}},
+  {"key": "cmd+up"}, {"type": "x"}, {"expect": {"fieldEditorText": "xabc", "folder": "sub"}},
+  {"key": "cmd+down"}, {"type": "y"}, {"expect": {"fieldEditorText": "xabcy", "folder": "sub"}},
+  {"key": "opt+left"}, {"type": "z"}, {"expect": {"fieldEditorText": "zxabcy", "folder": "sub"}},
+  {"key": "cmd+delete"}, {"expect": {"fieldEditorText": "xabcy", "filesExist": ["sub/a.txt"]}},
+  {"key": "opt+cmd+delete"}, {"sleepMs": 300},
+  {"expect": {"filesExist": ["sub/a.txt"], "sheetPresent": false, "editingAddress": true}},
+  {"key": "cmd+["}, {"key": "cmd+]"}, {"sleepMs": 300}, {"expect": {"folder": "sub", "editingAddress": true}},
+  {"key": "F2"}, {"key": "cmd+d"}, {"sleepMs": 300},
+  {"expect": {"filesAbsent": ["sub/a copy.txt"], "editingAddress": true}},
+  {"key": "delete"}, {"key": "fn+delete"}, {"key": "opt+d"}, {"key": "opt+up"}, {"key": "opt+right"}, {"sleepMs": 300},
+  {"expect": {"folder": "sub", "editingAddress": true, "filesExist": ["sub/a.txt", "sub/b.txt"]}},
+  {"key": "esc"}, {"waitFor": {"editingAddress": false, "folder": "sub"}}
+ ]}

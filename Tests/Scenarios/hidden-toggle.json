@@ -1,0 +1,7 @@
+{"name": "hidden-toggle",
+ "fixture": {"files": ["a.txt", ".dot"], "dirs": [], "hidden": ["flagged.txt"]},
+ "steps": [
+  {"expect": {"rows": ["a.txt"]}},
+  {"key": "cmd+shift+."}, {"waitFor": {"rowCount": 3, "rowsContain": [".dot", "a.txt", "flagged.txt"]}},
+  {"key": "cmd+shift+."}, {"waitFor": {"rows": ["a.txt"]}}
+ ]}

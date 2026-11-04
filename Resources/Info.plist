@@ -39,7 +39,7 @@
 	<key>NSNetworkVolumesUsageDescription</key>
 	<string>macExplorer shows and manages the files on network volumes when you browse them.</string>
 	<key>NSPrincipalClass</key>
-	<string>NSApplication</string>
+	<string>MacxApplication</string>
 	<key>NSRemovableVolumesUsageDescription</key>
 	<string>macExplorer shows and manages the files on removable volumes when you browse them.</string>
 	<key>NSSupportsAutomaticTermination</key>

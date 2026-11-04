@@ -1,0 +1,10 @@
+{"name": "drag-move",
+ "fixture": {"files": ["a.txt", "b.txt"], "dirs": ["dest"]},
+ "steps": [
+  {"drop": {"sources": ["a.txt"], "onto": "dest"}},
+  {"waitFor": {"rows": ["dest", "b.txt"], "filesExist": ["dest/a.txt"], "filesAbsent": ["a.txt"]}, "timeoutMs": 5000},
+  {"drop": {"sources": ["b.txt"], "onto": "dest"}, "modifiers": ["opt"]},
+  {"waitFor": {"filesExist": ["dest/b.txt", "b.txt"]}, "timeoutMs": 5000},
+  {"drop": {"sources": ["dest"], "onto": "dest"}}, {"sleepMs": 300},
+  {"expect": {"rows": ["dest", "b.txt"], "filesExist": ["dest/a.txt", "dest/b.txt"], "filesAbsent": ["dest/dest"]}}
+ ]}

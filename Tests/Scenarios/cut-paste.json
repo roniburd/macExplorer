@@ -1,0 +1,11 @@
+{"name": "cut-paste",
+ "fixture": {"files": ["a.txt", "b.txt"], "dirs": ["dest"]},
+ "steps": [
+  {"click": "a.txt"}, {"key": "cmd+x"}, {"waitFor": {"cut": ["a.txt"]}},
+  {"doubleClick": "dest"}, {"waitFor": {"folder": "dest", "rows": []}},
+  {"key": "cmd+v"}, {"waitFor": {"rows": ["a.txt"]}, "timeoutMs": 5000},
+  {"expect": {"filesExist": ["dest/a.txt"], "filesAbsent": ["a.txt"], "cut": []}},
+  {"key": "cmd+["}, {"waitFor": {"folder": "", "rows": ["dest", "b.txt"]}},
+  {"click": "b.txt"}, {"key": "ctrl+x"}, {"waitFor": {"cut": ["b.txt"]}},
+  {"key": "esc"}, {"waitFor": {"cut": []}}
+ ]}

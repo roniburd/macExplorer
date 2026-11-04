@@ -1,0 +1,6 @@
+{"name": "type-select",
+ "fixture": {"files": ["apple.txt", "banana.txt", "mango.txt", "melon.txt"], "dirs": []},
+ "steps": [
+  {"click": "apple.txt"}, {"type": "me"}, {"waitFor": {"selection": ["melon.txt"]}},
+  {"sleepMs": 1500}, {"type": "b"}, {"waitFor": {"selection": ["banana.txt"]}}
+ ]}

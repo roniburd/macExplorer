@@ -1,0 +1,8 @@
+{"name": "properties",
+ "fixture": {"files": ["a.txt"], "dirs": ["sub"]},
+ "steps": [
+  {"click": "a.txt"}, {"key": "cmd+i"}, {"waitFor": {"propertiesWindows": 1}},
+  {"click": "a.txt"}, {"key": "cmd+i"}, {"sleepMs": 300}, {"expect": {"propertiesWindows": 1}},
+  {"click": "sub"}, {"key": "opt+return"}, {"waitFor": {"propertiesWindows": 2}},
+  {"key": "cmd+w"}, {"waitFor": {"propertiesWindows": 1}}
+ ]}

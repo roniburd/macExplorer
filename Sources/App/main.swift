@@ -1,5 +1,6 @@
 import AppKit
 import Core
+import UI
 
 let options: LaunchOptions
 do {
@@ -23,7 +24,7 @@ if options.isSandboxed {
     UserDefaults.standard.register(defaults: ["ApplePersistenceIgnoreState": true, "NSQuitAlwaysKeepsWindows": false])
 }
 
-let app = NSApplication.shared
+let app = MacxApplication.shared
 let delegate = AppDelegate(options: options)
 app.delegate = delegate
 app.setActivationPolicy(.regular)

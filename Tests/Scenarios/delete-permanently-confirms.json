@@ -1,0 +1,9 @@
+{"name": "delete-permanently-confirms",
+ "fixture": {"files": ["a.txt", "b.txt"], "dirs": []},
+ "steps": [
+  {"click": "a.txt"}, {"key": "opt+cmd+delete"},
+  {"answerAlert": "Cancel", "timeoutMs": 3000}, {"sleepMs": 300}, {"expect": {"filesExist": ["a.txt"]}},
+  {"click": "a.txt"}, {"key": "shift+fn+delete"},
+  {"answerAlert": "Delete", "timeoutMs": 3000},
+  {"waitFor": {"rows": ["b.txt"], "filesAbsent": ["a.txt"]}, "timeoutMs": 5000}
+ ]}

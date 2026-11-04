@@ -1,0 +1,9 @@
+{"name": "icons-view",
+ "fixture": {"files": ["a.txt", "b.txt", "c.txt"], "dirs": []},
+ "steps": [
+  {"command": "viewAsIcons"}, {"waitFor": {"viewMode": "icons"}},
+  {"click": "a.txt"}, {"key": "right"}, {"waitFor": {"selection": ["b.txt"]}},
+  {"key": "shift+right"}, {"waitFor": {"selection": ["b.txt", "c.txt"]}},
+  {"key": "cmd+a"}, {"waitFor": {"selection": ["a.txt", "b.txt", "c.txt"]}},
+  {"command": "viewAsDetails"}, {"waitFor": {"viewMode": "details", "selection": ["a.txt", "b.txt", "c.txt"]}}
+ ]}

@@ -1,0 +1,8 @@
+{"name": "copy-paste-same-folder",
+ "fixture": {"files": ["b.txt"], "dirs": []},
+ "steps": [
+  {"click": "b.txt"}, {"key": "cmd+c"}, {"key": "cmd+v"},
+  {"waitFor": {"rowCount": 2, "rowsContain": ["b.txt", "b copy.txt"]}, "timeoutMs": 5000},
+  {"key": "ctrl+v"},
+  {"waitFor": {"rowCount": 3, "rowsContain": ["b copy 2.txt"], "filesExist": ["b copy.txt", "b copy 2.txt"]}, "timeoutMs": 5000}
+ ]}

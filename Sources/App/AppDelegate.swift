@@ -29,7 +29,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let launched = await AppBootstrap.launch(options: options, statePaths: statePaths)
             self.context = launched.context
             self.lifecycle = launched.lifecycle
-            NSApp.activate()
+            ScenarioLaunch.runIfRequested(context: launched.context)
+            if options.scenario == nil { NSApp.activate() }   // UI scenarios run inactive (P1-41)
             if let delay = options.smokeExitAfter { scheduleSmokeExit(after: delay) }
         }
     }

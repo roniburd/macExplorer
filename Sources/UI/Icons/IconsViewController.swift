@@ -94,6 +94,33 @@ final class FileCollectionView: NSCollectionView, NSSpringLoadingDestination {
         _ = nextResponder?.tryToPerform(#selector(NSText.selectAll(_:)), with: sender)
     }
 
+    /// Select All validates where selectAll: runs (the content controller up the chain). NSCollectionView's own
+    /// validation disables it because the grid is not `isSelectable` (the model owns the selection). The SDK does
+    /// not declare NSCollectionView's validateUserInterfaceItem: to Swift, so other actions reach it via its IMP.
+    @objc func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
+        let action = #selector(NSText.selectAll(_:))
+        guard item.action == action else { return superValidate(item) }
+        var next = nextResponder
+        while let responder = next {
+            if responder.responds(to: action) {
+                if let validator = responder as? NSMenuItemValidation, let menuItem = item as? NSMenuItem {
+                    return validator.validateMenuItem(menuItem)
+                }
+                return true
+            }
+            next = responder.nextResponder
+        }
+        return false
+    }
+
+    private func superValidate(_ item: any NSValidatedUserInterfaceItem) -> Bool {
+        typealias Validate = @convention(c) (AnyObject, Selector, AnyObject) -> Bool
+        let selector = #selector(validateUserInterfaceItem(_:))
+        guard NSCollectionView.instancesRespond(to: selector),
+              let imp = class_getMethodImplementation(NSCollectionView.self, selector) else { return true }
+        return unsafeBitCast(imp, to: Validate.self)(self, selector, item as AnyObject)
+    }
+
     // MARK: drags and right-drag (P1-36)
 
     override func mouseDragged(with event: NSEvent) {

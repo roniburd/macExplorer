@@ -1,0 +1,6 @@
+{"name": "rename-f2",
+ "fixture": {"files": ["a.txt", "b.txt"], "dirs": ["sub"]},
+ "steps": [{"click": "a.txt"}, {"key": "F2"}, {"expect": {"renameText": "a.txt"}},
+           {"type": "c"}, {"key": "return"},
+           {"waitFor": {"rows": ["sub", "b.txt", "c.txt"]}, "timeoutMs": 2000},
+           {"expect": {"filesExist": ["c.txt"], "filesAbsent": ["a.txt"], "selection": ["c.txt"]}}]}

@@ -16,7 +16,7 @@ final class BundleResourcesTests: XCTestCase {
         XCTAssertEqual(info["CFBundleName"] as? String, "macExplorer")
         XCTAssertEqual(info["CFBundlePackageType"] as? String, "APPL")
         XCTAssertEqual(info["LSMinimumSystemVersion"] as? String, "26.0")
-        XCTAssertEqual(info["NSPrincipalClass"] as? String, "NSApplication", "P1-41 changes it to MacxApplication")
+        XCTAssertEqual(info["NSPrincipalClass"] as? String, "MacxApplication", "P1-41: ScenarioDriver pins the key window through it")
         XCTAssertEqual(info["CFBundleIconFile"] as? String, "AppIcon")
         XCTAssertEqual(info["CFBundleDevelopmentRegion"] as? String, "en")
         XCTAssertEqual(info["NSHighResolutionCapable"] as? Bool, true)
