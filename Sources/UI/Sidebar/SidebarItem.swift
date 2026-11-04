@@ -22,6 +22,8 @@ enum SidebarItem: Hashable {
     case favorite(SidebarFavorite)
     case location(VolumeInfo)
     case iCloudDrive(URL)
+    /// The user's Trash (`~/.Trash`), last in LOCATIONS.
+    case trash(URL)
     case folder(FolderTreeNode)
 
     static func header(_ section: SidebarSection) -> SidebarItem {
@@ -35,7 +37,7 @@ enum SidebarItem: Hashable {
     var section: SidebarSection {
         switch self {
         case .favoritesHeader, .favorite: .favorites
-        case .locationsHeader, .location, .iCloudDrive: .locations
+        case .locationsHeader, .location, .iCloudDrive, .trash: .locations
         case .foldersHeader, .folder: .folders
         }
     }
@@ -43,7 +45,7 @@ enum SidebarItem: Hashable {
     var isHeader: Bool {
         switch self {
         case .favoritesHeader, .locationsHeader, .foldersHeader: true
-        case .favorite, .location, .iCloudDrive, .folder: false
+        case .favorite, .location, .iCloudDrive, .trash, .folder: false
         }
     }
 
@@ -53,7 +55,7 @@ enum SidebarItem: Hashable {
         case .favoritesHeader, .locationsHeader, .foldersHeader: nil
         case .favorite(let f): f.url
         case .location(let v): v.mountPoint
-        case .iCloudDrive(let url): url
+        case .iCloudDrive(let url), .trash(let url): url
         case .folder(let node): node.url
         }
     }
@@ -67,6 +69,7 @@ enum SidebarItem: Hashable {
         case .favorite(let f): "favorite.\(f.id.uuidString)"
         case .location(let v): "location.\(v.id.raw)"
         case .iCloudDrive: "location.iCloudDrive"
+        case .trash: "location.trash"
         case .folder(let node): "folder.\(ObjectIdentifier(node).hashValue)"
         }
     }
@@ -75,7 +78,7 @@ enum SidebarItem: Hashable {
     @MainActor var focusContext: FocusContext {
         switch self {
         case .favoritesHeader, .favorite: .sidebarFavorites
-        case .locationsHeader, .location, .iCloudDrive: .sidebarLocations
+        case .locationsHeader, .location, .iCloudDrive, .trash: .sidebarLocations
         case .foldersHeader: .sidebarFolders
         case .folder(let node): node.isVolumeRoot ? .sidebarVolumeRoot : .sidebarFolders
         }
@@ -87,7 +90,7 @@ enum SidebarItem: Hashable {
         case .favoritesHeader, .locationsHeader, .foldersHeader: nil
         case .favorite(let f): .favorite(f.resolved)
         case .location(let v): .volume(v)
-        case .iCloudDrive(let url): .location(url)
+        case .iCloudDrive(let url), .trash(let url): .location(url)
         case .folder(let node): node.isVolumeRoot ? .volume(node.volume) : .folder(node.url)
         }
     }
@@ -98,6 +101,7 @@ enum SidebarItem: Hashable {
         case (.favorite(let x), .favorite(let y)): x == y
         case (.location(let x), .location(let y)): x == y
         case (.iCloudDrive(let x), .iCloudDrive(let y)): x == y
+        case (.trash(let x), .trash(let y)): x == y
         case (.folder(let x), .folder(let y)): x === y
         default: false
         }

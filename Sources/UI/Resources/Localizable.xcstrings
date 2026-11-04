@@ -3787,6 +3787,17 @@
         }
       }
     },
+    "Trash" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trash"
+          }
+        }
+      }
+    },
     "Try Again" : {
       "extractionState" : "manual",
       "localizations" : {

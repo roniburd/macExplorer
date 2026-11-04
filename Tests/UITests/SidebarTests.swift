@@ -277,6 +277,29 @@ final class SidebarTests: XCTestCase {
         try await h.waitUntil("hidden by setting") { h.names(in: .locations) == ["Macintosh HD", "USB"] }
     }
 
+    func testTrashAppearsLastWhenItExists() async throws {
+        let h = try await SidebarHarness.make(self) { try $0.dir("home/.Trash") }
+        try await h.waitUntil("Trash row") { h.names(in: .locations) == ["Macintosh HD", "USB", "Trash"] }
+        let row = h.row(named: "Trash", in: .locations)
+        XCTAssertEqual(h.cell(atRow: row)?.toolTip.map { URL(filePath: $0).lastPathComponent }, ".Trash")
+        h.sidebar.select(row: row)
+        XCTAssertEqual(h.sidebar.focusContext, .sidebarLocations)
+        guard case .location(let url)? = h.sidebar.commandTarget else { return XCTFail("a Locations target") }
+        XCTAssertEqual(url.lastPathComponent, ".Trash")
+        let recorder = SidebarRecordingHandler()
+        h.sidebar.handler = recorder
+        for command: Command in [.moveToTrash, .deletePermanently, .rename, .cut] { h.sidebar.run(command, sender: nil) }
+        XCTAssertTrue(recorder.performed.isEmpty, "the Trash row is a pointer: got \(recorder.performed.map(\.0))")
+        let menu = try XCTUnwrap(h.sidebar.menu(forRow: row))
+        XCTAssertEqual(menu.items.map(\.title), ["Open in New Window"])
+    }
+
+    func testNoTrashRowWithoutATrashFolder() async throws {
+        let h = try await SidebarHarness.make(self)
+        await h.settle()
+        XCTAssertFalse(h.names(in: .locations).contains("Trash"))
+    }
+
     func testEjectButtonEjectsThroughTheHandler() async throws {
         let h = try await SidebarHarness.make(self)
         let window = BrowserWindowController(context: h.context, initialURL: h.url("home"))

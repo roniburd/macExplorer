@@ -21,6 +21,7 @@ final class SidebarViewController: CommandHandlingViewController {
 
     private(set) var locationItems: [SidebarItem] = []
     private var iCloudDrive: URL?
+    private var trash: URL?
     private var boxes: [String: (item: SidebarItem, box: AnyObject)] = [:]
     private var settingsLoop: ObservationLoop?
     private var lastSettings: SettingsSnapshot?
@@ -153,6 +154,7 @@ final class SidebarViewController: CommandHandlingViewController {
         updateTreeRoots()
         favorites.refresh()
         refreshICloudDrive()
+        refreshTrash()
         outlineView.reloadData()
         syncHeaderExpansion()
         revealCurrentFolder()
@@ -200,7 +202,7 @@ final class SidebarViewController: CommandHandlingViewController {
         case .locationsHeader: return locationItems
         case .foldersHeader: return tree.roots.map(SidebarItem.folder)
         case .folder(let node): return tree.children(of: node).map(SidebarItem.folder)
-        case .favorite, .location, .iCloudDrive: return []
+        case .favorite, .location, .iCloudDrive, .trash: return []
         }
     }
 
@@ -389,7 +391,8 @@ final class SidebarViewController: CommandHandlingViewController {
         Task { await tree.refreshUnwatched() }
     }
 
-    /// Boot volume first, then the others (Volumes order), iCloud Drive after the boot volume (§5.4 LOCATIONS).
+    /// Boot volume first, then the others (Volumes order), iCloud Drive after the boot volume, the Trash last
+    /// (§5.4 LOCATIONS).
     /// In sandbox mode only volumes mounted inside the root (disk images a test mounted there) are listed.
     func rebuildLocations() {
         let showExternal = settings.showExternalVolumesInSidebar
@@ -401,6 +404,7 @@ final class SidebarViewController: CommandHandlingViewController {
             let afterBoot = if case .location(let first)? = items.first, first.isBoot { 1 } else { 0 }
             items.insert(.iCloudDrive(iCloudDrive), at: afterBoot)
         }
+        if let trash, confinement.allows(trash) { items.append(.trash(trash)) }
         guard items != locationItems else { return }
         locationItems = items
         if isViewLoaded { reloadSection(.locationsHeader) }
@@ -410,22 +414,34 @@ final class SidebarViewController: CommandHandlingViewController {
         home.appending(path: "Library/Mobile Documents/com~apple~CloudDocs", directoryHint: .isDirectory)
     }
 
+    static func trashURL(home: URL) -> URL {
+        home.appending(path: ".Trash", directoryHint: .isDirectory)
+    }
+
     /// Whether iCloud Drive exists, checked on a lane (never on main).
     private func refreshICloudDrive() {
         guard settings.showICloudInSidebar else { return }
-        let url = Self.iCloudDriveURL(home: settings.home)
+        refreshLocationFolder(Self.iCloudDriveURL(home: settings.home)) { $0.iCloudDrive = $1 }
+    }
+
+    /// Whether the Trash folder exists, checked on a lane (never on main).
+    private func refreshTrash() {
+        refreshLocationFolder(Self.trashURL(home: settings.home)) { $0.trash = $1 }
+    }
+
+    /// `stat`s `url` on its volume's lane; stores it (or nil when it isn't a folder) and rebuilds LOCATIONS on change.
+    private func refreshLocationFolder(_ url: URL, store: @escaping (SidebarViewController, URL?) -> Void) {
         let path = url.path(percentEncoded: false)
         let volume = environment.volumes.volume(for: url)?.id ?? .unknown
         let lanes = environment.lanes
-        Task {
+        Task { [weak self] in
             let exists = (try? await lanes.perform(on: volume, .read) { _ in
                 var info = stat()
                 return stat(path, &info) == 0 && (info.st_mode & S_IFMT) == S_IFDIR
             }) ?? false
-            let next = exists ? url : nil
-            guard next != iCloudDrive else { return }
-            iCloudDrive = next
-            rebuildLocations()
+            guard let self else { return }
+            store(self, exists ? url : nil)
+            self.rebuildLocations()
         }
     }
 
