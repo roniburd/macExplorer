@@ -67,8 +67,11 @@ Every task in every slice implicitly includes all of these.
 | FSEvent → UI updated (incremental path) | < 150 ms |
 | FSEvent → UI updated (full re-read of 100k) | < 400 ms |
 | Memory, 100k-entry folder (entries, arena, sort keys, permutation, identity map) | < 20 MB steady, < 40 MB peak during sort/diff, excluding images |
-| Drag or copy of 100k items (pasteboard write) | < 300 ms |
+| Drag or copy of ≤10k items (pasteboard write) | < 300 ms |
+| Drag or copy of 100k items (pasteboard write) | < 1.5 s (decision 2026-11-03, see below) |
 | Cold launch → window with home folder | < 300 ms |
+
+**Pasteboard decision (2026-11-03, owner: main session).** Measurement showed one eager `public.file-url` item per URL costs ~0.12 ms/item and grows super-linearly (24 s at 100k), and no one-item-per-URL scheme reaches 300 ms at 100k. Decision: write up to 5,000 items eagerly; above that, write `NSPasteboardItem`s whose `public.file-url` data is supplied lazily by an `NSPasteboardItemDataProvider` held by `Clipboard`/`DragPasteboard` (the provider must also serve data on app termination, per `NSPasteboardItemDataProvider` semantics), plus the eager plain-text/`NSFilenamesPboardType` representations are dropped above 5,000. Budgets: ≤10k < 300 ms; 100k < 1.5 s with a busy cursor. Bench `--check-budgets` and tests use these numbers.
 
 Measured by `macx-bench` (P1-39) and `OSSignposter` intervals (`PerfSignposts`, §3.2). Debug-build unit tests may assert at most 4x these budgets (they are smoke checks, not gates); the gate is `macx-bench --check-budgets` on a release build.
 
