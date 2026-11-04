@@ -16,7 +16,7 @@ struct RecoveryNotice: Equatable {
             default: String(format: many, count)
             }
         }
-        message = L10n.string("macExplorer cleaned up after operations that were interrupted")
+        message = L10n.string("MacExplorer cleaned up after operations that were interrupted")
         details = [
             line(report.incompleteJobs.count, one: L10n.string("1 operation didn't finish."), many: L10n.string("%ld operations didn't finish.")),
             line(report.removedPartials.count, one: L10n.string("Removed 1 incomplete copy."), many: L10n.string("Removed %ld incomplete copies.")),

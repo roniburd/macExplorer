@@ -117,7 +117,7 @@ final class SettingsWindowTests: XCTestCase {
         addTeardownBlock { @MainActor in first.close() }
         let window = try XCTUnwrap(first.window)
         XCTAssertTrue(window.isVisible)
-        XCTAssertEqual(window.title, "macExplorer Settings")
+        XCTAssertEqual(window.title, "MacExplorer Settings")
         XCTAssertEqual(window.accessibilityIdentifier(), AXID.settingsWindow)
         XCTAssertTrue(window.contentViewController is NSHostingController<SettingsView>)
         XCTAssertFalse(window.isRestorable, "never restored")

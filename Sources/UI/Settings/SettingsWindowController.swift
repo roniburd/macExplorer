@@ -26,7 +26,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         host.sizingOptions = [.preferredContentSize]
         let window = NSWindow(contentViewController: host)
         window.styleMask = [.titled, .closable]
-        window.title = L10n.string("macExplorer Settings")
+        window.title = L10n.string("MacExplorer Settings")
         window.setAccessibilityIdentifier(AXID.settingsWindow)
         window.isReleasedWhenClosed = false
         window.isRestorable = false

@@ -72,7 +72,7 @@ struct ErrorDialogModel: Equatable {
     @MainActor
     private static func detail(_ kind: FileOpErrorKind) -> String? {
         switch kind {
-        case .blockedByMacOS: L10n.string("Allow macExplorer in System Settings › Privacy & Security, then try again.")
+        case .blockedByMacOS: L10n.string("Allow MacExplorer in System Settings › Privacy & Security, then try again.")
         case .locked: L10n.string("Unlocking removes the Locked attribute so the operation can continue.")
         case .noSpace: L10n.string("Free up space on the destination, then try again.")
         default: nil

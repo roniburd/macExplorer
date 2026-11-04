@@ -60,7 +60,7 @@ final class MenuValidationTests: XCTestCase {
     func testTopLevelMenus() {
         let menu = MainMenuBuilder.build()
         XCTAssertEqual(menu.items.compactMap { $0.submenu?.title },
-                       ["macExplorer", "File", "Edit", "View", "Go", "Window", "Help"])
+                       ["MacExplorer", "File", "Edit", "View", "Go", "Window", "Help"])
     }
 
     func testEveryCommandHasExactlyOneMainMenuItem() {
@@ -137,10 +137,10 @@ final class MenuValidationTests: XCTestCase {
 
     func testStandardAppItems() {
         let menu = MainMenuBuilder.build()
-        let quit = Self.item(at: ["macExplorer", "Quit macExplorer"], in: menu)
+        let quit = Self.item(at: ["MacExplorer", "Quit MacExplorer"], in: menu)
         XCTAssertEqual(quit?.action, #selector(NSApplication.terminate(_:)))
         XCTAssertEqual(quit?.keyEquivalent, "q")
-        XCTAssertNotNil(Self.item(at: ["macExplorer", "Services"], in: menu)?.submenu)
+        XCTAssertNotNil(Self.item(at: ["MacExplorer", "Services"], in: menu)?.submenu)
         XCTAssertEqual(Self.item(at: ["Window", "Minimize"], in: menu)?.action, #selector(NSWindow.performMiniaturize(_:)))
         XCTAssertNotNil(Self.items(in: menu).first { $0.action == #selector(NSWindow.toggleFullScreen(_:)) })
         XCTAssertNotNil(Self.items(in: menu).first { $0.action == #selector(NSSplitViewController.toggleSidebar(_:)) })
@@ -156,7 +156,7 @@ final class MenuValidationTests: XCTestCase {
             app.servicesMenu = previous.3
         }
         MainMenuBuilder.install(in: app)
-        XCTAssertEqual(app.mainMenu?.items.compactMap { $0.submenu?.title }.first, "macExplorer")
+        XCTAssertEqual(app.mainMenu?.items.compactMap { $0.submenu?.title }.first, "MacExplorer")
         XCTAssertEqual(app.windowsMenu?.title, "Window")
         XCTAssertEqual(app.helpMenu?.title, "Help")
         XCTAssertEqual(app.servicesMenu?.title, "Services")

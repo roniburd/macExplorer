@@ -9,10 +9,10 @@ enum OnboardingLinks {
 
 /// The sheet's text (§5.9).
 @MainActor enum OnboardingTexts {
-    static var title: String { L10n.string("Welcome to macExplorer") }
+    static var title: String { L10n.string("Welcome to MacExplorer") }
     static var fullDiskAccessTitle: String { L10n.string("Full Disk Access") }
     static var fullDiskAccess: String {
-        L10n.string("macOS asks before an app reads Desktop, Documents, Downloads, other apps' data and external disks. With Full Disk Access, macExplorer can browse and search everywhere without a prompt for each folder. You can grant it in Privacy & Security at any time.")
+        L10n.string("macOS asks before an app reads Desktop, Documents, Downloads, other apps' data and external disks. With Full Disk Access, MacExplorer can browse and search everywhere without a prompt for each folder. You can grant it in Privacy & Security at any time.")
     }
     static var openPrivacy: String { L10n.string("Open Privacy & Security") }
     static var continueWithout: String { L10n.string("Continue Without Full Disk Access") }

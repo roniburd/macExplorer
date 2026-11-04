@@ -65,8 +65,8 @@ build_clean() {
 # app_launch: release bundle + a sandboxed launch of a release copy under the scenarios bundle id (C12).
 app_launch() {
   scripts/bundle.sh release || return 1
-  [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' .build/macExplorer.app/Contents/Info.plist)" = com.macexplorer.app ] || return 1
-  codesign --verify --strict .build/macExplorer.app || return 1
+  [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' .build/MacExplorer.app/Contents/Info.plist)" = com.macexplorer.app ] || return 1
+  codesign --verify --strict .build/MacExplorer.app || return 1
   TMPDIR="$RUN/" scripts/bundle.sh release --bundle-id com.macexplorer.app.scenarios --output .build/macExplorer-scenarios.app || return 1
   local d="$RUN/launch"
   mkdir -p "$d/macx-scenario-root" "$d/state" "$d/trash" || return 1

@@ -29,8 +29,8 @@ final class UIResourcesTests: XCTestCase {
     func testL10nReturnsCatalogValueForKnownKey() {
         // A key present in the catalog is found (sentinel default value proves the table lookup hit).
         let sentinel = "\u{1}missing"
-        XCTAssertEqual(UIResources.bundle.localizedString(forKey: "Quit macExplorer", value: sentinel, table: nil), "Quit macExplorer")
-        XCTAssertEqual(L10n.string("Quit macExplorer"), "Quit macExplorer")
+        XCTAssertEqual(UIResources.bundle.localizedString(forKey: "Quit MacExplorer", value: sentinel, table: nil), "Quit MacExplorer")
+        XCTAssertEqual(L10n.string("Quit MacExplorer"), "Quit MacExplorer")
     }
 
     func testL10nFallsBackToKeyForUnknownKey() {

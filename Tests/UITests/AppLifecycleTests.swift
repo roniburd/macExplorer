@@ -239,7 +239,7 @@ final class AppLifecycleTests: XCTestCase {
         report.incompleteJobs = [JobDescription(verb: .moving, itemCount: 4, firstItemName: "x", sourceFolderName: nil,
                                                 destinationFolderName: nil)]
         let notice = try XCTUnwrap(RecoveryNotice(report))
-        XCTAssertEqual(notice.message, "macExplorer cleaned up after operations that were interrupted")
+        XCTAssertEqual(notice.message, "MacExplorer cleaned up after operations that were interrupted")
         XCTAssertEqual(notice.details.components(separatedBy: "\n"), [
             "1 operation didn't finish.",
             "Removed 2 incomplete copies.",

@@ -12,7 +12,7 @@ import Core
     public static func build() -> NSMenu {
         let main = NSMenu(title: "MainMenu")
         for (title, id, items) in [
-            ("macExplorer", "app", appItems()), ("File", "file", fileItems()), ("Edit", "edit", editItems()),
+            ("MacExplorer", "app", appItems()), ("File", "file", fileItems()), ("Edit", "edit", editItems()),
             ("View", "view", viewItems()), ("Go", "go", goItems()), ("Window", "window", windowItems()),
             ("Help", "help", helpItems()),
         ] {
@@ -66,18 +66,18 @@ import Core
     private static func appItems() -> [NSMenuItem] {
         let services = submenu(L10n.string("Services"), id: "services", [])
         return [
-            standard("About macExplorer", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
+            standard("About MacExplorer", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
             .separator(),
             // P1-30's AppDelegate implements macx_showSettings: (disabled until then).
             standard("Settings…", NSSelectorFromString("macx_showSettings:"), ","),
             .separator(),
             services,
             .separator(),
-            standard("Hide macExplorer", #selector(NSApplication.hide(_:)), "h"),
+            standard("Hide MacExplorer", #selector(NSApplication.hide(_:)), "h"),
             standard("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
             standard("Show All", #selector(NSApplication.unhideAllApplications(_:))),
             .separator(),
-            standard("Quit macExplorer", #selector(NSApplication.terminate(_:)), "q"),
+            standard("Quit MacExplorer", #selector(NSApplication.terminate(_:)), "q"),
         ]
     }
 
@@ -140,7 +140,7 @@ import Core
     }
 
     private static func helpItems() -> [NSMenuItem] {
-        [standard("macExplorer Help", #selector(NSApplication.showHelp(_:)), "?")]
+        [standard("MacExplorer Help", #selector(NSApplication.showHelp(_:)), "?")]
     }
 
     // MARK: items

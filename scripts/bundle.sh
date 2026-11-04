@@ -1,7 +1,7 @@
 #!/bin/bash
-# scripts/bundle.sh: assembles and ad-hoc signs macExplorer.app from the SwiftPM build products.
+# scripts/bundle.sh: assembles and ad-hoc signs MacExplorer.app from the SwiftPM build products.
 # Usage: scripts/bundle.sh [debug|release] [--bundle-id ID] [--output PATH]
-#   default: debug, com.macexplorer.app, .build/macExplorer.app
+#   default: debug, com.macexplorer.app, .build/MacExplorer.app
 # Scenario and smoke runs use a separate copy so AppKit's preference writes never touch a real install's domain:
 #   scripts/bundle.sh debug --bundle-id com.macexplorer.app.scenarios --output .build/macExplorer-scenarios.app
 set -euo pipefail
@@ -11,7 +11,7 @@ usage() { echo "usage: $0 [debug|release] [--bundle-id ID] [--output PATH]" >&2;
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 config=debug
 bundle_id=com.macexplorer.app
-output="$repo/.build/macExplorer.app"
+output="$repo/.build/MacExplorer.app"
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -53,7 +53,7 @@ bin="$(swift build -c "$config" --show-bin-path)"
 
 staging="$(mktemp -d "${TMPDIR:-/tmp}/macx-bundle-XXXXXX")"
 trap 'rm -rf "$staging"' EXIT
-app="$staging/macExplorer.app"
+app="$staging/MacExplorer.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$bin/macExplorer" "$app/Contents/MacOS/macExplorer"
 cp Resources/Info.plist "$app/Contents/Info.plist"

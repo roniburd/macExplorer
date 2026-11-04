@@ -509,13 +509,13 @@
         }
       }
     },
-    "About macExplorer" : {
+    "About MacExplorer" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "About macExplorer"
+            "value" : "About MacExplorer"
           }
         }
       }
@@ -564,13 +564,13 @@
         }
       }
     },
-    "Allow macExplorer in System Settings › Privacy & Security, then try again." : {
+    "Allow MacExplorer in System Settings › Privacy & Security, then try again." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Allow macExplorer in System Settings › Privacy & Security, then try again."
+            "value" : "Allow MacExplorer in System Settings › Privacy & Security, then try again."
           }
         }
       }
@@ -1829,6 +1829,17 @@
         }
       }
     },
+    "Hide MacExplorer" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide MacExplorer"
+          }
+        }
+      }
+    },
     "Hide Others" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1847,17 +1858,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hide extension"
-          }
-        }
-      }
-    },
-    "Hide macExplorer" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hide macExplorer"
           }
         }
       }
@@ -2111,6 +2111,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Locations"
+          }
+        }
+      }
+    },
+    "MacExplorer" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MacExplorer"
+          }
+        }
+      }
+    },
+    "MacExplorer Help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MacExplorer Help"
+          }
+        }
+      }
+    },
+    "MacExplorer Settings" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MacExplorer Settings"
+          }
+        }
+      }
+    },
+    "MacExplorer cleaned up after operations that were interrupted" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MacExplorer cleaned up after operations that were interrupted"
           }
         }
       }
@@ -2885,13 +2929,13 @@
         }
       }
     },
-    "Quit macExplorer" : {
+    "Quit MacExplorer" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Quit macExplorer"
+            "value" : "Quit MacExplorer"
           }
         }
       }
@@ -3952,13 +3996,13 @@
         }
       }
     },
-    "Welcome to macExplorer" : {
+    "Welcome to MacExplorer" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Welcome to macExplorer"
+            "value" : "Welcome to MacExplorer"
           }
         }
       }
@@ -4216,57 +4260,13 @@
         }
       }
     },
-    "macExplorer" : {
+    "macOS asks before an app reads Desktop, Documents, Downloads, other apps' data and external disks. With Full Disk Access, MacExplorer can browse and search everywhere without a prompt for each folder. You can grant it in Privacy & Security at any time." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "macExplorer"
-          }
-        }
-      }
-    },
-    "macExplorer Help" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macExplorer Help"
-          }
-        }
-      }
-    },
-    "macExplorer Settings" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macExplorer Settings"
-          }
-        }
-      }
-    },
-    "macExplorer cleaned up after operations that were interrupted" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macExplorer cleaned up after operations that were interrupted"
-          }
-        }
-      }
-    },
-    "macOS asks before an app reads Desktop, Documents, Downloads, other apps' data and external disks. With Full Disk Access, macExplorer can browse and search everywhere without a prompt for each folder. You can grant it in Privacy & Security at any time." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS asks before an app reads Desktop, Documents, Downloads, other apps' data and external disks. With Full Disk Access, macExplorer can browse and search everywhere without a prompt for each folder. You can grant it in Privacy & Security at any time."
+            "value" : "macOS asks before an app reads Desktop, Documents, Downloads, other apps' data and external disks. With Full Disk Access, MacExplorer can browse and search everywhere without a prompt for each folder. You can grant it in Privacy & Security at any time."
           }
         }
       }

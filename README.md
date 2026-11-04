@@ -17,12 +17,12 @@ Status: Phase 1 ("Core"), version `0.x`. Design: `docs/superpowers/specs/2026-11
 
 ```bash
 swift build -c release
-scripts/bundle.sh release                 # assembles and ad-hoc signs .build/macExplorer.app
-open .build/macExplorer.app
+scripts/bundle.sh release                 # assembles and ad-hoc signs .build/MacExplorer.app
+open .build/MacExplorer.app
 ```
 
 `scripts/bundle.sh [debug|release] [--bundle-id ID] [--output PATH]` defaults to a debug build at
-`.build/macExplorer.app`.
+`.build/MacExplorer.app`.
 
 ### Running against a sandbox folder
 
@@ -31,7 +31,7 @@ For trying things out, run the app on a throwaway folder so nothing you own is t
 ```bash
 SB="$(mktemp -d "${TMPDIR%/}/macx-fixtures-XXXXXX")"
 mkdir "$SB/root" && touch "$SB/root/a.txt" "$SB/root/b.txt"
-.build/macExplorer.app/Contents/MacOS/macExplorer --root "$SB/root" --state-dir "$SB/state" \
+.build/MacExplorer.app/Contents/MacOS/macExplorer --root "$SB/root" --state-dir "$SB/state" \
     --sandbox-trash "$SB/trash" --pasteboard "macx-fixtures-$$" --fake-launch-services --skip-onboarding
 rm -rf "$SB"                              # afterwards
 ```
