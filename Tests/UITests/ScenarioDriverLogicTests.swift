@@ -33,7 +33,7 @@ final class ScenarioDriverLogicTests: XCTestCase {
         XCTAssertThrowsError(try ScenarioDriver.confinedDropDestination(crumb0, onto: "crumb:0", roots: roots), "/")
         let crumb5 = DropDestinationResolver.crumbURL(5, of: folder, volumeRoot: nil)
         XCTAssertThrowsError(try ScenarioDriver.confinedDropDestination(crumb5, onto: "crumb:5", roots: roots), "$TMPDIR")
-        let favorite = URL(filePath: "/Users/someone/Documents", directoryHint: .isDirectory)
+        let favorite = URL(filePath: "/Volumes/Elsewhere/Documents", directoryHint: .isDirectory)
         XCTAssertThrowsError(try ScenarioDriver.confinedDropDestination(favorite, onto: "sidebar:Documents", roots: roots))
         XCTAssertThrowsError(try ScenarioDriver.confinedDropDestination(nil, onto: "crumb:99", roots: roots), "unresolvable")
         let atRoot = DropDestinationResolver.crumbURL(8, of: folder, volumeRoot: nil)
