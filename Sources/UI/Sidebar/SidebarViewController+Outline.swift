@@ -59,6 +59,9 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
         case .iCloudDrive(let url):
             cell.configure(title: L10n.string("iCloud Drive"), symbol: "icloud", dimmed: false, ejectable: false,
                            toolTip: url.path(percentEncoded: false))
+        case .cloudStorage(let folder):
+            cell.configure(title: folder.name, symbol: "cloud", dimmed: false, ejectable: false,
+                           toolTip: folder.url.path(percentEncoded: false))
         case .trash(let url):
             cell.configure(title: L10n.string("Trash"), symbol: "trash", dimmed: false, ejectable: false,
                            toolTip: url.path(percentEncoded: false))
@@ -99,7 +102,7 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
         case .favoritesHeader, .locationsHeader, .foldersHeader:
             guard !isSyncing, !settings.collapsedSections.contains(item.section) else { return }
             settings.collapsedSections.insert(item.section)
-        case .favorite, .location, .iCloudDrive, .trash:
+        case .favorite, .location, .iCloudDrive, .cloudStorage, .trash:
             break
         }
     }
@@ -163,7 +166,7 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
     }
 
     /// The folder a drop *onto* this row lands in: a tree node's URL, a resolved favorite (nil when stale), a volume's
-    /// mount point, iCloud Drive or the Trash; nil for section headers.
+    /// mount point, iCloud Drive, a cloud storage folder or the Trash; nil for section headers.
     func folderURL(forDropOnto item: Any?) -> URL? {
         (item as? SidebarItem)?.url
     }

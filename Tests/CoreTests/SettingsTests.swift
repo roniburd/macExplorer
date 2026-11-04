@@ -147,6 +147,7 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(s.favorites, [])
         XCTAssertEqual(s.hiddenDefaultFavorites, [])
         XCTAssertTrue(s.showICloudInSidebar)
+        XCTAssertTrue(s.showCloudStorageInSidebar)
         XCTAssertTrue(s.showExternalVolumesInSidebar)
         XCTAssertEqual(s.collapsedSections, [])
         XCTAssertFalse(s.confirmBeforeTrash)
@@ -191,6 +192,7 @@ final class SettingsTests: XCTestCase {
         s.favorites = [favorite]
         s.hiddenDefaultFavorites = [.applications, .downloads]
         s.showICloudInSidebar = false
+        s.showCloudStorageInSidebar = false
         s.showExternalVolumesInSidebar = false
         s.collapsedSections = [.folders]
         s.confirmBeforeTrash = true
@@ -219,6 +221,7 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(r.favorites, [favorite])
         XCTAssertEqual(r.hiddenDefaultFavorites, [.applications, .downloads])
         XCTAssertFalse(r.showICloudInSidebar)
+        XCTAssertFalse(r.showCloudStorageInSidebar)
         XCTAssertFalse(r.showExternalVolumesInSidebar)
         XCTAssertEqual(r.collapsedSections, [.folders])
         XCTAssertTrue(r.confirmBeforeTrash)

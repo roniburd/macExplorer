@@ -21,6 +21,7 @@ final class SidebarViewController: CommandHandlingViewController {
 
     private(set) var locationItems: [SidebarItem] = []
     private var iCloudDrive: URL?
+    private var cloudStorage: [CloudStorageFolder] = []
     private var trash: URL?
     private var boxes: [String: (item: SidebarItem, box: AnyObject)] = [:]
     private var settingsLoop: ObservationLoop?
@@ -154,6 +155,7 @@ final class SidebarViewController: CommandHandlingViewController {
         updateTreeRoots()
         favorites.refresh()
         refreshICloudDrive()
+        refreshCloudStorage()
         refreshTrash()
         outlineView.reloadData()
         syncHeaderExpansion()
@@ -202,7 +204,7 @@ final class SidebarViewController: CommandHandlingViewController {
         case .locationsHeader: return locationItems
         case .foldersHeader: return tree.roots.map(SidebarItem.folder)
         case .folder(let node): return tree.children(of: node).map(SidebarItem.folder)
-        case .favorite, .location, .iCloudDrive, .trash: return []
+        case .favorite, .location, .iCloudDrive, .cloudStorage, .trash: return []
         }
     }
 
@@ -339,9 +341,11 @@ final class SidebarViewController: CommandHandlingViewController {
         guard let before = lastSettings, before != now else { return }
         lastSettings = now
         if before.favorites != now.favorites || before.hiddenDefaults != now.hiddenDefaults { favorites.refresh() }
-        if before.showICloud != now.showICloud || before.showExternal != now.showExternal {
+        if before.showICloud != now.showICloud || before.showCloudStorage != now.showCloudStorage
+            || before.showExternal != now.showExternal {
             rebuildLocations()
             refreshICloudDrive()
+            refreshCloudStorage()
         }
         if before.collapsed != now.collapsed { syncHeaderExpansion() }
         if before.showHidden != now.showHidden { tree.showHidden = now.showHidden }
@@ -389,10 +393,11 @@ final class SidebarViewController: CommandHandlingViewController {
 
     private func windowBecameKey() {
         Task { await tree.refreshUnwatched() }
+        refreshCloudStorage()  // a provider app may have signed in or out while another app was frontmost
     }
 
-    /// Boot volume first, then the others (Volumes order), iCloud Drive after the boot volume, the Trash last
-    /// (§5.4 LOCATIONS).
+    /// Boot volume first, then iCloud Drive and the cloud storage folders (OneDrive, Google Drive…), then the other
+    /// volumes (Volumes order), the Trash last (§5.4 LOCATIONS).
     /// In sandbox mode only volumes mounted inside the root (disk images a test mounted there) are listed.
     func rebuildLocations() {
         let showExternal = settings.showExternalVolumesInSidebar
@@ -400,10 +405,15 @@ final class SidebarViewController: CommandHandlingViewController {
         var items = environment.volumes.browsable
             .filter { ($0.isBoot || $0.isInternal || showExternal) && confinement.allows($0.mountPoint) }
             .map(SidebarItem.location)
+        var cloud: [SidebarItem] = []
         if settings.showICloudInSidebar, let iCloudDrive, confinement.allows(iCloudDrive) {
-            let afterBoot = if case .location(let first)? = items.first, first.isBoot { 1 } else { 0 }
-            items.insert(.iCloudDrive(iCloudDrive), at: afterBoot)
+            cloud.append(.iCloudDrive(iCloudDrive))
         }
+        if settings.showCloudStorageInSidebar {
+            cloud += cloudStorage.filter { confinement.allows($0.url) }.map(SidebarItem.cloudStorage)
+        }
+        let afterBoot = if case .location(let first)? = items.first, first.isBoot { 1 } else { 0 }
+        items.insert(contentsOf: cloud, at: afterBoot)
         if let trash, confinement.allows(trash) { items.append(.trash(trash)) }
         guard items != locationItems else { return }
         locationItems = items
@@ -422,6 +432,20 @@ final class SidebarViewController: CommandHandlingViewController {
     private func refreshICloudDrive() {
         guard settings.showICloudInSidebar else { return }
         refreshLocationFolder(Self.iCloudDriveURL(home: settings.home)) { $0.iCloudDrive = $1 }
+    }
+
+    /// The folders in `~/Library/CloudStorage`, listed on a lane (never on main).
+    private func refreshCloudStorage() {
+        guard settings.showCloudStorageInSidebar else { return }
+        let container = CloudStorageFolder.containerURL(home: settings.home)
+        let volume = environment.volumes.volume(for: container)?.id ?? .unknown
+        let lanes = environment.lanes
+        Task { [weak self] in
+            let folders = (try? await lanes.perform(on: volume, .read) { _ in CloudStorageFolder.list(in: container) }) ?? []
+            guard let self, folders != self.cloudStorage else { return }
+            self.cloudStorage = folders
+            self.rebuildLocations()
+        }
     }
 
     /// Whether the Trash folder exists, checked on a lane (never on main).
@@ -483,6 +507,7 @@ struct SettingsSnapshot: Equatable {
     var favorites: [Favorite]
     var hiddenDefaults: Set<DefaultFavorite>
     var showICloud: Bool
+    var showCloudStorage: Bool
     var showExternal: Bool
     var collapsed: Set<SidebarSection>
     var showHidden: Bool
@@ -492,6 +517,7 @@ struct SettingsSnapshot: Equatable {
         favorites = settings.favorites
         hiddenDefaults = settings.hiddenDefaultFavorites
         showICloud = settings.showICloudInSidebar
+        showCloudStorage = settings.showCloudStorageInSidebar
         showExternal = settings.showExternalVolumesInSidebar
         collapsed = settings.collapsedSections
         showHidden = settings.showHidden

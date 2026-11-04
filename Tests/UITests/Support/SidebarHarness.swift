@@ -174,6 +174,7 @@ final class SidebarHarness {
         case .favorite(let f): f.name
         case .location(let v): v.name
         case .iCloudDrive: "iCloud Drive"
+        case .cloudStorage(let folder): folder.name
         case .trash: "Trash"
         case .folder(let node): node.name
         case .favoritesHeader: "FAVORITES"

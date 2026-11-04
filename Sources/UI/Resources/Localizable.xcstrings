@@ -938,6 +938,17 @@
         }
       }
     },
+    "Cloud storage (OneDrive, Google Drive, Dropbox…)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cloud storage (OneDrive, Google Drive, Dropbox…)"
+          }
+        }
+      }
+    },
     "Columns" : {
       "extractionState" : "manual",
       "localizations" : {

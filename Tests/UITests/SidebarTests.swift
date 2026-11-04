@@ -277,6 +277,40 @@ final class SidebarTests: XCTestCase {
         try await h.waitUntil("hidden by setting") { h.names(in: .locations) == ["Macintosh HD", "USB"] }
     }
 
+    func testCloudStorageFoldersAppearAfterICloudDrive() async throws {
+        let h = try await SidebarHarness.make(self) {
+            try $0.dir("home/Library/Mobile Documents/com~apple~CloudDocs")
+            try $0.dir("home/Library/CloudStorage/OneDrive-amazon.com")
+            try $0.dir("home/Library/CloudStorage/GoogleDrive-me@example.com")
+            try $0.dir("home/Library/CloudStorage/.hidden")
+        }
+        try await h.waitUntil("cloud rows") {
+            h.names(in: .locations) == ["Macintosh HD", "iCloud Drive", "Google Drive – me@example.com",
+                                         "OneDrive – amazon.com", "USB"]
+        }
+        let row = h.row(named: "OneDrive – amazon.com", in: .locations)
+        XCTAssertEqual(h.cell(atRow: row)?.toolTip.map { URL(filePath: $0).lastPathComponent }, "OneDrive-amazon.com")
+        h.sidebar.select(row: row)
+        XCTAssertEqual(h.sidebar.focusContext, .sidebarLocations)
+        guard case .location(let url)? = h.sidebar.commandTarget else { return XCTFail("a Locations target") }
+        XCTAssertEqual(url.lastPathComponent, "OneDrive-amazon.com")
+        let recorder = SidebarRecordingHandler()
+        h.sidebar.handler = recorder
+        for command: Command in [.moveToTrash, .deletePermanently, .rename, .cut] { h.sidebar.run(command, sender: nil) }
+        XCTAssertTrue(recorder.performed.isEmpty, "a cloud row is a pointer: got \(recorder.performed.map(\.0))")
+
+        h.settings.showCloudStorageInSidebar = false
+        try await h.waitUntil("hidden by setting") { h.names(in: .locations) == ["Macintosh HD", "iCloud Drive", "USB"] }
+    }
+
+    func testCloudStorageFolderDisplayNames() {
+        XCTAssertEqual(CloudStorageFolder.displayName(folderName: "OneDrive-Personal"), "OneDrive – Personal")
+        XCTAssertEqual(CloudStorageFolder.displayName(folderName: "GoogleDrive-me@x.com"), "Google Drive – me@x.com")
+        XCTAssertEqual(CloudStorageFolder.displayName(folderName: "Box-Box"), "Box")
+        XCTAssertEqual(CloudStorageFolder.displayName(folderName: "Dropbox"), "Dropbox")
+        XCTAssertEqual(CloudStorageFolder.displayName(folderName: "OneDrive-"), "OneDrive")
+    }
+
     func testTrashAppearsLastWhenItExists() async throws {
         let h = try await SidebarHarness.make(self) { try $0.dir("home/.Trash") }
         try await h.waitUntil("Trash row") { h.names(in: .locations) == ["Macintosh HD", "USB", "Trash"] }

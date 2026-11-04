@@ -40,6 +40,8 @@ public final class Settings {
     public var favorites: [Favorite] { didSet { save(favorites, Key.favorites) } }
     public var hiddenDefaultFavorites: Set<DefaultFavorite> { didSet { save(hiddenDefaultFavorites, Key.hiddenDefaultFavorites) } }
     public var showICloudInSidebar: Bool { didSet { save(showICloudInSidebar, Key.showICloudInSidebar) } }
+    /// OneDrive, Google Drive, Dropbox… (the folders in `~/Library/CloudStorage`) in LOCATIONS.
+    public var showCloudStorageInSidebar: Bool { didSet { save(showCloudStorageInSidebar, Key.showCloudStorageInSidebar) } }
     public var showExternalVolumesInSidebar: Bool { didSet { save(showExternalVolumesInSidebar, Key.showExternalVolumesInSidebar) } }
     public var collapsedSections: Set<SidebarSection> { didSet { save(collapsedSections, Key.collapsedSections) } }
     public var confirmBeforeTrash: Bool { didSet { save(confirmBeforeTrash, Key.confirmBeforeTrash) } }
@@ -77,6 +79,7 @@ public final class Settings {
         favorites = Self.load([Favorite].self, Key.favorites, from: storage) ?? []
         hiddenDefaultFavorites = Self.load(Set<DefaultFavorite>.self, Key.hiddenDefaultFavorites, from: storage) ?? []
         showICloudInSidebar = Self.load(Bool.self, Key.showICloudInSidebar, from: storage) ?? true
+        showCloudStorageInSidebar = Self.load(Bool.self, Key.showCloudStorageInSidebar, from: storage) ?? true
         showExternalVolumesInSidebar = Self.load(Bool.self, Key.showExternalVolumesInSidebar, from: storage) ?? true
         collapsedSections = Self.load(Set<SidebarSection>.self, Key.collapsedSections, from: storage) ?? []
         confirmBeforeTrash = Self.load(Bool.self, Key.confirmBeforeTrash, from: storage) ?? false
@@ -119,6 +122,7 @@ public final class Settings {
         static let confirmBeforeTrash = "confirmBeforeTrash", showFullPathInTitle = "showFullPathInTitle"
         static let onboardingCompleted = "onboardingCompleted", lastLocation = "lastLocation"
         static let recentLocations = "recentLocations", tccOutcomes = "tccOutcomes"
+        static let showCloudStorageInSidebar = "showCloudStorageInSidebar"
     }
 
     private struct TCCRecord: Codable {

@@ -15,6 +15,7 @@ struct SidebarSettingsView: View {
             }
             Section(L10n.string("Locations")) {
                 Toggle(L10n.string("iCloud Drive"), isOn: $settings.showICloudInSidebar)
+                Toggle(L10n.string("Cloud storage (OneDrive, Google Drive, Dropbox…)"), isOn: $settings.showCloudStorageInSidebar)
                 Toggle(L10n.string("External disks"), isOn: $settings.showExternalVolumesInSidebar)
             }
         }
