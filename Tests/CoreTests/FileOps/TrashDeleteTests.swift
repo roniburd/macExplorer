@@ -179,6 +179,27 @@ final class TrashDeleteTests: FileOpsTestCase {
         XCTAssertEqual(undone.skipped, [])
     }
 
+    /// Properties' "Apply to enclosed items…": files take only the r/w bits and keep their own x bits (QA round 3).
+    func testChmodRecursiveKeepingFileExecuteBits() async throws {
+        try file("T/a.txt"); try file("T/x.sh"); try file("T/sub/b.txt")
+        XCTAssertEqual(chmod(url("T/a.txt").path, 0o644), 0)
+        XCTAssertEqual(chmod(url("T/x.sh").path, 0o755), 0)
+        let (queue, _) = makeQueue()
+        let change = ModeChange(mode: 0o750, keepsFileExecuteBits: true)
+        _ = try await run(.chmodRecursive(url("T"), change), on: queue)
+        XCTAssertEqual(lst(url("T")).st_mode & 0o777, 0o750)
+        XCTAssertEqual(lst(url("T/sub")).st_mode & 0o777, 0o750)
+        XCTAssertEqual(lst(url("T/a.txt")).st_mode & 0o777, 0o640)
+        XCTAssertEqual(lst(url("T/x.sh")).st_mode & 0o777, 0o751, "rw 0o640 from T, x bits 0o111 kept")
+        XCTAssertEqual(lst(url("T/sub/b.txt")).st_mode & 0o777, 0o640)
+    }
+
+    func testModeChangeDecodesRecordsWithoutTheNewField() throws {
+        let old = Data(#"{"mode":448,"applyToDirectories":true,"applyToFiles":false}"#.utf8)
+        XCTAssertEqual(try JSONDecoder().decode(ModeChange.self, from: old),
+                       ModeChange(mode: 0o700, applyToDirectories: true, applyToFiles: false))
+    }
+
     func testChmodRecursiveFilesOnly() async throws {
         try file("T/f")
         let (queue, _) = makeQueue()

@@ -388,6 +388,17 @@
         }
       }
     },
+    "'%@' is not a valid name." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "'%@' is not a valid name."
+          }
+        }
+      }
+    },
     "'%@' no longer exists." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1385,6 +1396,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Do you want to delete them permanently? This can't be undone."
+          }
+        }
+      }
+    },
+    "Document" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Document"
           }
         }
       }

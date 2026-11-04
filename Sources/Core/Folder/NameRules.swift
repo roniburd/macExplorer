@@ -1,6 +1,6 @@
 import MacxFS
 
-public enum NameProblem: Sendable, Equatable { case empty, containsSlash, tooLong, duplicate }
+public enum NameProblem: Sendable, Equatable { case empty, reserved, containsSlash, tooLong, duplicate }
 public enum NameWarning: Sendable, Equatable { case extensionChanged(from: String, to: String), becomesHidden }
 public enum NameValidation: Sendable, Equatable {
     case ok(warnings: [NameWarning])
@@ -13,10 +13,11 @@ public enum NameRules {
 
     /// `exists` is answered from the full EntryStore (hidden rows included), NameNormalizer.sameName semantics.
     /// `original` nil for new items. A case/normalization-only change of `original` is not a duplicate.
-    /// Problems are checked in order empty, '/', length (UTF-8 bytes of the NFC form), duplicate; warnings follow.
+    /// Problems are checked in order empty, "."/".." (reserved), '/', length (UTF-8 bytes of the NFC form), duplicate; warnings follow.
     public static func validate(_ proposed: String, original: String?, caseSensitive: Bool,
                                 exists: (String) -> Bool) -> NameValidation {
         if proposed.isEmpty { return .invalid(.empty) }
+        if proposed == "." || proposed == ".." { return .invalid(.reserved) }
         if proposed.utf8.contains(UInt8(ascii: "/")) { return .invalid(.containsSlash) }
         if NameNormalizer.nfc(proposed).utf8.count > maxNameBytes { return .invalid(.tooLong) }
         let sameItem = original.map { NameNormalizer.sameName($0, proposed, caseSensitive: caseSensitive) } ?? false

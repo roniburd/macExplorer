@@ -62,7 +62,13 @@ final class AddressBarView: NSView {
             breadcrumb.isHidden = true
             editField.isHidden = false
         }
-        window?.makeFirstResponder(editField)
+        // Already editing in the field: re-focusing it would resign its field editor, which ends edit mode
+        // (controlTextDidEndEditing → finishEditing). Only select all and clear the error (QA round 3).
+        if let editor = editField.currentEditor(), window?.firstResponder === editor {
+            setError(nil)
+        } else {
+            window?.makeFirstResponder(editField)
+        }
         editField.currentEditor()?.selectAll(nil)
     }
 

@@ -206,7 +206,8 @@ final class PropertiesViewModel {
 
     func setAccess(_ access: PermissionAccess, for who: PermissionClass) async {
         guard case .item(var item) = content, item.isOwnedByCurrentUser else { return }
-        let mode = PermissionModel.applying(access, who, to: item.mode)
+        let mode = PermissionModel.applying(access, who, to: item.mode,
+                                              isDirectory: item.kind == .directory || item.kind == .package)
         guard mode != item.mode else { return }
         let before = content
         item.mode = mode
@@ -214,11 +215,13 @@ final class PropertiesViewModel {
         await run(.setAttributes(urls, .permissions(mode & 0o7777)), revertTo: before)
     }
 
-    /// Folders: confirmed, then one chmodRecursive job with the folder's rwx bits (undo restores each item's mode).
+    /// Folders: confirmed, then one chmodRecursive job with the folder's access levels: folders get r/w plus x, files
+    /// only the r/w bits and keep their own x bits (undo restores each item's mode).
     func applyPermissionsToEnclosed() async {
         guard case .item(let item) = content, item.kind == .directory, item.isOwnedByCurrentUser,
               await confirm(.applyToEnclosed(name: item.name)) else { return }
-        await run(.chmodRecursive(item.url, ModeChange(mode: item.mode & 0o777)), revertTo: content)
+        let change = ModeChange(mode: PermissionModel.directoryMode(item.mode) & 0o777, keepsFileExecuteBits: true)
+        await run(.chmodRecursive(item.url, change), revertTo: content)
     }
 
     /// Return in the name field. False when the name is refused (problem shown under the field) or declined.

@@ -24,6 +24,8 @@ public final class UIContext {
     public init(environment: CoreEnvironment, options: LaunchOptions) {
         self.environment = environment
         self.options = options
+        // Kind for unregistered extensions (dynamic types have no description): never the dyn.* identifier.
+        environment.types.setGenericDescriptions(document: L10n.string("Document"), folder: L10n.string("Folder"))
         self.icons = IconCache(lanes: environment.lanes, types: environment.types)
         self.interaction = BasicAlertInteraction()
         _ = windows

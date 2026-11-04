@@ -227,6 +227,41 @@ final class PropertiesViewModelTests: XCTestCase {
         m.close()
     }
 
+    /// Files keep their own x bits; folders get r/w plus x (QA round 3).
+    func testApplyToEnclosedKeepsFileExecuteBits() async throws {
+        let h = try await ContentTestHarness.make(self)
+        try h.dir("F/sub")
+        try h.file("F/a.txt"); try h.file("F/tool"); try h.file("F/sub/b.txt")
+        try h.setMode("F/a.txt", 0o644)
+        try h.setMode("F/tool", 0o755)
+        try h.setMode("F/sub/b.txt", 0o666)
+        try h.setMode("F/sub", 0o700)
+        try h.setMode("F", 0o755)
+        let m = model(h, ["F"])
+        await m.load()
+        m.confirm = { _ in true }
+        await m.applyPermissionsToEnclosed()
+        XCTAssertEqual(mode(h, "F/a.txt"), 0o644)
+        XCTAssertEqual(mode(h, "F/tool"), 0o755)
+        XCTAssertEqual(mode(h, "F/sub/b.txt"), 0o644)
+        XCTAssertEqual(mode(h, "F/sub"), 0o755)
+        m.close()
+    }
+
+    /// Owner Read & Write on a 000 folder makes it browsable again (QA round 3).
+    func testFolderReadWriteSetsSearchBit() async throws {
+        let h = try await ContentTestHarness.make(self)
+        try h.dir("denied")
+        try h.setMode("denied", 0o000)
+        let m = model(h, ["denied"])
+        await m.load()
+        await m.setAccess(.readWrite, for: .owner)
+        XCTAssertEqual(mode(h, "denied"), 0o700)
+        await m.setAccess(.readOnly, for: .group)
+        XCTAssertEqual(mode(h, "denied"), 0o750)
+        m.close()
+    }
+
     func testRemoveQuarantineDeletesTheXattr() async throws {
         let h = try await ContentTestHarness.make(self)
         try h.file("q.txt")

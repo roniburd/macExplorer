@@ -22,6 +22,15 @@ final class NameRulesTests: XCTestCase {
         XCTAssertEqual(validate("/"), .invalid(.containsSlash))
     }
 
+    /// "." and ".." name the folder itself and its parent: rejected before any warning (QA round 3).
+    func testDotAndDotDotAreReserved() {
+        XCTAssertEqual(validate("."), .invalid(.reserved))
+        XCTAssertEqual(validate(".."), .invalid(.reserved))
+        XCTAssertEqual(validate(".", original: nil), .invalid(.reserved))
+        XCTAssertEqual(validate("..", original: nil, existing: []), .invalid(.reserved))
+        XCTAssertEqual(validate("..."), .ok(warnings: [.extensionChanged(from: "txt", to: ""), .becomesHidden]))
+    }
+
     func testLengthLimitIs255UTF8Bytes() {
         XCTAssertEqual(validate(String(repeating: "n", count: 251) + ".txt"), .ok(warnings: []))
         XCTAssertEqual(validate(String(repeating: "n", count: 252) + ".txt"), .invalid(.tooLong))

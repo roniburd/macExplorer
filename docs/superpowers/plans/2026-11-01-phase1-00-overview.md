@@ -1891,7 +1891,8 @@ public struct ModeChange: Sendable, Codable, Equatable {
     public var mode: UInt16                 // permission bits to apply (rwx for u/g/o)
     public var applyToDirectories: Bool
     public var applyToFiles: Bool
-    public init(mode: UInt16, applyToDirectories: Bool = true, applyToFiles: Bool = true)
+    public var keepsFileExecuteBits: Bool   // files take only the r/w bits and keep their x bits (QA round 3)
+    public init(mode: UInt16, applyToDirectories: Bool = true, applyToFiles: Bool = true, keepsFileExecuteBits: Bool = false)
 }
 public enum AttributeEdit: Sendable, Codable, Equatable {
     case locked(Bool), hidden(Bool), extensionHidden(Bool), permissions(UInt16), removeQuarantine

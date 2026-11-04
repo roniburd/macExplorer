@@ -4,8 +4,9 @@ import Foundation
 public enum PermissionAccess: String, Sendable, CaseIterable { case readWrite, readOnly, writeOnly, noAccess }
 public enum PermissionClass: Sendable, CaseIterable { case owner, group, everyone }
 
-/// The §5.8 permission popups mapped onto POSIX mode bits. Only the read and write bits of one class change;
-/// execute, setuid/setgid/sticky and the other classes are kept.
+/// The §5.8 permission popups mapped onto POSIX mode bits. For files only the read and write bits of one class
+/// change; execute, setuid/setgid/sticky and the other classes are kept. For folders each level also sets or clears
+/// that class's search (x) bit: Read & Write = rwx, Read only = r-x, Write only = -wx (drop box), No access = ---.
 public enum PermissionModel {
     public static func access(_ mode: UInt16, _ who: PermissionClass) -> PermissionAccess {
         let bits = (mode >> shift(who)) & 0o6
@@ -17,15 +18,23 @@ public enum PermissionModel {
         }
     }
 
-    public static func applying(_ access: PermissionAccess, _ who: PermissionClass, to mode: UInt16) -> UInt16 {
-        let bits: UInt16 = switch access {
+    public static func applying(_ access: PermissionAccess, _ who: PermissionClass, to mode: UInt16,
+                                isDirectory: Bool = false) -> UInt16 {
+        var bits: UInt16 = switch access {
         case .readWrite: 0o6
         case .readOnly: 0o4
         case .writeOnly: 0o2
         case .noAccess: 0
         }
+        let mask: UInt16 = isDirectory ? 0o7 : 0o6
+        if isDirectory && access != .noAccess { bits |= 0o1 }
         let s = shift(who)
-        return (mode & ~(UInt16(0o6) << s)) | (bits << s)
+        return (mode & ~(mask << s)) | (bits << s)
+    }
+
+    /// `mode` with every class's level re-applied by the folder rule (x follows r/w), special bits kept.
+    public static func directoryMode(_ mode: UInt16) -> UInt16 {
+        PermissionClass.allCases.reduce(mode) { applying(access(mode, $1), $1, to: $0, isDirectory: true) }
     }
 
     /// "Executable" for files: any execute bit is set.

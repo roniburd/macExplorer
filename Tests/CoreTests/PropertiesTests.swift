@@ -27,6 +27,25 @@ final class PermissionModelTests: XCTestCase {
         XCTAssertEqual(PermissionModel.applying(.readWrite, .owner, to: 0o644), 0o644, "unchanged value is identity")
     }
 
+    /// Folders: each level carries the search (x) bit, so Read & Write repairs a 000 folder (QA round 3).
+    func testApplyingOnDirectoryAlsoSetsSearchBit() {
+        XCTAssertEqual(PermissionModel.applying(.readWrite, .owner, to: 0o000, isDirectory: true), 0o700)
+        XCTAssertEqual(PermissionModel.applying(.readOnly, .owner, to: 0o700, isDirectory: true), 0o500)
+        XCTAssertEqual(PermissionModel.applying(.readOnly, .group, to: 0o700, isDirectory: true), 0o750)
+        XCTAssertEqual(PermissionModel.applying(.writeOnly, .everyone, to: 0o755, isDirectory: true), 0o753, "drop box")
+        XCTAssertEqual(PermissionModel.applying(.noAccess, .everyone, to: 0o755, isDirectory: true), 0o750)
+        XCTAssertEqual(PermissionModel.applying(.readWrite, .owner, to: 0o1644, isDirectory: true), 0o1744, "sticky kept")
+        XCTAssertEqual(PermissionModel.applying(.readWrite, .owner, to: 0o000), 0o600, "files keep their x bits")
+    }
+
+    /// The mode "Apply to enclosed items…" sends: each class's level re-applied with the folder x rule.
+    func testDirectoryModeNormalizesEveryClass() {
+        XCTAssertEqual(PermissionModel.directoryMode(0o644), 0o755)
+        XCTAssertEqual(PermissionModel.directoryMode(0o700), 0o700)
+        XCTAssertEqual(PermissionModel.directoryMode(0o620), 0o730)
+        XCTAssertEqual(PermissionModel.directoryMode(0o4100), 0o4000)
+    }
+
     func testApplyingThenReadingRoundTripsForEveryCombination() {
         for mode: UInt16 in [0, 0o777, 0o644, 0o1750, 0o2711] {
             for who in PermissionClass.allCases {

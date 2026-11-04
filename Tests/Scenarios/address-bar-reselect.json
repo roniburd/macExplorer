@@ -1,0 +1,15 @@
+{"name": "address-bar-reselect",
+ "fixture": {"files": ["top.txt", "a/deep.txt"], "dirs": ["a"]},
+ "steps": [
+  {"key": "cmd+l"}, {"waitFor": {"editingAddress": true, "focus": "addressBar"}},
+  {"key": "cmd+l"}, {"sleepMs": 300},
+  {"expect": {"editingAddress": true, "focus": "addressBar"}},
+  {"type": "a"}, {"key": "cmd+l"}, {"sleepMs": 300},
+  {"expect": {"editingAddress": true, "focus": "addressBar"}},
+  {"type": "nope"}, {"key": "return"}, {"sleepMs": 300},
+  {"expect": {"editingAddress": true, "folder": ""}},
+  {"key": "cmd+l"}, {"sleepMs": 300},
+  {"expect": {"editingAddress": true, "focus": "addressBar"}},
+  {"type": "a"}, {"key": "return"},
+  {"waitFor": {"folder": "a", "rows": ["deep.txt"], "editingAddress": false}}
+ ]}

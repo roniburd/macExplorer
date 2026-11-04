@@ -46,6 +46,7 @@ final class InlineRenameTests: XCTestCase {
         XCTAssertEqual(ErrorText.renameProblem(.containsSlash, name: "a/b"), "A name can't contain '/'.")
         XCTAssertEqual(ErrorText.renameProblem(.tooLong, name: "x"), "The name is too long.")
         XCTAssertEqual(ErrorText.renameProblem(.duplicate, name: "b.txt"), "The name 'b.txt' is already taken.")
+        XCTAssertEqual(ErrorText.renameProblem(.reserved, name: ".."), "'..' is not a valid name.")
     }
 
     // MARK: AppKit

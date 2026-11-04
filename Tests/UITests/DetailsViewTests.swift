@@ -82,6 +82,17 @@ final class DetailsViewTests: XCTestCase {
         XCTAssertEqual(details.tableView.accessibilityIdentifier(), AXID.detailsTable)
     }
 
+    /// Unregistered extensions read "Document" in Kind, never the dyn.* identifier (QA round 3).
+    func testKindOfUnknownExtensionIsDocument() async throws {
+        let h = try await ContentTestHarness.make(self)
+        try h.file("c.dat", bytes: 1_500_000); try h.file("d.zzqq")
+        let (details, folder) = try await makeDetails(h)
+        for name in ["c.dat", "d.zzqq"] {
+            let row = try XCTUnwrap(folder.row(named: name))
+            XCTAssertEqual(details.cellView(row: row, column: .kind)?.textField?.stringValue, "Document", name)
+        }
+    }
+
     func testCutRowsAreDimmedAndItalic() async throws {
         let h = try await ContentTestHarness.make(self)
         try h.file("a.txt"); try h.file("b.txt")

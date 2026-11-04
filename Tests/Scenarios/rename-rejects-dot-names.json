@@ -1,0 +1,10 @@
+{"name": "rename-rejects-dot-names",
+ "fixture": {"files": ["a.txt", "b.txt"], "dirs": []},
+ "steps": [
+  {"click": "a.txt"}, {"key": "F2"}, {"waitFor": {"renameText": "a.txt"}},
+  {"key": "cmd+a"}, {"type": "."}, {"key": "return"}, {"sleepMs": 400},
+  {"expect": {"renameText": ".", "sheetPresent": false, "filesExist": ["a.txt", "b.txt"]}},
+  {"key": "cmd+a"}, {"type": ".."}, {"key": "return"}, {"sleepMs": 400},
+  {"expect": {"renameText": "..", "sheetPresent": false, "filesExist": ["a.txt", "b.txt"]}},
+  {"key": "esc"}, {"waitFor": {"rows": ["a.txt", "b.txt"], "sheetPresent": false}}
+ ]}

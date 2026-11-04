@@ -15,14 +15,21 @@ public final class TypeRegistry: Sendable {
         var types: [UTType] = [.folder, .data, .symbolicLink]
         var packages: [Bool] = [false, false, false]
         var applications: [Bool] = [false, false, false]
-        var descriptions: [String] = []
+        /// The system's localizedDescription; nil for dynamic (unregistered) types, which read as the generic text.
+        var descriptions: [String?] = []
+        var genericDocument = "Document"
+        var genericFolder = "Folder"
         var rankCache: (version: Int, ranks: [UInt16])?
+
+        func description(_ index: Int) -> String {
+            descriptions[index] ?? (index == Int(TypeRegistry.folderIndex) || packages[index] ? genericFolder : genericDocument)
+        }
     }
     private let state: Mutex<State>
 
     public init() {
         var s = State()
-        s.descriptions = s.types.map { $0.localizedDescription ?? $0.identifier }
+        s.descriptions = s.types.map(Self.systemDescription)
         state = Mutex(s)
     }
 
@@ -50,7 +57,7 @@ public final class TypeRegistry: Sendable {
                     s.types.append(type)
                     s.packages.append(package)
                     s.applications.append(type.conforms(to: .application))
-                    s.descriptions.append(type.localizedDescription ?? type.identifier)
+                    s.descriptions.append(Self.systemDescription(type))
                 }
             } else {
                 index = isDirectory ? Self.folderIndex : Self.dataIndex
@@ -63,12 +70,28 @@ public final class TypeRegistry: Sendable {
     public func type(at index: UInt16) -> UTType { state.withLock { $0.types[Int(index)] } }
     public func isPackage(_ index: UInt16) -> Bool { state.withLock { $0.packages[Int(index)] } }
     public func isApplication(_ index: UInt16) -> Bool { state.withLock { $0.applications[Int(index)] } }
-    public func localizedDescription(_ index: UInt16) -> String { state.withLock { $0.descriptions[Int(index)] } }
+    public func localizedDescription(_ index: UInt16) -> String { state.withLock { $0.description(Int(index)) } }
+
+    /// The Kind text for types the system can't describe (dynamic types of unregistered extensions): the UI passes
+    /// its localized "Document" / "Folder" at launch, before any listing (the defaults are the English text).
+    public func setGenericDescriptions(document: String, folder: String) {
+        state.withLock { s in
+            s.genericDocument = document
+            s.genericFolder = folder
+            s.rankCache = nil
+        }
+    }
+
+    private static func systemDescription(_ type: UTType) -> String? {
+        type.isDynamic ? nil : type.localizedDescription
+    }
 
     /// Rank by localizedDescription (localizedStandardCompare); recomputed when the table grows.
     /// Equal descriptions share a rank, so the name tie-break decides.
     public func kindRanks() -> (version: Int, ranks: [UInt16]) {
-        let (version, cached, descriptions) = state.withLock { s in (s.types.count, s.rankCache, s.descriptions) }
+        let (version, cached, descriptions) = state.withLock { s in
+            (s.types.count, s.rankCache, s.descriptions.indices.map { s.description($0) })
+        }
         if let cached, cached.version == version { return cached }
         let order = descriptions.indices.sorted {
             descriptions[$0].localizedStandardCompare(descriptions[$1]) == .orderedAscending

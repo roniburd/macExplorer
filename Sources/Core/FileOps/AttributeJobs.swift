@@ -105,7 +105,7 @@ enum AttributeJobs {
             guard e.type != .symlink, e.type != .other else { return nil }
             if e.type == .directory && !change.applyToDirectories { return nil }
             if e.type == .file && !change.applyToFiles { return nil }
-            let new = (e.mode & ~0o777) | (change.mode & 0o777)
+            let new = change.applied(to: e.mode, isDirectory: e.type == .directory)
             guard new != e.mode else { return nil }
             return Change(url: e.relativePath.isEmpty ? url : url.appending(path: e.relativePath), old: e.mode, new: new)
         }

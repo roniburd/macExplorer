@@ -41,6 +41,25 @@ final class TypeRegistryTests: XCTestCase {
         XCTAssertTrue(r.type(at: i).identifier.hasPrefix("dyn."))
     }
 
+    /// Unregistered extensions have a dynamic type with no description: Kind reads the generic document text,
+    /// never the dyn.* identifier, and sorts with it (QA round 3).
+    func testUnknownExtensionDescribedAsGenericDocument() {
+        let r = TypeRegistry()
+        let unknown = r.index(forExtension: "zzqq", isDirectory: false)
+        let dat = r.index(forExtension: "macxunknownext2", isDirectory: false)
+        XCTAssertEqual(r.localizedDescription(unknown), "Document")
+        XCTAssertEqual(r.localizedDescription(dat), "Document")
+        _ = r.kindRanks()
+        r.setGenericDescriptions(document: "Dokument", folder: "Ordner")
+        XCTAssertEqual(r.localizedDescription(unknown), "Dokument")
+        XCTAssertFalse(r.localizedDescription(unknown).hasPrefix("dyn."))
+        let ranks = r.kindRanks().ranks
+        XCTAssertEqual(ranks[Int(unknown)], ranks[Int(dat)], "same description, same rank")
+        let txt = r.index(forExtension: "txt", isDirectory: false)
+        XCTAssertFalse(r.localizedDescription(txt).isEmpty)
+        XCTAssertNotEqual(r.localizedDescription(txt), "Dokument")
+    }
+
     func testKindRanksFollowLocalizedDescriptionAndRecomputeOnGrowth() {
         let r = TypeRegistry()
         let txt = r.index(forExtension: "txt", isDirectory: false)
