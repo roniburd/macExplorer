@@ -1,0 +1,352 @@
+import AppKit
+import Core
+import Darwin
+import Foundation
+import MacxFS
+
+enum BenchFailure: Error, CustomStringConvertible {
+    case read(Int32)
+    case streamEnded
+    case timeout(String)
+    var description: String {
+        switch self {
+        case .read(let code): "directory read failed: errno \(code)"
+        case .streamEnded: "read stream ended without .completed"
+        case .timeout(let what): "timed out waiting for \(what)"
+        }
+    }
+}
+
+/// Observes a FolderModel and timestamps the events the budgets care about.
+@MainActor
+final class ModelWatch {
+    let model: FolderModel
+    private(set) var firstChanges: ContinuousClock.Instant?
+    private(set) var loaded: ContinuousClock.Instant?
+    private(set) var changeEvents = 0
+    private var token: ObserverToken?
+
+    init(model: FolderModel, expectedRows: Int) {
+        self.model = model
+        let clock = ContinuousClock()
+        token = model.observe { [weak self] event in
+            guard let self else { return }
+            if case .changes = event {
+                self.changeEvents += 1
+                if self.firstChanges == nil { self.firstChanges = clock.now }
+            }
+            if self.loaded == nil, self.model.state == .complete, self.model.rowCount == expectedRows {
+                self.loaded = clock.now
+            }
+        }
+    }
+
+    func close() {
+        token?.cancel()
+        token = nil
+        model.close()
+    }
+}
+
+@MainActor
+final class MetricSuite {
+    let env: CoreEnvironment
+    let sandbox: SandboxHandle
+    let relativeDir: String
+    let directory: URL
+    let size: Int
+    let options: BenchOptions
+    private var fileCount: Int
+    private var generation = Generation.initial
+    private let clock = ContinuousClock()
+
+    init(env: CoreEnvironment, sandbox: SandboxHandle, relativeDir: String, directory: URL, size: Int, options: BenchOptions) {
+        self.env = env
+        self.sandbox = sandbox
+        self.relativeDir = relativeDir
+        self.directory = directory
+        self.size = size
+        self.options = options
+        self.fileCount = size
+    }
+
+    private func wants(_ name: String) -> Bool {
+        guard let filter = options.metrics else { return true }
+        return filter.contains { name.hasPrefix($0) }
+    }
+
+    private func elapsedMs(since start: ContinuousClock.Instant) -> Double { Stats.milliseconds(clock.now - start) }
+
+    private func samples(_ body: @MainActor () async throws -> Double) async throws -> [Double] {
+        try await Stats.sample(warmups: options.warmups, iterations: options.iterations, body)
+    }
+
+    private func result(_ name: String, unit: String = "ms", _ samples: [Double]) -> MetricResult {
+        MetricResult(name: name, size: size, unit: unit, samples: samples)
+    }
+
+    func waitUntil(_ what: String, timeout: Duration, _ condition: () -> Bool) async throws {
+        let deadline = clock.now + timeout
+        while !condition() {
+            if clock.now >= deadline { throw BenchFailure.timeout(what) }
+            try await Task.sleep(for: .milliseconds(1))
+        }
+    }
+
+    private var identityMode: IdentityMode {
+        env.volumes.volume(for: directory)?.capabilities.identityMode ?? .objectID
+    }
+
+    private var ranks: [UInt16] { env.types.kindRanks().ranks }
+
+    func readStore() async throws -> EntryStore {
+        generation = generation.next()
+        let reader = env.readers.reader(for: directory)
+        var store = EntryStore(identityMode: identityMode)
+        for await event in await reader.read(directory, generation: generation) {
+            switch event {
+            case .batch(let batch): store.append(batch)
+            case .completed: return store
+            case .failed(let failure): throw BenchFailure.read(failure.code)
+            case .stalled, .waitingForPermission, .resumed: continue
+            }
+        }
+        throw BenchFailure.streamEnded
+    }
+
+    private func sortedStore() async throws -> EntryStore {
+        var store = try await readStore()
+        let keys = SortKeys.nameKeys(store, range: 0..<store.count)
+        store.setOrder(Sorter.permutation(store, nameKeys: keys, searchKeys: nil, query: ViewQuery(), kindRanks: ranks))
+        return store
+    }
+
+    private func withLoadedModel<T>(_ body: (ModelWatch) async throws -> T) async throws -> T {
+        let model = env.makeFolderModel(directory, query: ViewQuery())
+        let watch = ModelWatch(model: model, expectedRows: fileCount)
+        defer { watch.close() }
+        model.start()
+        try await waitUntil("\(size)-entry model loads", timeout: .seconds(60)) { watch.loaded != nil }
+        return try await body(watch)
+    }
+
+    func runAll() async throws -> [MetricResult] {
+        var out: [MetricResult] = []
+
+        if wants("enumerate") {
+            out.append(result("enumerate", try await samples {
+                let start = self.clock.now
+                _ = try await self.readStore()
+                return self.elapsedMs(since: start)
+            }))
+        }
+
+        if wants("firstBatch") || wants("listSorted") {
+            var first: [Double] = []
+            var loaded: [Double] = []
+            for i in 0..<(options.warmups + options.iterations) {
+                let model = env.makeFolderModel(directory, query: ViewQuery())
+                let watch = ModelWatch(model: model, expectedRows: fileCount)
+                let start = clock.now
+                model.start()
+                try await waitUntil("\(size)-entry model loads", timeout: .seconds(60)) {
+                    watch.loaded != nil && watch.firstChanges != nil
+                }
+                if i >= options.warmups, let f = watch.firstChanges, let l = watch.loaded {
+                    first.append(Stats.milliseconds(f - start))
+                    loaded.append(Stats.milliseconds(l - start))
+                }
+                watch.close()
+            }
+            if wants("firstBatch") { out.append(result("firstBatch", first)) }
+            if wants("listSorted") { out.append(result("listSorted", loaded)) }
+        }
+
+        let needsStore = ["sortkeys", "sort", "resort", "filter", "pasteboard"].contains { wants($0) }
+        if needsStore {
+            let store = try await readStore()
+            let keys = SortKeys.nameKeys(store, range: 0..<store.count)
+            let ranks = self.ranks
+            if wants("sortkeys") {
+                out.append(result("sortkeys", try await samples {
+                    let start = self.clock.now
+                    let k = SortKeys.nameKeys(store, range: 0..<store.count)
+                    withExtendedLifetime(k) {}
+                    return self.elapsedMs(since: start)
+                }))
+            }
+            if wants("sort") {
+                out.append(result("sort", try await samples {
+                    let start = self.clock.now
+                    let p = Sorter.permutation(store, nameKeys: keys, searchKeys: nil, query: ViewQuery(), kindRanks: ranks)
+                    withExtendedLifetime(p) {}
+                    return self.elapsedMs(since: start)
+                }))
+            }
+            for field in SortField.allCases where wants("resort.\(field.rawValue)") {
+                let query = ViewQuery(sort: SortDescriptor(field: field, ascending: field != .name))
+                out.append(result("resort.\(field.rawValue)", try await samples {
+                    let start = self.clock.now
+                    let p = Sorter.permutation(store, nameKeys: keys, searchKeys: nil, query: query, kindRanks: ranks)
+                    withExtendedLifetime(p) {}
+                    return self.elapsedMs(since: start)
+                }))
+            }
+            if wants("filter") {
+                out.append(result("filter", try await samples {
+                    let start = self.clock.now
+                    let search = SortKeys.searchKeys(store)
+                    let p = Sorter.permutation(store, nameKeys: keys, searchKeys: search, query: ViewQuery(filter: "42"), kindRanks: ranks)
+                    withExtendedLifetime(p) {}
+                    return self.elapsedMs(since: start)
+                }))
+            }
+            if wants("pasteboard") {
+                let urls = (0..<store.count).map {
+                    directory.appending(path: store.name(UInt32($0)), directoryHint: .notDirectory)
+                }
+                out.append(result("pasteboard", try await samples {
+                    let name = "macx-bench-\(UUID().uuidString)"
+                    let board = SystemPasteboard(name: name)
+                    let start = self.clock.now
+                    board.writeFileURLs(urls, cutMarker: false)
+                    let ms = self.elapsedMs(since: start)
+                    NSPasteboard(name: NSPasteboard.Name(name)).releaseGlobally()
+                    return ms
+                }))
+            }
+        }
+
+        if wants("modelResort") {
+            let values = try await withLoadedModel { watch in
+                var ascending = false
+                return try await samples {
+                    let before = watch.changeEvents
+                    let start = self.clock.now
+                    watch.model.setQuery(ViewQuery(sort: SortDescriptor(field: .name, ascending: ascending)))
+                    ascending.toggle()
+                    try await self.waitUntil("re-sort applied", timeout: .seconds(10)) { watch.changeEvents > before }
+                    return self.elapsedMs(since: start)
+                }
+            }
+            out.append(result("modelResort", values))
+        }
+
+        if wants("diff") {
+            let old = try await sortedStore()
+            var new = old
+            let touched = max(1, old.count / 100)
+            for i in 0..<touched {
+                var e = old.entry(UInt32(i))
+                e.mtime += 1_000_000_000
+                new.upsert(e, name: old.name(UInt32(i)))
+            }
+            new.remove(Set((0..<(touched / 2)).map { UInt32(old.count - 1 - $0) }))
+            let txt = env.types.index(forExtension: "txt", isDirectory: false)
+            for i in 0..<(touched / 2) {
+                let id = 9_000_000_000 + UInt64(i)
+                new.upsert(Entry(rowID: id, fileID: id, size: 1, allocSize: 4_096, mtime: 0, ctime: 0, nameOffset: 0,
+                                 nameLen: 0, kind: .file, flags: [.readable, .writable], typeIndex: txt),
+                           name: "added-\(i).txt")
+            }
+            let newKeys = SortKeys.nameKeys(new, range: 0..<new.count)
+            new.setOrder(Sorter.permutation(new, nameKeys: newKeys, searchKeys: nil, query: ViewQuery(), kindRanks: ranks))
+            out.append(result("diff", try await samples {
+                let start = self.clock.now
+                let r = StoreDiff.diff(old: old, new: new)
+                withExtendedLifetime(r) {}
+                return self.elapsedMs(since: start)
+            }))
+        }
+
+        if wants("memory.steady") {
+            out.append(result("memory.steady", unit: "MB", try await samples {
+                _ = malloc_zone_pressure_relief(nil, 0)
+                let before = Machine.footprintBytes()
+                var store = try await self.readStore()
+                let keys = SortKeys.nameKeys(store, range: 0..<store.count)
+                store.setOrder(Sorter.permutation(store, nameKeys: keys, searchKeys: nil, query: ViewQuery(), kindRanks: self.ranks))
+                _ = malloc_zone_pressure_relief(nil, 0)
+                let after = Machine.footprintBytes()
+                withExtendedLifetime((store, keys)) {}
+                return Double(after - before) / 1_048_576
+            }))
+        }
+
+        if wants("fsevent.incremental") {
+            let values = try await withLoadedModel { watch in
+                try await samples {
+                    let name = "inc-\(UUID().uuidString).txt"
+                    let start = self.clock.now
+                    self.sandbox.file("\(self.relativeDir)/\(name)")
+                    self.fileCount += 1
+                    try await self.waitUntil("incremental FSEvent applied", timeout: .seconds(10)) {
+                        watch.model.row(named: name) != nil
+                    }
+                    return self.elapsedMs(since: start)
+                }
+            }
+            out.append(result("fsevent.incremental", values))
+        }
+
+        if wants("fsevent.full") {
+            let values = try await withLoadedModel { watch in
+                try await samples {
+                    let tag = UUID().uuidString.prefix(8)
+                    let start = self.clock.now
+                    for i in 0..<300 { self.sandbox.file("\(self.relativeDir)/full-\(tag)-\(i).txt") }
+                    self.fileCount += 300
+                    let target = self.fileCount
+                    try await self.waitUntil("full re-read applied", timeout: .seconds(20)) { watch.model.rowCount == target }
+                    return self.elapsedMs(since: start)
+                }
+            }
+            out.append(result("fsevent.full", values))
+        }
+
+        return out
+    }
+}
+
+@MainActor
+enum Bench {
+    static var configuration: String {
+        #if DEBUG
+        return "debug"
+        #else
+        return "release"
+        #endif
+    }
+
+    /// Creates ${TMPDIR}/macx-bench-<UUID>, runs every metric per size, destroys the sandbox (unless keepFixtures).
+    static func run(_ options: BenchOptions, log: (String) -> Void = { _ in }) async throws -> BenchReport {
+        let sandbox = try SandboxHandle.make(prefix: "macx-bench")
+        let env = CoreEnvironment.sandboxed(root: sandbox.root)
+        _ = await env.start()
+        log("sandbox: \(sandbox.root.path)")
+        var metrics: [MetricResult] = []
+        var failure: (any Error)?
+        do {
+            for size in options.sizes {
+                let relative = "work/flat-\(size)"
+                log("fixture: \(size) files")
+                let directory = sandbox.flat(relative, count: size)
+                let suite = MetricSuite(env: env, sandbox: sandbox, relativeDir: relative, directory: directory, size: size, options: options)
+                metrics += try await suite.runAll()
+            }
+        } catch {
+            failure = error
+        }
+        await env.fileOps.waitUntilIdle()
+        var removed = false
+        if !options.keepFixtures {
+            sandbox.destroy()
+            removed = !FileManager.default.fileExists(atPath: sandbox.root.path)
+            log(removed ? "sandbox root \(sandbox.root.path) removed" : "WARNING: sandbox \(sandbox.root.path) was not removed")
+        }
+        if let failure { throw failure }
+        return BenchReport(machine: .current(), configuration: configuration, warmups: options.warmups,
+                           iterations: options.iterations, metrics: metrics, budgets: nil,
+                           sandbox: sandbox.root.path, sandboxRemoved: removed)
+    }
+}

@@ -33,6 +33,7 @@ let package = Package(
         .testTarget(name: "FSKitTests", dependencies: ["MacxFS", "CFSKit", "MacxFixtures"], resources: [.copy("Corpus")], swiftSettings: strict),
         .testTarget(name: "CoreTests", dependencies: ["Core", "MacxFS", "MacxFixtures"], swiftSettings: strict),
         .testTarget(name: "UITests", dependencies: ["UI", "Core", "MacxFS", "MacxFixtures"], swiftSettings: strict),
+        .testTarget(name: "BenchTests", dependencies: ["macx-bench", "Core", "MacxFS", "MacxFixtures"], swiftSettings: strict),
     ],
     swiftLanguageModes: [.v6]
 )
