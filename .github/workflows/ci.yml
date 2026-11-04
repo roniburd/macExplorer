@@ -1,0 +1,132 @@
+# macExplorer CI (spec §9 and §10, P1-42). Pull requests and main: layering, build, test, bundle, both scenario
+# runners, and macx-bench with the relative gate against a baseline from main on the same runner image.
+# The §4.4 absolute budgets appear only as warning annotations here; they are gated by
+# `macx-bench --check-budgets` on Apple Silicon as part of the release checklist (README).
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  XCODE_VERSION: "27.2"
+
+jobs:
+  build-test:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
+          swift --version
+      - name: Layering checks
+        run: scripts/check-layering.sh && scripts/test-check-layering.sh
+      - name: Build (release, warnings fail)
+        run: |
+          swift build -c release 2>&1 | tee "$RUNNER_TEMP/build-release.log"
+          test "${PIPESTATUS[0]}" -eq 0
+          ! grep -E '(^|[^A-Za-z])warning:' "$RUNNER_TEMP/build-release.log"
+      - name: Build (debug, warnings fail)
+        run: |
+          swift build 2>&1 | tee "$RUNNER_TEMP/build-debug.log"
+          test "${PIPESTATUS[0]}" -eq 0
+          ! grep -E '(^|[^A-Za-z])warning:' "$RUNNER_TEMP/build-debug.log"
+      - name: Test
+        run: swift test --parallel
+      - name: Bundle
+        run: |
+          scripts/bundle.sh release
+          codesign --verify --strict .build/macExplorer.app
+
+  scenarios:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
+      - name: Core scenarios (disk images, crash recovery)
+        run: scripts/run-scenarios.sh release
+      - name: UI scenarios (bundled app, sandboxed)
+        run: scripts/ui-scenarios.sh --require-gui
+      - name: Upload scenario reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scenario-reports
+          path: |
+            .build/scenario-report.json
+            .build/ui-scenario-report.json
+            .build/ui-scenario-logs/
+          if-no-files-found: ignore
+
+  bench:
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Select Xcode
+        run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
+      - name: Baseline cache key (runner image + architecture)
+        id: key
+        run: |
+          image="${ImageOS:-macos}-${ImageVersion:-$(sw_vers -buildVersion)}"
+          echo "prefix=bench-baseline-${image}-$(uname -m)-" >> "$GITHUB_OUTPUT"
+      - name: Restore the main baseline for this image
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@v4
+        with:
+          path: .build/bench-baseline.json
+          key: ${{ steps.key.outputs.prefix }}${{ github.event.pull_request.base.sha }}
+          restore-keys: ${{ steps.key.outputs.prefix }}
+      - name: Measure the base commit when no baseline exists for this image
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          mkdir -p .build
+          if [ -f .build/bench-baseline.json ]; then echo "baseline restored from cache"; exit 0; fi
+          git worktree add "$RUNNER_TEMP/base" "$BASE_SHA"
+          if (cd "$RUNNER_TEMP/base" && swift run -c release macx-bench --output "$GITHUB_WORKSPACE/.build/bench-baseline.json"); then
+            echo "baseline measured on $BASE_SHA"
+          else
+            rm -f .build/bench-baseline.json
+            echo "::notice title=Benchmark baseline::the base commit has no working macx-bench; relative gate skipped"
+          fi
+      - name: Benchmark (relative gate; budgets as warnings)
+        run: |
+          args=(--output .build/bench.json --warn-budgets)
+          if [ -f .build/bench-baseline.json ]; then args+=(--compare .build/bench-baseline.json); fi
+          swift run -c release macx-bench "${args[@]}" | tee "$RUNNER_TEMP/bench.txt"
+          status=${PIPESTATUS[0]}
+          { echo '### macx-bench'; echo '```'; grep -vE '^::' "$RUNNER_TEMP/bench.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+      - name: Keep this run as the main baseline
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: cp .build/bench.json .build/bench-baseline.json
+      - name: Save the main baseline
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: .build/bench-baseline.json
+          key: ${{ steps.key.outputs.prefix }}${{ github.sha }}
+      - name: Upload bench report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench
+          path: .build/bench*.json
+          if-no-files-found: ignore
