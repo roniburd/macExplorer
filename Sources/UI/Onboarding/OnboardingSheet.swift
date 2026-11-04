@@ -54,16 +54,12 @@ struct OnboardingView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(OnboardingTexts.title).font(.title2).bold()
-            VStack(alignment: .leading, spacing: 6) {
-                Label(OnboardingTexts.fullDiskAccessTitle, systemImage: "lock.shield").font(.headline)
-                Text(OnboardingTexts.fullDiskAccess).fixedSize(horizontal: false, vertical: true)
-                Button(OnboardingTexts.openPrivacy) { flow.openPrivacySettings() }
-            }
-            VStack(alignment: .leading, spacing: 6) {
-                Label(OnboardingTexts.fnKeysTitle, systemImage: "keyboard").font(.headline)
-                Text(OnboardingTexts.fnKeys).fixedSize(horizontal: false, vertical: true)
-                Button(OnboardingTexts.openKeyboard) { flow.openKeyboardSettings() }
-            }
+            section(OnboardingTexts.fullDiskAccessTitle, systemImage: "lock.shield",
+                    text: OnboardingTexts.fullDiskAccess,
+                    button: OnboardingTexts.openPrivacy) { flow.openPrivacySettings() }
+            section(OnboardingTexts.fnKeysTitle, systemImage: "keyboard",
+                    text: OnboardingTexts.fnKeys,
+                    button: OnboardingTexts.openKeyboard) { flow.openKeyboardSettings() }
             HStack {
                 Spacer()
                 Button(OnboardingTexts.continueWithout) { flow.finish() }
@@ -72,6 +68,23 @@ struct OnboardingView: View {
         }
         .padding(20)
         .frame(width: 460)
+    }
+
+    /// One note: the icon sits in a fixed-width column so both headings, their text and their buttons share one
+    /// leading edge regardless of the SF Symbol's width.
+    private func section(_ title: String, systemImage: String, text: String, button: String,
+                         action: @escaping () -> Void) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: systemImage)
+                .font(.headline)
+                .frame(width: 20, alignment: .center)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title).font(.headline)
+                Text(text).fixedSize(horizontal: false, vertical: true)
+                Button(button, action: action)
+                    .padding(.top, 2)
+            }
+        }
     }
 }
 
