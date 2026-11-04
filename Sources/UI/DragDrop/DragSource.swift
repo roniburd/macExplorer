@@ -4,28 +4,43 @@ import Core
 import MacxFS
 
 /// Drag pasteboard payload (§5.6): every URL as its own public.file-url item (the legacy NSFilenamesPboardType path
-/// list is derived from them by the pasteboard and is the fast read path for internal drops), and the secondary-drag
-/// marker for right-drags.
+/// list is derived from them by the pasteboard), and the secondary-drag marker for right-drags.
 @MainActor
 enum DragPasteboard {
     static let filenamesType = NSPasteboard.PasteboardType("NSFilenamesPboardType")
     static let secondaryType = NSPasteboard.PasteboardType(DropPolicy.secondaryDragType)
 
-    /// One public.file-url item per URL. The pasteboard synthesizes NSFilenamesPboardType from file-URL items, so
-    /// writing it explicitly too would only double the cost (it is expanded back into one item per path).
+    /// One public.file-url item per URL (promised above the eager limit). The pasteboard synthesizes
+    /// NSFilenamesPboardType from file-URL items, so writing it explicitly too would only double the cost.
+    /// Above FileURLPasteboardItems.eagerLimit the file URLs are promised; this provider answers for the drag in
+    /// progress (kept until the next drag).
+    private static var provider: FileURLPasteboardProvider?
+    private static var providerPasteboard: NSPasteboard.Name?
+    private static var providerChangeCount = 0
+
     static func write(_ urls: [URL], secondary: Bool, to pasteboard: NSPasteboard) {
         pasteboard.clearContents()
-        pasteboard.writeObjects(urls.map { url in
-            let item = NSPasteboardItem()
-            item.setString(url.absoluteString, forType: .fileURL)
-            return item
-        })
+        let (items, provider) = FileURLPasteboardItems.make(urls)
+        Self.provider = provider
+        pasteboard.writeObjects(items)
         if secondary { pasteboard.setData(Data(), forType: secondaryType) }
+        providerPasteboard = pasteboard.name
+        providerChangeCount = pasteboard.changeCount
     }
 
+    /// File URL items first: the NSFilenamesPboardType list synthesized from promised items costs a round trip
+    /// per item, while reading the items themselves does not.
     static func readURLs(from pasteboard: NSPasteboard) -> [URL] {
-        if let paths = pasteboard.propertyList(forType: filenamesType) as? [String] { return paths.map { URL(filePath: $0) } }
-        return pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+        if pasteboard.name == providerPasteboard,
+           let own = FileURLPasteboardItems.ownURLs(pasteboard, provider: provider, changeCount: providerChangeCount) {
+            return own                          // internal drop of our own promised drag
+        }
+        if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL],
+           !urls.isEmpty {
+            return urls
+        }
+        let paths = pasteboard.propertyList(forType: filenamesType) as? [String] ?? []
+        return paths.map { URL(filePath: $0) }
     }
 
     static func isSecondary(_ pasteboard: NSPasteboard) -> Bool {

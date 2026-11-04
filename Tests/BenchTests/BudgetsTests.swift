@@ -34,12 +34,22 @@ final class BudgetsTests: XCTestCase {
 
     func testAnnotationsOnlyForFailures() {
         let checks = Budgets.evaluate([
-            MetricResult(name: "pasteboard", size: 100_000, samples: [350]),
+            MetricResult(name: "pasteboard", size: 100_000, samples: [1_600]),
             MetricResult(name: "firstBatch", size: 1_000, samples: [5]),
         ])
         let lines = Budgets.annotations(checks)
         XCTAssertEqual(lines.count, 1)
         XCTAssertTrue(lines[0].hasPrefix("::warning title=Performance budget::pasteboard @ 100000"), lines[0])
+    }
+
+    /// Overview §4.4 pasteboard decision (2026-11-03): ≤10k < 300 ms, 100k < 1.5 s.
+    func testPasteboardBudgetsFollowThe2026_11_03Decision() {
+        let checks = Budgets.evaluate([
+            MetricResult(name: "pasteboard", size: 10_000, samples: [310]),
+            MetricResult(name: "pasteboard", size: 100_000, samples: [1_400]),
+        ])
+        XCTAssertEqual(checks.map(\.limit), [300, 1_500])
+        XCTAssertEqual(checks.map(\.passed), [false, true])
     }
 
     func testBudgetTableCoversEveryHeadlessSpecRow() {

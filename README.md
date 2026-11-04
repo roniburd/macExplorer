@@ -97,6 +97,11 @@ absolute budgets show up as warnings.
   macExplorer ⌥⌘V (Move Item Here) moves.
 - Libraries, Previous Versions, NTFS security tabs, drive letters, Mac App Store distribution, macOS before 26.
 - "Put Back" from the Trash is not offered; undo restores trashed items instead.
+- **Very large copies are slower to paste elsewhere.** Above 5,000 items, copy, cut and drag write each file URL as
+  a promise that macExplorer fills in when another app asks for it (writing 100k items up front takes over 20 s).
+  Pasting inside macExplorer is unaffected. Pasting those items in another app, or quitting macExplorer while they
+  are on the clipboard, takes about 1 ms per item. Above 5,000 items the clipboard also has no plain-text list of
+  the paths.
 
 Function keys: F2 (rename) and F5 (refresh) need fn held, unless "Use F1, F2, etc. keys as standard function keys"
 is on in Keyboard settings. Development builds are ad-hoc signed, so macOS may ask again for folder access after a

@@ -339,8 +339,37 @@ final class SystemPasteboardTests: XCTestCase {
         let elapsed = ContinuousClock.now - start
         XCTAssertEqual(raw.pasteboardItems?.count, 100_000)
         XCTAssertTrue(board.hasCutMarker())
-        // The pasteboard server costs ~100 µs per public.file-url item on an M3 Pro (writeObjects of 100k NSURLs alone takes
-        // ~10 s), so this is only a no-cap sanity bound; macx-bench measures the real cost against the §4.4 budget.
-        XCTAssertLessThan(elapsed, .seconds(60))
+        // Above the eager limit the file-url data is promised (overview pasteboard decision 2026-11-03: 100k < 1.5 s
+        // release); 4x for debug builds. macx-bench measures the real cost against the budget.
+        XCTAssertLessThan(elapsed, .seconds(6))
+        XCTAssertEqual(raw.pasteboardItems?.last?.string(forType: .fileURL).flatMap(URL.init(string:))?.path, "/tmp/macx-bench/f99999.txt")
+    }
+
+    /// Up to `eagerLimit` items every representation is written eagerly; above it the file URLs are supplied on
+    /// request by a data provider and the plain-text / legacy path lists are not written.
+    func testAboveTheEagerLimitFileURLsArePromisedAndStillRead() throws {
+        XCTAssertEqual(FileURLPasteboardItems.eagerLimit, 5_000)
+        let urls = (0...FileURLPasteboardItems.eagerLimit).map { u("/tmp/macx/f\($0).txt") }
+        let start = ContinuousClock.now
+        board.writeFileURLs(urls, cutMarker: true)
+        XCTAssertLessThan(ContinuousClock.now - start, .milliseconds(1_200), "≤10k < 300 ms release, 4x in debug")
+        XCTAssertEqual(raw.pasteboardItems?.count, urls.count)
+        XCTAssertTrue(board.hasCutMarker())
+        XCTAssertTrue(board.hasFileURLs())
+        XCTAssertFalse(raw.types?.contains(.string) ?? true, "no eager plain text above the limit")
+        XCTAssertEqual(board.readFileURLs().map(\.path), urls.map(\.path))
+        // Other readers get each promised value from the provider (a round trip per item, so spot-check two).
+        let items = try XCTUnwrap(raw.pasteboardItems)
+        for i in [0, urls.count - 1] {
+            XCTAssertEqual(items[i].string(forType: .fileURL).flatMap(URL.init(string:))?.path, urls[i].path)
+        }
+    }
+
+    func testAtTheEagerLimitEverythingIsEager() throws {
+        let urls = (0..<FileURLPasteboardItems.eagerLimit).map { u("/tmp/macx/f\($0).txt") }
+        board.writeFileURLs(urls, cutMarker: false)
+        XCTAssertEqual(raw.pasteboardItems?.count, urls.count)
+        XCTAssertTrue(raw.types?.contains(.string) ?? false)
+        XCTAssertEqual(board.readFileURLs().count, urls.count)
     }
 }

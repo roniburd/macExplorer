@@ -1,8 +1,9 @@
 import AppKit
 import Foundation
 
-/// NSPasteboard-backed `PasteboardBackend` (§5.6). Writes one `public.file-url` item per URL, with no cap; the first
-/// item also carries the legacy NSFilenamesPboardType path list, the paths as plain text and (for cut) the private marker.
+/// NSPasteboard-backed `PasteboardBackend` (§5.6). Writes one `public.file-url` item per URL, with no cap (promised above
+/// FileURLPasteboardItems.eagerLimit); the first item also carries (for cut) the private marker and, up to that limit,
+/// the legacy NSFilenamesPboardType path list and the paths as plain text.
 @MainActor public final class SystemPasteboard: PasteboardBackend {
     public static let cutMarkerType: String = "com.macexplorer.cut"
     static let filenamesType = NSPasteboard.PasteboardType("NSFilenamesPboardType")
@@ -17,22 +18,26 @@ import Foundation
 
     public var changeCount: Int { pasteboard.changeCount }
 
+    /// Answers the promised file URLs of the current contents (above FileURLPasteboardItems.eagerLimit).
+    private var provider: FileURLPasteboardProvider?
+    private var providerChangeCount = 0
+
     @discardableResult public func writeFileURLs(_ urls: [URL], cutMarker: Bool) -> Int {
         pasteboard.clearContents()
+        provider = nil
         guard !urls.isEmpty else { return pasteboard.changeCount }
-        var items: [NSPasteboardItem] = []
-        items.reserveCapacity(urls.count)
-        for url in urls {
-            let item = NSPasteboardItem()
-            item.setString(url.absoluteURL.absoluteString, forType: .fileURL)
-            items.append(item)
-        }
-        let paths = urls.map(Self.plainPath)
+        let (items, provider) = FileURLPasteboardItems.make(urls)
+        self.provider = provider
         let first = items[0]
-        first.setPropertyList(paths, forType: Self.filenamesType)
-        first.setString(paths.joined(separator: "\n"), forType: .string)
+        if provider == nil {
+            // Above the eager limit the legacy path list and plain text are not written (overview §4.4 decision).
+            let paths = urls.map(Self.plainPath)
+            first.setPropertyList(paths, forType: Self.filenamesType)
+            first.setString(paths.joined(separator: "\n"), forType: .string)
+        }
         if cutMarker { first.setData(Data(), forType: Self.markerType) }
         pasteboard.writeObjects(items)
+        providerChangeCount = pasteboard.changeCount
         return pasteboard.changeCount
     }
 
@@ -44,6 +49,7 @@ import Foundation
     }
 
     public func readFileURLs() -> [URL] {
+        if let own = FileURLPasteboardItems.ownURLs(pasteboard, provider: provider, changeCount: providerChangeCount) { return own }
         var urls: [URL] = []
         for item in pasteboard.pasteboardItems ?? [] {
             guard let string = item.string(forType: .fileURL), let url = URL(string: string), url.isFileURL else { continue }

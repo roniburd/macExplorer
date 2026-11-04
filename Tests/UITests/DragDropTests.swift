@@ -35,8 +35,9 @@ final class DragDropTests: XCTestCase {
         let urls = (0..<10_000).map { h.url("f\($0).txt") }   // paths only; nothing is created
         let start = ContinuousClock.now
         DragPasteboard.write(urls, secondary: false, to: pasteboard(h))
-        XCTAssertLessThan(ContinuousClock.now - start, .milliseconds(1_200), "budget: 100k in 300 ms release (§4.4)")
+        XCTAssertLessThan(ContinuousClock.now - start, .milliseconds(1_200), "budget: ≤10k in 300 ms release (overview §4.4 decision)")
         XCTAssertEqual(pasteboard(h).pasteboardItems?.count, 10_000)
+        XCTAssertEqual(DragPasteboard.readURLs(from: pasteboard(h)).map(\.path), urls.map(\.path), "promised items read back")
     }
 
     func testDragImageComposerCapsAtFiveIcons() async throws {
