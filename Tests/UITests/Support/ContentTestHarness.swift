@@ -145,6 +145,7 @@ final class ContentTestHarness {
 
     func tearDown() async {
         PropertiesWindowController.closeAll(for: context)
+        context.operationsUI.closePanel()
         for controller in context.windows.windows { controller.close() }
         for window in hostedWindows { window.close() }
         for model in models { model.close() }

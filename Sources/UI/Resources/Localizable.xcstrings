@@ -89,6 +89,17 @@
         }
       }
     },
+    "%@ of %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ of %@"
+          }
+        }
+      }
+    },
     "%@ selected" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -118,6 +129,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@, cut"
+          }
+        }
+      }
+    },
+    "%@/s" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@/s"
           }
         }
       }
@@ -184,6 +206,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld Items Properties"
+          }
+        }
+      }
+    },
+    "%lld items can't be moved to the Trash." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld items can't be moved to the Trash."
+          }
+        }
+      }
+    },
+    "%lld operations in progress" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld operations in progress"
+          }
+        }
+      }
+    },
+    "%lld%%" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld%%"
+          }
+        }
+      }
+    },
+    "'%@'" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "'%@'"
           }
         }
       }
@@ -353,6 +421,17 @@
         }
       }
     },
+    "1 operation in progress" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 operation in progress"
+          }
+        }
+      }
+    },
     "1 operation is in progress" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -382,6 +461,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "A name can't contain '/'."
+          }
+        }
+      }
+    },
+    "About %@ remaining" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "About %@ remaining"
           }
         }
       }
@@ -437,6 +527,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Advanced"
+          }
+        }
+      }
+    },
+    "Allow macExplorer in System Settings › Privacy & Security, then try again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow macExplorer in System Settings › Privacy & Security, then try again."
           }
         }
       }
@@ -540,6 +641,17 @@
         }
       }
     },
+    "At destination" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "At destination"
+          }
+        }
+      }
+    },
     "Attributes" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -639,6 +751,17 @@
         }
       }
     },
+    "Cancelling…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancelling…"
+          }
+        }
+      }
+    },
     "Capacity" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -690,6 +813,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Change…"
+          }
+        }
+      }
+    },
+    "Changing attributes of %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Changing attributes of %@"
+          }
+        }
+      }
+    },
+    "Changing permissions of %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Changing permissions of %@"
           }
         }
       }
@@ -793,6 +938,17 @@
         }
       }
     },
+    "Compare…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compare…"
+          }
+        }
+      }
+    },
     "Confirm before deleting items permanently" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -822,6 +978,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Contains"
+          }
+        }
+      }
+    },
+    "Continue" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continue"
           }
         }
       }
@@ -877,6 +1044,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Copy as Path"
+          }
+        }
+      }
+    },
+    "Copying %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copying %@"
+          }
+        }
+      }
+    },
+    "Copying %@ from %@ to %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copying %@ from %@ to %@"
+          }
+        }
+      }
+    },
+    "Copying %@ to %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copying %@ to %@"
           }
         }
       }
@@ -943,6 +1143,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Created"
+          }
+        }
+      }
+    },
+    "Creating %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Creating %@"
+          }
+        }
+      }
+    },
+    "Creating %@ in %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Creating %@ in %@"
           }
         }
       }
@@ -1035,6 +1257,17 @@
         }
       }
     },
+    "Deleting %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deleting %@"
+          }
+        }
+      }
+    },
     "Density" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1090,6 +1323,39 @@
         }
       }
     },
+    "Do this for all remaining conflicts (%lld)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Do this for all remaining conflicts (%lld)"
+          }
+        }
+      }
+    },
+    "Do you want to delete it permanently? This can't be undone." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Do you want to delete it permanently? This can't be undone."
+          }
+        }
+      }
+    },
+    "Do you want to delete them permanently? This can't be undone." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Do you want to delete them permanently? This can't be undone."
+          }
+        }
+      }
+    },
     "Documents" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1141,6 +1407,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Duplicate"
+          }
+        }
+      }
+    },
+    "Duplicating %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Duplicating %@"
           }
         }
       }
@@ -1376,6 +1653,28 @@
         }
       }
     },
+    "Free up space on the destination, then try again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Free up space on the destination, then try again."
+          }
+        }
+      }
+    },
+    "From source" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "From source"
+          }
+        }
+      }
+    },
     "Full Disk Access" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1537,6 +1836,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Icons"
+          }
+        }
+      }
+    },
+    "If you keep both, the copied item gets a number added to its name." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "If you keep both, the copied item gets a number added to its name."
           }
         }
       }
@@ -1772,6 +2082,28 @@
         }
       }
     },
+    "Making a symbolic link to %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Making a symbolic link to %@"
+          }
+        }
+      }
+    },
+    "Making an alias of %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Making an alias of %@"
+          }
+        }
+      }
+    },
     "Medium" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1805,6 +2137,17 @@
         }
       }
     },
+    "Merge folders?" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Merge folders?"
+          }
+        }
+      }
+    },
     "Minimize" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1834,6 +2177,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "More"
+          }
+        }
+      }
+    },
+    "More details" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "More details"
           }
         }
       }
@@ -1900,6 +2254,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Move to Trash"
+          }
+        }
+      }
+    },
+    "Moving %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Moving %@"
+          }
+        }
+      }
+    },
+    "Moving %@ from %@ to %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Moving %@ from %@ to %@"
+          }
+        }
+      }
+    },
+    "Moving %@ to %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Moving %@ to %@"
+          }
+        }
+      }
+    },
+    "Moving %@ to the Trash" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Moving %@ to the Trash"
           }
         }
       }
@@ -2080,6 +2478,17 @@
         }
       }
     },
+    "No operations" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No operations"
+          }
+        }
+      }
+    },
     "Not enough space (needs %@, %@ available)." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2087,6 +2496,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Not enough space (needs %@, %@ available)."
+          }
+        }
+      }
+    },
+    "Not enough space on '%@'" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not enough space on '%@'"
           }
         }
       }
@@ -2278,6 +2698,28 @@
         }
       }
     },
+    "Pause" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pause"
+          }
+        }
+      }
+    },
+    "Paused" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paused"
+          }
+        }
+      }
+    },
     "Permanent deletes can't be undone, so they always ask first." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2307,6 +2749,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Permissions"
+          }
+        }
+      }
+    },
+    "Preparing…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preparing…"
           }
         }
       }
@@ -2432,6 +2885,17 @@
         }
       }
     },
+    "Redoing changes to %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Redoing changes to %@"
+          }
+        }
+      }
+    },
     "Refresh" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2520,6 +2984,17 @@
         }
       }
     },
+    "Renaming %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Renaming %@"
+          }
+        }
+      }
+    },
     "Replace" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2527,6 +3002,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Replace"
+          }
+        }
+      }
+    },
+    "Replace it with the item you're copying or moving, skip this item, or keep both." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replace it with the item you're copying or moving, skip this item, or keep both."
           }
         }
       }
@@ -2549,6 +3035,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Restored the original names of %ld items."
+          }
+        }
+      }
+    },
+    "Resume" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resume"
           }
         }
       }
@@ -2681,6 +3178,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Share…"
+          }
+        }
+      }
+    },
+    "Show" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show"
           }
         }
       }
@@ -2971,6 +3479,39 @@
         }
       }
     },
+    "The destination already has a file named '%@'" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The destination already has a file named '%@'"
+          }
+        }
+      }
+    },
+    "The destination already has a folder named '%@'" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The destination already has a folder named '%@'"
+          }
+        }
+      }
+    },
+    "The destination already has a folder named '%@'. Merging adds the items of both folders to it." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The destination already has a folder named '%@'. Merging adds the items of both folders to it."
+          }
+        }
+      }
+    },
     "The destination already has an item named '%@'" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3114,6 +3655,17 @@
         }
       }
     },
+    "This operation needs %@, but only %@ is available." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This operation needs %@, but only %@ is available."
+          }
+        }
+      }
+    },
     "Today %@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3169,6 +3721,17 @@
         }
       }
     },
+    "Undoing changes to %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Undoing changes to %@"
+          }
+        }
+      }
+    },
     "Unlock and Continue" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3176,6 +3739,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Unlock and Continue"
+          }
+        }
+      }
+    },
+    "Unlocking removes the Locked attribute so the operation can continue." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unlocking removes the Locked attribute so the operation can continue."
           }
         }
       }
@@ -3301,6 +3875,28 @@
         }
       }
     },
+    "Waiting for your answer" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for your answer"
+          }
+        }
+      }
+    },
+    "Waiting to start…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting to start…"
+          }
+        }
+      }
+    },
     "Welcome to macExplorer" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3319,6 +3915,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Where from"
+          }
+        }
+      }
+    },
+    "Which items do you want to keep?" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Which items do you want to keep?"
           }
         }
       }
@@ -3628,6 +4235,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "macOS is blocking access to '%@'."
+          }
+        }
+      }
+    },
+    "waiting for your answer" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "waiting for your answer"
           }
         }
       }

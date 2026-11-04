@@ -70,6 +70,7 @@ public final class AppLifecycle {
                 reply(false)
             case .stopAndQuit:
                 // Cancel every job through the §6.1 cancel path; quit even if that times out (journal cleanup).
+                context.operationsUI.router.stopAnswering()
                 _ = await terminator.stopAllAndWait(timeout: Self.stopTimeout)
                 reply(true)
             }
@@ -94,9 +95,9 @@ public final class AppLifecycle {
         SettingsWindowController.show(context: context)
     }
 
-    /// Window › Operations with no browser window to handle it. The standalone Operations panel arrives in P1-38.
+    /// Window › Operations with no browser window to handle it: the standalone Operations panel (§6.7).
     public func showOperations() {
-        NSSound.beep()
+        context.showOperationsPanel()
     }
 
     // MARK: presenters

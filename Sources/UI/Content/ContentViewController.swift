@@ -14,6 +14,8 @@ final class ContentViewController: CommandHandlingViewController {
     let statusBar = StatusBarView()
     let stack = NSStackView()
     let listContainer = NSView()
+    /// The status bar's operations capsule (P1-38, §6.2).
+    private(set) var operationsCapsule: OperationsCapsule?
     let emptyState = EmptyStateView()
     let banner = BannerView()
     private lazy var menuBuilder = ContextMenuBuilder(context: context)
@@ -108,6 +110,21 @@ final class ContentViewController: CommandHandlingViewController {
         applyCommandBarVisibility()
         setViewMode(session.viewMode)
         bind(session.folder)
+        installOperationsCapsule()
+    }
+
+    private func installOperationsCapsule() {
+        let capsule = OperationsCapsule(context: context)
+        capsule.translatesAutoresizingMaskIntoConstraints = false
+        let slot = statusBar.operationsSlot
+        slot.addSubview(capsule)
+        NSLayoutConstraint.activate([
+            capsule.leadingAnchor.constraint(equalTo: slot.leadingAnchor),
+            capsule.trailingAnchor.constraint(equalTo: slot.trailingAnchor),
+            capsule.topAnchor.constraint(equalTo: slot.topAnchor),
+            capsule.bottomAnchor.constraint(equalTo: slot.bottomAnchor),
+        ])
+        operationsCapsule = capsule
     }
 
     override func flagsChanged(with event: NSEvent) {

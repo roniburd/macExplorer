@@ -16,7 +16,7 @@ extension FileCommandController {
         case .cycleFocusBackward: window.focus(FocusCycle.next(after: Self.focus(for: target), forward: false))
         case .newWindow: context.windows.openWindow(at: window.session.folder.directory)
         case .closeWindow: window.window?.performClose(nil)
-        case .showOperations: NSSound.beep()   // P1-38 shows the Operations panel
+        case .showOperations: context.showOperationsPanel()
         default: break
         }
     }

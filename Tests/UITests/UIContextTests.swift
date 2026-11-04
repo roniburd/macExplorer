@@ -11,10 +11,10 @@ final class UIContextTests: XCTestCase {
                     state: .running, progress: JobProgress(), origin: nil, startedAt: .now)
     }
 
-    func testInitInstallsBasicAlertInteraction() async throws {
+    func testInitInstallsInteractionRouter() async throws {   // P1-38 replaces BasicAlertInteraction
         let h = try await ShellHarness.make(self, start: false)
         let context = UIContext(environment: h.environment, options: h.context.options)
-        XCTAssertTrue(context.interaction is BasicAlertInteraction)
+        XCTAssertTrue(context.interaction is InteractionRouter)
         XCTAssertTrue(context.windows.windows.isEmpty)
         XCTAssertEqual(context.options, h.context.options)
         XCTAssertTrue(context.environment === h.environment)

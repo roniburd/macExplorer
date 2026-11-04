@@ -11,8 +11,8 @@ final class FileCommandController: CommandHandler {
     var prompts: any CommandPrompts = AppKitCommandPrompts()
     /// Set by SidebarViewController so F2 on a Folders-tree node renames inline there; nil → a name prompt.
     var beginSidebarRename: ((URL) -> Void)?
-    /// Commands whose UI arrives in a later task (P1-38 removes .showOperations).
-    static let pendingCommands: Set<Command> = [.showOperations]
+    /// Every command has its UI now.
+    static let pendingCommands: Set<Command> = []
 
     var environment: CoreEnvironment { context.environment }
     var session: BrowserSession? { window?.session }
