@@ -125,9 +125,18 @@ public final class Watcher: ContentWatching {
         }
         if state.withLock({ $0.stopped }) {
             Self.teardown(stream)            // stop() ran while we opened; its teardown block found nothing
-        } else {
-            self.stream = stream
+            return
         }
+        self.stream = stream
+        // The folder may have been moved or deleted after the read and before the stream existed. FSEvents does
+        // not reliably replay that to a stream whose root is already gone, so check it once the stream runs:
+        // later changes reach the stream, earlier ones are seen here.
+        if !Self.isDirectory(path), !state.withLock({ $0.stopped }) { handler(.rootChanged) }
+    }
+
+    private static func isDirectory(_ path: String) -> Bool {
+        var st = stat()
+        return stat(path, &st) == 0 && (st.st_mode & S_IFMT) == S_IFDIR
     }
 
     /// On `queue`.

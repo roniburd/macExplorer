@@ -415,6 +415,10 @@ final class SidebarTests: XCTestCase {
     func testTreeFollowsFileSystemChangesAndHiddenSetting() async throws {
         let h = try await SidebarHarness.make(self) { try $0.dir("a") }
         XCTAssertEqual(h.names(in: .folders), ["Macintosh HD", "a", "home", "USB"])
+        // The vnode sources open asynchronously on the watcher's queue: a change made before they are live is not
+        // reported (under parallel test load the open can trail the first read).
+        let tree = h.sidebar.tree
+        try await h.waitUntil("vnode sources open") { tree.watchedCount > 0 && tree.liveWatchCount == tree.watchedCount }
         try h.dir("new")
         try await h.waitUntil("vnode change shows up") { h.names(in: .folders) == ["Macintosh HD", "a", "home", "new", "USB"] }
         try h.dir(".hidden")

@@ -87,7 +87,7 @@ public actor LanePool {
                             return
                         }
                         let result = Result<T, any Error> { try work(LaneContext(job: job)) }
-                        if job.stalled.exchange(false, ordering: .acquiringAndReleasing) { job.onStall?(.resumed) }
+                        job.markFinished()
                         once.resume(result)
                     },
                     fail: { error in once.resume(.failure(error)) }
@@ -174,16 +174,15 @@ public actor LanePool {
             let job = entry.job
             let beat = job.lastBeat.load(ordering: .relaxed)
             guard beat != 0, entry.lane.runningJob === job, now &- beat >= limit else { continue }
-            guard !job.stalled.load(ordering: .relaxed) else { continue }
             switch job.policy {
             case .poison:
-                guard !job.everStalled.exchange(true, ordering: .relaxed) else { continue }
-                job.stalled.store(true, ordering: .relaxed)
-                poison(entry.lane)
-                job.onStall?(.stalled)
+                guard !job.everStalled.load(ordering: .relaxed) else { continue }
+                job.markStalled(.stalled) {
+                    job.everStalled.store(true, ordering: .relaxed)
+                    poison(entry.lane)
+                }
             case .awaitingPermission:
-                job.stalled.store(true, ordering: .relaxed)
-                job.onStall?(.waitingForPermission)
+                job.markStalled(.waitingForPermission)
             }
         }
         if active.isEmpty {

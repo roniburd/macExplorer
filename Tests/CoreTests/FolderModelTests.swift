@@ -181,6 +181,7 @@ final class FolderModelTests: XCTestCase {
 
     func testRetryAfterStallDiscardsTheOldGeneration() async throws {
         let w = try await FolderTestWorld.make(self)
+        w.pacer = ManualFramePacer()             // no frame elapses between the fresh batch and .completed
         let reads = ScriptedReads()
         let m = w.model(w.url(""))
         let log = FolderEventLog(m)

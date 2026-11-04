@@ -77,6 +77,21 @@ final class WatcherTests: XCTestCase {
         try await wait("rootChanged") { sink.all.contains(.rootChanged) }
     }
 
+    /// The model starts its watcher after the read; the folder can be renamed away before the stream opens, and
+    /// FSEvents does not reliably replay that rename to a stream whose root no longer exists (seen under load:
+    /// only HistoryDone arrives). The ID here is captured after the rename, so no replay can cover it.
+    func testRootGoneWhenTheStreamOpensIsRootChanged() async throws {
+        let dir = try sandbox.createDirectory("early")
+        try sandbox.rename("early", to: "moved-early")
+        try await Task.sleep(for: .milliseconds(500))           // the rename's event is assigned an ID before the capture
+        let since = Watcher.currentEventID()
+        let sink = WatchSink()
+        let watcher = Watcher(directory: dir, since: since, handler: sink.handler)
+        defer { watcher.stop() }
+        watcher.start()
+        try await wait("rootChanged", timeout: .seconds(5)) { sink.all.contains(.rootChanged) }
+    }
+
     func testStopEndsDelivery() async throws {
         let dir = try sandbox.createDirectory("s")
         let sink = WatchSink()

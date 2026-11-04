@@ -66,7 +66,7 @@ final class RunnerTests: XCTestCase {
         }
         let r = await ScenarioRunner.runOne(scenario, helper: nil, requireImages: true, keepSandbox: false)
         XCTAssertEqual(r.status, .failed)
-        XCTAssertFalse(ScenarioContext.isMounted(try XCTUnwrap(box.path)))
+        XCTAssertFalse(ScenarioContext.isMounted(try XCTUnwrap(box.path, "image never mounted: \(r.message ?? "-")")))
         XCTAssertTrue(r.sandboxRemoved, "a still-mounted image would block removal")
     }
 

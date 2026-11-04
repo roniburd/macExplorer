@@ -10,7 +10,7 @@ final class LaneJob: Sendable {
     let onStall: (@Sendable (StallNotice) -> Void)?
     let lastBeat = Atomic<UInt64>(0)          // DispatchTime uptime nanoseconds; 0 = not started
     let cancelled = Atomic<Bool>(false)
-    let stalled = Atomic<Bool>(false)         // a .stalled/.waitingForPermission notice is outstanding
+    private let stall = Mutex<StallState>(.running)
     let everStalled = Atomic<Bool>(false)     // .poison jobs report .stalled at most once
     let laneID = Atomic<UInt64>(0)
 
@@ -27,11 +27,37 @@ final class LaneJob: Sendable {
 
     func beat() {
         lastBeat.store(LaneJob.now(), ordering: .relaxed)
-        if stalled.exchange(false, ordering: .acquiringAndReleasing) {
+        stall.withLock { state in
+            guard state == .stalled else { return }
+            state = .running
             onStall?(.resumed)
         }
     }
+
+    /// Watchdog: a running job without a recent heartbeat. Runs `action` (e.g. poisoning the lane) and then
+    /// reports `notice`, both under the stall lock, so a job that already finished (or whose stall is still
+    /// outstanding) reports nothing. Returns whether the notice was sent.
+    @discardableResult
+    func markStalled(_ notice: StallNotice, action: () -> Void = {}) -> Bool {
+        stall.withLock { state in
+            guard state == .running else { return false }
+            state = .stalled
+            action()
+            onStall?(notice)
+            return true
+        }
+    }
+
+    /// Lane thread: the work returned. Reports .resumed if a stall notice is outstanding; no stall after this.
+    func markFinished() {
+        stall.withLock { state in
+            if state == .stalled { onStall?(.resumed) }
+            state = .finished
+        }
+    }
 }
+
+enum StallState: Sendable { case running, stalled, finished }
 
 public struct LaneContext: Sendable {
     let job: LaneJob
