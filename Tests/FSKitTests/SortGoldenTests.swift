@@ -42,6 +42,44 @@ final class SortGoldenTests: XCTestCase {
         XCTAssertEqual(key, [0, 0x61, 0x62, 1, 0x31, 0] + Array("Ab1".utf8))
     }
 
+    /// The ASCII fast path (no CFStringFold for pure-ASCII names, §4.4 key generation) must equal the Foundation
+    /// fold for every ASCII byte, alone and inside names, plus the NFC tie-break bytes.
+    func testAsciiFoldEqualsFoundationFold() {
+        let options: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive, .widthInsensitive]
+        let locale = Locale(identifier: "en_US_POSIX")
+        var names = (1..<128).map { String(UnicodeScalar(UInt8($0))) }
+        names += (1..<128).map { "Ab\(String(UnicodeScalar(UInt8($0))))Z09.TXT" }
+        names += ["IMG_0042.JPG", "Report 2026-11-03.pdf", "README", "a", "ZZ top", "file-000123.txt"]
+        for name in names {
+            XCTAssertEqual(SortKeys.searchFold(name), Array(name.folding(options: options, locale: locale).utf8), "searchFold \(name.debugDescription)")
+            XCTAssertEqual(SortKeys.nameKey(name, isFolder: false), referenceKey(name),
+                           "nameKey \(name.debugDescription)")
+        }
+    }
+
+    /// nameKey built only with Foundation calls (the pre-fast-path algorithm).
+    private func referenceKey(_ name: String) -> [UInt8] {
+        let folded = name.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+        var key: [UInt8] = [1]
+        var digits: [UInt8] = []
+        func flush() {
+            guard !digits.isEmpty else { return }
+            var start = 0
+            while start < digits.count - 1 && digits[start] == UInt8(ascii: "0") { start += 1 }
+            let run = digits[start...].prefix(255)
+            key.append(UInt8(run.count))
+            key.append(contentsOf: run)
+            digits.removeAll()
+        }
+        for byte in folded.utf8 {
+            if byte >= UInt8(ascii: "0") && byte <= UInt8(ascii: "9") { digits.append(byte) } else { flush(); key.append(byte) }
+        }
+        flush()
+        key.append(0)
+        key.append(contentsOf: name.precomposedStringWithCanonicalMapping.utf8)
+        return key
+    }
+
     func testSearchFold() {
         XCTAssertEqual(SortKeys.searchFold("Résumé"), Array("resume".utf8))
         XCTAssertEqual(SortKeys.searchFold("ＡＢＣ"), Array("abc".utf8))

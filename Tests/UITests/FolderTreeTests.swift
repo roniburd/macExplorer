@@ -60,6 +60,7 @@ final class FolderTreeTests: XCTestCase {
         XCTAssertEqual(tree.watchedCount, 1)
         XCTAssertEqual(names(tree.children(of: root)), ["a", "home"])
         let a = tree.children(of: root)[0]
+        try await h.waitUntil("vnode source open") { tree.liveWatchCount == 1 }
         try h.dir("new")
         try await h.waitUntil("vnode change re-reads") { self.names(tree.children(of: root)) == ["a", "home", "new"] }
         XCTAssertTrue(tree.children(of: root)[0] === a, "existing nodes survive the merge")

@@ -76,6 +76,7 @@ final class FolderTreeController {
     }
 
     var watchedCount: Int { watcher.count }
+    var liveWatchCount: Int { watcher.liveCount }
 
     // MARK: structure
 

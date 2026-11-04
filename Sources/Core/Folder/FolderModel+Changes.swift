@@ -27,8 +27,10 @@ extension FolderModel {
 
     /// Stats `names` on a lane outside the store queue, then enqueues the CPU-only patch. Results apply in completion
     /// order; for a name that a later-issued read also covers, only that later read's answer is applied.
-    func enqueuePatch(_ names: [String], renames: [LocalChange.Rename]) {
-        guard !names.isEmpty else { enqueue { [weak self] in self?.satisfyPending() }; return }
+    /// `then` runs on main after the patch was applied (or dropped for a re-read); never when a fresh load
+    /// replaced the epoch.
+    func enqueuePatch(_ names: [String], renames: [LocalChange.Rename], then: (@MainActor () -> Void)? = nil) {
+        guard !names.isEmpty else { enqueue { [weak self] in self?.satisfyPending(); then?() }; return }
         itemReadSeq += 1
         itemReadsInFlight += 1
         let seq = itemReadSeq, caseSensitive = self.caseSensitive
@@ -39,14 +41,15 @@ extension FolderModel {
             do { result = try await source(names, directory, generation) } catch { result = nil }
             guard let self, !self.closed, epoch == self.epoch else { return }
             let superseded = self.claimItemRead(names, seq: seq)
-            guard let result else { self.beginReread(); return }
-            guard !superseded.isEmpty else {
+            guard let result else { self.beginReread(); then?(); return }
+            if superseded.isEmpty {
                 self.enqueuePatchApply(result, names: names, renames: renames, epoch: epoch)
-                return
+            } else {
+                let current = names.filter { !superseded.contains(NameNormalizer.identityName($0, caseSensitive: caseSensitive)) }
+                self.enqueuePatchApply(result.dropping(superseded, caseSensitive: caseSensitive), names: current,
+                                       renames: renames, epoch: epoch)
             }
-            let current = names.filter { !superseded.contains(NameNormalizer.identityName($0, caseSensitive: caseSensitive)) }
-            self.enqueuePatchApply(result.dropping(superseded, caseSensitive: caseSensitive), names: current,
-                                   renames: renames, epoch: epoch)
+            if let then { self.enqueue { then() } }
         }
     }
 

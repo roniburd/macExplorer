@@ -29,6 +29,33 @@ public enum StoreDiff {
     /// subsequence kept in place), one `insert` (final indices), one `reload` (final indices). O(n log n).
     public static func diff(old: EntryStore, new: EntryStore) -> DiffResult {
         var match = matchIdentities(old: old, new: new)
+        return finish(old: old, new: new, match: &match, touched: nil)
+    }
+
+    /// Patch fast path (FolderWorker.patch): `new` was derived from `old` in place, so rows correspond by storage
+    /// index. `storageMap[i]` is the storage index in `new` of old storage index `i` (-1 = removed); only new
+    /// storage indices in `touched` (and replacements) can have changed content. Same result as `diff(old:new:)`
+    /// when every kept row keeps its identity, without hashing every identity of a 100k folder.
+    public static func diff(old: EntryStore, new: EntryStore, storageMap: [Int32], touched: Set<UInt32>) -> DiffResult {
+        precondition(storageMap.count == old.count, "StoreDiff: storageMap must cover every old storage index")
+        var newRow = [Int32](repeating: -1, count: new.count)
+        for p in 0..<new.visibleCount { newRow[Int(new.storageIndex(forRow: p))] = Int32(p) }
+        var match = Match(oldToNew: [Int](repeating: -1, count: old.visibleCount),
+                          newToOld: [Int](repeating: -1, count: new.visibleCount),
+                          replaced: [Bool](repeating: false, count: new.visibleCount))
+        for r in 0..<old.visibleCount {
+            let target = storageMap[Int(old.storageIndex(forRow: r))]
+            guard target >= 0 else { continue }
+            let p = Int(newRow[Int(target)])
+            guard p >= 0 else { continue }
+            match.oldToNew[r] = p
+            match.newToOld[p] = r
+        }
+        return finish(old: old, new: new, match: &match, touched: touched)
+    }
+
+    /// Replacements, removals, insertions, reloads (all matched rows, or only `touched` new storage indices) and moves.
+    private static func finish(old: EntryStore, new: EntryStore, match: inout Match, touched: Set<UInt32>?) -> DiffResult {
         let replacements = matchReplacements(old: old, new: new, match: &match)
 
         var removed = IndexSet(), inserted = IndexSet(), reloaded = IndexSet()
@@ -36,9 +63,10 @@ public enum StoreDiff {
         for p in 0..<new.visibleCount {
             let r = match.newToOld[p]
             if r < 0 { inserted.insert(p); continue }
-            if match.replaced[p] || !sameContent(old, old.storageIndex(forRow: r), new, new.storageIndex(forRow: p)) {
-                reloaded.insert(p)
-            }
+            let ni = new.storageIndex(forRow: p)
+            if match.replaced[p] { reloaded.insert(p); continue }
+            if let touched, !touched.contains(ni) { continue }
+            if !sameContent(old, old.storageIndex(forRow: r), new, ni) { reloaded.insert(p) }
         }
 
         var changes: [Change] = []

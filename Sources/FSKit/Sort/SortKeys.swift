@@ -9,7 +9,7 @@ public enum SortKeys {
     /// digit runs encoded as [len byte][digits without leading zeros] (tie-break on original run length)
     /// + 0x00 + unfolded NFC bytes.
     public static func nameKey(_ name: String, isFolder: Bool) -> [UInt8] {
-        let folded = name.folding(options: foldOptions, locale: foldLocale)
+        let folded = fold(name)
         var key: [UInt8] = [isFolder ? 0 : 1]
         key.reserveCapacity(folded.utf8.count * 2 + 4)
         var digits: [UInt8] = []
@@ -33,13 +33,33 @@ public enum SortKeys {
         flushDigits()
         key.append(0)
         // Tie-break: unfolded NFC bytes. For equal digit values the run with more leading zeros sorts first.
-        key.append(contentsOf: name.precomposedStringWithCanonicalMapping.utf8)
+        // (ASCII is already NFC.)
+        if isASCII(name) { key.append(contentsOf: name.utf8) } else { key.append(contentsOf: name.precomposedStringWithCanonicalMapping.utf8) }
         return key
     }
 
     /// Same fold, no digit encoding, no kind prefix.
     public static func searchFold(_ text: String) -> [UInt8] {
-        Array(text.folding(options: foldOptions, locale: foldLocale).utf8)
+        Array(fold(text).utf8)
+    }
+
+    /// The case|diacritic|width fold. Pure-ASCII text (most names) skips CFStringFold: for ASCII that fold is
+    /// exactly A–Z → a–z (pinned by SortGoldenTests.testAsciiFoldEqualsFoundationFold), and CFStringFold is the
+    /// dominant cost of 100k-entry key generation (§4.4).
+    static func fold(_ text: String) -> String {
+        guard isASCII(text) else { return text.folding(options: foldOptions, locale: foldLocale) }
+        var text = text
+        return text.withUTF8 { bytes in
+            String(unsafeUninitializedCapacity: bytes.count) { out in
+                for (i, b) in bytes.enumerated() { out[i] = b >= 0x41 && b <= 0x5A ? b | 0x20 : b }
+                return bytes.count
+            }
+        }
+    }
+
+    private static func isASCII(_ text: String) -> Bool {
+        var text = text
+        return text.withUTF8 { bytes in bytes.allSatisfy { $0 < 0x80 } }
     }
 
     /// Name keys for storage indices `range` of `store`, using concurrentPerform.

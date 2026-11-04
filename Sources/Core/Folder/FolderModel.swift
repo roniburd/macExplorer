@@ -84,6 +84,9 @@ public final class FolderModel {
 
     // Watcher (FolderModel+Watch)
     var watchBuffer = WatchBuffer()
+    /// Watcher patch coalescing (FolderModel+Watch): one patch in flight, later item events wait in `watchPending`.
+    var watchPatchInFlight = false
+    var watchPending = WatchBuffer()
     var relocated = false
 
     // The read in progress
@@ -336,6 +339,7 @@ public final class FolderModel {
     func resetItemReads() {
         latestItemRead = [:]
         itemReadsInFlight = 0
+        resetWatchPatches()
     }
 
     private func clearRows() {

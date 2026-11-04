@@ -11,6 +11,13 @@ struct WatchBuffer: Equatable {
 
     var isEmpty: Bool { names.isEmpty && !rescan && !rootChanged }
 
+    /// The buffered events, condensed (root change, else rescan, else the names).
+    var events: [WatchEvent] {
+        if rootChanged { return [.rootChanged] }
+        if rescan { return [.fullRescan] }
+        return names.isEmpty ? [] : [.items(names)]
+    }
+
     mutating func add(_ event: WatchEvent) {
         switch event {
         case .items(let new):
@@ -43,10 +50,34 @@ extension FolderModel {
 
     private func applyWatch(_ event: WatchEvent) {
         switch event {
-        case .items(let names): enqueuePatch(names, renames: [])
+        case .items(let names):
+            if watchPatchInFlight { watchPending.add(event) } else { startWatchPatch(names) }
         case .fullRescan: beginReread()
         case .rootChanged: checkRoot()
         }
+    }
+
+    /// FSEvents with NoDefer delivers a burst as many small deliveries, and every patch re-sorts and diffs the
+    /// whole folder. So at most one watcher patch runs; item events arriving meanwhile coalesce into one follow-up
+    /// patch, or one re-read past the incremental limit (§4.4 FSEvent → UI updated).
+    private func startWatchPatch(_ names: [String]) {
+        watchPatchInFlight = true
+        let epoch = self.epoch
+        enqueuePatch(names, renames: []) { [weak self] in self?.watchPatchDone(epoch: epoch) }
+    }
+
+    private func watchPatchDone(epoch: Int) {
+        guard epoch == self.epoch else { return }
+        let pending = watchPending
+        watchPending = WatchBuffer()
+        watchPatchInFlight = false
+        for event in pending.events { handleWatch(event) }
+    }
+
+    /// A fresh load re-reads everything: drop the coalescing state of the previous epoch.
+    func resetWatchPatches() {
+        watchPatchInFlight = false
+        watchPending = WatchBuffer()
     }
 
     /// After a fresh load completed: what the buffer gathered becomes one root check, one re-read or one patch.

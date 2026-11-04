@@ -11,7 +11,12 @@ public enum RowID: Hashable, Sendable {
 }
 
 public enum NameNormalizer {
-    public static func nfc(_ name: String) -> String { name.precomposedStringWithCanonicalMapping }
+    /// ASCII is already NFC: skipping the NSString bridge keeps 100k-row name scans (watcher patches) cheap.
+    public static func nfc(_ name: String) -> String {
+        var name = name
+        if name.withUTF8({ $0.allSatisfy { $0 < 0x80 } }) { return name }
+        return name.precomposedStringWithCanonicalMapping
+    }
 
     public static func identityName(_ name: String, caseSensitive: Bool) -> String {
         let n = nfc(name)

@@ -115,7 +115,7 @@ final class WatcherTests: XCTestCase {
         XCTAssertTrue(tree.watch(dir, isLocalVolume: true))
         XCTAssertTrue(tree.watch(dir, isLocalVolume: true), "watching twice is one source")
         XCTAssertEqual(tree.count, 1)
-        try await Task.sleep(for: .milliseconds(100))
+        try await wait("source open") { tree.liveCount == 1 }
         _ = try sandbox.createDirectory("tree/child")
         try await wait("tree change") { changed.contains(dir) }
         tree.unwatch(dir)

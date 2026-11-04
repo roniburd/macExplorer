@@ -32,6 +32,35 @@ final class SorterTests: XCTestCase {
         ("Tool.app", .package, 0, 400, []), ("c10.txt", .file, 20, 200, []), ("c9.txt", .file, 20, 250, []),
     ])
 
+    /// 100k-row re-sorts run in concurrent chunks (§4.4 < 30 ms); the result must equal the serial order
+    /// (two serial half-runs merged), for every field and direction, with hidden rows and ties. 40k rows is above
+    /// the 32,768-row concurrency threshold; each 20k half-run is below it.
+    func testParallelSortMatchesSerialOrder() {
+        var generator = SystemRandomNumberGenerator()
+        let rows: [(String, Kind, Int64, Int64, EntryFlags)] = (0..<40_000).map { i in
+            let stem = ["IMG_", "img_", "Report ", "report-", "a", "Ä"][i % 6]
+            let name = "\(stem)\(Int.random(in: 0..<5_000, using: &generator))-\(i)" + ["", ".txt", ".JPG", ".tar.gz"][i % 4]
+            let kind: Kind = i % 17 == 0 ? .directory : .file
+            return (name, kind, Int64(i % 50), Int64(i % 300), i % 23 == 0 ? .dotName : [])
+        }
+        let s = store(rows)
+        let keys = SortKeys.nameKeys(s, range: 0..<s.count)
+        let ext = SortKeys.extensionKeys(s, range: 0..<s.count)
+        let ranks = registry.kindRanks().ranks
+        for field in SortField.allCases {
+            for ascending in [true, false] {
+                for showHidden in [false, true] {
+                    let query = ViewQuery(sort: SortDescriptor(field: field, ascending: ascending), showHidden: showHidden)
+                    let parallel = Sorter.permutation(s, nameKeys: keys, searchKeys: nil, query: query, kindRanks: ranks, extensionKeys: ext)
+                    let a = Sorter.sortedRun(s, range: 0..<20_000, nameKeys: keys, searchKeys: nil, query: query, kindRanks: ranks, extensionKeys: ext)
+                    let b = Sorter.sortedRun(s, range: 20_000..<40_000, nameKeys: keys, searchKeys: nil, query: query, kindRanks: ranks, extensionKeys: ext)
+                    let serial = Sorter.merge(a, b, store: s, nameKeys: keys, query: query, kindRanks: ranks, extensionKeys: ext)
+                    XCTAssertEqual(parallel, serial, "\(field) ascending=\(ascending) showHidden=\(showHidden)")
+                }
+            }
+        }
+    }
+
     func testNameAscendingFoldersFirstHiddenExcluded() {
         XCTAssertEqual(names(sample, ViewQuery()), ["alpha", "zeta", "A.pdf", "b.txt", "c9.txt", "c10.txt", "Tool.app"])
     }

@@ -141,6 +141,7 @@ actor FolderWorker {
         var k = keys
         k.search = nil
         var present: [String: UInt32] = [:]          // identityName → upserted storage index
+        var touched = Set<UInt32>()                  // storage indices (before removal) whose content may change
         for i in 0..<result.batch.count {
             let name = result.batch.name(at: i), entry = result.batch.entries[i]
             let before = store.count
@@ -155,10 +156,12 @@ actor FolderWorker {
                 k.ext.replace(Int(index), with: extKey)
             }
             present[NameNormalizer.identityName(name, caseSensitive: caseSensitive)] = index
+            touched.insert(index)
         }
         for error in result.batch.errors where Int(error.index) < result.batch.count {
             if let index = present[NameNormalizer.identityName(result.batch.name(at: Int(error.index)), caseSensitive: caseSensitive)] {
                 store.setError(error.code, at: index)
+                touched.insert(index)
             }
         }
 
@@ -167,7 +170,15 @@ actor FolderWorker {
                                 uniquingKeysWith: { a, _ in a })
         var removed = Set<UInt32>()
         if !missing.isEmpty || !present.isEmpty || !failed.isEmpty {
+            // Cheap pre-filter: an ASCII name's identity name has its byte length, so ASCII rows whose length no
+            // target has cannot match (skips building and normalizing a String per row in 100k folders).
+            var lengths = Set<Int>()
+            for name in missing { lengths.insert(name.utf8.count) }
+            for name in present.keys { lengths.insert(name.utf8.count) }
+            for name in failed.keys { lengths.insert(name.utf8.count) }
             for i in 0..<UInt32(store.count) {
+                let skip = store.withNameBytes(i) { bytes in !lengths.contains(bytes.count) && bytes.allSatisfy { $0 < 0x80 } }
+                if skip { continue }
                 let name = NameNormalizer.identityName(store.name(i), caseSensitive: caseSensitive)
                 if missing.contains(name) {
                     removed.insert(i)
@@ -175,15 +186,34 @@ actor FolderWorker {
                     removed.insert(i)                // another identity held the name: replaced
                 } else if let code = failed[name] {
                     store.setError(code, at: i)
+                    touched.insert(i)
                 }
             }
+        }
+        // EntryStore.remove compacts in place: old storage index i moves down by the removed indices below it.
+        var storageMap = [Int32](repeating: -1, count: old.count)
+        var below: Int32 = 0
+        for i in 0..<store.count {
+            if removed.contains(UInt32(i)) { below += 1; continue }
+            if i < old.count { storageMap[i] = Int32(i) - below }
+        }
+        var touchedAfter = Set<UInt32>()
+        if !removed.isEmpty {
+            let sortedRemoved = removed.sorted()
+            for index in touched where !removed.contains(index) {
+                var lo = 0, hi = sortedRemoved.count
+                while lo < hi { let mid = (lo + hi) / 2; if sortedRemoved[mid] < index { lo = mid + 1 } else { hi = mid } }
+                touchedAfter.insert(index - UInt32(lo))
+            }
+        } else {
+            touchedAfter = touched
         }
         store.remove(removed)
         k.name.remove(removed)
         k.ext.remove(removed)
         store.setOrder(permutation(store, k, query))
         keys = k
-        let diff = StoreDiff.diff(old: old, new: store)
+        let diff = StoreDiff.diff(old: old, new: store, storageMap: storageMap, touched: touchedAfter)
         return PatchResult(store: store, diff: diff, tag: newTag())
     }
 

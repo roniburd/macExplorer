@@ -31,6 +31,9 @@ public final class TreeWatcher {
             if keep { s.resume() } else { s.cancel(); s.resume() }
         }
 
+        /// The vnode source is installed (changes from now on are reported).
+        var isLive: Bool { source.withLock { $0 != nil } }
+
         func cancel() {
             cancelled.withLock { $0 = true }
             source.withLock { s in
@@ -52,6 +55,10 @@ public final class TreeWatcher {
     }
 
     public var count: Int { nodes.count }
+
+    /// Watched nodes whose source is already open (`watch` opens it asynchronously on the private queue, so a
+    /// change made right after `watch` returns can predate the source). Tests wait on this instead of sleeping.
+    public var liveCount: Int { nodes.values.filter(\.isLive).count }
 
     /// false when over the cap or the volume is not local: caller re-reads on re-expand / window key.
     @discardableResult

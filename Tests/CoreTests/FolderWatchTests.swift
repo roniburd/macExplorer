@@ -78,6 +78,61 @@ final class FolderWatchTests: XCTestCase {
         XCTAssertEqual(reads.reads.count, 3)
     }
 
+    /// FSEvents (NoDefer) delivers a burst as many small deliveries; each patch re-sorts and diffs the whole
+    /// folder, so item events that arrive while a watcher patch is in flight coalesce into one follow-up patch
+    /// (§4.4 FSEvent → UI updated).
+    func testItemEventsDuringAPatchCoalesceIntoOneFollowUpPatch() async throws {
+        let w = try await FolderTestWorld.make(self)
+        try w.dir("co")
+        try w.file("co/a")
+        let m = try await w.open("co")
+        let gate = HoldGate()
+        defer { gate.open() }
+        var calls: [[String]] = []
+        m.itemSource = { names, _, generation in
+            calls.append(names)
+            if calls.count == 1 { await gate.wait() }
+            return ItemReadResult(batch: TestBatch.files(generation, names, firstID: UInt64(100 + calls.count * 10)), missing: [], errors: [:])
+        }
+        try watcher(w).send(.items(["b"]))
+        try await w.waitUntil("first patch in flight") { gate.waiting == 1 }
+        for name in ["c", "d", "c", "e"] { try watcher(w).send(.items([name])) }
+        await w.settle()
+        XCTAssertEqual(calls, [["b"]], "nothing else is read while the first patch is in flight")
+        gate.open()
+        try await w.waitUntil("all applied") { m.rowNames == ["a", "b", "c", "d", "e"] }
+        await w.settle()
+        XCTAssertEqual(calls, [["b"], ["c", "d", "e"]], "one follow-up patch for the coalesced names")
+    }
+
+    /// Coalesced names past the incremental limit become one full re-read instead of a giant patch.
+    func testCoalescedItemsPastTheLimitBecomeOneReread() async throws {
+        let w = try await FolderTestWorld.make(self)
+        try w.dir("cl")
+        try w.file("cl/a")
+        let m = try await w.open("cl")
+        let gate = HoldGate()
+        defer { gate.open() }
+        var calls = 0
+        m.itemSource = { names, _, generation in
+            calls += 1
+            if calls == 1 { await gate.wait() }
+            return ItemReadResult(batch: TestBatch.files(generation, names, firstID: 500), missing: [], errors: [:])
+        }
+        let reads = ScriptedReads()
+        m.readSource = reads.source()
+        try watcher(w).send(.items(["b"]))
+        try await w.waitUntil("first patch in flight") { gate.waiting == 1 }
+        for chunk in 0..<3 { try watcher(w).send(.items((0..<100).map { "n\(chunk)-\($0)" })) }
+        await w.settle()
+        XCTAssertEqual(reads.reads.count, 0)
+        gate.open()
+        try await w.waitUntil("one re-read") { reads.reads.count == 1 }
+        await w.settle()
+        XCTAssertEqual(calls, 1, "no item read for the coalesced names")
+        XCTAssertEqual(reads.reads.count, 1)
+    }
+
     func testFullRescansCoalesceToOneRereadPlusOnePending() async throws {
         let w = try await FolderTestWorld.make(self)
         try w.dir("rr")

@@ -183,11 +183,15 @@ final class MetricSuite {
                     return self.elapsedMs(since: start)
                 }))
             }
+            // FolderWorker maintains the extension column next to the name keys while loading, so a re-sort by
+            // extension never folds the store; measure the same work here.
+            let extensionKeys = SortKeys.extensionKeys(store, range: 0..<store.count)
             for field in SortField.allCases where wants("resort.\(field.rawValue)") {
                 let query = ViewQuery(sort: SortDescriptor(field: field, ascending: field != .name))
                 out.append(result("resort.\(field.rawValue)", try await samples {
                     let start = self.clock.now
-                    let p = Sorter.permutation(store, nameKeys: keys, searchKeys: nil, query: query, kindRanks: ranks)
+                    let p = Sorter.permutation(store, nameKeys: keys, searchKeys: nil, query: query, kindRanks: ranks,
+                                               extensionKeys: extensionKeys)
                     withExtendedLifetime(p) {}
                     return self.elapsedMs(since: start)
                 }))
