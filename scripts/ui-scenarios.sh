@@ -98,6 +98,14 @@ if [ "$APP_CODE" != 0 ] || [ "$title" != "macx-scenario-root" ]; then
   if [ "$REQUIRE_GUI" = 1 ]; then exit 1; fi
   echo "SKIP: UI scenarios need a logged-in GUI session (pass --require-gui to fail instead)"; exit 0
 fi
+# A locked screen still opens windows, but none can become key, so a collapsed toolbar search item never expands
+# and focus scenarios (filter-in-folder) fail for reasons unrelated to the app. Report it as an environment problem.
+if ioreg -n Root -d1 -a 2>/dev/null | plutil -extract IOConsoleUsers xml1 -o - - 2>/dev/null \
+    | grep -A1 CGSSessionScreenIsLocked | grep -q '<true/>'; then
+  echo "ui-scenarios: the screen is locked (windows cannot become key); unlock it and rerun"
+  if [ "$REQUIRE_GUI" = 1 ]; then exit 2; fi
+  echo "SKIP: UI scenarios need an unlocked GUI session (pass --require-gui to fail instead)"; exit 0
+fi
 
 names=()
 for f in "$SCEN_DIR"/*.json; do
