@@ -6,3 +6,4 @@
 bench-*.json
 .DS_Store
 brainstorm
+.claude/worktrees/
