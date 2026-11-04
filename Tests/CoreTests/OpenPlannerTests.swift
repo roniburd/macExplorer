@@ -207,6 +207,30 @@ final class OpenPlannerTests: XCTestCase {
         XCTAssertEqual(normalized(p), [.brokenLink(u("gone alias"))])
     }
 
+    // MARK: QA round 1: a link whose target can't be read is not broken
+
+    func testSymlinkIntoAnUnreadableFolderIsNotBroken() async throws {
+        try sandbox.createFile("denied/inner/x.txt")
+        let link = try sandbox.createSymlink("link-into-denied", target: "denied/inner")
+        try sandbox.createFile("denied/secret.txt")
+        let fileLink = try sandbox.createSymlink("link-to-secret", target: "denied/secret.txt")
+        try sandbox.setMode("denied", 0o000)
+        defer { try? sandbox.setMode("denied", 0o755) }
+        let p = await plan([OpenItem(url: link, kind: .symlink, isApplication: false)])
+        XCTAssertEqual(normalized(p), [.navigate(u("denied/inner"))], "the folder view then shows the permission state")
+        let q = await plan([OpenItem(url: fileLink, kind: .symlink, isApplication: false)])
+        XCTAssertFalse(q.actions.contains { if case .brokenLink = $0 { true } else { false } }, "\(q.actions)")
+    }
+
+    func testAliasIntoAnUnreadableFolderIsNotBroken() async throws {
+        try sandbox.createFile("denied/inner/x.txt")
+        let alias = try sandbox.createAlias("inner alias", to: "denied/inner")
+        try sandbox.setMode("denied", 0o000)
+        defer { try? sandbox.setMode("denied", 0o755) }
+        let p = await plan([OpenItem(url: alias, kind: .alias, isApplication: false)])
+        XCTAssertFalse(p.actions.contains { if case .brokenLink = $0 { true } else { false } }, "\(p.actions)")
+    }
+
     func testLinksInAMultipleSelection() async throws {
         try sandbox.createDirectory("real")
         try sandbox.createFile("t.txt")

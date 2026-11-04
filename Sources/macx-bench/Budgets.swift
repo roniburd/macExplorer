@@ -25,6 +25,8 @@ enum Budgets {
         var t: [Budget] = [
             Budget(metric: "firstBatch", sizes: nil, limit: 50, unit: "ms", spec: "§4.4 navigate → first rows painted < 50 ms"),
             Budget(metric: "listSorted", sizes: [100_000], limit: 250, unit: "ms", spec: "§4.4 100k entries fully listed + sorted < 250 ms"),
+            Budget(metric: "listSorted.busyMain", sizes: [100_000], limit: 250, unit: "ms",
+                   spec: "§4.4 100k entries fully listed + sorted < 250 ms, with the main actor as busy as in the app"),
             Budget(metric: "modelResort", sizes: [100_000], limit: 30, unit: "ms", spec: "§4.4 re-sort 100k by any column < 30 ms"),
             Budget(metric: "fsevent.incremental", sizes: nil, limit: 150, unit: "ms", spec: "§4.4 FSEvent → UI updated (incremental) < 150 ms"),
             Budget(metric: "fsevent.full", sizes: [100_000], limit: 400, unit: "ms", spec: "§4.4 FSEvent → UI updated (full re-read of 100k) < 400 ms"),

@@ -100,18 +100,25 @@ final class DragSourceController: NSObject, NSDraggingSource {
 
     func begin(event: NSEvent, rows: IndexSet, folder: FolderModel, view: NSView, rowFrame: (Int) -> NSRect, secondary: Bool) {
         let valid = rows.filteredIndexSet { $0 < folder.rowCount }
-        guard !valid.isEmpty, !isDragging else { return }
-        let urls = valid.map { folder.url(atRow: $0) }
+        guard !valid.isEmpty else { return }
+        let sample = Array(valid.prefix(5))
+        begin(event: event, urls: valid.map { folder.url(atRow: $0) }, typeIndices: sample.map { folder.entry(atRow: $0).typeIndex },
+              view: view, frame: { rowFrame(sample[$0]) }, secondary: secondary)
+    }
+
+    /// Any URLs (the sidebar's tree folders): `typeIndices` and `frame(i)` describe the first ≤ 5 of them.
+    func begin(event: NSEvent, urls: [URL], typeIndices: [UInt16], view: NSView, frame: (Int) -> NSRect, secondary: Bool) {
+        guard !urls.isEmpty, !isDragging else { return }
         pendingURLs = urls
         pendingSecondary = secondary
         isDragging = true
-        let sample = Array(valid.prefix(5))
+        let sample = Array(typeIndices.prefix(min(5, urls.count)))
         let scale = Double(view.window?.backingScaleFactor ?? 2)
-        let composite = DragImageComposer.image(icons: sample.map { icons.typeIcon(folder.entry(atRow: $0).typeIndex, points: 48, scale: scale) },
+        let composite = DragImageComposer.image(icons: sample.map { icons.typeIcon($0, points: 48, scale: scale) },
                                                 count: urls.count, scale: CGFloat(scale))
-        let items: [NSDraggingItem] = sample.enumerated().map { index, row in
+        let items: [NSDraggingItem] = sample.indices.map { index in
             let item = NSDraggingItem(pasteboardWriter: urls[index] as NSURL)
-            let origin = rowFrame(row).origin
+            let origin = frame(index).origin
             if index == 0 {
                 item.setDraggingFrame(NSRect(origin: origin, size: composite.size), contents: composite)
             } else {

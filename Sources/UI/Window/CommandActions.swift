@@ -37,11 +37,31 @@ enum CommandTarget {
         handler.perform(command, target: target, sender: sender)
     }
 
+    /// While a field editor (inline rename, address bar) is first responder, ⌘Z/⇧⌘Z belong to its typing (§6.6):
+    /// the view controller steps out of the chain for undo:/redo:, so NSWindow's undo: runs with the per-edit
+    /// manager from windowWillReturnUndoManager instead of the app-wide file-operation stack (QA round 1).
+    override nonisolated func responds(to aSelector: Selector!) -> Bool {
+        if let aSelector, Thread.isMainThread, ["undo:", "redo:"].contains(NSStringFromSelector(aSelector)),
+           MainActor.assumeIsolated({ MenuValidation.isFieldEditorActive(in: viewIfLoaded?.window) }) { return false }
+        return super.responds(to: aSelector)
+    }
+
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         guard let command = MenuValidation.command(for: menuItem.action) else { return false }
         // While a field editor (rename, address bar) is first responder, the colliding keys belong to it.
         if MenuValidation.blockedByFieldEditor(command, window: viewIfLoaded?.window) { return false }
         guard let handler, let target = commandTarget else { return false }
         return handler.canPerform(command, target: target)
+    }
+}
+
+/// The manager ⌘Z acts on from a command handler: the field editor's own while one is first responder (its
+/// typing, §6.6), else the app-wide file-operation stack.
+@MainActor enum UndoTarget {
+    static func manager(window: NSWindow?, fallback: UndoManager) -> UndoManager {
+        guard let window, MenuValidation.isFieldEditorActive(in: window), let manager = window.firstResponder?.undoManager else {
+            return fallback
+        }
+        return manager
     }
 }

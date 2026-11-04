@@ -271,4 +271,39 @@ final class InlineRenameTests: XCTestCase {
         try send(#selector(NSResponder.cancelOperation(_:)), rename)
         XCTAssertNil(browser.probeRenameText)
     }
+
+    // MARK: QA round 1: ⌘Z while renaming belongs to the field editor (§6.6)
+
+    func testUndoWhileRenamingUndoesTheTypingNotTheLastFileOperation() async throws {
+        let h = try await ContentTestHarness.make(self)
+        try h.file("a.txt"); try h.file("b.txt")
+        let controller = try await h.openBrowserWindow()
+        let content = try h.content(of: controller)
+        let folder = controller.session.folder
+        let a = try XCTUnwrap(folder.row(named: "a.txt"))
+        folder.select(.set(IndexSet(integer: a), cursor: a))
+        content.handler?.perform(.moveToTrash, target: .contentSelection(folder), sender: nil)
+        try await h.waitUntil("a.txt trashed") { !h.exists("a.txt") && h.environment.undo.canUndo }
+        try await h.waitUntil("a.txt gone from the list") { folder.row(named: "a.txt") == nil }
+        let rename = try beginRename(content, "b.txt")
+        let editor = try editor(rename)
+        XCTAssertTrue(controller.window?.firstResponder === editor)
+        XCTAssertFalse(content.responds(to: NSSelectorFromString("undo:")), "the window's undo: (field editor manager) decides")
+        XCTAssertFalse(content.responds(to: NSSelectorFromString("redo:")))
+        XCTAssertTrue(editor.tryToPerform(NSSelectorFromString("undo:"), with: nil))
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertFalse(h.exists("a.txt"), "responder chain: the trash was not undone while typing")
+        content.handler?.perform(.undo, target: .contentSelection(folder), sender: nil)
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertFalse(h.exists("a.txt"), "command handler: the trash was not undone while typing")
+        XCTAssertTrue(h.environment.undo.canUndo)
+        try type("q.txt", rename)
+        XCTAssertEqual(rename.currentText, "q.txt")
+        XCTAssertTrue(editor.tryToPerform(NSSelectorFromString("undo:"), with: nil))
+        XCTAssertEqual(rename.currentText, "b.txt", "the typing is undone")
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertFalse(h.exists("a.txt"))
+        rename.cancel()
+        XCTAssertTrue(content.responds(to: NSSelectorFromString("undo:")))
+    }
 }

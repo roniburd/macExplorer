@@ -60,9 +60,9 @@ pasteboard or your default apps. Each runner prints the sandbox roots it used an
 |---|---|
 | `swift test --parallel` | unit and integration tests (`FSKitTests`, `CoreTests`, `UITests`, `MacxFixturesTests`, `BenchTests`, `ScenarioRunnerTests`); GUI and `hdiutil` tests skip with a reason when unavailable |
 | `scripts/run-scenarios.sh [debug\|release]` | headless end-to-end Core scenarios: every file operation, conflicts, undo, watcher bursts, cross-volume moves on disk images, crash/kill recovery |
-| `scripts/ui-scenarios.sh` | the 21 scripted UI scenarios in `Tests/Scenarios/` driven inside the bundled app (needs a logged-in GUI session) |
+| `scripts/ui-scenarios.sh` | the 25 scripted UI scenarios in `Tests/Scenarios/` driven inside the bundled app (needs a logged-in GUI session) |
 | `scripts/ui-ax-smoke.sh` | optional Accessibility smoke through System Events; skips when the terminal lacks Accessibility permission |
-| `swift run -c release macx-bench` | 1k/10k/100k benchmarks, median and p90 as JSON; `--check-budgets` gates §4.4 on Apple Silicon, `--compare baseline.json` applies the CI relative gate |
+| `swift run -c release macx-bench` | 1k/10k/100k benchmarks (model level, plus `listSorted.busyMain` with the main actor as busy as in the app), median and p90 as JSON; `--check-budgets` gates §4.4 on Apple Silicon, `--compare baseline.json` applies the CI relative gate |
 | `scripts/check-layering.sh` | `MacxFS`/`Core` never import AppKit (except `Sources/Core/Platform`), layers only import downwards, fixtures never ship, tests never use global user state |
 | `scripts/verify-phase1.sh` | every gate above in one run, then checks that nothing was left behind |
 

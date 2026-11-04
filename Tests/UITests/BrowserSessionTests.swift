@@ -179,4 +179,65 @@ final class BrowserSessionTests: XCTestCase {
         XCTAssertEqual(events, 0)
         XCTAssertNotEqual(model.state, .complete)
     }
+
+    // MARK: QA round 1
+
+    func testEverySessionFollowsTheShowHiddenSetting() async throws {
+        let h = try await ShellHarness.make(self)
+        try h.file("top.txt"); try h.file(".dot")
+        h.environment.settings.showHidden = false
+        let one = try await makeSession(h), two = try await makeSession(h)
+        h.environment.settings.showHidden = true
+        try await h.waitUntil("both windows show hidden items") {
+            one.folder.query.showHidden && two.folder.query.showHidden && one.folder.rowCount == 2 && two.folder.rowCount == 2
+        }
+        h.environment.settings.showHidden = false
+        try await h.waitUntil("both windows hide them again") {
+            !one.folder.query.showHidden && !two.folder.query.showHidden && one.folder.rowCount == 1 && two.folder.rowCount == 1
+        }
+        one.navigate(to: h.url(""))
+        XCTAssertFalse(one.folder.query.showHidden, "a new model starts from the setting")
+    }
+
+    func testAPendingSelectionOfAnUnlistedNameIsDroppedWhenTheListingCompletes() async throws {
+        let h = try await ShellHarness.make(self)
+        try h.file("top.txt"); try h.file("other.txt"); try h.file(".dot")
+        h.environment.settings.showHidden = false
+        let session = try await makeSession(h)
+        session.navigate(to: h.url(""), selecting: ".dot")
+        try await h.waitUntil("listed") { session.folder.state == .complete && session.folder.rowCount == 2 }
+        let top = try XCTUnwrap(session.folder.row(named: "top.txt"))
+        session.folder.select(.set(IndexSet(integer: top), cursor: top))
+        var query = session.folder.query
+        query.showHidden = true
+        session.folder.setQuery(query)
+        try await h.waitUntil("hidden rows shown") { session.folder.rowCount == 3 }
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(session.folder.selectedURLs.map(\.lastPathComponent), ["top.txt"])
+    }
+
+    func testAPendingSelectionNeverFiresForAnItemCreatedLater() async throws {
+        let h = try await ShellHarness.make(self)
+        try h.file("a.txt")
+        let session = try await makeSession(h)
+        session.navigate(to: h.url(""), selecting: "later.txt")
+        try await h.waitUntil("listed") { session.folder.state == .complete }
+        try h.file("later.txt")
+        try await h.waitUntil("later.txt listed", timeout: .seconds(10)) { session.folder.row(named: "later.txt") != nil }
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(session.folder.selectedURLs, [])
+    }
+
+    func testAUserSelectionCancelsAPendingSelection() async throws {
+        let h = try await ShellHarness.make(self)
+        try h.file("a.txt")
+        let session = try await makeSession(h)
+        session.selectWhenListed("later.txt")
+        let row = try XCTUnwrap(session.folder.row(named: "a.txt"))
+        session.folder.select(.set(IndexSet(integer: row), cursor: row))
+        try h.file("later.txt")
+        try await h.waitUntil("later.txt listed", timeout: .seconds(10)) { session.folder.row(named: "later.txt") != nil }
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(session.folder.selectedURLs.map(\.lastPathComponent), ["a.txt"])
+    }
 }

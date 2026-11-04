@@ -9,11 +9,11 @@ int cfsk_parse_single(const void *buf, size_t used_len, cfsk_record *out);  /* c
 static void fill_attrlist(struct attrlist *al, int bulk) {
     memset(al, 0, sizeof *al);
     al->bitmapcount = ATTR_BIT_MAP_COUNT;
-    al->commonattr = ATTR_CMN_RETURNED_ATTRS | ATTR_CMN_NAME | ATTR_CMN_OBJTYPE | ATTR_CMN_FILEID |
+    al->commonattr = ATTR_CMN_RETURNED_ATTRS | ATTR_CMN_NAME | ATTR_CMN_DEVID | ATTR_CMN_OBJTYPE | ATTR_CMN_FILEID |
                      ATTR_CMN_MODTIME | ATTR_CMN_CRTIME | ATTR_CMN_FLAGS | ATTR_CMN_USERACCESS | ATTR_CMN_FNDRINFO;
     if (bulk) al->commonattr |= ATTR_CMN_ERROR;
     al->fileattr = ATTR_FILE_DATALENGTH | ATTR_FILE_ALLOCSIZE;
-    al->dirattr = ATTR_DIR_ENTRYCOUNT;
+    al->dirattr = ATTR_DIR_ENTRYCOUNT | ATTR_DIR_MOUNTSTATUS;
     al->forkattr = ATTR_CMNEXT_LINKID;
 }
 

@@ -344,6 +344,17 @@
         }
       }
     },
+    "'%@' is hidden (⇧⌘. shows hidden items)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "'%@' is hidden (⇧⌘. shows hidden items)"
+          }
+        }
+      }
+    },
     "'%@' is in use by another app." : {
       "extractionState" : "manual",
       "localizations" : {

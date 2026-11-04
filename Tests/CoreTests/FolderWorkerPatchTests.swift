@@ -34,6 +34,24 @@ final class FolderWorkerPatchTests: XCTestCase {
 
     private let names = (0..<200).map { "file-\($0).txt" }
 
+    /// QA round 1: two mount points re-read by a watcher patch. The readers give them no object ID (rowID 0, see
+    /// RecordConverter.directoryDevice), so they keep separate rows instead of one replacing the other.
+    func testTwoMountPointsPatchedTogetherKeepBothRows() async {
+        var old = EntryStore(identityMode: .objectID)
+        old.append(TestBatch.make(.initial, [TestBatch.Item(name: "romnt", id: 0, kind: .directory),
+                                              TestBatch.Item(name: "tiny", id: 0, kind: .directory),
+                                              TestBatch.Item(name: "small.txt", id: 30)]))
+        let keys = SortKeys.nameKeys(old, range: 0..<old.count)
+        old.setOrder(Sorter.permutation(old, nameKeys: keys, searchKeys: nil, query: ViewQuery(), kindRanks: types.kindRanks().ranks))
+        let worker = FolderWorker(types: types)
+        let patched = await worker.patch(old, tag: 0, result: result([TestBatch.Item(name: "romnt", id: 0, kind: .directory, size: 4),
+                                                                       TestBatch.Item(name: "tiny", id: 0, kind: .directory, size: 2)]),
+                                         query: ViewQuery(), caseSensitive: false)
+        let rows = (0..<patched.store.visibleCount).map { patched.store.name(patched.store.storageIndex(forRow: $0)) }
+        XCTAssertEqual(rows, ["romnt", "tiny", "small.txt"])
+        await check(old, result([TestBatch.Item(name: "romnt", id: 0, kind: .directory), TestBatch.Item(name: "tiny", id: 0, kind: .directory)]))
+    }
+
     func testInsertMatchesGeneralDiff() async {
         await check(loaded(names), result([TestBatch.Item(name: "file-50a.txt", id: 9_000)]))
     }

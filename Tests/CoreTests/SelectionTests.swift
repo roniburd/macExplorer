@@ -12,9 +12,11 @@ final class SelectionTests: XCTestCase {
         var space: SelectionRowSpace {
             let ids = self.ids
             return SelectionRowSpace(count: ids.count, identity: { ids[$0] }, row: { ids.firstIndex(of: $0) },
-                                     rowNamed: { name in
-                                         guard name.hasPrefix("r"), let n = Int(name.dropFirst()), n < ids.count else { return nil }
-                                         return n
+                                     rowsNamed: { names in
+                                         IndexSet(names.compactMap { name in
+                                             guard name.hasPrefix("r"), let n = Int(name.dropFirst()), n < ids.count else { return nil }
+                                             return n
+                                         })
                                      })
         }
     }

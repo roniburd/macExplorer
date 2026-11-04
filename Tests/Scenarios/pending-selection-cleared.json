@@ -1,0 +1,14 @@
+{"name": "pending-selection-cleared",
+ "fixture": {"files": ["top.txt", "other.txt", ".dot", ".hid/in.txt"], "dirs": [".hid"]},
+ "steps": [
+  {"key": "cmd+l"}, {"waitFor": {"editingAddress": true}},
+  {"type": ".dot"}, {"key": "return"}, {"sleepMs": 300},
+  {"expect": {"editingAddress": true, "folder": ""}},
+  {"key": "esc"}, {"waitFor": {"editingAddress": false}},
+  {"key": "cmd+l"}, {"waitFor": {"editingAddress": true}},
+  {"type": ".hid"}, {"key": "return"}, {"waitFor": {"folder": ".hid", "rows": ["in.txt"]}},
+  {"key": "cmd+up"}, {"waitFor": {"folder": "", "rowCount": 2}},
+  {"click": "top.txt"}, {"expect": {"selection": ["top.txt"]}},
+  {"key": "cmd+shift+."}, {"waitFor": {"rowCount": 4}}, {"sleepMs": 300},
+  {"expect": {"selection": ["top.txt"]}}
+ ]}

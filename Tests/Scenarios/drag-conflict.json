@@ -1,0 +1,7 @@
+{"name": "drag-conflict",
+ "fixture": {"files": ["a.txt", "dest/a.txt"], "dirs": ["dest"]},
+ "steps": [
+  {"drop": {"sources": ["a.txt"], "onto": "dest"}},
+  {"answerConflict": "keepBoth", "timeoutMs": 5000},
+  {"waitFor": {"filesExist": ["dest/a.txt", "dest/a 2.txt"], "filesAbsent": ["a.txt"], "sheetPresent": false}, "timeoutMs": 5000}
+ ]}

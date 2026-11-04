@@ -18,7 +18,7 @@ public enum FallbackReader {
             throw ReadFailure(code: code, stage: .open)
         }
         defer { closedir(dir) }
-        var converter = RecordConverter(types: types)
+        var converter = RecordConverter(types: types, directoryFD: fd)
         var accumulator = BatchAccumulator(batchSize: options.batchSize, interval: options.batchInterval)
         var batch = Batch(generation: generation)
         var buffer = [UInt8](repeating: 0, count: 2048)

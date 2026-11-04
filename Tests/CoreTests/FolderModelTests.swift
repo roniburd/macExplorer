@@ -3,6 +3,7 @@ import Darwin
 import Foundation
 import MacxFixtures
 @testable import MacxFS
+import Synchronization
 import XCTest
 
 /// FolderModel (§4.3) against real sandbox folders and scripted reads.
@@ -258,6 +259,41 @@ final class FolderModelTests: XCTestCase {
         XCTAssertEqual(log.resets, 3, "one final reset at complete")
         XCTAssertEqual(m.rowNames, ["a", "b", "c", "d", "e", "m", "n", "x", "y"])
         XCTAssertEqual(log.states, [.partial, .complete])
+    }
+
+    // MARK: QA round 1: a busy main actor must not hold up a large listing
+
+    func testTheReadStartsWhileTheMainActorIsStillBusy() async throws {
+        let w = try await FolderTestWorld.make(self)
+        let m = w.model(w.url(""))
+        let started = Mutex(false)
+        let (stream, continuation) = AsyncStream<ReadEvent>.makeStream()
+        m.readSource = { _, _, _ in
+            started.withLock { $0 = true }
+            return stream
+        }
+        m.start()
+        let deadline = ContinuousClock.now + .milliseconds(500)
+        while !started.withLock({ $0 }) && ContinuousClock.now < deadline {}   // main stays busy (a navigation turn)
+        XCTAssertTrue(started.withLock { $0 }, "the read began without waiting for the main actor")
+        continuation.finish()
+    }
+
+    func testLargeListingsPresentLessOftenThanEveryFrame() {
+        XCTAssertEqual(FolderModel.loadingPresentSpacing(rows: 10), .zero)
+        XCTAssertEqual(FolderModel.loadingPresentSpacing(rows: 4_999), .zero)
+        XCTAssertEqual(FolderModel.loadingPresentSpacing(rows: 100_000), .milliseconds(250))
+    }
+
+    func testTheWorkerIgnoresASupersededBegin() async {
+        let worker = FolderWorker(types: .shared)
+        let one = Generation.initial.next(), two = one.next()
+        await worker.begin(two, identityMode: .objectID, query: ViewQuery())
+        await worker.begin(one, identityMode: .objectID, query: ViewQuery())
+        let accepted = await worker.ingest(TestBatch.files(two, ["a"]))
+        XCTAssertTrue(accepted, "the newer listing is still the one being built")
+        let order = await worker.finishLoad(two, query: ViewQuery())
+        XCTAssertEqual(order?.order, [0])
     }
 
     func testSetQueryWhileLoadingAppliesToTheNextFrame() async throws {
@@ -543,6 +579,31 @@ final class FolderModelTests: XCTestCase {
         XCTAssertEqual(m.selectedNames, ["New Folder"])
         try await w.waitUntil("rename began") { !log.renames.isEmpty }
         XCTAssertEqual(log.renames, [0])
+    }
+
+    /// QA round 1: pasting ~10k items posts 10k selections; resolving them after a patch must not be O(names × rows).
+    func testTenThousandPendingSelectionsResolveQuickly() async throws {
+        let w = try await FolderTestWorld.make(self)
+        let reads = ScriptedReads()
+        let m = w.model(w.url(""))
+        m.readSource = reads.source()
+        m.start()
+        try await w.waitUntil("read started") { !reads.reads.isEmpty }
+        let names = (0..<10_000).map { String(format: "f%05d.txt", $0) }
+        reads.last.continuation.yield(.batch(TestBatch.files(reads.last.generation, names)))
+        reads.last.continuation.yield(.completed(ReadSummary(entryCount: names.count, degradedCount: 0, usedFallback: false, elapsed: .zero)))
+        try await w.waitUntil("complete") { m.state == .complete && m.rowCount == 10_000 }
+        let clock = ContinuousClock()
+        m.pendingSelect = names.reversed()
+        let start = clock.now
+        m.satisfyPending()
+        let elapsed = clock.now - start
+        XCTAssertEqual(m.selection.count, 10_000)
+        XCTAssertLessThan(elapsed, .milliseconds(250), "one pass over the store (debug build bound)")
+        let again = clock.now
+        m.select(.names(names))
+        XCTAssertLessThan(clock.now - again, .milliseconds(250), "select(.names) resolves in one pass too")
+        XCTAssertEqual(m.selection.count, 10_000)
     }
 
     func testLocalChangeArrivesThroughTheBusWithAnySpelling() async throws {

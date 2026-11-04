@@ -34,9 +34,11 @@ extension FileCommandController {
         case .densityRegular: settings.density = .regular
         case .densityComfortable: settings.density = .comfortable
         case .toggleHidden:
-            settings.showHidden.toggle()
+            // Flip what this window shows; every session (this one included) follows the setting.
+            let show = !session.folder.query.showHidden
+            settings.showHidden = show
             var query = session.folder.query
-            query.showHidden = settings.showHidden
+            query.showHidden = show
             session.folder.setQuery(query)
         case .toggleCommandBar: settings.commandBarVisible.toggle()
         case .sortByName: setSort(field: .name)

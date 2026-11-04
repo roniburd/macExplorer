@@ -26,7 +26,7 @@ public enum ItemReader {
             return result
         }
         defer { close(fd) }
-        var converter = RecordConverter(types: types)
+        var converter = RecordConverter(types: types, directoryFD: fd)
         var buffer = [UInt8](repeating: 0, count: 2048)
         for name in names {
             context?.heartbeat()

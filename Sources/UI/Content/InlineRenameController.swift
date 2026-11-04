@@ -36,6 +36,11 @@ enum RenameAdvance: Sendable { case none, next, previous }
 }
 
 final class RenameField: NSTextField {
+    /// Typing undo stays inside the edit (§6.6, QA round 1): AppKit's per-cell undo manager hands ⌘Z it can't
+    /// handle to this one, which is empty, never to the window's file-operation stack.
+    private let editingUndo = UndoManager()
+    override var undoManager: UndoManager? { editingUndo }
+
     init(frame: NSRect, multiline: Bool, font: NSFont) {
         super.init(frame: frame)
         self.font = font

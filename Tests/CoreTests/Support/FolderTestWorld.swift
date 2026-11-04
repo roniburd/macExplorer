@@ -79,7 +79,9 @@ final class ScriptedReads {
     func source() -> FolderModel.ReadSource {
         { [weak self] directory, generation, options in
             let (stream, continuation) = AsyncStream<ReadEvent>.makeStream()
-            self?.reads.append(Read(directory: directory, generation: generation, options: options, continuation: continuation))
+            await MainActor.run {
+                self?.reads.append(Read(directory: directory, generation: generation, options: options, continuation: continuation))
+            }
             return stream
         }
     }

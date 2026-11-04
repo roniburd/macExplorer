@@ -10,9 +10,18 @@ struct RecordConverter {
     static let VREG: UInt32 = 1, VDIR: UInt32 = 2, VLNK: UInt32 = 5
 
     let types: TypeRegistry
+    /// st_dev of the directory being read. A child reported on another device (a stat'ed mount point) or with
+    /// DIR_MNTSTATUS_MNTPOINT (a listed one) is a mount point: its file ID is the covered folder's in a listing
+    /// but the mounted volume's root (2 on every APFS/HFS+ volume) in a per-item read, so it gets no object
+    /// identity (rowID 0 → name identity) and two mount points never collide (QA round 1).
+    var directoryDevice: Int32?
     private var cache: [String: UInt16] = [:]   // "<d|f><ext>" → index; avoids the registry lock per entry
 
-    init(types: TypeRegistry) { self.types = types }
+    init(types: TypeRegistry, directoryFD: Int32? = nil) {
+        self.types = types
+        var st = stat()
+        if let directoryFD, fstat(directoryFD, &st) == 0 { directoryDevice = st.st_dev }
+    }
 
     /// Appends the record to `batch`. Returns false if it has no name (dropped).
     mutating func append(_ r: cfsk_record, to batch: inout Batch, directoriesOnly: Bool) -> (appended: Bool, degraded: Bool) {
@@ -59,7 +68,9 @@ struct RecordConverter {
         }
         if directoriesOnly && kind != .directory { return (false, false) }
         let fileID = has(CFSK_HAS_FILEID) ? r.file_id : 0
-        let rowID = has(CFSK_HAS_LINKID) && r.link_id != 0 ? r.link_id : fileID
+        let isMountPoint = (has(CFSK_HAS_MOUNTSTATUS) && r.mount_status & UInt32(DIR_MNTSTATUS_MNTPOINT) != 0)
+            || (has(CFSK_HAS_DEVID) && directoryDevice != nil && r.dev_id != directoryDevice)
+        let rowID = isMountPoint ? 0 : has(CFSK_HAS_LINKID) && r.link_id != 0 ? r.link_id : fileID
         let size: Int64 = isDir ? Int64(r.entry_count) : (has(CFSK_HAS_DATALENGTH) ? r.data_length : 0)
         let entry = Entry(rowID: rowID, fileID: fileID, size: size,
                           allocSize: has(CFSK_HAS_ALLOCSIZE) ? r.alloc_size : 0,

@@ -12,6 +12,8 @@ final class SidebarViewController: CommandHandlingViewController {
     let context: UIContext
     let session: BrowserSession
     let outlineView = SidebarOutlineView()
+    /// Right-drags from FOLDERS tree rows (§5.6).
+    private(set) lazy var dragSource = DragSourceController(icons: context.icons)
     let tree: FolderTreeController
     let favorites: SidebarFavoritesModel
     /// Locate… picks the new folder (tests replace it). Default: an NSOpenPanel sheet.
@@ -109,13 +111,16 @@ final class SidebarViewController: CommandHandlingViewController {
         outlineView.allowsMultipleSelection = false
         outlineView.setAccessibilityLabel(L10n.string("Sidebar"))
         outlineView.registerForDraggedTypes([Self.favoritePasteboardType] + DropTarget.acceptedTypes)
-        outlineView.setDraggingSourceOperationMask(.move, forLocal: true)
+        // Favorites reorder (.move); tree folders drag like files (copy/move/alias, the right-drag menu).
+        outlineView.setDraggingSourceOperationMask([.copy, .move, .link, .generic], forLocal: true)
+        outlineView.setDraggingSourceOperationMask([.copy, .move, .link, .generic], forLocal: false)
         outlineView.dataSource = self
         outlineView.delegate = self
         outlineView.target = self
         outlineView.action = #selector(rowClicked(_:))
         outlineView.onActivate = { [weak self] row in self?.activateRow(row) }
         outlineView.menuProvider = { [weak self] row in self?.menu(forRow: row) }
+        outlineView.onSecondaryDrag = { [weak self] row, event in self?.beginSecondaryDrag(row: row, event: event) }
         outlineView.keyHandler = { [weak self] event in
             guard let self else { return false }
             return KeyRouter.handle(event, focus: self.focusContext, returnKey: .open, from: self.outlineView)

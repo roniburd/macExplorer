@@ -85,6 +85,14 @@ public enum OpenPlanner {
                     actions.append(.openDocuments([]))
                 }
                 documents.append(url)
+            case .unreadable(let url):
+                // Its kind can't be known; as a folder it shows the permission state (and the Privacy fix).
+                if newWindow {
+                    actions.append(.openInNewWindow(url))
+                    windows += 1
+                } else {
+                    actions.append(.navigate(url))
+                }
             case .broken:
                 actions.append(.brokenLink(original))
             }
@@ -97,6 +105,8 @@ public enum OpenPlanner {
 /// What a link (or plain item) finally points at.
 enum LinkTarget: Sendable, Equatable {
     case folder(URL), application(URL), document(URL), broken
+    /// The chain reaches a path that exists as far as we can tell but can't be examined (EACCES/EPERM on the way).
+    case unreadable(URL)
 }
 
 /// Lane-only resolution of symlink and alias chains.
@@ -109,7 +119,9 @@ enum LinkResolver {
         for _ in 0..<maxHops {
             var st = stat()
             let path = current.path(percentEncoded: false)
-            guard lstat(path, &st) == 0 else { return .broken }
+            // Only a missing item is broken (QA round 1): EACCES/EPERM means a valid link into a folder we may not
+            // read, which must never get the "can't be found" / Delete prompt.
+            guard lstat(path, &st) == 0 else { return isPermission(errno) ? .unreadable(current) : .broken }
             switch st.st_mode & S_IFMT {
             case S_IFLNK:
                 guard let destination = try? FileManager.default.destinationOfSymbolicLink(atPath: path) else { return .broken }
@@ -121,8 +133,11 @@ enum LinkResolver {
                 if values?.isApplication == true { return .application(current) }
                 return values?.isPackage == true ? .document(current) : .folder(current)
             case S_IFREG where isAliasFile(current):
-                guard let target = try? URL(resolvingAliasFileAt: current, options: [.withoutUI, .withoutMounting]) else {
-                    return .broken
+                let target: URL
+                do {
+                    target = try URL(resolvingAliasFileAt: current, options: [.withoutUI, .withoutMounting])
+                } catch {
+                    return unresolvedAlias(current, error)
                 }
                 let next = target.standardizedFileURL
                 guard next != current else { return .broken }
@@ -132,6 +147,18 @@ enum LinkResolver {
             }
         }
         return .broken   // a loop or an absurdly long chain
+    }
+
+    static func isPermission(_ code: Int32) -> Bool { code == EACCES || code == EPERM }
+
+    /// An alias that can't be resolved is broken unless the recorded target is merely unreadable: then the path
+    /// stored in the alias is followed (it shows the permission state). The stored path is checked with lstat.
+    private static func unresolvedAlias(_ alias: URL, _ error: Error) -> LinkTarget {
+        guard let data = try? URL.bookmarkData(withContentsOf: alias),
+              let path = URL.resourceValues(forKeys: [.pathKey], fromBookmarkData: data)?.path else { return .broken }
+        var st = stat()
+        if lstat(path, &st) == 0 { return .broken }   // it is there yet won't resolve: let the user fix the alias
+        return isPermission(errno) ? .unreadable(URL(filePath: path).standardizedFileURL) : .broken
     }
 
     private static func isAliasFile(_ url: URL) -> Bool {

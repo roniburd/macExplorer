@@ -200,13 +200,13 @@ final class ContentViewController: CommandHandlingViewController {
             (self?.activeList as? InlineRenameHost)?.renameController?.currentText
         }
         controller.scenarioHooks.performDrop = { [weak self] sources, onto, modifiers, secondary, choice in
-            await self?.scenarioDrop(sources: sources, onto: onto, modifiers: modifiers, secondary: secondary, choice: choice)
+            self?.scenarioDrop(sources: sources, onto: onto, modifiers: modifiers, secondary: secondary, choice: choice)
         }
     }
 
     /// Scenario drop entry point (overview §3.14 ScenarioProbe.probePerformDrop). Drag sessions can't be synthesized
     /// in-process, so this runs the same DropPolicy → menu choice → job path as a real drop.
-    func scenarioDrop(sources: [URL], onto: String, modifiers: DragModifiers, secondary: Bool, choice: DragOperation?) async {
+    func scenarioDrop(sources: [URL], onto: String, modifiers: DragModifiers, secondary: Bool, choice: DragOperation?) {
         let folder = session.folder
         guard let destination = DropDestinationResolver.resolve(onto, folder: folder, favorites: context.environment.settings.favorites) else {
             return
@@ -214,7 +214,10 @@ final class ContentViewController: CommandHandlingViewController {
         let op = dropTarget.operation(sources: sources, destination: destination, modifiers: modifiers, secondary: secondary)
         let picked: DropChoice? = op == .menu ? DropChoice(menuChoice: choice) : DropChoice(operation: op)
         guard let picked, let kind = picked.jobKind(sources: sources, destination: destination) else { return }
-        _ = await context.environment.operations.perform(JobRequest(kind, origin: dropTarget.origin))
+        // Like DropTarget.run, the job is not awaited: a conflict or error it asks about is answered by a later
+        // step (answerConflict, answerAlert), which could never run while this step waited (QA round 1).
+        let request = JobRequest(kind, origin: dropTarget.origin), operations = context.environment.operations
+        Task { _ = await operations.perform(request) }
     }
 
     // MARK: context menus and clipboard (P1-35)

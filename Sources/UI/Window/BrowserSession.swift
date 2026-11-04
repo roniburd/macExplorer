@@ -17,7 +17,10 @@ final class BrowserSession {
 
     private let observers = Observers<SessionEvent>()
     private var folderToken: ObserverToken?
+    /// A name to select once it is listed (goUp, address-bar file, "selecting:"). Dropped when the first full
+    /// listing completes without it and on any other selection change, so it never fires later (QA round 1).
     private var pendingSelection: String?
+    private var settingsLoop: ObservationLoop?
     private var bannerText: String?
     private var closed = false
 
@@ -27,6 +30,9 @@ final class BrowserSession {
         self.history = NavigationHistory(current: initialURL)
         self.viewMode = environment.settings.viewMode
         attach(folder)
+        // Every window follows Settings.showHidden (⇧⌘. or the Settings window in any window, QA round 1).
+        settingsLoop = ObservationLoop({ [weak self] in _ = self?.environment.settings.showHidden },
+                                       onChange: { [weak self] in self?.applyShowHiddenSetting() })
     }
 
     /// Closes the previous model, opens `url`, and (optionally) records it in history.
@@ -89,6 +95,8 @@ final class BrowserSession {
     func close() {
         guard !closed else { return }
         closed = true
+        settingsLoop?.cancel()
+        settingsLoop = nil
         folderToken = nil
         folder.close()
     }
@@ -130,15 +138,34 @@ final class BrowserSession {
             }
         case .changes, .state:
             applyPendingSelection()
-        case .selection, .beginRename, .query:
+        case .selection:
+            pendingSelection = nil          // the user (or a file operation) chose a selection meanwhile
+        case .beginRename, .query:
             break
         }
     }
 
     private func applyPendingSelection() {
-        guard let name = pendingSelection, folder.row(named: name) != nil else { return }
+        guard let name = pendingSelection else { return }
+        guard folder.row(named: name) != nil else {
+            // The full listing doesn't show it (hidden, gone): forget it rather than select it out of nowhere later.
+            switch folder.state {
+            case .complete, .error: pendingSelection = nil
+            case .loading, .partial, .unresponsive, .waitingForPermission: break
+            }
+            return
+        }
         pendingSelection = nil
         folder.select(.names([name]))
+    }
+
+    private func applyShowHiddenSetting() {
+        guard !closed else { return }
+        let wanted = environment.settings.showHidden
+        guard folder.query.showHidden != wanted else { return }
+        var query = folder.query
+        query.showHidden = wanted
+        folder.setQuery(query)
     }
 
     private func showBanner(_ text: String?) {

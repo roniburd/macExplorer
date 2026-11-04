@@ -46,6 +46,23 @@ public struct EntryStore: Sendable {
         return nil
     }
 
+    /// One pass for many names (QA round 1: 10k pasted items must not cost names × entries normalizations):
+    /// each given name that is present maps to its first storage index (firstIndex(named:) semantics, hidden rows
+    /// included). Stops scanning once every name was found. O(n + names).
+    public func firstIndices(named wantedNames: [String], caseSensitive: Bool) -> [String: UInt32] {
+        guard !wantedNames.isEmpty else { return [:] }
+        var wanted: [String: [String]] = [:]
+        for name in wantedNames { wanted[NameNormalizer.identityName(name, caseSensitive: caseSensitive), default: []].append(name) }
+        var found: [String: UInt32] = [:]
+        for i in entries.indices {
+            let key = NameNormalizer.identityName(self.name(UInt32(i)), caseSensitive: caseSensitive)
+            guard let originals = wanted.removeValue(forKey: key) else { continue }
+            for original in originals { found[original] = UInt32(i) }
+            if wanted.isEmpty { break }
+        }
+        return found
+    }
+
     public func errno(_ index: UInt32) -> Int32? { errors[index] }
 
     // MARK: Display-row access

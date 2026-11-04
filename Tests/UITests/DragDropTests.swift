@@ -189,4 +189,28 @@ final class DragDropTests: XCTestCase {
         try await h.waitUntil("copied by the probe") { h.exists("sub/a.txt") }
         XCTAssertTrue(h.exists("a.txt"))
     }
+
+    /// Answers conflicts only after `delay`, like a user looking at the sheet.
+    private final class SlowInteraction: FileOpInteraction {
+        let inner = ScriptedInteraction(conflicts: [.one(.keepBoth)])
+        func resolveConflict(_ conflict: ConflictInfo, job: JobSnapshot) async -> ConflictResolution {
+            try? await Task.sleep(for: .seconds(2))
+            return await inner.resolveConflict(conflict, job: job)
+        }
+        func resolveError(_ error: FileOpError, job: JobSnapshot) async -> ErrorResolution { .skip }
+        func confirmInsufficientSpace(_ shortfall: SpaceShortfall, job: JobSnapshot) async -> Bool { false }
+        func confirmPermanentDeleteWithoutTrash(_ urls: [URL], job: JobSnapshot) async -> Bool { false }
+    }
+
+    /// QA round 1: the scenario drop step returns once the job is started, so a later answerConflict step can run.
+    func testScenarioDropReturnsWhileTheJobAsksAQuestion() async throws {
+        let h = try await ContentTestHarness.make(self)
+        try h.file("a.txt"); try h.file("sub/a.txt")
+        h.environment.interaction.setTarget(SlowInteraction())
+        let browser = try await h.openBrowserWindow()
+        let clock = ContinuousClock(), started = clock.now
+        await browser.probePerformDrop(sources: [h.url("a.txt")], onto: "sub", modifiers: [], secondary: false, menuChoice: nil)
+        XCTAssertLessThan(clock.now - started, .seconds(1), "the drop step did not wait for the conflict answer")
+        try await h.waitUntil("kept both", timeout: .seconds(10)) { h.exists("sub/a 2.txt") && !h.exists("a.txt") }
+    }
 }

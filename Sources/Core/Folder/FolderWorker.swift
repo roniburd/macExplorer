@@ -56,9 +56,14 @@ actor FolderWorker {
     // MARK: Loading and re-reads
 
     /// Starts collecting the batches of read `generation` (replacing any read in progress).
+    /// Starts a listing. Fresh loads call this from a detached task, so a superseded load's call can arrive after
+    /// a newer one: begins older than the newest seen are ignored.
     func begin(_ generation: Generation, identityMode: IdentityMode, query: ViewQuery) {
+        if let newest = newestBegun, generation < newest { return }
+        newestBegun = generation
         building = Building(generation: generation, store: EntryStore(identityMode: identityMode), query: query)
     }
+    private var newestBegun: Generation?
 
     /// Drops the read in progress (navigation, close, retry).
     func cancel() { building = nil }

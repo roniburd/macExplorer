@@ -75,8 +75,9 @@ extension FolderModel {
         guard !closed, epoch == self.epoch, state == .complete else { return }
         if rereadInFlight { namesPatchedDuringReread.formUnion(names) }
         let old = store, caseSensitive = self.caseSensitive
+        let sources = old.firstIndices(named: renames.map(\.from), caseSensitive: caseSensitive)
         let carrying: [(RowID, String)] = renames.compactMap { rename in
-            old.firstIndex(named: rename.from, caseSensitive: caseSensitive).map { (old.identity($0), rename.to) }
+            sources[rename.from].map { (old.identity($0), rename.to) }
         }
         let patched = await worker.patch(old, tag: keysTag, result: result, query: query, caseSensitive: caseSensitive)
         guard !closed, epoch == self.epoch else { return }
@@ -88,8 +89,9 @@ extension FolderModel {
     /// Selects names posted with `select` and begins the posted inline rename once those items are displayed.
     func satisfyPending() {
         if !pendingSelect.isEmpty {
-            let present = pendingSelect.filter { row(named: $0) != nil }
-            if !present.isEmpty { select(.names(present)) }
+            // One pass over the store for every pending name (QA round 1: 10k pasted items), not one per name.
+            let present = rows(named: pendingSelect)
+            if !present.isEmpty { select(.set(present, cursor: nil)) }
         }
         if let name = pendingRename, let row = row(named: name) {
             pendingRename = nil

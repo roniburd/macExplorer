@@ -320,4 +320,36 @@ final class PropertiesViewModelTests: XCTestCase {
         XCTAssertEqual(PropertiesWindowController.openControllers(for: h.context).count, 1)
         XCTAssertFalse(PropertiesWindowController.answersErrorsInline(OriginID(raw: window.windowNumber)))
     }
+
+    // MARK: QA round 1: every tab of a plain file has a visible entry point
+
+    private func segmentedControls(in view: NSView) -> [NSSegmentedControl] {
+        ((view as? NSSegmentedControl).map { [$0] } ?? []) + view.subviews.flatMap { segmentedControls(in: $0) }
+    }
+
+    func testEveryTabOfAPlainFileIsReachableInTheContentArea() async throws {
+        try ContentTestHarness.requireWindowServer()
+        let h = try await ContentTestHarness.make(self)
+        try h.file("a.txt")
+        let controller = try XCTUnwrap(PropertiesWindowController.controller(for: .items([h.url("a.txt")]), context: h.context,
+                                                                             activate: false))
+        defer { controller.close() }
+        try await h.waitUntil("loaded") { controller.model.content != .loading }
+        XCTAssertEqual(PropertiesTab.tabs(showsOpensWith: controller.model.showsOpensWith), [.general, .permissions, .opensWith, .details])
+        let window = try XCTUnwrap(controller.window)
+        let root = try XCTUnwrap(window.contentView)
+        var bar: NSSegmentedControl?
+        try await h.waitUntil("tab bar laid out") {
+            root.layoutSubtreeIfNeeded()
+            bar = segmentedControls(in: root).first
+            return bar != nil
+        }
+        let tabs = try XCTUnwrap(bar)
+        XCTAssertEqual((0..<tabs.segmentCount).map { tabs.label(forSegment: $0) ?? "" }, ["General", "Permissions", "Opens with", "Details"])
+        XCTAssertLessThanOrEqual(tabs.fittingSize.width, root.bounds.width, "the bar fits the window; nothing overflows")
+        XCTAssertTrue(window.toolbar?.items.isEmpty ?? true, "no tabs moved into the toolbar")
+        XCTAssertEqual(PropertiesTab.tabs(showsOpensWith: false), [.general, .permissions, .details])
+        XCTAssertEqual(PropertiesTab.next(after: .details, in: [.general, .permissions, .details]), .general)
+        XCTAssertEqual(PropertiesTab.next(after: .general, in: [.general, .permissions, .details], forward: false), .details)
+    }
 }

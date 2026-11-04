@@ -176,4 +176,31 @@ final class EntryStoreTests: XCTestCase {
         XCTAssertFalse(NameNormalizer.sameName("ABC", "abc", caseSensitive: true))
         XCTAssertEqual(Array(NameNormalizer.nfc("Cafe\u{301}").unicodeScalars), Array("Caf\u{E9}".unicodeScalars))
     }
+
+    // MARK: QA round 1: bulk name lookup
+
+    func testFirstIndicesNamedResolvesManyNamesInOnePass() {
+        var store = EntryStore(identityMode: .objectID)
+        store.append(makeBatch([("a.txt", makeEntry(1)), ("Résumé", makeEntry(2)), ("B.TXT", makeEntry(3)), ("b.txt", makeEntry(4))]))
+        let nfd = "Re\u{301}sume\u{301}"
+        XCTAssertEqual(store.firstIndices(named: ["a.txt", nfd, "b.txt", "missing"], caseSensitive: false),
+                       ["a.txt": 0, nfd: 1, "b.txt": 2])
+        XCTAssertEqual(store.firstIndices(named: ["b.txt", "B.TXT"], caseSensitive: true), ["b.txt": 3, "B.TXT": 2])
+        XCTAssertEqual(store.firstIndices(named: [], caseSensitive: false), [:])
+    }
+
+    func testFirstIndicesNamedIsLinear() {
+        var store = EntryStore(identityMode: .objectID)
+        let names = (0..<10_000).map { String(format: "f%05d.txt", $0) }
+        store.append(makeBatch(names.enumerated().map { ($0.element, makeEntry(UInt64($0.offset + 1))) }))
+        let clock = ContinuousClock()
+        var best = Duration.seconds(100)
+        for _ in 0..<3 {
+            let start = clock.now
+            let found = store.firstIndices(named: names.reversed(), caseSensitive: false)
+            best = min(best, clock.now - start)
+            XCTAssertEqual(found.count, 10_000)
+        }
+        XCTAssertLessThan(best, .milliseconds(100), "10k names against 10k entries (debug build bound)")
+    }
 }

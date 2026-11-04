@@ -69,6 +69,12 @@ static int parse_record(const uint8_t *start, uint32_t len, int has_error_field,
         out->name_len = n;
         out->fields |= CFSK_HAS_NAME;
     }
+    if (set.commonattr & ATTR_CMN_DEVID) {
+        dev_t d;
+        if (!take(&r, &d, sizeof d)) return CFSK_NEXT_DROPPED;
+        out->dev_id = (int32_t)d;
+        out->fields |= CFSK_HAS_DEVID;
+    }
     if (set.commonattr & ATTR_CMN_OBJTYPE) {
         fsobj_type_t t;
         if (!take(&r, &t, sizeof t)) return CFSK_NEXT_DROPPED;
@@ -119,6 +125,12 @@ static int parse_record(const uint8_t *start, uint32_t len, int has_error_field,
         if (!take(&r, &n, sizeof n)) return CFSK_NEXT_DROPPED;
         out->entry_count = n;
         out->fields |= CFSK_HAS_ENTRYCOUNT;
+    }
+    if (set.dirattr & ATTR_DIR_MOUNTSTATUS) {
+        uint32_t m;
+        if (!take(&r, &m, sizeof m)) return CFSK_NEXT_DROPPED;
+        out->mount_status = m;
+        out->fields |= CFSK_HAS_MOUNTSTATUS;
     }
     if (set.fileattr & ATTR_FILE_ALLOCSIZE) {
         off_t v;

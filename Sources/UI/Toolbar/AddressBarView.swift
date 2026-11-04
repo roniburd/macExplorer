@@ -56,6 +56,7 @@ final class AddressBarView: NSView {
             editToken += 1
             setError(nil)
             editField.resetSuggestions()
+            editField.resetUndo()
             editField.stringValue = BreadcrumbPath.posixPath(url)
             breadcrumb.isHidden = true
             editField.isHidden = false
@@ -82,6 +83,9 @@ final class AddressBarView: NSView {
         switch result {
         case .folder(let url):
             complete(url, selecting: nil, recent: url)
+        case .file(_, let name) where name.hasPrefix(".") && !environment.settings.showHidden:
+            // It would be listed but not shown, so nothing could be selected: say why instead (QA round 1).
+            setError(String(format: L10n.string("'%@' is hidden (⇧⌘. shows hidden items)"), name))
         case .file(let parent, let name):
             complete(parent, selecting: name, recent: parent)
         case .notFound(let input):

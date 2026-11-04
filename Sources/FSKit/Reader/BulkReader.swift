@@ -34,7 +34,7 @@ public enum BulkReader {
         let size = max(options.bufferSize, 4096)
         let buffer = UnsafeMutableRawPointer.allocate(byteCount: size, alignment: 16)
         defer { buffer.deallocate() }
-        var converter = RecordConverter(types: types)
+        var converter = RecordConverter(types: types, directoryFD: fd)
         var accumulator = BatchAccumulator(batchSize: options.batchSize, interval: options.batchInterval)
         var batch = Batch(generation: generation)
         var total = 0, degraded = 0

@@ -103,11 +103,32 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
 
     // MARK: drag and drop (§5.4: drag folders between favorites to add them, drag favorites to reorder)
 
+    /// User favorites drag to reorder (a private id, never a file); FOLDERS tree nodes drag as their folder's file
+    /// URL, like Explorer's navigation pane (QA round 1). Volume roots, Locations and default favorites don't drag.
     func outlineView(_ outlineView: NSOutlineView, pasteboardWriterForItem item: Any) -> (any NSPasteboardWriting)? {
-        guard case .favorite(let favorite)? = item as? SidebarItem, favorite.defaultKind == nil else { return nil }
-        let writer = NSPasteboardItem()
-        writer.setString(favorite.id.uuidString, forType: Self.favoritePasteboardType)
-        return writer
+        switch item as? SidebarItem {
+        case .favorite(let favorite)? where favorite.defaultKind == nil:
+            let writer = NSPasteboardItem()
+            writer.setString(favorite.id.uuidString, forType: Self.favoritePasteboardType)
+            return writer
+        case .folder(let node)? where !node.isRoot:
+            return node.url as NSURL
+        default:
+            return nil
+        }
+    }
+
+    /// What a right-drag from `row` carries: a tree folder's URL; nil for every other row.
+    func secondaryDragURL(row: Int) -> URL? {
+        guard case .folder(let node)? = item(atRow: row), !node.isRoot else { return nil }
+        return node.url
+    }
+
+    /// §5.6 right-drag from the tree: a secondary drag (the drop shows Copy/Move/Alias/Symlink/Cancel).
+    func beginSecondaryDrag(row: Int, event: NSEvent) {
+        guard let url = secondaryDragURL(row: row) else { return }
+        dragSource.begin(event: event, urls: [url], typeIndices: [TypeRegistry.folderIndex], view: outlineView,
+                         frame: { [outlineView] _ in outlineView.rect(ofRow: row) }, secondary: true)
     }
 
     func outlineView(_ outlineView: NSOutlineView, validateDrop info: any NSDraggingInfo, proposedItem item: Any?,

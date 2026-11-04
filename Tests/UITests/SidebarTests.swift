@@ -113,6 +113,49 @@ final class SidebarTests: XCTestCase {
         XCTAssertEqual(writer.string(forType: SidebarViewController.favoritePasteboardType), h.settings.favorites[0].id.uuidString)
     }
 
+    // MARK: QA round 1: tree folders drag (left and right) like Explorer's navigation pane
+
+    func testTreeFoldersDragAsFileURLs() async throws {
+        let h = try await SidebarHarness.make(self) { try $0.dir("a/b") }
+        let row = h.row(named: "a", in: .folders)
+        let item = try XCTUnwrap(h.sidebar.item(atRow: row))
+        let writer = try XCTUnwrap(h.sidebar.outlineView(h.outline, pasteboardWriterForItem: h.sidebar.box(item)) as? NSURL)
+        XCTAssertEqual((writer as URL).standardizedFileURL.path, h.url("a").standardizedFileURL.path)
+        XCTAssertNil(h.sidebar.outlineView(h.outline, pasteboardWriterForItem: h.sidebar.box(.foldersHeader)))
+        let root = try XCTUnwrap(h.rows(in: .folders).first { if case .folder(let n) = $0 { n.isRoot } else { false } })
+        XCTAssertNil(h.sidebar.outlineView(h.outline, pasteboardWriterForItem: h.sidebar.box(root)), "a volume root never drags")
+        XCTAssertEqual(h.sidebar.secondaryDragURL(row: row)?.lastPathComponent, "a")
+        XCTAssertNil(h.sidebar.secondaryDragURL(row: h.row(named: "Home", in: .favorites)))
+    }
+
+    private func rightEvent(_ type: NSEvent.EventType, at point: NSPoint, window: NSWindow?) throws -> NSEvent {
+        try XCTUnwrap(NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: 0,
+                                         windowNumber: window?.windowNumber ?? 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+    }
+
+    func testRightDragInTheTreeStartsASecondaryDragAndARightClickShowsTheMenu() async throws {
+        let h = try await SidebarHarness.make(self) { try $0.dir("a") }
+        let row = h.row(named: "a", in: .folders)
+        XCTAssertNotNil(h.outline.onSecondaryDrag, "wired to the sidebar's drag source")
+        var drags: [Int] = [], menus = 0
+        h.outline.onSecondaryDrag = { row, _ in drags.append(row) }
+        h.outline.presentMenu = { _, _, _ in menus += 1 }
+        let rect = h.outline.rect(ofRow: row)
+        let start = h.outline.convert(NSPoint(x: rect.midX, y: rect.midY), to: nil)
+        let window = h.outline.window
+        h.outline.rightMouseDown(with: try rightEvent(.rightMouseDown, at: start, window: window))
+        h.outline.rightMouseDragged(with: try rightEvent(.rightMouseDragged, at: NSPoint(x: start.x + 1, y: start.y), window: window))
+        XCTAssertEqual(drags, [], "below the threshold nothing starts")
+        h.outline.rightMouseDragged(with: try rightEvent(.rightMouseDragged, at: NSPoint(x: start.x + 12, y: start.y), window: window))
+        h.outline.rightMouseUp(with: try rightEvent(.rightMouseUp, at: NSPoint(x: start.x + 12, y: start.y), window: window))
+        XCTAssertEqual(drags, [row])
+        XCTAssertEqual(menus, 0, "a drag shows no menu")
+        h.outline.rightMouseDown(with: try rightEvent(.rightMouseDown, at: start, window: window))
+        h.outline.rightMouseUp(with: try rightEvent(.rightMouseUp, at: start, window: window))
+        XCTAssertEqual(menus, 1, "a right-click without moving shows the row menu")
+        XCTAssertEqual(drags, [row])
+    }
+
     func testStaleFavoriteIsDimmedOffersLocateAndCanBeRelocated() async throws {
         let h = try await SidebarHarness.make(self) { h in try h.dir("old"); try h.dir("new") }
         await h.sidebar.addFavorites([h.url("old")], atChildIndex: 1)

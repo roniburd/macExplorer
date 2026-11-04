@@ -1,0 +1,14 @@
+{"name": "undo-while-renaming",
+ "fixture": {"files": ["a.txt", "b.txt"], "dirs": []},
+ "steps": [
+  {"click": "a.txt"}, {"key": "cmd+delete"}, {"waitFor": {"rows": ["b.txt"], "filesAbsent": ["a.txt"]}},
+  {"click": "b.txt"}, {"key": "f2"}, {"waitFor": {"renameText": "b.txt"}},
+  {"key": "cmd+z"}, {"sleepMs": 500}, {"expect": {"filesAbsent": ["a.txt"], "renameText": "b.txt"}},
+  {"type": "q"}, {"waitFor": {"renameText": "q.txt"}},
+  {"key": "cmd+z"}, {"sleepMs": 500}, {"expect": {"filesAbsent": ["a.txt"], "renameText": "b.txt"}},
+  {"key": "esc"}, {"waitFor": {"rows": ["b.txt"]}},
+  {"key": "cmd+l"}, {"waitFor": {"editingAddress": true}},
+  {"key": "cmd+z"}, {"sleepMs": 500}, {"expect": {"filesAbsent": ["a.txt"]}},
+  {"key": "esc"}, {"waitFor": {"editingAddress": false}},
+  {"key": "cmd+z"}, {"waitFor": {"filesExist": ["a.txt"]}, "timeoutMs": 5000}
+ ]}

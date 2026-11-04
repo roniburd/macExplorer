@@ -7,7 +7,7 @@ import MacxFS
 /// model starts unfiltered). Sort and hidden-items flags of the folder's query are kept.
 @MainActor
 final class SearchFieldController: NSObject, NSSearchFieldDelegate {
-    let field = NSSearchField()
+    let field: NSSearchField = FilterSearchField()
     private let session: BrowserSession
 
     init(session: BrowserSession) {
@@ -52,4 +52,11 @@ final class SearchFieldController: NSObject, NSSearchFieldDelegate {
         textDidChange()
         return true
     }
+}
+
+/// Typing undo stays inside the filter field (§6.6): ⌘Z AppKit's per-cell undo manager can't handle ends in this
+/// empty manager, never in the window's file-operation stack (QA round 1).
+final class FilterSearchField: NSSearchField {
+    private let editingUndo = UndoManager()
+    override var undoManager: UndoManager? { editingUndo }
 }

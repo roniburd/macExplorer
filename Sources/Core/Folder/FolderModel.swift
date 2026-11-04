@@ -52,7 +52,8 @@ public struct FolderContext {
 @MainActor
 public final class FolderModel {
     /// Test seams (@testable): where listings and item stats come from.
-    typealias ReadSource = @MainActor (URL, Generation, ReadOptions) async -> AsyncStream<ReadEvent>
+    /// Not main-actor isolated: a fresh load starts reading while main still finishes the navigation turn.
+    typealias ReadSource = @Sendable (URL, Generation, ReadOptions) async -> AsyncStream<ReadEvent>
     typealias ItemSource = @MainActor ([String], URL, Generation) async throws -> ItemReadResult
 
     public let directory: URL
@@ -92,6 +93,11 @@ public final class FolderModel {
     // The read in progress
     private var readTask: Task<Void, Never>?
     private var pacerTask: Task<Void, Never>?
+    /// Fresh loads hand batches to the worker through this feed, consumed off main in order, so the main actor
+    /// never waits for a batch sort before taking the next batch (QA round 1: busy display cycles between those
+    /// hops made a 100k listing take 3-5x the model-level time).
+    private var loadFeed: AsyncStream<Batch>.Continuation?
+    private var loadFeeder: Task<Void, Never>?
     private var permissionAsked = false
     private var rowsPresented = false
     /// Incremented by every fresh load (start, retry): store-mutating work captured under an older epoch is dropped.
@@ -179,6 +185,7 @@ public final class FolderModel {
         readTask?.cancel()
         pacerTask?.cancel()
         opTail?.cancel()
+        stopLoadFeed()
         readTask = nil
         resetItemReads()
         pacerTask = nil
@@ -209,6 +216,11 @@ public final class FolderModel {
     /// NameNormalizer.sameName semantics; nil when the item is hidden from the current view.
     public func row(named name: String) -> Int? {
         store.firstIndex(named: name, caseSensitive: caseSensitive).flatMap { store.row(ofStorageIndex: $0) }
+    }
+
+    /// Display rows of `names` in one pass over the store (QA round 1); names hidden from the view are left out.
+    public func rows(named names: [String]) -> IndexSet {
+        IndexSet(store.firstIndices(named: names, caseSensitive: caseSensitive).values.compactMap { store.row(ofStorageIndex: $0) })
     }
 
     public func errno(atRow row: Int) -> Int32? { store.errno(store.storageIndex(forRow: row)) }
@@ -271,7 +283,7 @@ public final class FolderModel {
 
     var rowSpace: SelectionRowSpace {
         SelectionRowSpace(count: rowCount, identity: { [unowned self] in identity(atRow: $0) },
-                          row: { [unowned self] in row(of: $0) }, rowNamed: { [unowned self] in row(named: $0) })
+                          row: { [unowned self] in row(of: $0) }, rowsNamed: { [unowned self] in rows(named: $0) })
     }
 
     /// Recomputes selection rows after the order changed; sends .selection if it changed.
@@ -369,9 +381,23 @@ public final class FolderModel {
         options.permissionPending = permissionAsked
         let source = readSource
         PerfSignposts.signposter.emitEvent(PerfSignposts.navigate)
-        readTask = Task { @MainActor [weak self] in
+        stopLoadFeed()
+        let (feed, feedInput) = AsyncStream<Batch>.makeStream()
+        loadFeed = feedInput
+        // Starts the worker and the read off main (QA round 1): navigating keeps main busy with UI for tens of ms,
+        // and the read used to wait for that before it even began.
+        let opening = Task.detached(priority: .userInitiated) { () -> AsyncStream<ReadEvent> in
             await worker.begin(gen, identityMode: identityMode, query: query)
-            let stream = await source(directory, gen, options)
+            return await source(directory, gen, options)
+        }
+        readTask = Task { @MainActor [weak self] in
+            let stream = await opening.value
+            do {
+                guard let self, !self.closed, self.generation == gen else { return }
+                self.loadFeeder = Task.detached(priority: .userInitiated) {
+                    for await batch in feed { await worker.ingest(batch) }
+                }
+            }
             for await event in stream {
                 guard let self, !self.closed, self.generation == gen else { break }
                 await self.handleLoad(event, gen)
@@ -380,17 +406,46 @@ public final class FolderModel {
         startPacer(gen)
     }
 
+    /// Ends the current load's feed; batches not yet ingested belong to a stale generation and are dropped.
+    private func stopLoadFeed() {
+        loadFeed?.finish()
+        loadFeed = nil
+        loadFeeder?.cancel()
+        loadFeeder = nil
+    }
+
+    /// Waits until the worker has ingested every batch fed so far (the feed is finished first).
+    private func drainLoadFeed() async {
+        loadFeed?.finish()
+        loadFeed = nil
+        await loadFeeder?.value
+        loadFeeder = nil
+    }
+
     private func startPacer(_ gen: Generation) {
         let pacer = context.pacer, worker = self.worker
         pacerTask = Task { @MainActor [weak self] in
+            let clock = ContinuousClock()
+            var nextPresent = clock.now
             while !Task.isCancelled {
                 await pacer.nextFrame()
                 guard let self, !Task.isCancelled, self.isLoading(gen) else { return }
+                guard clock.now >= nextPresent else { continue }
                 guard let order = await worker.takeLoadingOrder(gen) else { continue }
                 guard !Task.isCancelled, self.isLoading(gen) else { return }
                 self.presentLoading(order)
+                nextPresent = clock.now + Self.loadingPresentSpacing(rows: order.count)
             }
         }
+    }
+
+    /// Minimum time between two loading presentations (§4.3 allows at most one per frame). Each one is a full
+    /// reloadData plus a re-layout of the visible rows; for a large folder doing that every frame kept the main
+    /// actor too busy to take the remaining batches, so 100k entries took ~1.5 s to list (QA round 1). Small
+    /// folders still update every frame; the first batch is always presented at once, and a large local folder
+    /// usually completes before a second one is due (a slow volume still shows progress 4× a second).
+    nonisolated static func loadingPresentSpacing(rows: Int) -> Duration {
+        rows < 5_000 ? .zero : .milliseconds(250)
     }
 
     private func isLoading(_ gen: Generation) -> Bool {
@@ -414,7 +469,7 @@ public final class FolderModel {
         case .batch(let batch):
             guard batch.generation == gen else { return }
             store.append(batch)
-            await worker.ingest(batch)
+            loadFeed?.yield(batch)
         case .stalled:
             setState(.unresponsive)
         case .waitingForPermission:
@@ -422,6 +477,8 @@ public final class FolderModel {
         case .resumed:
             if state == .unresponsive || state == .waitingForPermission { setState(rowsPresented ? .partial : .loading) }
         case .completed:
+            await drainLoadFeed()
+            guard !closed, generation == gen else { return }
             guard let (order, tag) = await worker.finishLoad(gen, query: query), !closed, generation == gen else { return }
             pacerTask?.cancel()
             pacerTask = nil
@@ -437,6 +494,7 @@ public final class FolderModel {
         case .failed(let failure):
             pacerTask?.cancel()
             pacerTask = nil
+            stopLoadFeed()
             await worker.cancel()
             guard !closed, generation == gen else { return }
             if failure.code == EPERM && failure.stage != .unresponsiveVolume { context.recordPermissionOutcome(directory, false) }
@@ -455,8 +513,9 @@ public final class FolderModel {
         store = result.store
         keysTag = result.tag
         for replacement in result.diff.replacements { substitute(replacement.old, with: replacement.new) }
+        let carried = store.firstIndices(named: carrying.map(\.1), caseSensitive: caseSensitive)
         for (old, name) in carrying {
-            if let index = store.firstIndex(named: name, caseSensitive: caseSensitive) { substitute(old, with: store.identity(index)) }
+            if let index = carried[name] { substitute(old, with: store.identity(index)) }
         }
         reconcileSelection(emitting: false)
         if !result.diff.changes.isEmpty { emit(.changes(result.diff.changes)) }

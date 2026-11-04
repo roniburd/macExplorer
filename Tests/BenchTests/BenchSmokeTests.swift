@@ -6,7 +6,7 @@ import MacxFS
 final class BenchSmokeTests: XCTestCase {
     func testSmallRunProducesEveryMetricAndRemovesItsSandbox() async throws {
         let report = try await Bench.run(BenchOptions(sizes: [300], warmups: 0, iterations: 1))
-        var expected: Set<String> = ["enumerate", "firstBatch", "listSorted", "sortkeys", "sort", "filter", "modelResort",
+        var expected: Set<String> = ["enumerate", "firstBatch", "listSorted", "listSorted.busyMain", "sortkeys", "sort", "filter", "modelResort",
                                      "diff", "memory.steady", "pasteboard", "fsevent.incremental", "fsevent.full"]
         for field in SortField.allCases { expected.insert("resort.\(field.rawValue)") }
         XCTAssertEqual(Set(report.metrics.map(\.name)), expected)

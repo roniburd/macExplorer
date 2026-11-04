@@ -95,8 +95,8 @@ final class ShellCommandHandler: CommandHandler {
         case .toggleCommandBar: context.environment.settings.commandBarVisible.toggle()
         case .viewAsDetails: setViewMode(.details)
         case .viewAsIcons: setViewMode(.icons)
-        case .undo: context.environment.undo.undoManager.undo()
-        case .redo: context.environment.undo.undoManager.redo()
+        case .undo: UndoTarget.manager(window: window.window, fallback: context.environment.undo.undoManager).undo()
+        case .redo: UndoTarget.manager(window: window.window, fallback: context.environment.undo.undoManager).redo()
         case .open: if let url = Self.url(of: target) { window.session.navigate(to: url) }
         case .openInNewWindow: if let url = Self.url(of: target) { context.windows.openWindow(at: url) }
         case .eject:

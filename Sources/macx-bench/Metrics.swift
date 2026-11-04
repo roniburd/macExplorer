@@ -130,6 +130,33 @@ final class MetricSuite {
         return try await body(watch)
     }
 
+    /// listSorted as the app sees it (QA round 1): the main actor is busy the way a browser window keeps it busy.
+    /// Navigating costs a synchronous UI turn (50 ms), every presented reset a reloadData + layout (20 ms), and
+    /// display cycles take 3 ms of every 8 ms frame. A pipeline that waits for main between batches fails this.
+    private func listWithBusyMain() async throws -> Double {
+        func busy(_ duration: Duration) {
+            let end = ContinuousClock.now + duration
+            while ContinuousClock.now < end {}
+        }
+        let model = env.makeFolderModel(directory, query: ViewQuery())
+        let watch = ModelWatch(model: model, expectedRows: fileCount)
+        defer { watch.close() }
+        let resets = model.observe { event in if case .changes = event { busy(.milliseconds(20)) } }
+        defer { resets.cancel() }
+        let frames = Task { @MainActor in
+            while !Task.isCancelled {
+                busy(.milliseconds(3))
+                try? await Task.sleep(for: .milliseconds(5))
+            }
+        }
+        defer { frames.cancel() }
+        let start = clock.now
+        model.start()
+        busy(.milliseconds(50))
+        try await waitUntil("\(size)-entry model loads (busy main)", timeout: .seconds(60)) { watch.loaded != nil }
+        return Stats.milliseconds(watch.loaded! - start)
+    }
+
     func runAll() async throws -> [MetricResult] {
         var out: [MetricResult] = []
 
@@ -160,6 +187,10 @@ final class MetricSuite {
             }
             if wants("firstBatch") { out.append(result("firstBatch", first)) }
             if wants("listSorted") { out.append(result("listSorted", loaded)) }
+        }
+
+        if wants("listSorted.busyMain") {
+            out.append(result("listSorted.busyMain", try await samples { try await self.listWithBusyMain() }))
         }
 
         let needsStore = ["sortkeys", "sort", "resort", "filter", "pasteboard"].contains { wants($0) }

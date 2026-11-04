@@ -17,6 +17,8 @@ static const uint32_t CFSK_HAS_DATALENGTH = 1u << 9;
 static const uint32_t CFSK_HAS_ALLOCSIZE  = 1u << 10;
 static const uint32_t CFSK_HAS_ENTRYCOUNT = 1u << 11;
 static const uint32_t CFSK_HAS_LINKID     = 1u << 12;
+static const uint32_t CFSK_HAS_DEVID      = 1u << 13;
+static const uint32_t CFSK_HAS_MOUNTSTATUS = 1u << 14;
 
 /* Result codes of cfsk_cursor_next. */
 static const int CFSK_NEXT_END       = 0;  /* no more records */
@@ -41,6 +43,8 @@ typedef struct cfsk_record {
     int64_t     data_length;
     int64_t     alloc_size;
     uint32_t    entry_count;
+    int32_t     dev_id;        /* ATTR_CMN_DEVID: device of the object reported (a mounted volume's for a stat'ed mount point) */
+    uint32_t    mount_status;  /* ATTR_DIR_MOUNTSTATUS: DIR_MNTSTATUS_MNTPOINT when a volume is mounted on the directory */
 } cfsk_record;
 
 typedef struct cfsk_cursor {

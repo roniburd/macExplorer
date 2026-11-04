@@ -6,6 +6,14 @@ import AppKit
 /// is plain text editing (§5.6 rule 1).
 @MainActor
 final class AddressEditField: NSTextField, NSTextFieldDelegate {
+    /// Typing undo stays inside the edit (§6.6, QA round 1): AppKit's per-cell undo manager hands ⌘Z it can't
+    /// handle to this one, which is empty, never to the window's file-operation stack.
+    private let editingUndo = UndoManager()
+    override var undoManager: UndoManager? { editingUndo }
+
+    /// A new edit starts with no typing to undo.
+    func resetUndo() { editingUndo.removeAllActions() }
+
     /// Suggestions for the typed text (off main through Core; installed by AddressBarView).
     var suggestionProvider: ((String) async -> [AddressSuggestion])?
     var onSubmit: ((String) -> Void)?

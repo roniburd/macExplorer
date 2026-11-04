@@ -102,4 +102,31 @@ final class SidebarOutlineView: NSOutlineView {
         guard row >= 0 else { return nil }
         return menuProvider?(row)
     }
+
+    // MARK: right-drag (§5.6: tracked on rightMouseDown in the sidebar too)
+
+    /// A right-drag past the threshold started on `row` (the sidebar begins a secondary drag for tree folders).
+    var onSecondaryDrag: ((_ row: Int, _ event: NSEvent) -> Void)?
+    /// Shows the context menu on a right-click that did not drag (tests replace it; the default runs the menu).
+    var presentMenu: (NSMenu, NSEvent, NSView) -> Void = { menu, event, view in NSMenu.popUpContextMenu(menu, with: event, for: view) }
+    private var rightDrag = RightDragTracker()
+    private var rightDownEvent: NSEvent?
+
+    override func rightMouseDown(with event: NSEvent) {
+        rightDrag.rightMouseDown(at: event.locationInWindow)
+        rightDownEvent = event
+    }
+
+    override func rightMouseDragged(with event: NSEvent) {
+        guard rightDrag.rightMouseDragged(to: event.locationInWindow) == .beginDrag, let down = rightDownEvent else { return }
+        let row = self.row(at: convert(down.locationInWindow, from: nil))
+        if row >= 0 { onSecondaryDrag?(row, event) }
+    }
+
+    override func rightMouseUp(with event: NSEvent) {
+        defer { rightDownEvent = nil }
+        guard case .showMenu = rightDrag.rightMouseUp(at: event.locationInWindow), let down = rightDownEvent,
+              let menu = menu(for: down) else { return }
+        presentMenu(menu, down, self)
+    }
 }

@@ -24,14 +24,7 @@ struct PropertiesView: View {
             case .failed(let text):
                 Text(verbatim: text).foregroundStyle(.secondary).frame(maxWidth: .infinity, minHeight: 80)
             case .item(let item):
-                TabView {
-                    GeneralTab(model: model, item: item, actions: actions).tabItem { Text(verbatim: L10n.string("General")) }
-                    PermissionsTab(model: model, item: item).tabItem { Text(verbatim: L10n.string("Permissions")) }
-                    if model.showsOpensWith {
-                        OpensWithTab(model: model, actions: actions).tabItem { Text(verbatim: L10n.string("Opens with")) }
-                    }
-                    DetailsTab(model: model, item: item).tabItem { Text(verbatim: L10n.string("Details")) }
-                }
+                ItemTabs(model: model, item: item, actions: actions)
             case .items(let multi):
                 MultiItemsForm(model: model, multi: multi)
             case .volume(let volume):
@@ -49,7 +42,7 @@ struct PropertiesView: View {
     }
 }
 
-private struct GeneralTab: View {
+struct GeneralTab: View {
     @Bindable var model: PropertiesViewModel
     let item: ItemProperties
     let actions: PropertiesActions
@@ -105,7 +98,7 @@ private struct GeneralTab: View {
     }
 }
 
-private struct PermissionsTab: View {
+struct PermissionsTab: View {
     let model: PropertiesViewModel
     let item: ItemProperties
 
@@ -145,7 +138,7 @@ private struct PermissionsTab: View {
     }
 }
 
-private struct OpensWithTab: View {
+struct OpensWithTab: View {
     let model: PropertiesViewModel
     let actions: PropertiesActions
 
@@ -162,7 +155,7 @@ private struct OpensWithTab: View {
     }
 }
 
-private struct DetailsTab: View {
+struct DetailsTab: View {
     let model: PropertiesViewModel
     let item: ItemProperties
 

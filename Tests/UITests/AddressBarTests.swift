@@ -94,6 +94,25 @@ final class AddressBarTests: XCTestCase {
         try await h.waitUntil("top.txt selected") { controller.probeSelectedNames == ["top.txt"] }
     }
 
+    func testAHiddenFileReportsInlineWhileHiddenItemsAreOff() async throws {
+        let h = try await ShellHarness.make(self)
+        try h.file("top.txt"); try h.file(".dot")
+        h.environment.settings.showHidden = false
+        let controller = try await h.openWindow()
+        let bar = controller.addressBar
+        let before = controller.session.folder
+        bar.beginEditing()
+        await bar.submit(".dot")
+        XCTAssertTrue(bar.isEditing, "nothing could be selected, so the bar says why")
+        XCTAssertTrue(controller.session.folder === before)
+        XCTAssertEqual(bar.errorText, "'.dot' is hidden (⇧⌘. shows hidden items)")
+        h.environment.settings.showHidden = true
+        try await h.waitUntil("hidden shown") { controller.session.folder.rowCount == 2 }
+        await bar.submit(".dot")
+        XCTAssertFalse(bar.isEditing)
+        try await h.waitUntil(".dot selected") { controller.probeSelectedNames == [".dot"] }
+    }
+
     func testAbsoluteTildeAndFileURLInput() async throws {
         let h = try await ShellHarness.make(self)
         try h.dir("x"); try h.dir("y")

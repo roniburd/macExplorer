@@ -42,7 +42,8 @@ struct SelectionRowSpace {
     let count: Int
     let identity: (Int) -> RowID
     let row: (RowID) -> Int?
-    let rowNamed: (String) -> Int?
+    /// Display rows of the given names, resolved in one pass over the store (names not displayed are left out).
+    let rowsNamed: ([String]) -> IndexSet
 }
 
 extension Selection {
@@ -79,7 +80,7 @@ extension Selection {
         case .invert:
             setRows(IndexSet(integersIn: 0..<space.count).subtracting(rows), in: space)
         case .names(let names):
-            let r = IndexSet(names.compactMap(space.rowNamed))
+            let r = space.rowsNamed(names)
             setRows(r, in: space)
             cursor = r.first.map(space.identity)
             anchor = cursor
