@@ -1,0 +1,64 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:macExplorer}",
+            "name": "Debug macExplorer",
+            "target": "macExplorer",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug macExplorer"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:macExplorer}",
+            "name": "Release macExplorer",
+            "target": "macExplorer",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release macExplorer"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:macExplorer}",
+            "name": "Debug macx-bench",
+            "target": "macx-bench",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug macx-bench"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:macExplorer}",
+            "name": "Release macx-bench",
+            "target": "macx-bench",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release macx-bench"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:macExplorer}",
+            "name": "Debug macx-scenarios",
+            "target": "macx-scenarios",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug macx-scenarios"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:macExplorer}",
+            "name": "Release macx-scenarios",
+            "target": "macx-scenarios",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release macx-scenarios"
+        }
+    ]
+}
