@@ -49,4 +49,27 @@ final class ScenarioFileTests: XCTestCase {
         XCTAssertThrowsError(try load(#"{"name":"x","fixture":{"files":[],"dirs":[]},"steps":[{"expect":{"filesExist":["/etc/hosts"]}}]}"#))
         XCTAssertThrowsError(try load(#"{"name":"x","fixture":{"files":[],"dirs":["d"],"modes":{"d":"999"}},"steps":[]}"#))
     }
+
+    func testRejectsDropPathsThatLeaveTheFolder() {
+        let cases: [(String, ScenarioFile.ValidationError)] = [
+            (#"{"drop":{"sources":["../../../x"],"onto":"dest"}}"#, .unsafePath("../../../x")),
+            (#"{"drop":{"sources":["a.txt","/etc/hosts"],"onto":"dest"}}"#, .unsafePath("/etc/hosts")),
+            (#"{"drop":{"sources":["a.txt"],"onto":"../up"}}"#, .unsafePath("../up")),
+        ]
+        for (step, expected) in cases {
+            XCTAssertThrowsError(try load(#"{"name":"x","fixture":{"files":[],"dirs":[]},"steps":["# + step + #"]}"#)) {
+                XCTAssertEqual($0 as? ScenarioFile.ValidationError, expected, step)
+            }
+        }
+        XCTAssertNoThrow(try load(#"{"name":"x","fixture":{"files":[],"dirs":[]},"steps":[{"drop":{"sources":["a.txt"],"onto":"dest"}}]}"#))
+    }
+
+    func testRejectsTypingAbsoluteOrHomePaths() {
+        for text in ["/Users", "~/Desktop", "~"] {
+            XCTAssertThrowsError(try load(#"{"name":"x","fixture":{"files":[],"dirs":[]},"steps":[{"type":""# + text + #""}]}"#)) {
+                XCTAssertEqual($0 as? ScenarioFile.ValidationError, .unsafeTypedPath(step: 0, text), text)
+            }
+        }
+        XCTAssertNoThrow(try load(#"{"name":"x","fixture":{"files":[],"dirs":[]},"steps":[{"type":"../../top.txt"}]}"#))
+    }
 }

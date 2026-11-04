@@ -44,6 +44,8 @@ cleanup() {
   while IFS= read -r mp; do
     case "$mp" in "$RUN_REAL"/*) hdiutil detach "$mp" -force >/dev/null 2>&1 ;; esac
   done < <(mount | sed -n 's/^.* on \(.*\) (.*)$/\1/p')
+  # chmod first: chflags cannot descend into a mode-000 folder, so a uchg item inside one would keep its flag.
+  chmod -R u+rwx "$RUN" 2>/dev/null
   chflags -R nouchg "$RUN" 2>/dev/null
   chmod -R u+rwx "$RUN" 2>/dev/null
   if [ "$KEEP" = 1 ]; then echo "sandbox root $RUN kept (--keep-sandbox)"; return 0; fi
@@ -95,7 +97,7 @@ title="$(field windowTitles.0 "$RUN/gui-probe/state/smoke.json")"
 if [ "$APP_CODE" != 0 ] || [ "$title" != "macx-scenario-root" ]; then
   echo "ui-scenarios: the app opened no window on its sandbox (exit $APP_CODE, title '$title'); no GUI session?"
   tail -10 "$RUN/gui-probe.log" | sed 's/^/    /'
-  if [ "$REQUIRE_GUI" = 1 ]; then exit 1; fi
+  if [ "$REQUIRE_GUI" = 1 ]; then exit 2; fi
   echo "SKIP: UI scenarios need a logged-in GUI session (pass --require-gui to fail instead)"; exit 0
 fi
 # A locked screen still opens windows, but none can become key, so a collapsed toolbar search item never expands

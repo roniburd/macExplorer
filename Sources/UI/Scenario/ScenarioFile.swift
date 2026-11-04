@@ -81,6 +81,7 @@ struct ScenarioFile: Codable {
         case badCommand(step: Int, String)
         case badModifier(step: Int, String)
         case unsafePath(String)
+        case unsafeTypedPath(step: Int, String)
         case badMode(String, String)
         var description: String {
             switch self {
@@ -91,6 +92,7 @@ struct ScenarioFile: Codable {
             case .badCommand(let s, let c): "step \(s): unknown command '\(c)'"
             case .badModifier(let s, let m): "step \(s): unknown modifier '\(m)' (cmd, shift, opt, ctrl)"
             case .unsafePath(let p): "unsafe relative path '\(p)'"
+            case .unsafeTypedPath(let s, let t): "step \(s): typed text '\(t)' is an absolute or home path outside --root"
             case .badMode(let p, let m): "bad octal mode '\(m)' for '\(p)'"
             }
         }
@@ -112,7 +114,10 @@ struct ScenarioFile: Codable {
             if let choice = step.drop?.choose, !Self.dropChoices.contains(choice) { throw .badDropChoice(step: index, choice) }
             if let command = step.command, Command(rawValue: command) == nil { throw .badCommand(step: index, command) }
             for modifier in step.modifiers ?? [] where !Self.modifierNames.contains(modifier) { throw .badModifier(step: index, modifier) }
-            let paths = (step.waitFor.map(ExpectationMatcher.requestedPaths) ?? []) + (step.expect.map(ExpectationMatcher.requestedPaths) ?? [])
+            if let text = step.type, text.hasPrefix("/") || text.hasPrefix("~") { throw .unsafeTypedPath(step: index, text) }
+            let dropPaths = step.drop.map { $0.sources + [$0.onto] } ?? []
+            let paths = dropPaths + (step.waitFor.map(ExpectationMatcher.requestedPaths) ?? [])
+                + (step.expect.map(ExpectationMatcher.requestedPaths) ?? [])
             for path in paths where !ScenarioPath.isSafeRelative(path) { throw .unsafePath(path) }
         }
     }

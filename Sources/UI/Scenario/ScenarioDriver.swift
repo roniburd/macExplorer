@@ -72,7 +72,10 @@ final class ScenarioDriver {
             result.name = scenario.name
             try await prepare(scenario.fixture)
             for (index, step) in scenario.steps.enumerated() {
-                do { try await perform(step) } catch {
+                do {
+                    try await perform(step)
+                    try requireBrowsingInsideRoot()
+                } catch {
                     result.failedStep = index
                     throw error
                 }
@@ -274,6 +277,15 @@ final class ScenarioDriver {
         else if let ms = step.sleepMs { try await Task.sleep(for: .milliseconds(ms)) }
     }
 
+    /// Safety net for the C3 rule: a step that left a window browsing outside --root fails the run before any
+    /// later step (delete, rename, drop) could act there.
+    private func requireBrowsingInsideRoot() throws {
+        for window in context.windows.windows {
+            let path = window.probeFolderURL.standardizedFileURL.path
+            if Self.relativePath(path, roots: rootPrefixes) == nil { throw DriverError("a window left --root: it browses \(path)") }
+        }
+    }
+
     private func post(_ keys: [SynthKey]) throws {
         let number = try keyWindowNumber()
         for key in keys { for event in KeySynth.events(key, windowNumber: number) { NSApp.postEvent(event, atStart: false) } }
@@ -404,7 +416,11 @@ final class ScenarioDriver {
             default: throw DriverError("unsupported drop choice '\(raw)' (Contract note C5)")
             }
         }
-        await controller.probePerformDrop(sources: drop.sources.map { folderURL.appending(path: $0) }, onto: drop.onto,
+        let sources = drop.sources.map { folderURL.appending(path: $0).standardizedFileURL }
+        for source in sources where Self.relativePath(source.path, roots: rootPrefixes) == nil {
+            throw DriverError("drop source \(source.path) is outside --root")
+        }
+        await controller.probePerformDrop(sources: sources, onto: drop.onto,
                                           modifiers: mods, secondary: drop.secondary ?? false, menuChoice: choice)
         await fence()
     }

@@ -24,6 +24,8 @@ cleanup() {
   while IFS= read -r mp; do
     case "$mp" in "$RUN_REAL"/*) hdiutil detach "$mp" -force >/dev/null 2>&1 ;; esac
   done < <(mount | sed -n 's/^.* on \(.*\) (.*)$/\1/p')
+  # chmod first: chflags cannot descend into a mode-000 folder, so a uchg item inside one would keep its flag.
+  chmod -R u+rwx "$RUN" 2>/dev/null
   chflags -R nouchg "$RUN" 2>/dev/null
   chmod -R u+rwx "$RUN" 2>/dev/null
   rm -rf "$RUN"
