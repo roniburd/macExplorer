@@ -1,6 +1,17 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%@ (%@ bytes)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (%@ bytes)"
+          }
+        }
+      }
+    },
     "%@ (default)" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -23,6 +34,17 @@
         }
       }
     },
+    "%@ Properties" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ Properties"
+          }
+        }
+      }
+    },
     "%@ available" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -34,6 +56,17 @@
         }
       }
     },
+    "%@ files, %@ folders" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ files, %@ folders"
+          }
+        }
+      }
+    },
     "%@ items" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -41,6 +74,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ items"
+          }
+        }
+      }
+    },
+    "%@ items (%@ files, %@ folders)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ items (%@ files, %@ folders)"
           }
         }
       }
@@ -133,6 +177,17 @@
         }
       }
     },
+    "%lld Items Properties" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Items Properties"
+          }
+        }
+      }
+    },
     "'%@' can't be ejected because it is in use by %@." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -144,6 +199,28 @@
         }
       }
     },
+    "'%@' can't be moved or copied into itself." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "'%@' can't be moved or copied into itself."
+          }
+        }
+      }
+    },
+    "'%@' can't be moved to the Trash." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "'%@' can't be moved to the Trash."
+          }
+        }
+      }
+    },
     "'%@' can't be moved to the Trash. Delete it permanently?" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -151,6 +228,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "'%@' can't be moved to the Trash. Delete it permanently?"
+          }
+        }
+      }
+    },
+    "'%@' changed while it was being moved, so it was left in place." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "'%@' changed while it was being moved, so it was left in place."
           }
         }
       }
@@ -173,6 +261,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "'%@' couldn't be opened."
+          }
+        }
+      }
+    },
+    "'%@' couldn't be read." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "'%@' couldn't be read."
+          }
+        }
+      }
+    },
+    "'%@' is in use by another app." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "'%@' is in use by another app."
+          }
+        }
+      }
+    },
+    "'%@' is locked." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "'%@' is locked."
+          }
+        }
+      }
+    },
+    "'%@' no longer exists." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "'%@' no longer exists."
           }
         }
       }
@@ -276,6 +408,17 @@
         }
       }
     },
+    "Access control list" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Access control list"
+          }
+        }
+      }
+    },
     "Address" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -320,6 +463,17 @@
         }
       }
     },
+    "An error occurred with '%@': %@ (error %lld)." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An error occurred with '%@': %@ (error %lld)."
+          }
+        }
+      }
+    },
     "Applications" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -327,6 +481,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Applications"
+          }
+        }
+      }
+    },
+    "Apply" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apply"
+          }
+        }
+      }
+    },
+    "Apply these permissions to all items inside '%@'?" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apply these permissions to all items inside '%@'?"
+          }
+        }
+      }
+    },
+    "Apply to enclosed items…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apply to enclosed items…"
           }
         }
       }
@@ -349,6 +536,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ascending"
+          }
+        }
+      }
+    },
+    "Attributes" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attributes"
           }
         }
       }
@@ -437,6 +635,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cancel them and eject, or wait until they finish?"
+          }
+        }
+      }
+    },
+    "Capacity" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capacity"
+          }
+        }
+      }
+    },
+    "Change All…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Change All…"
           }
         }
       }
@@ -595,6 +815,17 @@
         }
       }
     },
+    "Contains" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contains"
+          }
+        }
+      }
+    },
     "Continue Anyway" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -650,6 +881,28 @@
         }
       }
     },
+    "Counting…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Counting…"
+          }
+        }
+      }
+    },
+    "Counting… %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Counting… %@"
+          }
+        }
+      }
+    },
     "Create Alias Here" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -679,6 +932,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Create Symbolic Link Here"
+          }
+        }
+      }
+    },
+    "Created" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Created"
           }
         }
       }
@@ -936,6 +1200,39 @@
         }
       }
     },
+    "Everyone" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Everyone"
+          }
+        }
+      }
+    },
+    "Executable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Executable"
+          }
+        }
+      }
+    },
+    "Extended attributes" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extended attributes"
+          }
+        }
+      }
+    },
     "Extension" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1046,6 +1343,17 @@
         }
       }
     },
+    "Format" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Format"
+          }
+        }
+      }
+    },
     "Forward" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1053,6 +1361,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Forward"
+          }
+        }
+      }
+    },
+    "Free" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Free"
           }
         }
       }
@@ -1112,6 +1431,17 @@
         }
       }
     },
+    "Group (%@)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Group (%@)"
+          }
+        }
+      }
+    },
     "Help" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1119,6 +1449,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Help"
+          }
+        }
+      }
+    },
+    "Hidden" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hidden"
           }
         }
       }
@@ -1141,6 +1482,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hide Others"
+          }
+        }
+      }
+    },
+    "Hide extension" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide extension"
           }
         }
       }
@@ -1218,6 +1570,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "In the same window"
+          }
+        }
+      }
+    },
+    "Inode" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inode"
           }
         }
       }
@@ -1321,6 +1684,17 @@
         }
       }
     },
+    "Last opened" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last opened"
+          }
+        }
+      }
+    },
     "Loading…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1339,6 +1713,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Locate…"
+          }
+        }
+      }
+    },
+    "Location" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Location"
           }
         }
       }
@@ -1431,6 +1816,17 @@
         }
       }
     },
+    "Modified" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modified"
+          }
+        }
+      }
+    },
     "More" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1438,6 +1834,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "More"
+          }
+        }
+      }
+    },
+    "Mount point" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mount point"
           }
         }
       }
@@ -1618,6 +2025,17 @@
         }
       }
     },
+    "No" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No"
+          }
+        }
+      }
+    },
     "No Subfolders" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1629,6 +2047,28 @@
         }
       }
     },
+    "No access" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No access"
+          }
+        }
+      }
+    },
+    "No default app" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No default app"
+          }
+        }
+      }
+    },
     "No items match '%@'" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1636,6 +2076,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No items match '%@'"
+          }
+        }
+      }
+    },
+    "Not enough space (needs %@, %@ available)." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not enough space (needs %@, %@ available)."
+          }
+        }
+      }
+    },
+    "Not enough space on the destination." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not enough space on the destination."
           }
         }
       }
@@ -1750,6 +2212,17 @@
         }
       }
     },
+    "Opens with" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opens with"
+          }
+        }
+      }
+    },
     "Operations" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1772,6 +2245,17 @@
         }
       }
     },
+    "Owner (%@)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Owner (%@)"
+          }
+        }
+      }
+    },
     "Paste" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1779,6 +2263,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Paste"
+          }
+        }
+      }
+    },
+    "Path" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Path"
           }
         }
       }
@@ -1801,6 +2296,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Permanently delete %lld items?"
+          }
+        }
+      }
+    },
+    "Permissions" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permissions"
           }
         }
       }
@@ -1849,6 +2355,28 @@
         }
       }
     },
+    "Quarantine" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quarantine"
+          }
+        }
+      }
+    },
+    "Quarantined" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quarantined"
+          }
+        }
+      }
+    },
     "Quit macExplorer" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1856,6 +2384,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Quit macExplorer"
+          }
+        }
+      }
+    },
+    "Read & Write" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read & Write"
+          }
+        }
+      }
+    },
+    "Read only" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read only"
+          }
+        }
+      }
+    },
+    "Read-only (Locked)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read-only (Locked)"
           }
         }
       }
@@ -1900,6 +2461,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Relative"
+          }
+        }
+      }
+    },
+    "Remove" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove"
           }
         }
       }
@@ -2003,6 +2575,17 @@
         }
       }
     },
+    "Reveal" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reveal"
+          }
+        }
+      }
+    },
     "Reveal in Finder" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2054,6 +2637,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Select None"
+          }
+        }
+      }
+    },
+    "Selection" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Selection"
           }
         }
       }
@@ -2212,6 +2806,17 @@
         }
       }
     },
+    "Size on disk" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Size on disk"
+          }
+        }
+      }
+    },
     "Skip" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2355,6 +2960,17 @@
         }
       }
     },
+    "The default app for '%@' couldn't be changed." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The default app for '%@' couldn't be changed."
+          }
+        }
+      }
+    },
     "The destination already has an item named '%@'" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2362,6 +2978,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The destination already has an item named '%@'"
+          }
+        }
+      }
+    },
+    "The destination is read-only." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The destination is read-only."
           }
         }
       }
@@ -2395,6 +3022,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The name '%@' is already taken."
+          }
+        }
+      }
+    },
+    "The name '%@' is too long for the destination." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The name '%@' is too long for the destination."
           }
         }
       }
@@ -2487,6 +3125,17 @@
         }
       }
     },
+    "Total size" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Total size"
+          }
+        }
+      }
+    },
     "Try Again" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2494,6 +3143,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Try Again"
+          }
+        }
+      }
+    },
+    "Type identifier" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type identifier"
           }
         }
       }
@@ -2564,6 +3224,28 @@
         }
       }
     },
+    "Used" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Used"
+          }
+        }
+      }
+    },
+    "Used space" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Used space"
+          }
+        }
+      }
+    },
     "Using F2 or F5? Hold fn, or turn on 'Use F1, F2, etc. keys as standard function keys'." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2582,6 +3264,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "View"
+          }
+        }
+      }
+    },
+    "Volume" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volume"
           }
         }
       }
@@ -2619,6 +3312,17 @@
         }
       }
     },
+    "Where from" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Where from"
+          }
+        }
+      }
+    },
     "Window" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2626,6 +3330,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Window"
+          }
+        }
+      }
+    },
+    "Write only" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Write only"
+          }
+        }
+      }
+    },
+    "Yes" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yes"
           }
         }
       }
@@ -2641,6 +3367,28 @@
         }
       }
     },
+    "You can undo this with Edit › Undo." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You can undo this with Edit › Undo."
+          }
+        }
+      }
+    },
+    "You can't change permissions because you aren't the owner." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You can't change permissions because you aren't the owner."
+          }
+        }
+      }
+    },
     "You can't undo this action." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2648,6 +3396,105 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "You can't undo this action."
+          }
+        }
+      }
+    },
+    "You don't have permission to change '%@'." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You don't have permission to change '%@'."
+          }
+        }
+      }
+    },
+    "You don't have permission to copy '%@'." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You don't have permission to copy '%@'."
+          }
+        }
+      }
+    },
+    "You don't have permission to create '%@'." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You don't have permission to create '%@'."
+          }
+        }
+      }
+    },
+    "You don't have permission to delete '%@'." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You don't have permission to delete '%@'."
+          }
+        }
+      }
+    },
+    "You don't have permission to duplicate '%@'." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You don't have permission to duplicate '%@'."
+          }
+        }
+      }
+    },
+    "You don't have permission to make a link to '%@'." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You don't have permission to make a link to '%@'."
+          }
+        }
+      }
+    },
+    "You don't have permission to move '%@' to the Trash." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You don't have permission to move '%@' to the Trash."
+          }
+        }
+      }
+    },
+    "You don't have permission to move '%@'." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You don't have permission to move '%@'."
+          }
+        }
+      }
+    },
+    "You don't have permission to rename '%@'." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You don't have permission to rename '%@'."
           }
         }
       }
@@ -2769,6 +3616,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "macOS is blocking access to '%@'"
+          }
+        }
+      }
+    },
+    "macOS is blocking access to '%@'." : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS is blocking access to '%@'."
           }
         }
       }

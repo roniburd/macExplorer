@@ -11,8 +11,8 @@ final class FileCommandController: CommandHandler {
     var prompts: any CommandPrompts = AppKitCommandPrompts()
     /// Set by SidebarViewController so F2 on a Folders-tree node renames inline there; nil → a name prompt.
     var beginSidebarRename: ((URL) -> Void)?
-    /// Commands whose UI arrives in a later task (P1-37 removes .properties, P1-38 removes .showOperations).
-    static let pendingCommands: Set<Command> = [.properties, .showOperations]
+    /// Commands whose UI arrives in a later task (P1-38 removes .showOperations).
+    static let pendingCommands: Set<Command> = [.showOperations]
 
     var environment: CoreEnvironment { context.environment }
     var session: BrowserSession? { window?.session }
@@ -137,8 +137,31 @@ final class FileCommandController: CommandHandler {
         if case .contentSelection(let folder) = target { folder.select(command) }
     }
 
-    /// Filled in by P1-37 (Properties window).
+    /// ⌘I / ⌥Return / command bar / context menus / the empty state's Properties button (§5.8).
     func showProperties(_ target: CommandTarget) {
-        NSSound.beep()
+        switch Self.propertiesSubject(for: target, volumes: environment.volumes.list) {
+        case .items(let urls)?: PropertiesWindowController.show(for: urls, context: context)
+        case .volume(let volume)?: PropertiesWindowController.show(volume: volume, context: context)
+        case nil: NSSound.beep()
+        }
+    }
+
+    /// The selection (or, with nothing selected, the current folder); sidebar rows give their folder or volume.
+    /// A single item that is a volume's mount point shows volume properties.
+    static func propertiesSubject(for target: CommandTarget, volumes: [VolumeInfo]) -> PropertiesSubject? {
+        let urls: [URL]
+        switch target {
+        case .volume(let volume): return .volume(volume)
+        case .contentSelection(let folder): urls = folder.selectedURLs.isEmpty ? [folder.directory] : folder.selectedURLs
+        case .currentFolder(let folder): urls = [folder.directory]
+        case .folder(let url), .location(let url): urls = [url]
+        case .favorite(let favorite):
+            guard let url = favorite.url else { return nil }
+            urls = [url]
+        }
+        if urls.count == 1, let volume = volumes.first(where: { $0.mountPoint.standardizedFileURL.path == urls[0].standardizedFileURL.path }) {
+            return .volume(volume)
+        }
+        return .items(urls)
     }
 }

@@ -16,6 +16,8 @@ final class ContentTestHarness {
     let environment: CoreEnvironment
     let context: UIContext
     let pasteboardName: String
+    /// environment.interaction's target in every UI test (S5-C1): never a modal alert.
+    let interaction = ScriptedInteraction()
     private var hostedWindows: [NSWindow] = []
     private var models: [FolderModel] = []
     private var lockedPaths: [String] = []
@@ -48,6 +50,7 @@ final class ContentTestHarness {
         options.fakeLaunchServices = true
         options.skipOnboarding = true
         context = UIContext(environment: environment, options: options)
+        environment.interaction.setTarget(interaction)
     }
 
     func url(_ relative: String) -> URL {
@@ -141,6 +144,7 @@ final class ContentTestHarness {
     }
 
     func tearDown() async {
+        PropertiesWindowController.closeAll(for: context)
         for controller in context.windows.windows { controller.close() }
         for window in hostedWindows { window.close() }
         for model in models { model.close() }

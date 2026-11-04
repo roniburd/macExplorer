@@ -12,6 +12,13 @@ enum DefaultAppChoice {
         }
         try await provider.open([file], withApplicationAt: app)
     }
+
+    /// Properties (§5.8): the per-file default, or with `allOfType` the content-type default first, then the per-file
+    /// one (so an older per-file override can't keep winning). Opens nothing.
+    static func setDefault(app: URL, file: URL, allOfType: Bool, provider: any LaunchServicesProviding) async throws {
+        if allOfType { try await provider.setDefaultApplication(app, forContentTypeOf: file) }
+        try await provider.setDefaultApplication(app, forFile: file)
+    }
 }
 
 /// Choose Default App… sheet: the apps that can open the file, Browse…, and "Always use this app".
@@ -23,18 +30,26 @@ final class DefaultAppSheet: NSObject, NSTableViewDataSource, NSTableViewDelegat
     private let panel: NSPanel
     private let table = NSTableView()
     private let always: NSButton
+    private let opensFile: Bool
     private var continuation: CheckedContinuation<AppInfo?, Never>?
 
     static func present(for file: URL, on window: NSWindow, context: UIContext) async {
-        await present(for: file, on: window, context: context, alwaysChecked: false)
+        await present(for: file, on: window, context: context, alwaysChecked: false, opensFile: true)
     }
 
-    /// Properties' "Change All…" opens the sheet with the checkbox already on (P1-37).
+    /// Properties' Change All… opens the sheet with the checkbox already on (P1-37).
     static func present(for file: URL, on window: NSWindow, context: UIContext, alwaysChecked: Bool) async {
-        await DefaultAppSheet(file: file, context: context, alwaysChecked: alwaysChecked).run(on: window)
+        await present(for: file, on: window, context: context, alwaysChecked: alwaysChecked, opensFile: true)
     }
 
-    private init(file: URL, context: UIContext, alwaysChecked: Bool) {
+    /// `opensFile: false` (Properties' Change… / Change All…): set the default only; the checkbox means "all files
+    /// of this type" (§5.8).
+    static func present(for file: URL, on window: NSWindow, context: UIContext, alwaysChecked: Bool, opensFile: Bool) async {
+        await DefaultAppSheet(file: file, context: context, alwaysChecked: alwaysChecked, opensFile: opensFile).run(on: window)
+    }
+
+    private init(file: URL, context: UIContext, alwaysChecked: Bool, opensFile: Bool) {
+        self.opensFile = opensFile
         self.file = file
         self.context = context
         let ext = file.pathExtension
@@ -85,13 +100,19 @@ final class DefaultAppSheet: NSObject, NSTableViewDataSource, NSTableViewDelegat
         }
         window.endSheet(panel)
         guard let chosen else { return }
+        let provider = context.environment.launchServices.provider
         do {
-            try await DefaultAppChoice.apply(app: chosen.url, file: file, always: always.state == .on,
-                                             provider: context.environment.launchServices.provider)
+            if opensFile {
+                try await DefaultAppChoice.apply(app: chosen.url, file: file, always: always.state == .on, provider: provider)
+            } else {
+                try await DefaultAppChoice.setDefault(app: chosen.url, file: file, allOfType: always.state == .on, provider: provider)
+            }
             context.environment.launchServices.invalidate(file: file)
         } catch {
             let alert = NSAlert()
-            alert.messageText = String(format: L10n.string("'%@' couldn't be opened with %@."), file.lastPathComponent, chosen.name)
+            alert.messageText = opensFile
+                ? String(format: L10n.string("'%@' couldn't be opened with %@."), file.lastPathComponent, chosen.name)
+                : String(format: L10n.string("The default app for '%@' couldn't be changed."), file.lastPathComponent)
             alert.informativeText = error.localizedDescription
             _ = await alert.beginSheetModal(for: window)
         }
