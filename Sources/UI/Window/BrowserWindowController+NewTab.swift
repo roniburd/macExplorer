@@ -26,9 +26,12 @@ extension BrowserWindowController {
         return content.newTabGesture(.middleClick, row: row)
     }
 
-    /// `tree:` targets only (P2-10 adds `group:`, P2-16 `header:`). "cmd" is the ⌘-click path; otherwise a plain click
-    /// selects the node and navigates to it.
+    /// `tree:` and `group:` targets (P2-16 adds `header:`). For `tree:`, "cmd" is the ⌘-click path; otherwise a plain
+    /// click selects the node and navigates to it. `group:<title>` toggles that group of the Details list.
     private func scenarioClick(_ target: String, modifiers: [String]) async -> Bool {
+        if target.hasPrefix("group:") {
+            return contentController?.details.toggleGroup(titled: String(target.dropFirst("group:".count))) ?? false
+        }
         guard let url = treeURL(target), let sidebar = sidebarController,
               let row = await sidebar.revealRow(for: url) else { return false }
         if modifiers.contains("cmd") { return sidebar.handleNewTabGesture(.commandClick, row: row) }

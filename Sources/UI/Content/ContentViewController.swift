@@ -169,7 +169,8 @@ final class ContentViewController: CommandHandlingViewController {
         case .beginRename(let row): activeList.beginInlineRename(row: row)
         case .relocate: break   // BrowserSession navigates (P1-26) and emits .banner
         case .query: updateStatus(); updateEmptyState()
-        case .groups: break     // the .changes(.reset) that follows redraws; P2-10 draws the group rows
+        case .groups(let runs):  // the .changes(.reset) that follows redraws
+            if details.folder === session.folder { details.applyGroups(runs) }
         }
     }
 
@@ -205,6 +206,8 @@ final class ContentViewController: CommandHandlingViewController {
         controller.scenarioHooks.renameText = { [weak self] in
             (self?.activeList as? InlineRenameHost)?.renameController?.currentText
         }
+        controller.scenarioHooks.visibleRowNames = { [weak self] in self?.details.visibleRowNames() ?? [] }
+        controller.scenarioHooks.groupHeaderTitles = { [weak self] in self?.details.groupHeaderTitles() ?? [] }
         controller.scenarioHooks.performDrop = { [weak self] sources, onto, modifiers, secondary, choice in
             self?.scenarioDrop(sources: sources, onto: onto, modifiers: modifiers, secondary: secondary, choice: choice)
         }
@@ -224,6 +227,14 @@ final class ContentViewController: CommandHandlingViewController {
         // step (answerConflict, answerAlert), which could never run while this step waited (QA round 1).
         let request = JobRequest(kind, origin: dropTarget.origin), operations = context.environment.operations
         Task { _ = await operations.perform(request) }
+    }
+
+    /// Group By ▸ items show a checkmark for this folder's saved choice (P2-10).
+    override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if let command = MenuValidation.command(for: menuItem.action), let state = MenuValidation.groupByState(command, session.viewState) {
+            menuItem.state = state
+        }
+        return super.validateMenuItem(menuItem)
     }
 
     // MARK: new tabs (P2-06)

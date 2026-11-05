@@ -76,6 +76,11 @@ enum ContextMenuTitles {
         case .sortByDateCreated: L10n.string("Date Created")
         case .sortAscending: L10n.string("Ascending")
         case .sortDescending: L10n.string("Descending")
+        case .groupByNone: L10n.string("None")
+        case .groupByKind: L10n.string("Kind")
+        case .groupByDateModified: L10n.string("Date Modified")
+        case .groupBySize: L10n.string("Size")
+        case .groupByName: L10n.string("Name")
         default: command.rawValue
         }
     }
@@ -144,6 +149,8 @@ final class ContextMenuBuilder {
                                                               .toggleHidden, .toggleCommandBar], target, handler, folder, view))
         menu.addItem(submenu(L10n.string("Sort By"), id: "sortBy", [.sortByName, .sortByDateModified, .sortBySize, .sortByKind,
                                                                    .sortByDateCreated, .sortAscending, .sortDescending], target, handler, folder, view))
+        menu.addItem(submenu(L10n.string("Group By"), id: "groupBy", [.groupByNone, .groupByKind, .groupByDateModified, .groupBySize,
+                                                                     .groupByName], target, handler, folder, view))
         add(.refresh, target, handler, to: menu)
         menu.addItem(.separator())
         add(.openInTerminal, target, handler, to: menu)
@@ -201,6 +208,8 @@ final class ContextMenuBuilder {
         case .sortByDateCreated: sort.field == .dateCreated
         case .sortAscending: sort.ascending
         case .sortDescending: !sort.ascending
+        case .groupByNone, .groupByKind, .groupByDateModified, .groupBySize, .groupByName:
+            MenuValidation.groupByState(command, view) == .on
         default: false
         }
         return on ? .on : .off

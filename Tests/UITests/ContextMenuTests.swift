@@ -104,8 +104,8 @@ final class ContextMenuTests: XCTestCase {
         try h.file("a.txt")
         let content = try h.content(of: try await h.openBrowserWindow())
         let menu = content.contextMenu(forRow: nil)
-        XCTAssertEqual(ids(menu), ["macx.menu.paste", "macx.menu.new", "macx.menu.view", "macx.menu.sortBy", "macx.menu.refresh",
-                                   "macx.menu.openInTerminal", "macx.menu.properties"])
+        XCTAssertEqual(ids(menu), ["macx.menu.paste", "macx.menu.new", "macx.menu.view", "macx.menu.sortBy", "macx.menu.groupBy",
+                                   "macx.menu.refresh", "macx.menu.openInTerminal", "macx.menu.properties"])   // Group By ▸: P2-10
         guard case .currentFolder? = box(menu, .properties)?.target else { return XCTFail("Properties of the current folder") }
         let sortBy = menu?.items.first { $0.identifier?.rawValue == "macx.menu.sortBy" }?.submenu
         XCTAssertEqual(item(sortBy, .sortByName)?.state, .on)

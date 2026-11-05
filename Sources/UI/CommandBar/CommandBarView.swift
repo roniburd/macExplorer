@@ -38,6 +38,8 @@ final class CommandBarView: NSView {
         if let index = moreButton.pullDownMenu.items.firstIndex(where: { $0.action == Selector(Command.copyAsPath.selectorName) }) {
             moreButton.pullDownMenu.insertItem(CopyPathMenu.submenuItem(), at: index + 1)
         }
+        viewButton.pullDownMenu.addItem(.separator())
+        viewButton.pullDownMenu.addItem(Self.groupBySubmenu())
         moreButton.setAccessibilityLabel(L10n.string("More"))
         moreButton.toolTip = L10n.string("More")
         deleteButton = Self.button(.moveToTrash)
@@ -155,6 +157,22 @@ final class CommandBarView: NSView {
             button.toolTip = title
         }
         return button
+    }
+
+    /// View ▾ › Group By ▸ (P2-10): nil-targeted items; the content pane validates them and sets the checkmark.
+    private static func groupBySubmenu() -> NSMenuItem {
+        let title = L10n.string("Group By")
+        let submenu = NSMenu(title: title)
+        for command in [Command.groupByNone, .groupByKind, .groupByDateModified, .groupBySize, .groupByName] {
+            let item = NSMenuItem(title: CommandBarTitles.menuTitle(command), action: Selector(command.selectorName), keyEquivalent: "")
+            item.identifier = NSUserInterfaceItemIdentifier("macx.commandBar.\(command.rawValue)")
+            submenu.addItem(item)
+            if command == .groupByNone { submenu.addItem(.separator()) }
+        }
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.identifier = NSUserInterfaceItemIdentifier("macx.commandBar.groupBy")
+        item.submenu = submenu
+        return item
     }
 
     private static func divider() -> NSView {

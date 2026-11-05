@@ -1,5 +1,6 @@
 import AppKit
 import Core
+import MacxFS
 
 /// Menu-item enablement shared by the main menu (P1-29), the command bar and CommandHandlingViewController.
 @MainActor enum MenuValidation {
@@ -28,6 +29,23 @@ import Core
         guard command == .closeWindow else { return }
         let title = closeTitle(for: window)
         if item.title != title { item.title = title }
+    }
+
+    /// The checkmark of a Group By ▸ item for a folder's view state; nil for other commands (P2-10).
+    static func groupByState(_ command: Command, _ state: FolderViewState) -> NSControl.StateValue? {
+        guard let groupBy = groupBy(for: command) else { return nil }
+        return groupBy == state.groupBy ? .on : .off
+    }
+
+    static func groupBy(for command: Command) -> GroupBy? {
+        switch command {
+        case .groupByNone: GroupBy.none
+        case .groupByKind: .kind
+        case .groupByDateModified: .dateModified
+        case .groupBySize: .size
+        case .groupByName: .nameFirstLetter
+        default: nil
+        }
     }
 
     private static let commandsBySelector: [String: Command] = {

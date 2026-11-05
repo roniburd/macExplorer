@@ -133,6 +133,28 @@
         }
       }
     },
+    "%@, %@, collapsed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, %@, collapsed"
+          }
+        }
+      }
+    },
+    "%@, %@, expanded" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, %@, expanded"
+          }
+        }
+      }
+    },
     "%@, cut" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -432,6 +454,17 @@
         }
       }
     },
+    "0–9" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "0–9"
+          }
+        }
+      }
+    },
     "1 item" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -472,6 +505,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "1 operation is in progress"
+          }
+        }
+      }
+    },
+    "A long time ago" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A long time ago"
           }
         }
       }
@@ -1055,6 +1099,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cloud storage (OneDrive, Google Drive, Dropbox…)"
+          }
+        }
+      }
+    },
+    "Collapse %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collapse %@"
+          }
+        }
+      }
+    },
+    "Collapse All Groups" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collapse All Groups"
           }
         }
       }
@@ -1697,6 +1763,39 @@
         }
       }
     },
+    "Earlier this month" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Earlier this month"
+          }
+        }
+      }
+    },
+    "Earlier this week" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Earlier this week"
+          }
+        }
+      }
+    },
+    "Earlier this year" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Earlier this year"
+          }
+        }
+      }
+    },
     "Edit" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1715,6 +1814,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Eject"
+          }
+        }
+      }
+    },
+    "Empty (0 KB)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Empty (0 KB)"
           }
         }
       }
@@ -1770,6 +1880,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Executable"
+          }
+        }
+      }
+    },
+    "Expand %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expand %@"
+          }
+        }
+      }
+    },
+    "Expand All Groups" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expand All Groups"
           }
         }
       }
@@ -2005,6 +2137,17 @@
         }
       }
     },
+    "Gigantic (> 4 GB)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gigantic (> 4 GB)"
+          }
+        }
+      }
+    },
     "Go" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2137,6 +2280,17 @@
         }
       }
     },
+    "Huge (1 – 4 GB)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Huge (1 – 4 GB)"
+          }
+        }
+      }
+    },
     "Icon Size" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2188,6 +2342,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "In iCloud, not downloaded"
+          }
+        }
+      }
+    },
+    "In the future" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In the future"
           }
         }
       }
@@ -2291,6 +2456,17 @@
         }
       }
     },
+    "Large (128 MB – 1 GB)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Large (128 MB – 1 GB)"
+          }
+        }
+      }
+    },
     "Large Icons" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2313,6 +2489,17 @@
         }
       }
     },
+    "Last month" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last month"
+          }
+        }
+      }
+    },
     "Last opened" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2320,6 +2507,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Last opened"
+          }
+        }
+      }
+    },
+    "Last week" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last week"
           }
         }
       }
@@ -2507,6 +2705,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Medium"
+          }
+        }
+      }
+    },
+    "Medium (1 – 128 MB)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Medium (1 – 128 MB)"
           }
         }
       }
@@ -3134,6 +3343,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Operations"
+          }
+        }
+      }
+    },
+    "Other" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Other"
           }
         }
       }
@@ -4018,6 +4239,17 @@
         }
       }
     },
+    "Small (16 KB – 1 MB)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Small (16 KB – 1 MB)"
+          }
+        }
+      }
+    },
     "Small Icons" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4344,6 +4576,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "This update couldn't be verified and wasn't installed."
+          }
+        }
+      }
+    },
+    "Tiny (0 – 16 KB)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tiny (0 – 16 KB)"
+          }
+        }
+      }
+    },
+    "Today" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Today"
           }
         }
       }
@@ -4718,6 +4972,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Yes"
+          }
+        }
+      }
+    },
+    "Yesterday" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yesterday"
           }
         }
       }

@@ -89,6 +89,23 @@ enum SelectionController {
         }
     }
 
+    /// Grouped Details (P2-10): the item a navigation key moves to over visible items only. Headers and collapsed
+    /// groups are skipped; Home/End are the first/last visible items and pages land on the nearest visible item.
+    /// ←/→ give nil (they collapse/expand the cursor's group).
+    static func groupedTarget(_ key: NavKey, cursorRow: Int?, mapping: RowMapping, pageSize: Int) -> Int? {
+        switch (key, cursorRow) {
+        case (.left, _), (.right, _): return nil
+        case (.home, _), (_, nil): return mapping.firstVisibleModelRow
+        case (.end, _): return mapping.lastVisibleModelRow
+        case (.up, let cursor?): return mapping.adjacentVisibleModelRow(from: cursor, by: -1)
+        case (.down, let cursor?): return mapping.adjacentVisibleModelRow(from: cursor, by: 1)
+        case (.pageUp, let cursor?), (.pageDown, let cursor?):
+            let delta = key == .pageUp ? -max(pageSize, 1) : max(pageSize, 1)
+            guard let start = mapping.anchorTableRow(forModelRow: cursor) else { return mapping.firstVisibleModelRow }
+            return mapping.nearestVisibleModelRow(toTableRow: start + delta, direction: delta)
+        }
+    }
+
     static func targetRow(of command: SelectionCommand) -> Int? {
         switch command {
         case .set(_, let cursor): cursor
@@ -134,21 +151,30 @@ final class ListMouseHandler {
 /// Navigation keys and type-select for a list (KeyRouter runs first for alternates).
 @MainActor
 enum ListKeys {
+    /// `mapping` (grouped Details, P2-10): navigation and type-select run over visible items only.
     static func handle(_ event: NSEvent, folder: FolderModel, list: FileListView, pageSize: Int,
-                       navigate: (Int, NavKey) -> Int?, typeSelect: TypeSelect) -> Bool {
+                       navigate: (Int, NavKey) -> Int?, typeSelect: TypeSelect, mapping: RowMapping? = nil) -> Bool {
         if let key = NavKey(event.specialKey) {
             typeSelect.reset()
             if event.modifierFlags.contains(.command) { return true }   // ⌘-arrows never change the selection (§5.5)
             let cursor = folder.selection.cursor.flatMap { folder.row(of: $0) }
-            if let command = SelectionController.arrow(key, extend: event.modifierFlags.contains(.shift), cursorRow: cursor,
-                                                       rowCount: folder.rowCount, pageSize: pageSize, navigate: navigate) {
+            let extend = event.modifierFlags.contains(.shift)
+            let command: SelectionCommand?
+            if let mapping, mapping.isGrouped {
+                command = SelectionController.groupedTarget(key, cursorRow: cursor, mapping: mapping, pageSize: pageSize)
+                    .map { extend ? .extend(to: $0) : .set(IndexSet(integer: $0), cursor: $0) }
+            } else {
+                command = SelectionController.arrow(key, extend: extend, cursorRow: cursor, rowCount: folder.rowCount,
+                                                    pageSize: pageSize, navigate: navigate)
+            }
+            if let command {
                 folder.select(command)
                 if let row = SelectionController.targetRow(of: command) { list.scrollToRow(row) }
             }
             return true
         }
         if TypeSelect.accepts(event, bufferEmpty: typeSelect.buffer.isEmpty) {
-            typeSelect.handle(event.characters ?? "", folder: folder, list: list)
+            typeSelect.handle(event.characters ?? "", folder: folder, list: list, mapping: mapping)
             return true
         }
         return false

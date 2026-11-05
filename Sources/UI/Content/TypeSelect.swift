@@ -11,7 +11,8 @@ struct TypeSelectQuery: Equatable, Sendable {
 /// Prefix search on display rows, folded like the filter (§4.2 SortKeys rule 5). O(rows) with a bounded fold per
 /// name, so big folders run it off main.
 enum TypeSelectSearch {
-    static func find(_ query: TypeSelectQuery, in store: EntryStore, from cursorRow: Int?) -> Int? {
+    /// `mapping` (grouped Details, P2-10): rows of collapsed groups are skipped.
+    static func find(_ query: TypeSelectQuery, in store: EntryStore, from cursorRow: Int?, mapping: RowMapping? = nil) -> Int? {
         let needle = SortKeys.searchFold(query.text)
         let count = store.visibleCount
         guard !needle.isEmpty, count > 0 else { return nil }
@@ -19,6 +20,7 @@ enum TypeSelectSearch {
         let prefixLength = query.text.count + 4
         for step in 0..<count {
             let row = (begin + step) % count
+            if let mapping, mapping.tableRow(forModelRow: row) == nil { continue }
             let name = store.name(store.storageIndex(forRow: row))
             if SortKeys.searchFold(String(name.prefix(prefixLength))).starts(with: needle) { return row }
         }
@@ -63,7 +65,7 @@ final class TypeSelect {
         return characters.unicodeScalars.allSatisfy { !CharacterSet.controlCharacters.contains($0) }
     }
 
-    func handle(_ characters: String, folder: FolderModel, list: FileListView) {
+    func handle(_ characters: String, folder: FolderModel, list: FileListView, mapping: RowMapping? = nil) {
         let query = append(characters)
         let store = folder.store
         let cursor = folder.selection.cursor.flatMap { folder.row(of: $0) }
@@ -71,12 +73,14 @@ final class TypeSelect {
         let token = generation
         let version = store.version
         if store.visibleCount <= Self.inlineLimit {
-            apply(TypeSelectSearch.find(query, in: store, from: cursor), token: token, version: version, folder: folder, list: list)
+            apply(TypeSelectSearch.find(query, in: store, from: cursor, mapping: mapping), token: token, version: version, folder: folder, list: list)
             return
         }
         searchTask?.cancel()
         searchTask = Task { [weak self, weak folder, weak list] in
-            let row = await Task.detached(priority: .userInitiated) { TypeSelectSearch.find(query, in: store, from: cursor) }.value
+            let row = await Task.detached(priority: .userInitiated) {
+                TypeSelectSearch.find(query, in: store, from: cursor, mapping: mapping)
+            }.value
             guard let self, let folder, let list else { return }
             self.apply(row, token: token, version: version, folder: folder, list: list)
         }

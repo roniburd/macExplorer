@@ -66,7 +66,8 @@ extension BrowserWindowController {
     }
 
     var probeSort: MacxFS.SortDescriptor { session.folder.query.sort }
-    var probeGrouping: GroupBy { session.folder.grouping }
+    /// The folder's saved Group by choice (P2-10): it stays set in Icons view, whose list is never grouped.
+    var probeGrouping: GroupBy { session.viewState.groupBy }
     var probeIconSize: IconSize { session.viewState.iconSize }
 
     func probePerformDrop(sources: [URL], onto targetName: String, modifiers: DragModifiers, secondary: Bool,

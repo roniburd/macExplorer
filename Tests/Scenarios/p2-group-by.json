@@ -1,0 +1,23 @@
+{"name": "p2-group-by",
+ "fixture": {"files": ["a.txt", "b.txt", "c.txt"], "dirs": ["sub"],
+             "mtimeDays": {"sub": 0, "a.txt": 0, "b.txt": -1, "c.txt": -400}},
+ "steps": [
+  {"waitFor": {"rows": ["sub", "a.txt", "b.txt", "c.txt"], "state": "complete"}},
+  {"menu": ["View", "Group By", "Date Modified"]},
+  {"waitFor": {"groupBy": "dateModified", "groups": ["Today (2)", "Yesterday (1)", "A long time ago (1)"],
+               "visibleRows": ["sub", "a.txt", "b.txt", "c.txt"]}},
+  {"click": "group:Today"},
+  {"waitFor": {"visibleRows": ["b.txt", "c.txt"], "groups": ["Today (2)", "Yesterday (1)", "A long time ago (1)"]}},
+  {"click": "b.txt"},
+  {"key": "down"},
+  {"expect": {"selection": ["c.txt"]}},
+  {"key": "up"},
+  {"key": "up"},
+  {"expect": {"selection": ["b.txt"]}},
+  {"menu": ["View", "Group By", "Size"]},
+  {"waitFor": {"groups": ["Folders (1)", "Tiny (0 – 16 KB) (3)"]}},
+  {"key": "cmd+2"},
+  {"waitFor": {"viewMode": "icons", "rows": ["sub", "a.txt", "b.txt", "c.txt"], "groupBy": "size"}},
+  {"key": "cmd+1"},
+  {"waitFor": {"groups": ["Folders (1)", "Tiny (0 – 16 KB) (3)"]}}
+ ]}

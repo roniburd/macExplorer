@@ -14,9 +14,7 @@ final class FileCommandController: CommandHandler {
     /// Commands whose UI arrives in a later Phase 2 task (disabled, never performed). The NSWindow tab commands are
     /// here too: NSWindow and BrowserWindowController handle them, so they never reach a pane's handler.
     static let pendingCommands: Set<Command> = Command.windowTabCommands.union([
-        .quickLook, .viewAsColumns,
-        .groupByNone, .groupByKind, .groupByDateModified, .groupBySize, .groupByName,
-        .toggleFolderSizes,
+        .quickLook, .viewAsColumns, .toggleFolderSizes,
     ])
 
     var environment: CoreEnvironment { context.environment }
@@ -88,14 +86,14 @@ final class FileCommandController: CommandHandler {
              .densityComfortable, .toggleHidden, .toggleCommandBar, .sortByName, .sortByDateModified, .sortBySize, .sortByKind,
              .sortByDateCreated, .sortAscending, .sortDescending:
             performViewCommand(effective)
+        case .groupByNone, .groupByKind, .groupByDateModified, .groupBySize, .groupByName:
+            if let groupBy = MenuValidation.groupBy(for: effective) { session?.updateViewState { $0.groupBy = groupBy } }
         case .applyViewToAllFolders: applyViewToAllFolders()
         case .eject: eject(target)
         case .removeFromFavorites: removeFavorite(target)
         case .cancelOperation: environment.clipboard.clearCut()
         case .newTab, .nextTab, .previousTab, .showTabBar, .showAllTabs, .moveTabToNewWindow, .mergeAllWindows,
-             .quickLook, .viewAsColumns,
-             .groupByNone, .groupByKind, .groupByDateModified, .groupBySize, .groupByName,
-             .toggleFolderSizes:
+             .quickLook, .viewAsColumns, .toggleFolderSizes:
             break   // pendingCommands: canPerform is false, so perform beeps above
         }
     }
