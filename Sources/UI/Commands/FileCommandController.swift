@@ -14,7 +14,7 @@ final class FileCommandController: CommandHandler {
     /// Commands whose UI arrives in a later Phase 2 task (disabled, never performed). The NSWindow tab commands are
     /// here too: NSWindow and BrowserWindowController handle them, so they never reach a pane's handler.
     static let pendingCommands: Set<Command> = Command.windowTabCommands.union([
-        .viewAsColumns, .toggleFolderSizes,
+        .viewAsColumns,
     ])
 
     var environment: CoreEnvironment { context.environment }
@@ -91,6 +91,7 @@ final class FileCommandController: CommandHandler {
         case .groupByNone, .groupByKind, .groupByDateModified, .groupBySize, .groupByName:
             if let groupBy = MenuValidation.groupBy(for: effective) { session?.updateViewState { $0.groupBy = groupBy } }
         case .applyViewToAllFolders: applyViewToAllFolders()
+        case .toggleFolderSizes: toggleFolderSizes()
         case .eject: eject(target)
         case .removeFromFavorites: removeFavorite(target)
         case .cancelOperation:
@@ -98,9 +99,14 @@ final class FileCommandController: CommandHandler {
             if window?.quickLook.hideIfVisible() != true { environment.clipboard.clearCut() }
         case .quickLook: window?.quickLook.toggle()
         case .newTab, .nextTab, .previousTab, .showTabBar, .showAllTabs, .moveTabToNewWindow, .mergeAllWindows,
-             .viewAsColumns, .toggleFolderSizes:
+             .viewAsColumns:
             break   // pendingCommands: canPerform is false, so perform beeps above
         }
+    }
+
+    /// View ▸ Calculate Folder Sizes (P2-14): per folder, saved in its view state; the session starts or stops sizing.
+    func toggleFolderSizes() {
+        session?.updateViewState { $0.calculateFolderSizes.toggle() }
     }
 
     // MARK: copy path (P2-04)

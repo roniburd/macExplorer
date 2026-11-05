@@ -35,6 +35,8 @@ public struct FolderContext {
     /// "Now" and the calendar for Date Modified groups (P2-09); tests inject both.
     public var now: @Sendable () -> Date
     public var calendar: Calendar
+    /// While folder sizes stream in, the size sort re-sorts at most once per this interval (P2-14); tests pass .zero.
+    public var resortCoalescing: Duration
 
     public init(readers: DirectoryReaders, lanes: LanePool, volumes: Volumes, changeBus: ChangeBus,
                 types: TypeRegistry = .shared, pacer: any FramePacer = TimerFramePacer(),
@@ -43,8 +45,10 @@ public struct FolderContext {
                 recordPermissionOutcome: @escaping @MainActor (URL, Bool) -> Void,
                 home: URL = FileManager.default.homeDirectoryForCurrentUser,
                 now: @escaping @Sendable () -> Date = { Date() },
-                calendar: Calendar = .autoupdatingCurrent) {
+                calendar: Calendar = .autoupdatingCurrent,
+                resortCoalescing: Duration = .milliseconds(500)) {
         self.home = home
+        self.resortCoalescing = resortCoalescing
         self.now = now
         self.calendar = calendar
         self.readers = readers
@@ -146,6 +150,10 @@ public final class FolderModel {
 
     // Folder sizes (FolderModel+Sizes, P2-13): set by a FolderSizeSession; rows that leave the store are dropped.
     var sizeTable: [RowID: FolderSize] = [:]
+    /// "Calculate Folder Sizes" is on for the view showing this model (P2-14): the selection total includes folders.
+    public internal(set) var folderSizesEnabled = false
+    /// The pending coalesced size re-sort (FolderModel+Sizes).
+    var sizeResortTask: Task<Void, Never>?
 
     public init(directory: URL, context: FolderContext, query: ViewQuery) {
         self.directory = directory
@@ -218,6 +226,8 @@ public final class FolderModel {
         pacerTask = nil
         stopWatcher()
         cancelDayTimer()
+        sizeResortTask?.cancel()
+        sizeResortTask = nil
         busToken?.cancel()
         busToken = nil
         volumeToken?.cancel()
@@ -275,7 +285,7 @@ public final class FolderModel {
     func resortNow() async {
         let snapshot = store, wanted = query, epoch = self.epoch, group = currentGroupSpec()
         let signpost = PerfSignposts.signposter.beginInterval(PerfSignposts.sort)
-        let result = await worker.resort(snapshot, tag: keysTag, query: wanted, group: group)
+        let result = await worker.resort(snapshot, tag: keysTag, query: wanted, group: group, sizes: sortSizes())
         PerfSignposts.signposter.endInterval(PerfSignposts.sort, signpost)
         // A newer setQuery or grouping change queued its own re-sort; a fresh load replaced the store.
         guard !closed, epoch == self.epoch, wanted == query, store.version == snapshot.version,
@@ -296,18 +306,24 @@ public final class FolderModel {
 
     public var selectedURLs: [URL] { selection.rows.map { url(atRow: $0) } }
 
+    /// Files' bytes, plus (with folder sizes on) the selected folders' and packages' computed sizes once every one
+    /// of them is known (P2-14).
     public var selectionSummary: SelectionSummary {
         var files = 0, folders = 0
         var bytes: Int64 = 0
+        var folderBytes: Int64? = folderSizesEnabled ? 0 : nil
         for row in selection.rows {
             let e = entry(atRow: row)
             switch e.kind {
-            case .directory: folders += 1
-            case .package: files += 1                 // size is its entry count; bytes are folder sizes (Phase 2)
+            case .directory, .package:
+                if e.kind == .directory { folders += 1 } else { files += 1 }   // a package's size is its entry count
+                if let sum = folderBytes { folderBytes = folderSize(atRow: row).map { sum + $0.bytes } }
             default: files += 1; bytes += e.size
             }
         }
-        return SelectionSummary(count: selection.count, files: files, folders: folders, bytes: bytes)
+        var summary = SelectionSummary(count: selection.count, files: files, folders: folders, bytes: bytes)
+        summary.folderBytes = folderBytes
+        return summary
     }
 
     public func isCut(row: Int) -> Bool { !cutNames.isEmpty && cutNames.contains(name(atRow: row)) }
@@ -512,7 +528,7 @@ public final class FolderModel {
         case .completed:
             await drainLoadFeed()
             guard !closed, generation == gen else { return }
-            guard let finished = await worker.finishLoad(gen, query: query, group: currentGroupSpec()),
+            guard let finished = await worker.finishLoad(gen, query: query, group: currentGroupSpec(), sizes: sortSizes()),
                   !closed, generation == gen else { return }
             pacerTask?.cancel()
             pacerTask = nil
@@ -598,7 +614,8 @@ public final class FolderModel {
                 guard let self, epoch == self.epoch, self.generation == gen else { return }
                 let old = self.store
                 guard let result = await self.worker.finishReread(gen, old: old, query: self.query,
-                                                                  group: self.currentGroupSpec()) else { return }
+                                                                  group: self.currentGroupSpec(),
+                                                                  sizes: self.sortSizes()) else { return }
                 guard !self.closed, epoch == self.epoch, self.store.version == old.version else { return }
                 self.applyPatch(result)
                 self.rereadDone()

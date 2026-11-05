@@ -93,8 +93,10 @@ final class PlainCellView: NSTableCellView {
 
     required init?(coder: NSCoder) { fatalError("PlainCellView is created in code") }
 
-    func configure(text: String, alignment: NSTextAlignment, monospacedDigits: Bool, isCut: Bool) {
+    func configure(text: String, alignment: NSTextAlignment, monospacedDigits: Bool, isCut: Bool,
+                   accessibilityLabel: String? = nil) {
         label.stringValue = text
+        label.setAccessibilityLabel(accessibilityLabel)
         label.alignment = alignment
         label.font = monospacedDigits ? CellStyle.digitsFont : CellStyle.font
         CellStyle.apply(isCut: isCut, to: label, container: self, italicizes: false)

@@ -37,6 +37,9 @@ final class BrowserSession {
     private var settingsLoop: ObservationLoop?
     private var bannerText: String?
     private var closed = false
+    /// Folder sizes (P2-14): while the folder's "Calculate Folder Sizes" is on and the window shows Details, one
+    /// session sizes the current model's folders. Stopped on navigation, a mode change away and the toggle off.
+    private(set) var sizeSession: FolderSizeSession?
 
     init(environment: CoreEnvironment, initialURL: URL) {
         self.environment = environment
@@ -51,6 +54,7 @@ final class BrowserSession {
         self.history = NavigationHistory(current: initialURL)
         folder.setGrouping(Self.grouping(for: state))
         attach(folder)
+        updateFolderSizes()
         refineLocator()
         // Every window follows Settings.showHidden (⇧⌘. or the Settings window in any window, QA round 1).
         settingsLoop = ObservationLoop({ [weak self] in _ = self?.environment.settings.showHidden },
@@ -111,6 +115,7 @@ final class BrowserSession {
     /// F5/⌘R: re-read + diff of the same model (retry from an error state).
     func reload() {
         folder.refresh()
+        sizeSession?.retry()
     }
 
     func observe(_ handler: @escaping @MainActor (SessionEvent) -> Void) -> ObserverToken { observers.add(handler) }
@@ -144,6 +149,7 @@ final class BrowserSession {
         settingsLoop?.cancel()
         settingsLoop = nil
         folderToken = nil
+        stopFolderSizes()
         folder.close()
     }
 
@@ -157,6 +163,7 @@ final class BrowserSession {
 
     private func open(_ url: URL, selecting name: String?, folderID: UInt64? = nil) {
         folderToken = nil
+        stopFolderSizes()
         folder.close()
         let (state, locator) = viewStates.state(for: url, fileID: folderID)
         viewState = state
@@ -169,6 +176,7 @@ final class BrowserSession {
         attach(model)
         observers.send(.folderChanged(model))
         setDisplayedMode(state.mode)
+        updateFolderSizes()
         observers.send(.viewStateChanged(state))
         refineLocator()
     }
@@ -219,7 +227,26 @@ final class BrowserSession {
         }
         setDisplayedMode(state.mode)
         folder.setGrouping(Self.grouping(for: state))
+        updateFolderSizes()
         if state != old { observers.send(.viewStateChanged(state)) }
+    }
+
+    /// Folder sizes follow the view state and the displayed mode (Details only): enabled on the model, with one
+    /// session while on; off stops the session and clears the sizes.
+    private func updateFolderSizes() {
+        let on = viewState.calculateFolderSizes && viewMode == .details
+        if on {
+            folder.setFolderSizesEnabled(true)
+            if sizeSession == nil { sizeSession = environment.folderSizes.attach(to: folder) }
+        } else {
+            stopFolderSizes()
+            folder.setFolderSizesEnabled(false)
+        }
+    }
+
+    private func stopFolderSizes() {
+        sizeSession?.stop()
+        sizeSession = nil
     }
 
     /// The only writer of `viewMode`. Until P2-19 `.columns` is shown as Details by ContentViewController.

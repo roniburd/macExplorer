@@ -45,6 +45,17 @@
         }
       }
     },
+    "%@ + calculating…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ + calculating…"
+          }
+        }
+      }
+    },
     "%@ Properties" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -802,6 +813,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Calculate Folder Sizes"
+          }
+        }
+      }
+    },
+    "Calculating…" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Calculating…"
           }
         }
       }
@@ -5207,6 +5230,29 @@
         }
       }
     },
+    "at least %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "at least %@"
+          }
+        }
+      }
+    },
+    "calculating…" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "calculating…"
+          }
+        }
+      }
+    },
     "iCloud Drive" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5294,6 +5340,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "“%@” couldn't be ejected."
+          }
+        }
+      }
+    },
+    "≥ %@" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "≥ %@"
           }
         }
       }

@@ -61,3 +61,33 @@ enum Formatters {
         return formatter
     }
 }
+
+/// The Size cell of a folder or package row (P2-14): "--" with sizes off, "Calculating…" while pending, the size once
+/// known, "≥ <size>" when parts were skipped (unreadable, dataless, degraded).
+@MainActor
+enum FolderSizeText {
+    static func text(_ size: FolderSize?, enabled: Bool) -> String {
+        guard enabled else { return Formatters.folderSize }
+        guard let size else { return L10n.string("Calculating…") }
+        let bytes = Formatters.bytes(size.bytes)
+        return size.isPartial ? String(format: L10n.string("≥ %@"), bytes) : bytes
+    }
+
+    /// VoiceOver label for a partial size ("at least 1.2 MB"); nil when the text reads as it is.
+    static func accessibilityLabel(_ size: FolderSize?, enabled: Bool) -> String? {
+        guard enabled, let size, size.isPartial else { return nil }
+        return String(format: L10n.string("at least %@"), Formatters.bytes(size.bytes))
+    }
+}
+
+/// The size part of the status bar's selection text (P2-14): with folder sizes on, files plus the selected folders
+/// once every one of them is known, "<files> + calculating…" before that. With sizes off it is Phase 1's (files only).
+@MainActor
+enum SelectionSizeText {
+    static func text(_ s: SelectionSummary, sizesEnabled: Bool) -> String {
+        let files = Formatters.bytes(s.bytes)
+        guard sizesEnabled else { return files }
+        if let folders = s.folderBytes { return Formatters.bytes(s.bytes + folders) }
+        return s.files > 0 ? String(format: L10n.string("%@ + calculating…"), files) : L10n.string("calculating…")
+    }
+}

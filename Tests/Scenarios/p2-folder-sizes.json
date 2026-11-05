@@ -1,0 +1,17 @@
+{"name": "p2-folder-sizes",
+ "fixture": {"files": ["big/a.bin", "big/deep/b.bin", "small/c.bin"], "dirs": ["big", "small"],
+             "sizes": {"big/a.bin": 3000000, "big/deep/b.bin": 2000000, "small/c.bin": 1000}},
+ "steps": [
+  {"waitFor": {"rows": ["big", "small"], "state": "complete"}},
+  {"expect": {"cells": {"big": {"size": "--"}}}},
+  {"menu": ["View", "Calculate Folder Sizes"]},
+  {"waitFor": {"cells": {"big": {"size": "5 MB"}, "small": {"size": "1 KB"}}}, "timeoutMs": 5000},
+  {"menu": ["View", "Sort By", "Size"]},
+  {"waitFor": {"rows": ["small", "big"]}},
+  {"fsWrite": {"path": "big/deep/new.bin", "bytes": 4000000}},
+  {"waitFor": {"cells": {"big": {"size": "9 MB"}}}, "timeoutMs": 6000},
+  {"doubleClick": "small"},
+  {"waitFor": {"folder": "small"}},
+  {"key": "cmd+["},
+  {"waitFor": {"cells": {"big": {"size": "9 MB"}}}, "timeoutMs": 1000}
+ ]}

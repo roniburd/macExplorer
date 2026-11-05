@@ -175,6 +175,36 @@ final class DetailsViewTests: XCTestCase {
         XCTAssertNotNil(session.folder.row(named: "new.txt"))
     }
 
+    /// P2-14: with Calculate Folder Sizes on, folder Size cells go "Calculating…" → size (through `.folderSizes`),
+    /// partial sizes read "≥ …" with an "at least" label, the status bar adds the folders' sizes, and the toggle off
+    /// goes back to "--". `cellText` (scenario hook) reports what the cell shows.
+    func testFolderSizeCellsAndSelectionTotal() async throws {
+        let h = try await ContentTestHarness.make(self)
+        try h.file("big/a.bin", bytes: 5_000); try h.file("part/b.bin", bytes: 10); try h.file("f.txt", bytes: 3)
+        let (content, session, _) = try await h.makeContent()
+        let details = content.details
+        let folder = session.folder
+        let big = try XCTUnwrap(folder.row(named: "big")), part = try XCTUnwrap(folder.row(named: "part"))
+        XCTAssertEqual(details.cellView(row: big, column: .size)?.textField?.stringValue, "--")
+        XCTAssertEqual(details.cellText(rowNamed: "big", column: "size"), "--")
+        session.updateViewState { $0.calculateFolderSizes = true }
+        session.sizeSession?.stop()                      // sizes are set by hand below
+        XCTAssertEqual(details.cellView(row: big, column: .size)?.textField?.stringValue, "Calculating…")
+        folder.select(.names(["big", "f.txt"]))
+        XCTAssertEqual(content.statusBar.selectionText, "2 selected (3 bytes + calculating…)")
+        folder.setFolderSizes([folder.identity(atRow: big): FolderSize(bytes: 5_000),
+                               folder.identity(atRow: part): FolderSize(bytes: 1_200_000, isPartial: true)])
+        XCTAssertEqual(details.cellView(row: big, column: .size)?.textField?.stringValue, "5 KB")
+        XCTAssertEqual(details.cellText(rowNamed: "big", column: "size"), "5 KB")
+        let partial = try XCTUnwrap(details.cellView(row: part, column: .size)?.textField)
+        XCTAssertEqual(partial.stringValue, "≥ 1.2 MB")
+        XCTAssertEqual(partial.accessibilityLabel(), "at least 1.2 MB")
+        XCTAssertEqual(content.statusBar.selectionText, "2 selected (5 KB)")
+        session.updateViewState { $0.calculateFolderSizes = false }
+        XCTAssertEqual(details.cellView(row: big, column: .size)?.textField?.stringValue, "--")
+        XCTAssertEqual(content.statusBar.selectionText, "2 selected (3 bytes)")
+    }
+
     func testScrollAnchorSurvivesResort() async throws {
         let h = try await ContentTestHarness.make(self)
         for i in 0..<300 { try h.file(String(format: "f%03d.txt", i)) }

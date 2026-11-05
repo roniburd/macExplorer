@@ -30,11 +30,15 @@ public struct SelectionSummary: Sendable, Equatable {
     public var files: Int
     public var folders: Int
     public var bytes: Int64                         // files only; folders excluded in Phase 1
-    public init(count: Int, files: Int, folders: Int, bytes: Int64) {
+    /// Folder sizes on (P2-14): the selected folders' and packages' computed sizes (0 if none is selected), nil while
+    /// any of them is unknown. Folder sizes off: nil.
+    public var folderBytes: Int64?
+    public init(count: Int, files: Int, folders: Int, bytes: Int64, folderBytes: Int64? = nil) {
         self.count = count
         self.files = files
         self.folders = folders
         self.bytes = bytes
+        self.folderBytes = folderBytes
     }
 }
 

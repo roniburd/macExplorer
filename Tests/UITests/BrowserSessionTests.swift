@@ -12,6 +12,37 @@ final class BrowserSessionTests: XCTestCase {
         return session
     }
 
+    /// P2-14: the folder-size session lives while "Calculate Folder Sizes" is on and Details is shown; it stops on a
+    /// mode change away, on navigation (the next folder's own toggle decides) and when the toggle is turned off.
+    func testFolderSizeSessionFollowsToggleModeAndNavigation() async throws {
+        let h = try await ShellHarness.make(self)
+        try h.file("big/a.bin"); try h.dir("other")
+        let session = try await makeSession(h)
+        XCTAssertNil(session.sizeSession)
+        XCTAssertFalse(session.folder.folderSizesEnabled)
+        session.updateViewState { $0.calculateFolderSizes = true }
+        let first = try XCTUnwrap(session.sizeSession)
+        XCTAssertTrue(session.folder.folderSizesEnabled)
+        await first.waitUntilIdle()
+        let big = try XCTUnwrap(session.folder.row(named: "big"))
+        XCTAssertNotNil(session.folder.folderSize(atRow: big))
+        session.updateViewState { $0.mode = .icons }
+        XCTAssertNil(session.sizeSession, "Icons: no folder sizes")
+        XCTAssertFalse(session.folder.folderSizesEnabled)
+        XCTAssertNil(session.folder.folderSize(atRow: big))
+        session.updateViewState { $0.mode = .details }
+        XCTAssertNotNil(session.sizeSession)
+        session.navigate(to: h.url("other"))
+        XCTAssertNil(session.sizeSession, "the other folder has its own toggle (off)")
+        XCTAssertFalse(session.folder.folderSizesEnabled)
+        session.goBack()
+        XCTAssertNotNil(session.sizeSession, "back: this folder's saved toggle is on")
+        XCTAssertTrue(session.folder.folderSizesEnabled)
+        session.updateViewState { $0.calculateFolderSizes = false }
+        XCTAssertNil(session.sizeSession)
+        XCTAssertFalse(session.folder.folderSizesEnabled)
+    }
+
     func testInitStartsTheModelAtTheInitialURLWithTheSettingsViewMode() async throws {
         let h = try await ShellHarness.make(self)
         try h.file("a.txt"); try h.dir("sub")

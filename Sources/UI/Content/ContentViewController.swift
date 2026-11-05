@@ -98,6 +98,10 @@ final class ContentViewController: CommandHandlingViewController {
         details.onNewTabGesture = { [weak self] gesture, row in self?.newTabGesture(gesture, row: row) }
         details.onColumnsChanged = { [weak self] columns in self?.session.updateViewState { $0.columns = columns } }
         details.onSortChanged = { [weak self] sort in self?.session.updateViewState { $0.sort = sort } }
+        details.onVisibleRowsChanged = { [weak self] rows in
+            guard let self, self.details.folder === self.session.folder else { return }
+            self.session.sizeSession?.setVisibleRows(rows)
+        }
         NotificationCenter.default.addObserver(self, selector: #selector(applicationDidBecomeActive(_:)),
                                                name: NSApplication.didBecomeActiveNotification, object: nil)
         sessionToken = session.observe { [weak self] event in self?.handle(event) }
@@ -142,7 +146,11 @@ final class ContentViewController: CommandHandlingViewController {
         switch event {
         case .folderChanged(let model): bind(model)
         case .viewModeChanged(let mode): setViewMode(mode)
-        case .viewStateChanged(let state): applyViewState(state)
+        case .viewStateChanged(let state):
+            applyViewState(state)
+            if details.folder === session.folder { details.reloadSizeColumn() }   // folder sizes turned on or off
+            updateStatus()
+            if session.sizeSession != nil { details.reportVisibleRows() }
         case .historyChanged: updateCommandBar()
         case .banner(let text): showBanner(text)
         }
@@ -171,7 +179,9 @@ final class ContentViewController: CommandHandlingViewController {
         case .query: updateStatus(); updateEmptyState()
         case .groups(let runs):  // the .changes(.reset) that follows redraws
             if details.folder === session.folder { details.applyGroups(runs) }
-        case .folderSizes: break   // the Size column shows them from P2-14
+        case .folderSizes(let ids):
+            if details.folder === session.folder { details.reloadFolderSizes(ids) }
+            updateStatus()
         }
     }
 
@@ -209,6 +219,7 @@ final class ContentViewController: CommandHandlingViewController {
         }
         controller.scenarioHooks.visibleRowNames = { [weak self] in self?.details.visibleRowNames() ?? [] }
         controller.scenarioHooks.groupHeaderTitles = { [weak self] in self?.details.groupHeaderTitles() ?? [] }
+        controller.scenarioHooks.cellText = { [weak self] row, column in self?.details.cellText(rowNamed: row, column: column) }
         controller.scenarioHooks.performDrop = { [weak self] sources, onto, modifiers, secondary, choice in
             self?.scenarioDrop(sources: sources, onto: onto, modifiers: modifiers, secondary: secondary, choice: choice)
         }
@@ -232,7 +243,8 @@ final class ContentViewController: CommandHandlingViewController {
 
     /// Group By ▸ items show a checkmark for this folder's saved choice (P2-10).
     override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        if let command = MenuValidation.command(for: menuItem.action), let state = MenuValidation.groupByState(command, session.viewState) {
+        if let command = MenuValidation.command(for: menuItem.action),
+           let state = MenuValidation.groupByState(command, session.viewState) ?? MenuValidation.folderSizesState(command, session.viewState) {
             menuItem.state = state
         }
         return super.validateMenuItem(menuItem)
@@ -343,7 +355,8 @@ final class ContentViewController: CommandHandlingViewController {
     func updateStatus() {
         let folder = session.folder
         let available = lastVolumeID.flatMap { context.environment.volumes.cachedAvailableCapacity($0) }
-        statusBar.update(itemCount: folder.rowCount, selection: folder.selectionSummary, available: available)
+        statusBar.update(itemCount: folder.rowCount, selection: folder.selectionSummary, available: available,
+                         folderSizes: folder.folderSizesEnabled)
     }
 
     /// Free space (§5.5): fetched on a lane, cached; refreshed on navigation to another volume, when an operation

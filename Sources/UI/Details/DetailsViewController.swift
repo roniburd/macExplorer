@@ -158,6 +158,10 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     var onSpringLoad: ((URL) -> Void)?
     /// Installed by ContentViewController (P2-06): a middle-click on `row` (the selection is not touched).
     var onNewTabGesture: ((NewTabGesture, Int) -> Void)?
+    /// Installed by ContentViewController (P2-14): the on-screen model rows changed (scroll, reload). Coalesced to one
+    /// call per run-loop turn; the folder-size session scans those folders first.
+    var onVisibleRowsChanged: ((IndexSet) -> Void)?
+    private var visibleRowsReportPending = false
     /// The folder's columns (order, widths, visibility), from its view state (P2-08). `apply(columns:)` sets them.
     private(set) lazy var columns: [ColumnSetting] = DetailsColumns.normalized(settings.columns)
     /// Installed by ContentViewController (P2-08): the user resized, moved, showed or hid a column.
@@ -251,6 +255,7 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
             restoreScroll(anchor: folder.scrollAnchor)
         }
         reloadSelectionDrawing()
+        reportVisibleRows()
     }
 
     func apply(_ changes: ChangeSet) {
@@ -278,6 +283,7 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
             PerfSignposts.signposter.emitEvent(PerfSignposts.firstPaint)
         }
         context.icons.cancelFileIcons(notIn: visibleRowIDs())
+        reportVisibleRows()
     }
 
     /// Mirrors the model's selection into the table highlight (S5-C4) and redraws cut state when it changed.
@@ -368,6 +374,47 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
         guard !isRestoringScroll, let folder else { return }
         if let top = topVisibleRow(), top > 0 { folder.scrollAnchor = folder.identity(atRow: top) } else { folder.scrollAnchor = nil }
         context.icons.cancelFileIcons(notIn: visibleRowIDs())
+        reportVisibleRows()
+    }
+
+    /// Calls `onVisibleRowsChanged` on the next run-loop turn with `visibleRows()` (model rows of the item rows on
+    /// screen: a collapsed group between two visible ones is left out, never bridged).
+    func reportVisibleRows() {
+        guard onVisibleRowsChanged != nil, !visibleRowsReportPending else { return }
+        visibleRowsReportPending = true
+        RunLoop.main.perform { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.visibleRowsReportPending = false
+                guard self.folder != nil else { return }
+                self.onVisibleRowsChanged?(self.visibleRows())
+            }
+        }
+    }
+
+    /// `.folderSizes(ids)` (P2-14): redraws the Size cells of those rows that are on screen (rows scrolled in later
+    /// are configured with the current size anyway).
+    func reloadFolderSizes(_ ids: Set<RowID>) {
+        guard let folder, !ids.isEmpty else { return }
+        let column = tableView.column(withIdentifier: DetailsColumns.identifier(.size))
+        guard column >= 0 else { return }
+        let mapping = self.mapping
+        var rows = IndexSet()
+        for table in visibleTableRows() {
+            guard let row = mapping.modelRow(forTableRow: table), row < folder.rowCount,
+                  ids.contains(folder.identity(atRow: row)) else { continue }
+            rows.insert(table)
+        }
+        guard !rows.isEmpty else { return }
+        tableView.reloadData(forRowIndexes: rows, columnIndexes: IndexSet(integer: column))
+    }
+
+    /// Folder sizes were turned on or off: every on-screen Size cell is redrawn.
+    func reloadSizeColumn() {
+        let column = tableView.column(withIdentifier: DetailsColumns.identifier(.size))
+        let rows = visibleTableRows()
+        guard column >= 0, !rows.isEmpty else { return }
+        tableView.reloadData(forRowIndexes: IndexSet(integersIn: rows), columnIndexes: IndexSet(integer: column))
     }
 
     private func visibleRowIDs() -> Set<RowID> {
@@ -663,8 +710,10 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
             return cell
         }
         let cell = tableView.makeView(withIdentifier: PlainCellView.reuseID, owner: nil) as? PlainCellView ?? PlainCellView()
+        let label = id == .size && Self.isSizedFolder(entry)
+            ? FolderSizeText.accessibilityLabel(folder.folderSize(atRow: row), enabled: folder.folderSizesEnabled) : nil
         cell.configure(text: text(for: id, row: row), alignment: id == .size ? .right : .left,
-                       monospacedDigits: id == .size, isCut: isCut)
+                       monospacedDigits: id == .size, isCut: isCut, accessibilityLabel: label)
         return cell
     }
 
@@ -681,6 +730,18 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
         return tableView.view(atColumn: index, row: row, makeIfNecessary: true) as? NSTableCellView
     }
 
+    /// Folders and packages: their Size cell shows the computed folder size (P2-14).
+    static func isSizedFolder(_ entry: Entry) -> Bool { entry.kind == .directory || entry.kind == .package }
+
+    /// Scenario hook `cellText` (P2-14): the text the cell of `name`'s row shows in `column` (a ColumnID raw value),
+    /// computed with the same formatting the cell uses. nil for an unknown row or column.
+    func cellText(rowNamed name: String, column: String) -> String? {
+        guard let folder, let id = ColumnID(rawValue: column), let row = folder.row(named: name), row < folder.rowCount else {
+            return nil
+        }
+        return text(for: id, row: row)
+    }
+
     private func text(for id: ColumnID, row: Int) -> String {
         guard let folder else { return "" }
         let entry = folder.entry(atRow: row)
@@ -688,7 +749,9 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
         case .name: return folder.name(atRow: row)
         case .dateModified: return Formatters.date(nanoseconds: entry.mtime, style: settings.dateStyle)
         case .dateCreated: return Formatters.date(nanoseconds: entry.ctime, style: settings.dateStyle)
-        case .size: return Formatters.size(of: entry)
+        case .size:
+            guard Self.isSizedFolder(entry) else { return Formatters.size(of: entry) }
+            return FolderSizeText.text(folder.folderSize(atRow: row), enabled: folder.folderSizesEnabled)
         case .kind: return context.environment.types.localizedDescription(entry.typeIndex)
         case .fileExtension: return Formatters.extensionText(name: folder.name(atRow: row), kind: entry.kind)
         case .tags, .dateLastOpened, .permissions, .owner, .path, .comments: return ""   // P2-16: never shown before then

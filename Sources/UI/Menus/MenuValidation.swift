@@ -37,6 +37,11 @@ import MacxFS
         return groupBy == state.groupBy ? .on : .off
     }
 
+    /// The checkmark of View ▸ Calculate Folder Sizes for a folder's view state; nil for other commands (P2-14).
+    static func folderSizesState(_ command: Command, _ state: FolderViewState) -> NSControl.StateValue? {
+        command == .toggleFolderSizes ? (state.calculateFolderSizes ? .on : .off) : nil
+    }
+
     static func groupBy(for command: Command) -> GroupBy? {
         switch command {
         case .groupByNone: GroupBy.none

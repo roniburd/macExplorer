@@ -1,7 +1,7 @@
 import AppKit
 import Core
 
-/// The status bar (§5.5), about 22 pt: `N items`, `M selected (size)` (files only in Phase 1), `X available` for the
+/// The status bar (§5.5), about 22 pt: `N items`, `M selected (size)` (files, plus folders with folder sizes on), `X available` for the
 /// current volume, and on the trailing end the slot P1-38's operations capsule lives in. The owner supplies the
 /// numbers (selection totals from FolderModel.selectionSummary, free space from the Volumes cache); this view only
 /// formats them.
@@ -27,9 +27,9 @@ final class StatusBarView: NSView {
     var selectionText: String { selectionLabel.stringValue }
     var availableText: String { freeLabel.stringValue }
 
-    func update(itemCount: Int, selection: SelectionSummary, available: Int64?) {
+    func update(itemCount: Int, selection: SelectionSummary, available: Int64?, folderSizes: Bool = false) {
         countLabel.stringValue = StatusText.items(itemCount)
-        selectionLabel.stringValue = StatusText.selection(selection)
+        selectionLabel.stringValue = StatusText.selection(selection, sizesEnabled: folderSizes)
         freeLabel.stringValue = available.map(StatusText.available) ?? ""
     }
 
@@ -74,11 +74,14 @@ enum StatusText {
         count == 1 ? L10n.string("1 item") : String(format: L10n.string("%@ items"), number(count))
     }
 
-    static func selection(_ summary: SelectionSummary) -> String {
+    /// With folder sizes on (P2-14) the size includes the selected folders (SelectionSizeText).
+    @MainActor
+    static func selection(_ summary: SelectionSummary, sizesEnabled: Bool = false) -> String {
         guard summary.count > 0 else { return "" }
         let count = number(summary.count)
-        guard summary.files > 0 else { return String(format: L10n.string("%@ selected"), count) }
-        return String(format: L10n.string("%@ selected (%@)"), count, size(summary.bytes))
+        let sized = summary.files > 0 || (sizesEnabled && summary.folders > 0)
+        guard sized else { return String(format: L10n.string("%@ selected"), count) }
+        return String(format: L10n.string("%@ selected (%@)"), count, SelectionSizeText.text(summary, sizesEnabled: sizesEnabled))
     }
 
     static func available(_ bytes: Int64) -> String {
