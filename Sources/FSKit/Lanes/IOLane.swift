@@ -6,7 +6,8 @@ public struct LaneID: Hashable, Sendable, CustomStringConvertible {
     public var description: String { "lane\(raw)" }
 }
 
-public enum LaneClass: Sendable, Hashable { case read, fileOp }
+/// `.scan` (P2-12): recursive folder-size scans, kept off the `.read` lanes so a long scan never delays a listing.
+public enum LaneClass: Sendable, Hashable { case read, fileOp, scan }
 
 /// One dedicated Thread with a serial FIFO of work items (§4.2). Never the cooperative pool or a GCD
 /// global queue. A poisoned lane accepts no more work; its thread exits once its current item returns.

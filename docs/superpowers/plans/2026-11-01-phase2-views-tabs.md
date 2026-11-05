@@ -4000,6 +4000,15 @@ git commit -m "feat: cancellable recursive folder-size scanner on dedicated scan
 
 ---
 
+**P2-12 implementation notes (2026-11-05):**
+- Steps 1-5 done. Test code uses the real `Sandbox` names (`createFile(_:contents:)`, `createHardLink`, `createSymlink`, `setMode`) and `DiskImage.create(in:format:sizeMB:)`.
+- `MountTable.standardize` is now `public`; the scanner uses it for both mount points and child paths, so `/private/var/...` and `/var/...` spellings of a mount point inside `$TMPDIR` match.
+- `testMountPointIsNotCrossed`: `DiskImage.create` puts the `.dmg` file itself in the sandbox root, so the plan's `< 1_000_000` bound was wrong (an 8 MB image file is a legitimate part of the folder). The test now asserts the exact total (`plain` + the `.dmg`'s size), `files == 2`, and `isPartial == false`.
+- The scanner also marks the result partial when a batch carries per-entry `errors`. Added `testDegradedEntryMarksPartialAndHardLinksCountOncePerScan` (synthetic batch) alongside the plan's tests.
+- `IOLane` already gives non-`.read` classes `.utility` QoS, and there is no exhaustive switch over `LaneClass`, so `.scan` needed no further changes.
+
+---
+
 ### Task P2-13: Folder-size cache, sessions and Watcher-based invalidation
 
 **Files:**

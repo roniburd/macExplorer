@@ -29,6 +29,14 @@ final class LaneTests: XCTestCase {
         XCTAssertTrue(name.hasPrefix("macx.lane.read.mnt:/test."), name)
     }
 
+    func testScanClassHasItsOwnLanes() async throws {
+        let pool = LanePool(config: fast)
+        _ = try await pool.perform(on: .unknown, .scan) { _ in 1 }
+        let scan = await pool.liveLaneCount(of: .unknown, .scan)
+        let read = await pool.liveLaneCount(of: .unknown, .read)
+        XCTAssertEqual(scan, 1); XCTAssertEqual(read, 0)
+    }
+
     func testErrorsPropagate() async {
         struct Boom: Error {}
         let pool = LanePool(config: fast)

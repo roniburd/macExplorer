@@ -34,7 +34,7 @@ public struct MountTable: Sendable, Equatable {
     /// var, tmp or etc. mountedVolumeURLs reports images mounted in $TMPDIR as /private/var/folders/…, while
     /// URL.standardizedFileURL (LaunchOptions, the overview's "standardized URL") yields /var/folders/…; both
     /// mount points and queries go through this, so either spelling finds the image's volume.
-    static func standardize(_ path: String) -> String {
+    public static func standardize(_ path: String) -> String {
         guard path.hasPrefix("/") else { return path }
         var parts: [Substring] = []
         for c in path.split(separator: "/", omittingEmptySubsequences: true) {
