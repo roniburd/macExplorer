@@ -194,6 +194,20 @@ final class KeyRouterTests: XCTestCase {
         XCTAssertEqual(handler.performed, [])
     }
 
+    /// Until P2-11 wires Quick Look, Space must keep reaching type-select ("my f" → "my file.txt") instead of beeping.
+    func testPendingCommandsKeysAreNotHandled() throws {
+        let pane = KeyPane()
+        let handler = RecordingHandler()
+        pane.handler = handler
+        _ = try makeWindow(pane)
+        XCTAssertEqual(KeyRouter.command(for: KeyEvents.key(49, " "), focus: .content, returnKey: .open), .quickLook)
+        XCTAssertTrue(FileCommandController.pendingCommands.contains(.quickLook))
+        XCTAssertFalse(KeyRouter.handle(KeyEvents.key(49, " "), focus: .content, returnKey: .open, from: pane.view))
+        XCTAssertFalse(KeyRouter.handle(KeyEvents.key(48, "\t", [.control]), focus: .content, returnKey: .open, from: pane.view),
+                       "⌃Tab is the Show Next Tab menu key, never focus cycling")
+        XCTAssertEqual(handler.performed, [])
+    }
+
     func testNoResponderMeansNotHandled() throws {
         try ShellHarness.requireWindowServer()
         let lonely = FocusableView(frame: .zero)   // no window, no pane, nothing implements macx_moveToTrash:

@@ -27,7 +27,8 @@ final class KeyMapTests: XCTestCase {
         XCTAssertEqual(Command.open.selectorName, "macx_open:")
         XCTAssertEqual(Command.moveItemHere.selectorName, "macx_moveItemHere:")
         let standard: Set<Command> = [.cut, .copy, .paste, .selectAll, .undo, .redo, .cancelOperation]
-        for c in Command.allCases where !standard.contains(c) {
+        // Phase 2's tab commands use NSWindow's own actions (Phase2KeyMapTests.testSelectorNames).
+        for c in Command.allCases where !standard.contains(c) && !c.isWindowTabCommand {
             XCTAssertEqual(c.selectorName, "macx_\(c.rawValue):", "\(c)")
         }
     }
@@ -120,6 +121,9 @@ final class KeyMapTests: XCTestCase {
             .focusAddressBar: "cmd+l", .focusSearch: "cmd+f", .newFolder: "cmd+shift+n", .newWindow: "cmd+n",
             .closeWindow: "cmd+w", .properties: "cmd+i", .refresh: "cmd+r", .copyAsPath: "cmd+shift+c",
             .toggleHidden: "cmd+shift+.", .selectAll: "cmd+a", .duplicate: "cmd+d", .eject: "cmd+e",
+            // Phase 2 (P2-02)
+            .newTab: "cmd+t", .nextTab: "ctrl+tab", .previousTab: "ctrl+shift+tab", .showAllTabs: "cmd+shift+\\",
+            .viewAsDetails: "cmd+1", .viewAsIcons: "cmd+2", .viewAsColumns: "cmd+3",
         ]
         for c in Command.allCases {
             if let text = expected[c] {
@@ -139,10 +143,15 @@ final class KeyMapTests: XCTestCase {
         }
     }
 
+    /// Chords reserved for later phases go only to the command that phase assigns them (Phase 2 took ⌘T, ⌘1–⌘3, ⌃Tab).
     func testPrimariesAvoidLaterPhaseChords() {
-        let reserved = ["cmd+t", "cmd+1", "cmd+2", "cmd+3", "ctrl+tab", "opt+p", "cmd+opt+r"].map { chord($0) }
+        let owners: [String: Command?] = [
+            "cmd+t": .newTab, "cmd+1": .viewAsDetails, "cmd+2": .viewAsIcons, "cmd+3": .viewAsColumns, "ctrl+tab": .nextTab,
+            "opt+p": nil, "cmd+opt+r": nil,
+        ]
         for c in Command.allCases {
-            if let p = KeyMap.primary(c) { XCTAssertFalse(reserved.contains(p), "\(c) uses \(p)") }
+            guard let p = KeyMap.primary(c), let owner = owners.first(where: { chord($0.key) == p })?.value else { continue }
+            XCTAssertEqual(owner, c, "\(c) uses \(p)")
         }
     }
 
@@ -155,6 +164,7 @@ final class KeyMapTests: XCTestCase {
             .back: ["delete", "opt+left"], .forward: ["opt+right"], .up: ["opt+up"], .focusAddressBar: ["opt+d", "F4"],
             .focusSearch: ["F3"], .properties: ["opt+return"], .refresh: ["F5"], .selectAll: ["ctrl+a"],
             .cycleFocusForward: ["tab"], .cycleFocusBackward: ["shift+tab"], .cancelOperation: ["esc"],
+            .quickLook: ["space"],   // Phase 2 (P2-02), content only
         ]
         for c in Command.allCases {
             XCTAssertEqual(KeyMap.alternates(c), (expected[c] ?? []).map { chord($0) }, "\(c)")
@@ -208,7 +218,7 @@ final class KeyMapTests: XCTestCase {
             XCTAssertNil(d.command(for: p, in: .content), "\(p) belongs to the menu")
         }
         XCTAssertNil(d.command(for: chord("x"), in: .content), "plain letters are type-select")
-        XCTAssertNil(d.command(for: chord("space"), in: .content))
+        XCTAssertNil(d.command(for: chord("space"), in: .sidebarFolders), "Space is Quick Look in the content view only")
     }
 
     func testReturnKeyBehaviour() {

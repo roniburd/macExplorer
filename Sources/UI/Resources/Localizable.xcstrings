@@ -641,6 +641,17 @@
         }
       }
     },
+    "Apply to All Folders…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apply to All Folders…"
+          }
+        }
+      }
+    },
     "Apply to enclosed items…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -736,6 +747,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Browse…"
+          }
+        }
+      }
+    },
+    "Calculate Folder Sizes" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Calculate Folder Sizes"
           }
         }
       }
@@ -1176,6 +1198,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Copy Here"
+          }
+        }
+      }
+    },
+    "Copy Path As" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy Path As"
           }
         }
       }
@@ -1785,6 +1818,17 @@
         }
       }
     },
+    "File URL" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "File URL"
+          }
+        }
+      }
+    },
     "Filter" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1968,6 +2012,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Group (%@)"
+          }
+        }
+      }
+    },
+    "Group By" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Group By"
           }
         }
       }
@@ -2456,6 +2511,17 @@
         }
       }
     },
+    "Merge All Windows" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Merge All Windows"
+          }
+        }
+      }
+    },
     "Merge folders?" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2573,6 +2639,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Move MacExplorer to the Applications folder to get updates."
+          }
+        }
+      }
+    },
+    "Move Tab to New Window" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move Tab to New Window"
           }
         }
       }
@@ -2709,6 +2786,17 @@
         }
       }
     },
+    "New Tab" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Tab"
+          }
+        }
+      }
+    },
     "New Text File" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2815,6 +2903,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No operations"
+          }
+        }
+      }
+    },
+    "None" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "None"
           }
         }
       }
@@ -2947,6 +3046,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Open folders in:"
+          }
+        }
+      }
+    },
+    "Open in New Tab" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open in New Tab"
           }
         }
       }
@@ -3182,6 +3292,17 @@
         }
       }
     },
+    "Quick Look" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quick Look"
+          }
+        }
+      }
+    },
     "Quit MacExplorer" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3189,6 +3310,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Quit MacExplorer"
+          }
+        }
+      }
+    },
+    "Quoted for Shell" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quoted for Shell"
           }
         }
       }
@@ -3633,6 +3765,17 @@
         }
       }
     },
+    "Show All Tabs" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show All Tabs"
+          }
+        }
+      }
+    },
     "Show Command Bar" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3666,6 +3809,17 @@
         }
       }
     },
+    "Show Next Tab" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Next Tab"
+          }
+        }
+      }
+    },
     "Show Package Contents" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3673,6 +3827,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Show Package Contents"
+          }
+        }
+      }
+    },
+    "Show Previous Tab" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Previous Tab"
           }
         }
       }
@@ -3695,6 +3860,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Show Sidebar"
+          }
+        }
+      }
+    },
+    "Show Tab Bar" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Tab Bar"
           }
         }
       }
@@ -4678,6 +4854,17 @@
         }
       }
     },
+    "as Columns" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "as Columns"
+          }
+        }
+      }
+    },
     "as Details" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4753,6 +4940,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "waiting for your answer"
+          }
+        }
+      }
+    },
+    "~ Path" : {
+      "extractionState" : "manual",
+      "generatesSymbol" : false,
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "~ Path"
           }
         }
       }

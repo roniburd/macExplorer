@@ -256,6 +256,13 @@ final class OperationsUITests: XCTestCase {
     }
 
     func testShowOperationsIsNoLongerPending() {
-        XCTAssertTrue(FileCommandController.pendingCommands.isEmpty)
+        XCTAssertFalse(FileCommandController.pendingCommands.contains(.showOperations))
+        // Only Phase 2 commands whose UI lands in a later task may still be pending; every Phase 1 command has its UI.
+        let phase2: Set<Command> = Command.windowTabCommands.union([
+            .openInNewTab, .quickLook, .viewAsColumns, .groupByNone, .groupByKind, .groupByDateModified, .groupBySize,
+            .groupByName, .toggleFolderSizes, .applyViewToAllFolders,
+            .copyPathTilde, .copyPathFileURL, .copyName, .copyPathShellQuoted,
+        ])
+        XCTAssertTrue(FileCommandController.pendingCommands.isSubset(of: phase2))
     }
 }

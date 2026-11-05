@@ -11,8 +11,14 @@ final class FileCommandController: CommandHandler {
     var prompts: any CommandPrompts = AppKitCommandPrompts()
     /// Set by SidebarViewController so F2 on a Folders-tree node renames inline there; nil → a name prompt.
     var beginSidebarRename: ((URL) -> Void)?
-    /// Every command has its UI now.
-    static let pendingCommands: Set<Command> = []
+    /// Commands whose UI arrives in a later Phase 2 task (disabled, never performed). The NSWindow tab commands are
+    /// here too: NSWindow and BrowserWindowController handle them, so they never reach a pane's handler.
+    static let pendingCommands: Set<Command> = Command.windowTabCommands.union([
+        .openInNewTab, .quickLook, .viewAsColumns,
+        .groupByNone, .groupByKind, .groupByDateModified, .groupBySize, .groupByName,
+        .toggleFolderSizes, .applyViewToAllFolders,
+        .copyPathTilde, .copyPathFileURL, .copyName, .copyPathShellQuoted,
+    ])
 
     var environment: CoreEnvironment { context.environment }
     var session: BrowserSession? { window?.session }
@@ -83,6 +89,12 @@ final class FileCommandController: CommandHandler {
         case .eject: eject(target)
         case .removeFromFavorites: removeFavorite(target)
         case .cancelOperation: environment.clipboard.clearCut()
+        case .newTab, .nextTab, .previousTab, .showTabBar, .showAllTabs, .moveTabToNewWindow, .mergeAllWindows,
+             .openInNewTab, .quickLook, .viewAsColumns,
+             .groupByNone, .groupByKind, .groupByDateModified, .groupBySize, .groupByName,
+             .toggleFolderSizes, .applyViewToAllFolders,
+             .copyPathTilde, .copyPathFileURL, .copyName, .copyPathShellQuoted:
+            break   // pendingCommands: canPerform is false, so perform beeps above
         }
     }
 

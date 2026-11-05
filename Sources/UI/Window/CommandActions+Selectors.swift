@@ -61,4 +61,20 @@ extension CommandHandlingViewController {
     @objc func macx_eject(_ sender: Any?) { run(.eject, sender: sender) }
     @objc func macx_removeFromFavorites(_ sender: Any?) { run(.removeFromFavorites, sender: sender) }
     @objc override func cancelOperation(_ sender: Any?) { run(.cancelOperation, sender: sender) }
+    // Phase 2. The NSWindow tab commands (Command.windowTabCommands) are deliberately absent: NSWindow implements
+    // and validates them, and a pane method would intercept them before the window.
+    @objc func macx_openInNewTab(_ sender: Any?) { run(.openInNewTab, sender: sender) }
+    @objc func macx_quickLook(_ sender: Any?) { run(.quickLook, sender: sender) }
+    @objc func macx_viewAsColumns(_ sender: Any?) { run(.viewAsColumns, sender: sender) }
+    @objc func macx_groupByNone(_ sender: Any?) { run(.groupByNone, sender: sender) }
+    @objc func macx_groupByKind(_ sender: Any?) { run(.groupByKind, sender: sender) }
+    @objc func macx_groupByDateModified(_ sender: Any?) { run(.groupByDateModified, sender: sender) }
+    @objc func macx_groupBySize(_ sender: Any?) { run(.groupBySize, sender: sender) }
+    @objc func macx_groupByName(_ sender: Any?) { run(.groupByName, sender: sender) }
+    @objc func macx_toggleFolderSizes(_ sender: Any?) { run(.toggleFolderSizes, sender: sender) }
+    @objc func macx_applyViewToAllFolders(_ sender: Any?) { run(.applyViewToAllFolders, sender: sender) }
+    @objc func macx_copyPathTilde(_ sender: Any?) { run(.copyPathTilde, sender: sender) }
+    @objc func macx_copyPathFileURL(_ sender: Any?) { run(.copyPathFileURL, sender: sender) }
+    @objc func macx_copyName(_ sender: Any?) { run(.copyName, sender: sender) }
+    @objc func macx_copyPathShellQuoted(_ sender: Any?) { run(.copyPathShellQuoted, sender: sender) }
 }

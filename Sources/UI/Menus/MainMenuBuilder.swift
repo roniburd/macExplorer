@@ -10,6 +10,9 @@ import Core
     static let notInMenu: Set<Command> = [.cancelOperation]
 
     public static func build() -> NSMenu {
+        // Tabs come only from MacExplorer's own commands (⌘T, "+", Open in New Tab); AppKit must not add its
+        // automatic tab items next to the Window menu's own.
+        NSWindow.allowsAutomaticWindowTabbing = false
         let main = NSMenu(title: "MainMenu")
         for (title, id, items) in [
             ("MacExplorer", "app", appItems()), ("File", "file", fileItems()), ("Edit", "edit", editItems()),
@@ -85,8 +88,8 @@ import Core
 
     private static func fileItems() -> [NSMenuItem] {
         [
-            item(.newWindow), item(.newFolder), item(.newTextFile), item(.newEmptyFile), .separator(),
-            item(.open), item(.openInNewWindow), item(.showPackageContents), item(.openInTerminal), item(.revealInFinder),
+            item(.newWindow), item(.newTab), item(.newFolder), item(.newTextFile), item(.newEmptyFile), .separator(),
+            item(.open), item(.openInNewWindow), item(.openInNewTab), item(.quickLook), item(.showPackageContents), item(.openInTerminal), item(.revealInFinder),
             .separator(),
             item(.rename), item(.duplicate), item(.makeAlias), item(.makeSymlink), .separator(),
             item(.moveToTrash), item(.deletePermanently), .separator(),
@@ -99,20 +102,25 @@ import Core
     private static func editItems() -> [NSMenuItem] {
         [
             item(.undo), item(.redo), .separator(),
-            item(.cut), item(.copy), item(.paste), item(.moveItemHere), item(.copyAsPath), .separator(),
+            item(.cut), item(.copy), item(.paste), item(.moveItemHere), item(.copyAsPath), copyPathAsPlaceholder(), .separator(),
             item(.selectAll), item(.selectNone), item(.invertSelection),
         ]
     }
 
     private static func viewItems() -> [NSMenuItem] {
         [
-            item(.viewAsDetails), item(.viewAsIcons), .separator(),
+            item(.viewAsDetails), item(.viewAsIcons), item(.viewAsColumns), .separator(),
             submenu(L10n.string("Icon Size"), id: "iconSize", [item(.iconSizeSmall), item(.iconSizeMedium), item(.iconSizeLarge)]),
             submenu(L10n.string("Density"), id: "density", [item(.densityCompact), item(.densityRegular), item(.densityComfortable)]),
             submenu(L10n.string("Sort By"), id: "sortBy", [
                 item(.sortByName), item(.sortByDateModified), item(.sortBySize), item(.sortByKind), item(.sortByDateCreated),
                 .separator(), item(.sortAscending), item(.sortDescending),
             ]),
+            submenu(L10n.string("Group By"), id: "groupBy", [
+                item(.groupByNone), .separator(),
+                item(.groupByKind), item(.groupByDateModified), item(.groupBySize), item(.groupByName),
+            ]),
+            item(.toggleFolderSizes), item(.applyViewToAllFolders),
             .separator(),
             item(.toggleHidden), item(.toggleCommandBar),
             standard("Show Sidebar", #selector(NSSplitViewController.toggleSidebar(_:)), "s", [.command, .control]),
@@ -135,6 +143,10 @@ import Core
             standard("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m"),
             standard("Zoom", #selector(NSWindow.performZoom(_:))),
             .separator(),
+            // NSWindow's own tab actions (Command.windowTabCommands); NSWindow validates and retitles them.
+            item(.showTabBar), item(.showAllTabs), item(.previousTab), item(.nextTab),
+            item(.moveTabToNewWindow), item(.mergeAllWindows),
+            .separator(),
             item(.showOperations),
             .separator(),
             standard("Bring All to Front", #selector(NSApplication.arrangeInFront(_:))),
@@ -148,6 +160,16 @@ import Core
             standard("Report a Bug…", FeedbackActions.reportBugAction),
             standard("Request a Feature…", FeedbackActions.requestFeatureAction),
         ]
+    }
+
+    /// Edit › Copy Path As ▸ (P2-04 fills in CopyPathMenu and shows it). Hidden until then; it already carries the
+    /// four variant command items so every Command has its one main-menu item.
+    private static func copyPathAsPlaceholder() -> NSMenuItem {
+        let placeholder = submenu(L10n.string("Copy Path As"), id: "copyPathAs", [
+            item(.copyPathTilde), item(.copyPathFileURL), item(.copyName), item(.copyPathShellQuoted),
+        ])
+        placeholder.isHidden = true
+        return placeholder
     }
 
     // MARK: items

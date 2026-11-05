@@ -62,6 +62,28 @@ import Core
         case .eject: L10n.string("Eject")
         case .removeFromFavorites: L10n.string("Remove from Favorites")
         case .cancelOperation: L10n.string("Cancel")
+        case .newTab: L10n.string("New Tab")
+        case .nextTab: L10n.string("Show Next Tab")
+        case .previousTab: L10n.string("Show Previous Tab")
+        case .showTabBar: L10n.string("Show Tab Bar")
+        case .showAllTabs: L10n.string("Show All Tabs")
+        case .moveTabToNewWindow: L10n.string("Move Tab to New Window")
+        case .mergeAllWindows: L10n.string("Merge All Windows")
+        case .openInNewTab: L10n.string("Open in New Tab")
+        case .quickLook: L10n.string("Quick Look")
+        case .viewAsColumns: L10n.string("as Columns")
+        case .groupByNone: L10n.string("None")
+        case .groupByKind: L10n.string("Kind")
+        case .groupByDateModified: L10n.string("Date Modified")
+        case .groupBySize: L10n.string("Size")
+        case .groupByName: L10n.string("Name")
+        case .toggleFolderSizes: L10n.string("Calculate Folder Sizes")
+        case .applyViewToAllFolders: L10n.string("Apply to All Folders…")
+        // The Copy Path As ▸ submenu's titles (P2-04).
+        case .copyPathTilde: L10n.string("~ Path")
+        case .copyPathFileURL: L10n.string("File URL")
+        case .copyName: L10n.string("Name")
+        case .copyPathShellQuoted: L10n.string("Quoted for Shell")
         }
     }
 }

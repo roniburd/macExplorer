@@ -76,6 +76,52 @@ final class MenuValidationTests: XCTestCase {
         XCTAssertEqual(MainMenuBuilder.notInMenu, [.cancelOperation], "Esc is a key, not a menu command")
     }
 
+    func testPhase2MenuItemsExistWithKeys() throws {
+        let menu = MainMenuBuilder.build()
+        func item(_ selector: String) -> NSMenuItem? {
+            func walk(_ m: NSMenu) -> NSMenuItem? {
+                for i in m.items { if i.action == Selector(selector) { return i }; if let s = i.submenu, let f = walk(s) { return f } }
+                return nil
+            }
+            return walk(menu)
+        }
+        XCTAssertEqual(item("newWindowForTab:")?.keyEquivalent, "t")
+        XCTAssertEqual(item("selectNextTab:")?.keyEquivalent, "\t")
+        XCTAssertEqual(item("selectNextTab:")?.keyEquivalentModifierMask, [.control])
+        XCTAssertEqual(item("selectPreviousTab:")?.keyEquivalentModifierMask, [.control, .shift])
+        XCTAssertEqual(item("toggleTabOverview:")?.keyEquivalent, "\\")
+        XCTAssertEqual(item("macx_viewAsDetails:")?.keyEquivalent, "1")
+        XCTAssertEqual(item("macx_viewAsIcons:")?.keyEquivalent, "2")
+        XCTAssertEqual(item("macx_viewAsColumns:")?.keyEquivalent, "3")
+        XCTAssertEqual(item("macx_quickLook:")?.keyEquivalent, "")
+        XCTAssertNotNil(item("macx_groupByDateModified:"))
+        XCTAssertNotNil(item("macx_applyViewToAllFolders:"))
+        XCTAssertFalse(NSWindow.allowsAutomaticWindowTabbing)
+    }
+
+    func testPhase2MenuPlacement() {
+        let menu = MainMenuBuilder.build()
+        func titles(_ name: String) -> [String] { Self.item(at: [name], in: menu)?.submenu?.items.map(\.title) ?? [] }
+        let file = titles("File")
+        XCTAssertEqual(file.firstIndex(of: "New Tab"), file.firstIndex(of: "New Window").map { $0 + 1 })
+        XCTAssertTrue(file.contains("Quick Look"))
+        let view = titles("View")
+        XCTAssertEqual(view.firstIndex(of: "as Columns"), view.firstIndex(of: "as Icons").map { $0 + 1 })
+        XCTAssertEqual(view.firstIndex(of: "Group By"), view.firstIndex(of: "Sort By").map { $0 + 1 })
+        XCTAssertEqual(Self.item(at: ["View", "Group By"], in: menu)?.submenu?.items.filter { !$0.isSeparatorItem }.map(\.title),
+                       ["None", "Kind", "Date Modified", "Size", "Name"])
+        XCTAssertTrue(view.contains("Calculate Folder Sizes"))
+        XCTAssertTrue(view.contains("Apply to All Folders…"))
+        let window = titles("Window")
+        let tabs = ["Show Tab Bar", "Show All Tabs", "Show Previous Tab", "Show Next Tab", "Move Tab to New Window", "Merge All Windows"]
+        let start = window.firstIndex(of: "Show Tab Bar") ?? -1
+        XCTAssertEqual(Array(window.dropFirst(max(start, 0)).prefix(tabs.count)), tabs)
+        let edit = titles("Edit")
+        let copyPathAs = Self.item(at: ["Edit", "Copy Path As"], in: menu)
+        XCTAssertEqual(edit.firstIndex(of: "Copy Path As"), edit.firstIndex(of: "Copy as Path").map { $0 + 1 })
+        XCTAssertEqual(copyPathAs?.isHidden, true, "placeholder until P2-04")
+    }
+
     func testKeyEquivalentsComeFromKeyMapPrimaries() throws {
         let menu = MainMenuBuilder.build()
         for command in Command.allCases {

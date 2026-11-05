@@ -13,10 +13,17 @@ public struct CommandState: Sendable, Equatable {
     public var targetIsEjectable: Bool
     public var targetIsPackage: Bool
     public var folderIsReadOnly: Bool
+    /// Folders (directories or packages opened as folders) among the selection; Open in New Tab needs one.
+    public var selectedFolderCount: Int
+    /// The Quick Look panel is open, so Space closes it even with nothing selected.
+    public var quickLookVisible: Bool
+    /// The command target's view mode (Group by and folder sizes are Details-only).
+    public var viewMode: ViewMode
     public init(selectionCount: Int = 0, singleFolderSelected: Bool = false, canPaste: Bool = false,
                 canUndo: Bool = false, canRedo: Bool = false, canGoBack: Bool = false, canGoForward: Bool = false,
                 canGoUp: Bool = false, targetIsEjectable: Bool = false, targetIsPackage: Bool = false,
-                folderIsReadOnly: Bool = false) {
+                folderIsReadOnly: Bool = false, selectedFolderCount: Int = 0, quickLookVisible: Bool = false,
+                viewMode: ViewMode = .details) {
         self.selectionCount = selectionCount
         self.singleFolderSelected = singleFolderSelected
         self.canPaste = canPaste
@@ -28,6 +35,9 @@ public struct CommandState: Sendable, Equatable {
         self.targetIsEjectable = targetIsEjectable
         self.targetIsPackage = targetIsPackage
         self.folderIsReadOnly = folderIsReadOnly
+        self.selectedFolderCount = selectedFolderCount
+        self.quickLookVisible = quickLookVisible
+        self.viewMode = viewMode
     }
 }
 
@@ -77,6 +87,20 @@ public enum CommandAvailability {
             return true
         case .eject: return section == .locations && state.targetIsEjectable
         case .removeFromFavorites: return section == .favorites    // stale favorites can be removed too
+        case .quickLook: return focus == .content && (state.selectionCount > 0 || state.quickLookVisible)
+        case .openInNewTab:
+            switch focus {
+            case .content: return state.selectedFolderCount > 0
+            case .sidebarFavorites, .sidebarLocations, .sidebarFolders, .sidebarVolumeRoot: return true
+            case .addressBar, .fieldEditor: return false
+            }
+        case .groupByNone, .groupByKind, .groupByDateModified, .groupBySize, .groupByName, .toggleFolderSizes:
+            return state.viewMode == .details && (focus == .content || focus.isSidebar)
+        case .newTab, .viewAsColumns, .applyViewToAllFolders,
+             .nextTab, .previousTab, .showTabBar, .showAllTabs, .moveTabToNewWindow, .mergeAllWindows:
+            return true   // the tab commands are validated again by NSWindow
+        case .copyPathTilde, .copyPathFileURL, .copyName, .copyPathShellQuoted:
+            return isEnabled(.copyAsPath, focus: focus, state: state)
         }
     }
 

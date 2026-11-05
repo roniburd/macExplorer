@@ -86,7 +86,8 @@ final class SidebarViewController: CommandHandlingViewController {
     /// checks the real state.
     private static let focusOnlyState = CommandState(
         selectionCount: 1, singleFolderSelected: true, canPaste: true, canUndo: true, canRedo: true, canGoBack: true,
-        canGoForward: true, canGoUp: true, targetIsEjectable: true, targetIsPackage: true, folderIsReadOnly: false)
+        canGoForward: true, canGoUp: true, targetIsEjectable: true, targetIsPackage: true, folderIsReadOnly: false,
+        selectedFolderCount: 1, quickLookVisible: true, viewMode: .details)
 
     /// Commands that act on the window or the session, not on a sidebar row.
     static let rowIndependent: Set<Command> = [
@@ -95,6 +96,8 @@ final class SidebarViewController: CommandHandlingViewController {
         .viewAsDetails, .viewAsIcons, .iconSizeSmall, .iconSizeMedium, .iconSizeLarge,
         .densityCompact, .densityRegular, .densityComfortable, .toggleHidden, .toggleCommandBar,
         .sortByName, .sortByDateModified, .sortBySize, .sortByKind, .sortByDateCreated, .sortAscending, .sortDescending,
+        .viewAsColumns, .groupByNone, .groupByKind, .groupByDateModified, .groupBySize, .groupByName,
+        .toggleFolderSizes, .applyViewToAllFolders,
     ]
 
     // MARK: view

@@ -31,13 +31,25 @@ public enum KeyMap {
         case .selectAll: cmd("a")
         case .duplicate: cmd("d")
         case .eject: cmd("e")
+        case .newTab: cmd("t")
+        case .nextTab: KeyChord(.tab, .control)
+        case .previousTab: KeyChord(.tab, [.control, .shift])
+        case .showAllTabs: KeyChord(.character("\\"), [.command, .shift])
+        case .viewAsDetails: cmd("1")
+        case .viewAsIcons: cmd("2")
+        case .viewAsColumns: cmd("3")
         case .openInNewWindow, .showPackageContents, .openInTerminal, .revealInFinder,
              .selectNone, .invertSelection, .makeAlias, .makeSymlink, .newTextFile, .newEmptyFile, .share,
              .cycleFocusForward, .cycleFocusBackward, .showOperations,
-             .viewAsDetails, .viewAsIcons, .iconSizeSmall, .iconSizeMedium, .iconSizeLarge,
+             .iconSizeSmall, .iconSizeMedium, .iconSizeLarge,
              .densityCompact, .densityRegular, .densityComfortable, .toggleCommandBar,
              .sortByName, .sortByDateModified, .sortBySize, .sortByKind, .sortByDateCreated, .sortAscending, .sortDescending,
-             .removeFromFavorites, .cancelOperation:
+             .removeFromFavorites, .cancelOperation,
+             // Quick Look's Space is a content-only alternate, so type-select and text fields keep it.
+             .showTabBar, .moveTabToNewWindow, .mergeAllWindows, .openInNewTab, .quickLook,
+             .groupByNone, .groupByKind, .groupByDateModified, .groupBySize, .groupByName,
+             .toggleFolderSizes, .applyViewToAllFolders,
+             .copyPathTilde, .copyPathFileURL, .copyName, .copyPathShellQuoted:
             nil
         }
     }
@@ -66,6 +78,7 @@ public enum KeyMap {
         case .cycleFocusForward: [KeyChord(.tab)]
         case .cycleFocusBackward: [KeyChord(.tab, .shift)]
         case .cancelOperation: [KeyChord(.escape)]
+        case .quickLook: [KeyChord(.space)]
         case .openInNewWindow, .showPackageContents, .openInTerminal, .revealInFinder, .moveItemHere,
              .selectNone, .invertSelection, .duplicate, .makeAlias, .makeSymlink,
              .newFolder, .newTextFile, .newEmptyFile, .copyAsPath, .share,
@@ -73,7 +86,12 @@ public enum KeyMap {
              .viewAsDetails, .viewAsIcons, .iconSizeSmall, .iconSizeMedium, .iconSizeLarge,
              .densityCompact, .densityRegular, .densityComfortable, .toggleHidden, .toggleCommandBar,
              .sortByName, .sortByDateModified, .sortBySize, .sortByKind, .sortByDateCreated, .sortAscending, .sortDescending,
-             .eject, .removeFromFavorites:
+             .eject, .removeFromFavorites,
+             .newTab, .nextTab, .previousTab, .showTabBar, .showAllTabs, .moveTabToNewWindow, .mergeAllWindows,
+             .openInNewTab, .viewAsColumns,
+             .groupByNone, .groupByKind, .groupByDateModified, .groupBySize, .groupByName,
+             .toggleFolderSizes, .applyViewToAllFolders,
+             .copyPathTilde, .copyPathFileURL, .copyName, .copyPathShellQuoted:
             []
         }
     }

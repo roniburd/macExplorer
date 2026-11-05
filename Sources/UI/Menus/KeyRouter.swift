@@ -10,7 +10,10 @@ import Core
     /// The action goes to the first responder up the chain from `view` that implements it (so it reaches the view's
     /// own pane even while the app is inactive and has no key window), else nil-targeted to the app.
     static func handle(_ event: NSEvent, focus: FocusContext, returnKey: ReturnKeyBehavior, from view: NSView) -> Bool {
-        guard let command = command(for: event, focus: focus, returnKey: returnKey) else { return false }
+        // A command whose UI has not landed yet (Space → Quick Look before P2-11) leaves its key to the view
+        // (type-select), rather than beeping.
+        guard let command = command(for: event, focus: focus, returnKey: returnKey),
+              !FileCommandController.pendingCommands.contains(command) else { return false }
         let action = Selector(command.selectorName)
         if let responder = responder(for: action, from: view) {
             return NSApp.sendAction(action, to: responder, from: view)

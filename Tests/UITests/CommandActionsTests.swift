@@ -24,8 +24,15 @@ private final class TestPane: CommandHandlingViewController {
 final class CommandActionsTests: XCTestCase {
     func testEveryCommandHasAResponderMethod() {
         let pane = TestPane()
-        for command in Command.allCases {
+        for command in Command.allCases where !command.isWindowTabCommand {
             XCTAssertTrue(pane.responds(to: Selector(command.selectorName)), "missing @objc \(command.selectorName)")
+        }
+    }
+
+    func testPanesNeverInterceptNSWindowTabActions() {
+        let pane = TestPane()
+        for command in Command.windowTabCommands {
+            XCTAssertFalse(pane.responds(to: Selector(command.selectorName)), "\(command.selectorName) belongs to NSWindow")
         }
     }
 
@@ -33,10 +40,11 @@ final class CommandActionsTests: XCTestCase {
         let pane = TestPane()
         let handler = RecordingHandler()
         pane.handler = handler
-        for command in Command.allCases {
+        let paneCommands = Command.allCases.filter { !$0.isWindowTabCommand }
+        for command in paneCommands {
             _ = pane.perform(Selector(command.selectorName), with: nil)
         }
-        XCTAssertEqual(handler.performed, Command.allCases)
+        XCTAssertEqual(handler.performed, paneCommands)
     }
 
     func testActionsWithoutHandlerOrTargetDoNothing() {

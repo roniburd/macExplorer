@@ -24,12 +24,38 @@ public enum Command: String, Sendable, Codable, CaseIterable {
     case eject, removeFromFavorites
     // escape: clear cut marks / cancel inline state
     case cancelOperation
+    // Phase 2: tabs (NSWindow's own actions, see `windowTabCommands`) and open in new tab
+    case newTab, nextTab, previousTab, showTabBar, showAllTabs, moveTabToNewWindow, mergeAllWindows, openInNewTab
+    // Phase 2: Quick Look, Columns view, Group by, folder sizes, per-folder view state
+    case quickLook, viewAsColumns, groupByNone, groupByKind, groupByDateModified, groupBySize, groupByName
+    case toggleFolderSizes, applyViewToAllFolders
+    // Phase 2: copy-path variants
+    case copyPathTilde, copyPathFileURL, copyName, copyPathShellQuoted
 
     /// "cut:", "copy:", "paste:", "selectAll:", "undo:", "redo:", "cancelOperation:" for the standard ones;
+    /// AppKit's NSWindow tab actions ("newWindowForTab:", "selectNextTab:", "selectPreviousTab:", "toggleTabBar:",
+    /// "toggleTabOverview:", "moveTabToNewWindow:", "mergeAllWindows:") for the tab commands;
     /// otherwise "macx_<rawValue>:" (e.g. "macx_moveToTrash:").
     public var selectorName: String {
-        isStandardSelector ? "\(rawValue):" : "macx_\(rawValue):"
+        switch self {
+        case .newTab: "newWindowForTab:"
+        case .nextTab: "selectNextTab:"
+        case .previousTab: "selectPreviousTab:"
+        case .showTabBar: "toggleTabBar:"
+        case .showAllTabs: "toggleTabOverview:"
+        case .moveTabToNewWindow: "moveTabToNewWindow:"
+        case .mergeAllWindows: "mergeAllWindows:"
+        default: isStandardSelector ? "\(rawValue):" : "macx_\(rawValue):"
+        }
     }
+
+    /// Commands whose action NSWindow (or BrowserWindowController, for newWindowForTab:) implements and validates
+    /// itself. The content and sidebar panes never implement these selectors, so they cannot intercept them.
+    public static let windowTabCommands: Set<Command> = [
+        .newTab, .nextTab, .previousTab, .showTabBar, .showAllTabs, .moveTabToNewWindow, .mergeAllWindows,
+    ]
+
+    public var isWindowTabCommand: Bool { Self.windowTabCommands.contains(self) }
 
     /// Exhaustive on purpose (no `default:`), so new cases must decide.
     private var isStandardSelector: Bool {
@@ -45,7 +71,12 @@ public enum Command: String, Sendable, Codable, CaseIterable {
              .viewAsDetails, .viewAsIcons, .iconSizeSmall, .iconSizeMedium, .iconSizeLarge,
              .densityCompact, .densityRegular, .densityComfortable, .toggleHidden, .toggleCommandBar,
              .sortByName, .sortByDateModified, .sortBySize, .sortByKind, .sortByDateCreated, .sortAscending, .sortDescending,
-             .eject, .removeFromFavorites:
+             .eject, .removeFromFavorites,
+             .newTab, .nextTab, .previousTab, .showTabBar, .showAllTabs, .moveTabToNewWindow, .mergeAllWindows,
+             .openInNewTab, .quickLook, .viewAsColumns,
+             .groupByNone, .groupByKind, .groupByDateModified, .groupBySize, .groupByName,
+             .toggleFolderSizes, .applyViewToAllFolders,
+             .copyPathTilde, .copyPathFileURL, .copyName, .copyPathShellQuoted:
             false
         }
     }

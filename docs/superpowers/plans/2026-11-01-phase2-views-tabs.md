@@ -297,6 +297,10 @@ extension Settings {
 // selectorName: newTab "newWindowForTab:", nextTab "selectNextTab:", previousTab "selectPreviousTab:",
 //   showTabBar "toggleTabBar:", showAllTabs "toggleTabOverview:", moveTabToNewWindow "moveTabToNewWindow:",
 //   mergeAllWindows "mergeAllWindows:"; the rest "macx_<rawValue>:".
+// P2-02 addition: public static let windowTabCommands: Set<Command> (the seven NSWindow tab actions above) and
+//   public var isWindowTabCommand: Bool. CommandHandlingViewController never implements those selectors, so the
+//   panes cannot intercept NSWindow's (or BrowserWindowController's newWindowForTab:) handling.
+// P2-02 addition: FocusContext.isSidebar (true for the four sidebar cases).
 
 // Commands/CommandAvailability.swift (P2-02 adds fields, defaulted, appended to the init)
 extension CommandState {
