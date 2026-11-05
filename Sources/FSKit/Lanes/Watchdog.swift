@@ -22,4 +22,10 @@ public struct WatchdogConfig: Sendable, Equatable {
         let c = stallTimeout.components
         return UInt64(c.seconds) * 1_000_000_000 + UInt64(c.attoseconds / 1_000_000_000)
     }
+
+    /// No heartbeat for `limit` ns. A beat newer than `now` (the lane beat after the watchdog read the clock)
+    /// is fresh, not a wrapped-around stall.
+    static func isOverdue(lastBeat: UInt64, now: UInt64, limit: UInt64) -> Bool {
+        lastBeat != 0 && now > lastBeat && now - lastBeat >= limit
+    }
 }

@@ -47,7 +47,10 @@ final class LaneTests: XCTestCase {
     }
 
     func testAtMostLanesPerClassAndClassesAreSeparate() async throws {
-        let pool = LanePool(config: fast)
+        // A watchdog that never fires here: on a slow runner a descheduled 20 ms job must not poison its lane and
+        // spawn a replacement (or leave the class with no live lane), which is what this test counts.
+        let config = WatchdogConfig(stallTimeout: .seconds(60), tick: .milliseconds(20), lanesPerClass: 2, poisonCap: 4)
+        let pool = LanePool(config: config)
         let lanesSeen = Recorder<UInt64>()
         try await withThrowingTaskGroup(of: Void.self) { group in
             for i in 0..<12 {
@@ -65,7 +68,17 @@ final class LaneTests: XCTestCase {
         let opCount = await pool.liveLaneCount(of: volume, .fileOp)
         XCTAssertEqual(readCount, 2)
         XCTAssertEqual(opCount, 2)
-        XCTAssertEqual(Set(lanesSeen.values).count, 4)
+        XCTAssertEqual(Set(lanesSeen.values).count, 4, "\(lanesSeen.values)")
+    }
+
+    /// The watchdog reads the clock once per pass; a lane that heartbeats after that read has a beat newer than
+    /// `now`. That job is not overdue (the unsigned difference must not wrap into a huge stall).
+    func testBeatNewerThanTheWatchdogsClockIsNotOverdue() {
+        let limit = fast.stallNanoseconds
+        XCTAssertFalse(WatchdogConfig.isOverdue(lastBeat: 1_000_000_500, now: 1_000_000_000, limit: limit))
+        XCTAssertFalse(WatchdogConfig.isOverdue(lastBeat: 0, now: 1_000_000_000, limit: limit), "not started")
+        XCTAssertFalse(WatchdogConfig.isOverdue(lastBeat: 1_000_000_000, now: 1_000_000_000 + limit - 1, limit: limit))
+        XCTAssertTrue(WatchdogConfig.isOverdue(lastBeat: 1_000_000_000, now: 1_000_000_000 + limit, limit: limit))
     }
 
     func testHungReadPoisonsLaneAndRetryGetsFreshLane() async throws {

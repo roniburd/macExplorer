@@ -154,6 +154,10 @@ public final class FolderModel {
     public internal(set) var folderSizesEnabled = false
     /// The pending coalesced size re-sort (FolderModel+Sizes).
     var sizeResortTask: Task<Void, Never>?
+    /// `selectionSummary`'s cached walk, kept current by `setFolderSizes`.
+    var selectionTotals: SelectionTotals?
+    /// Full selection walks so far (tests).
+    private(set) var selectionSummaryPasses = 0
 
     public init(directory: URL, context: FolderContext, query: ViewQuery) {
         self.directory = directory
@@ -308,22 +312,31 @@ public final class FolderModel {
 
     /// Files' bytes, plus (with folder sizes on) the selected folders' and packages' computed sizes once every one
     /// of them is known (P2-14).
+    /// One walk of the selection per (selection, store version, sizes toggle); folder sizes arriving afterwards
+    /// update the cached totals in `setFolderSizes` (§11: selection totals are computed incrementally).
     public var selectionSummary: SelectionSummary {
-        var files = 0, folders = 0
-        var bytes: Int64 = 0
-        var folderBytes: Int64? = folderSizesEnabled ? 0 : nil
+        if let totals = selectionTotals, totals.selection == selection, totals.storeVersion == store.version,
+           totals.sizesEnabled == folderSizesEnabled {
+            return totals.summary
+        }
+        selectionSummaryPasses += 1
+        var files = 0, folders = 0, sizable = 0, sized = 0
+        var bytes: Int64 = 0, folderSum: Int64 = 0
         for row in selection.rows {
             let e = entry(atRow: row)
             switch e.kind {
             case .directory, .package:
                 if e.kind == .directory { folders += 1 } else { files += 1 }   // a package's size is its entry count
-                if let sum = folderBytes { folderBytes = folderSize(atRow: row).map { sum + $0.bytes } }
+                sizable += 1
+                if let size = folderSize(atRow: row) { sized += 1; folderSum += size.bytes }
             default: files += 1; bytes += e.size
             }
         }
-        var summary = SelectionSummary(count: selection.count, files: files, folders: folders, bytes: bytes)
-        summary.folderBytes = folderBytes
-        return summary
+        let totals = SelectionTotals(selection: selection, storeVersion: store.version, sizesEnabled: folderSizesEnabled,
+                                     base: SelectionSummary(count: selection.count, files: files, folders: folders, bytes: bytes),
+                                     sizable: sizable, sized: sized, folderSum: folderSum)
+        selectionTotals = totals
+        return totals.summary
     }
 
     public func isCut(row: Int) -> Bool { !cutNames.isEmpty && cutNames.contains(name(atRow: row)) }

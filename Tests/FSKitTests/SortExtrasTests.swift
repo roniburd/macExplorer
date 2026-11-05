@@ -28,6 +28,16 @@ final class SortExtrasTests: XCTestCase {
         XCTAssertEqual(sorted(s, ViewQuery(sort: .default), extras), ["A", "B", "C", "x", "y"], "only the size sort uses folder sizes")
     }
 
+    func testSizedPackagesSortAmongFilesByComputedSize() {
+        // X.app's Entry.size is an entry count (3); its computed size is 500 bytes.
+        let s = store([("D", .directory, 0), ("X.app", .package, 3), ("Y.app", .package, 2), ("a", .file, 2000), ("b", .file, 10)])
+        let extras = SortExtras(folderSizes: [0: 7, 1: 500])            // Y.app not sized yet
+        XCTAssertEqual(sorted(s, ViewQuery(sort: SortDescriptor(field: .size, ascending: true)), extras),
+                       ["D", "b", "X.app", "a", "Y.app"])
+        XCTAssertEqual(sorted(s, ViewQuery(sort: SortDescriptor(field: .size, ascending: false)), extras),
+                       ["D", "a", "X.app", "b", "Y.app"], "unknown package size still last when descending")
+    }
+
     func testEqualSizesBreakTiesByNameInBothDirections() {
         let s = store([("b", .directory, 0), ("a", .directory, 0), ("c", .directory, 0), ("d", .directory, 0)])
         let extras = SortExtras(folderSizes: [0: 10, 1: 10, 2: 5])     // d unknown

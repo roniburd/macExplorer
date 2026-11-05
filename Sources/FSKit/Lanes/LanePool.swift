@@ -173,7 +173,7 @@ public actor LanePool {
         for entry in active.values {
             let job = entry.job
             let beat = job.lastBeat.load(ordering: .relaxed)
-            guard beat != 0, entry.lane.runningJob === job, now &- beat >= limit else { continue }
+            guard WatchdogConfig.isOverdue(lastBeat: beat, now: now, limit: limit), entry.lane.runningJob === job else { continue }
             switch job.policy {
             case .poison:
                 guard !job.everStalled.load(ordering: .relaxed) else { continue }

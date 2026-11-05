@@ -99,8 +99,15 @@ public final class FolderSizeSession {
     private var idleWaiters: [CheckedContinuation<Void, Never>] = []
     private var nextToken: UInt64 = 0
     private var stopped = false
-    /// The volume stopped answering: nothing is scanned until `retry()`.
-    public private(set) var halted = false
+    /// Volumes that stopped answering: rows scanning on them are dropped (their cells stay "Calculating…") until
+    /// `retry()`; rows on other volumes (other mount points in /Volumes) keep sizing.
+    private var haltedVolumes = Set<VolumeID>()
+    /// Rows dropped because their volume stopped answering: subtree events and mtime changes do not re-queue them.
+    private var haltedRows = Set<RowID>()
+    /// Some volume stopped answering since the last `retry()`.
+    public var halted: Bool { !haltedVolumes.isEmpty }
+    /// The listed folder's own volume stopped answering: nothing is scanned until `retry()`.
+    private var listedVolumeHalted: Bool { haltedVolumes.contains(model?.volume?.id ?? .unknown) }
 
     /// Scans started so far, in total and per row (tests).
     private(set) var scansStarted = 0
@@ -147,10 +154,24 @@ public final class FolderSizeSession {
     /// Visible folders scan first. `rows` are on-screen model rows (not contiguous when grouped).
     public func setVisibleRows(_ rows: IndexSet) {
         guard let model, !stopped else { return }
-        visible = Set(rows.lazy.filter { $0 < model.rowCount }.map { model.identity(atRow: $0) })
-        guard !visible.isEmpty, pendingCount > 0 else { return }
-        let rest = queue[head...].filter { queued.contains($0) }
-        queue = rest.filter { visible.contains($0) } + rest.filter { !visible.contains($0) }
+        let onScreen = rows.filter { $0 < model.rowCount }.map { model.identity(atRow: $0) }
+        let ids = Set(onScreen)
+        guard ids != visible else { return }                 // scrolling within the same rows: nothing to move
+        visible = ids
+        // Only the queued visible rows move: they are re-inserted at `head` in on-screen order. Their later copies
+        // stay behind as stale entries that pump() skips (`queued` no longer holds them by then), so the rest of
+        // the queue is neither filtered nor rehashed.
+        var seen = Set<RowID>()
+        let front = onScreen.filter { queued.contains($0) && seen.insert($0).inserted }
+        guard !front.isEmpty else { return }
+        queue.insert(contentsOf: front, at: head)
+        if queue.count - head > 2 * queued.count + 1_024 { compactQueue() }   // amortized: bounds stale entries
+    }
+
+    /// Drops consumed and stale queue entries, keeping the first copy of each queued row.
+    private func compactQueue() {
+        var seen = Set<RowID>()
+        queue = queue[head...].filter { queued.contains($0) && seen.insert($0).inserted }
         head = 0
     }
 
@@ -172,7 +193,8 @@ public final class FolderSizeSession {
     /// After a volume stopped answering (or on Refresh): re-queue every folder row.
     public func retry() {
         guard !stopped else { return }
-        halted = false
+        haltedVolumes = []
+        haltedRows = []
         known = [:]
         scanned = [:]
         lastRescan = [:]
@@ -205,7 +227,7 @@ public final class FolderSizeSession {
     /// Cache hits go on the model at once; misses are queued first, then hits (revalidated: deep changes do not
     /// change a folder's own mtime). Visible rows go to the front.
     private func startAll() {
-        guard let model, !stopped, !halted else { return }
+        guard let model, !stopped, !listedVolumeHalted else { return }
         var hits: [RowID: FolderSize] = [:]
         var misses: [RowID] = [], revalidate: [RowID] = []
         for folder in folderRows(model) {
@@ -239,7 +261,8 @@ public final class FolderSizeSession {
             deferred = deferred.filter { model.row(of: $0.key) != nil }
             scheduleWake()
         }
-        guard !halted else { resumeWaitersIfIdle(); return }
+        haltedRows = haltedRows.filter { model.row(of: $0) != nil }
+        guard !listedVolumeHalted else { resumeWaitersIfIdle(); return }
         var hits: [RowID: FolderSize] = [:]
         for folder in folderRows(model) where known[folder.id] != folder.entry.mtime {
             let isNew = known[folder.id] == nil
@@ -303,7 +326,7 @@ public final class FolderSizeSession {
     /// rescan waits until `max(minRescanInterval, 2 × its duration)` after it finished. The first rescan after a
     /// quiet period runs at once.
     private func requestRescan(_ id: RowID) {
-        guard !halted, !stopped, deferred[id] == nil, !queued.contains(id) else { return }
+        guard !listedVolumeHalted, !stopped, !haltedRows.contains(id), deferred[id] == nil, !queued.contains(id) else { return }
         if let last = lastRescan[id] {
             let due = last.finished + max(service.minRescanInterval, last.duration * 2)
             if ContinuousClock.now < due {
@@ -334,7 +357,7 @@ public final class FolderSizeSession {
     private func releaseDeferred() {
         wakeTask = nil
         wakeAt = nil
-        guard let model, !stopped, !halted else { return }
+        guard let model, !stopped, !listedVolumeHalted else { return }
         let now = ContinuousClock.now
         for (id, due) in deferred where due <= now {
             deferred[id] = nil
@@ -357,7 +380,7 @@ public final class FolderSizeSession {
     }
 
     private func enqueue(_ id: RowID) {
-        guard !halted, queued.insert(id).inserted else { return }
+        guard !listedVolumeHalted, !haltedRows.contains(id), queued.insert(id).inserted else { return }
         if visible.contains(id) { queue.insert(id, at: head) } else { queue.append(id) }
     }
 
@@ -370,7 +393,7 @@ public final class FolderSizeSession {
     // MARK: Scanning
 
     private func pump() {
-        guard let model, !stopped, !halted else { return }
+        guard let model, !stopped, !listedVolumeHalted else { return }
         let table = service.mountTable.current()
         let listedVolume = model.volume?.id ?? .unknown
         while inFlight.count < service.maxConcurrentScans, head < queue.count {
@@ -382,6 +405,7 @@ public final class FolderSizeSession {
             // The row's own volume: a mount point (an entry of /Volumes, a share under ~/mnt) scans on the lanes
             // of the volume it shows, so a hung volume never poisons the listed folder's volume (§4.2).
             let volume = table.volume(containing: url.path(percentEncoded: false))?.id ?? listedVolume
+            if haltedVolumes.contains(volume) { haltedRows.insert(id); continue }   // stays "Calculating…"
             let key = key(row, model)
             let path = ChangeBus.key(for: url)
             nextToken += 1
@@ -401,14 +425,14 @@ public final class FolderSizeSession {
                 } catch {
                     outcome = .failure(error)
                 }
-                self?.finish(id, token: token, key: key, path: path, outcome)
+                self?.finish(id, token: token, key: key, path: path, volume: volume, outcome)
             }
             inFlight[id] = InFlight(token: token, task: task, isRescan: triggered.remove(id) != nil, started: .now)
         }
         if queue.count == head { queue = []; head = 0 }
     }
 
-    private func finish(_ id: RowID, token: UInt64, key: FolderSizeKey, path: String,
+    private func finish(_ id: RowID, token: UInt64, key: FolderSizeKey, path: String, volume: VolumeID,
                         _ outcome: Result<ScanResult, any Error>) {
         guard !stopped, let flight = inFlight[id], flight.token == token else { return }
         inFlight[id] = nil
@@ -430,9 +454,14 @@ public final class FolderSizeSession {
             if again { scanned[id] = nil; requestRescan(id) }
         case .failure(let error):
             if case LaneError.volumeUnresponsive = error {
-                halted = true                                // cells stay "Calculating…" until retry()
-                clearQueue()
-                clearDeferred()
+                // Only this volume's rows stop (cells stay "Calculating…" until retry()); queued rows on it are
+                // dropped as pump() reaches them. The listed folder's own volume stops everything.
+                haltedVolumes.insert(volume)
+                haltedRows.insert(id)
+                if listedVolumeHalted {
+                    clearQueue()
+                    clearDeferred()
+                }
             }
         }
         pump()

@@ -15,6 +15,7 @@ extension FolderModel {
     public func setFolderSizesEnabled(_ on: Bool) {
         guard on != folderSizesEnabled, !closed else { return }
         folderSizesEnabled = on
+        selectionTotals = nil
         guard !on else { return }
         sizeResortTask?.cancel()
         sizeResortTask = nil
@@ -31,10 +32,18 @@ extension FolderModel {
     public func setFolderSizes(_ sizes: [RowID: FolderSize]) {
         guard !closed else { return }
         var changed = Set<RowID>()
-        for (id, size) in sizes where store.firstIndex(of: id) != nil {
-            if sizeTable[id] != size { changed.insert(id) }
+        let totalsCurrent = selectionTotals.map { $0.selection == selection && $0.storeVersion == store.version } ?? false
+        for (id, size) in sizes {
+            guard let index = store.firstIndex(of: id) else { continue }
+            let old = sizeTable[id]
+            guard old != size else { continue }
+            changed.insert(id)
             sizeTable[id] = size
+            if totalsCurrent, selection.ids.contains(id), store.entry(index).kind == .directory || store.entry(index).kind == .package {
+                selectionTotals?.add(size, replacing: old)
+            }
         }
+        if !totalsCurrent { selectionTotals = nil }
         guard !changed.isEmpty else { return }
         emit(.folderSizes(changed))
         if query.sort.field == .size { scheduleSizeResort() }
@@ -49,6 +58,7 @@ extension FolderModel {
     /// After every store replacement or mutation: entries of rows that left the store are dropped.
     func pruneFolderSizes() {
         guard !sizeTable.isEmpty else { return }
+        selectionTotals = nil
         let store = self.store
         sizeTable = sizeTable.filter { store.firstIndex(of: $0.key) != nil }
     }
@@ -65,5 +75,28 @@ extension FolderModel {
             guard !self.closed, self.state == .complete, self.query.sort.field == .size else { return }
             self.enqueue { [weak self] in await self?.resortNow() }
         }
+    }
+}
+
+/// Totals of one walk of the selection (`FolderModel.selectionSummary`), updated in place as folder sizes arrive.
+struct SelectionTotals {
+    var selection: Selection
+    var storeVersion: UInt64
+    var sizesEnabled: Bool
+    var base: SelectionSummary
+    /// Selected folders and packages, and how many of them have a size.
+    var sizable: Int
+    var sized: Int
+    var folderSum: Int64
+
+    var summary: SelectionSummary {
+        var summary = base
+        summary.folderBytes = sizesEnabled ? (sized == sizable ? folderSum : nil) : nil
+        return summary
+    }
+
+    mutating func add(_ size: FolderSize, replacing old: FolderSize?) {
+        if old == nil { sized += 1 }
+        folderSum += size.bytes - (old?.bytes ?? 0)
     }
 }

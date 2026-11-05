@@ -116,25 +116,33 @@ final class FolderSizeScannerTests: XCTestCase {
         XCTAssertTrue(state.result.isPartial)
     }
 
+    /// Review Focus 3: a cancel stops the scan within one directory. The cancel is issued from inside the scan
+    /// (after directory 10), so the count at that moment is exact rather than racing a polling loop.
     func testCancellationStopsWithinADirectory() async throws {
         for i in 0..<400 { try sandbox.createFile("many/d\(i)/f", contents: Data(count: 1)) }
         let url = sandbox.url("many")
         let visited = Mutex(0)
+        let cancelledAt = Mutex<Int?>(nil)
+        let handle = Mutex<Task<FolderSize?, any Error>?>(nil)
         let lanes = self.lanes
         let task = Task {
             try await lanes.perform(on: .unknown, .scan) { ctx in
                 FolderSizeScanner.scan(url, context: ctx, mountTable: .empty, onDirectory: { n in
                     visited.withLock { $0 = n }
-                    usleep(2_000)                       // 400 dirs ≈ 0.8 s, so the cancel lands mid-scan
+                    guard n == 10 else { return }
+                    var task: Task<FolderSize?, any Error>?
+                    while task == nil { task = handle.withLock { $0 }; if task == nil { usleep(1_000) } }
+                    task?.cancel()                      // sets the lane job's cancel flag synchronously
+                    cancelledAt.withLock { $0 = n }
                 })
             }
         }
-        while visited.withLock({ $0 }) < 10 { try await Task.sleep(for: .milliseconds(1)) }
-        task.cancel()
+        handle.withLock { $0 = task }
         let result = try? await task.value
         XCTAssertNil(result ?? nil, "a cancelled scan returns nil")
-        let atCancel = visited.withLock { $0 }
-        XCTAssertLessThan(atCancel, 400)
+        let atCancel = try XCTUnwrap(cancelledAt.withLock { $0 })
+        let final = visited.withLock { $0 }
+        XCTAssertLessThanOrEqual(final, atCancel + 1, "the scan stops within one directory of the cancel")
     }
 
     func testScanLanesAreSeparateFromReadLanes() async throws {

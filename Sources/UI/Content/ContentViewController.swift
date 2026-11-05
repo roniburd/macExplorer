@@ -181,7 +181,9 @@ final class ContentViewController: CommandHandlingViewController {
             if details.folder === session.folder { details.applyGroups(runs) }
         case .folderSizes(let ids):
             if details.folder === session.folder { details.reloadFolderSizes(ids) }
-            updateStatus()
+            // Only a selected row's size changes the status bar's selection total.
+            let selected = session.folder.selection.ids
+            if ids.contains(where: selected.contains) { updateStatus() }
         }
     }
 

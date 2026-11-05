@@ -63,6 +63,34 @@ final class FolderModelSizesTests: XCTestCase {
         XCTAssertEqual(model.selectionSummary.folderBytes, 42)
     }
 
+    /// Sizes streaming in for a large selection update the total incrementally (§11: "computed incrementally"):
+    /// no O(selection) pass per arriving size.
+    func testSelectionFolderBytesUpdateIncrementallyAsSizesArrive() async throws {
+        let sandbox = try Sandbox(); defer { sandbox.destroy() }
+        for name in ["a", "b", "c"] { try sandbox.createDirectory(name) }
+        try sandbox.createFile("f.txt", contents: Data(count: 3))
+        let env = CoreEnvironment.sandboxed(root: sandbox.root); _ = await env.start()
+        let model = try await loadedModel(sandbox.root, env: env)
+        defer { model.close() }
+        model.setFolderSizesEnabled(true)
+        model.select(.all)
+        XCTAssertNil(model.selectionSummary.folderBytes)
+        let passes = model.selectionSummaryPasses
+        let id = { (name: String) in model.identity(atRow: model.row(named: name)!) }
+        model.setFolderSizes([id("a"): FolderSize(bytes: 10)])
+        XCTAssertNil(model.selectionSummary.folderBytes, "b and c unknown")
+        model.setFolderSizes([id("b"): FolderSize(bytes: 20), id("c"): FolderSize(bytes: 30)])
+        XCTAssertEqual(model.selectionSummary.folderBytes, 60)
+        model.setFolderSizes([id("a"): FolderSize(bytes: 15)])                     // a rescan changes one size
+        XCTAssertEqual(model.selectionSummary.folderBytes, 65)
+        XCTAssertEqual(model.selectionSummary.bytes, 3)
+        XCTAssertEqual(model.selectionSummaryPasses, passes, "sizes arriving never re-walk the selection")
+        model.select(.names(["a", "f.txt"]))
+        XCTAssertEqual(model.selectionSummary.folderBytes, 15, "a new selection is summed afresh")
+        model.setFolderSizesEnabled(false)
+        XCTAssertNil(model.selectionSummary.folderBytes)
+    }
+
     func testCoalescedResortWhileSizesStreamIn() async throws {
         let sandbox = try Sandbox(); defer { sandbox.destroy() }
         for name in ["a", "b", "c"] { try sandbox.createDirectory(name) }

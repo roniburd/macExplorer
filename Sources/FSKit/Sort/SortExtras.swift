@@ -35,7 +35,7 @@ public struct SortExtras: Sendable {
 
 extension Sorter {
     /// Phase 1 permutation plus: the size sort orders the folders group by `extras.folderSizes` (unknown sizes last
-    /// in both directions, name order breaking ties). Folders stay first. Other fields ignore the extras until P2-16.
+    /// in both directions, name order breaking ties), and sized packages among the files by theirs. Folders stay first. Other fields ignore the extras until P2-16.
     public static func permutation(_ store: EntryStore, nameKeys: SortKeyColumn, searchKeys: SortKeyColumn?,
                                    query: ViewQuery, kindRanks: [UInt16], extensionKeys: SortKeyColumn? = nil,
                                    extras: SortExtras) -> [UInt32] {
@@ -50,6 +50,14 @@ extension Sorter {
         if query.sort.field == .size, !extras.folderSizes.isEmpty {
             let folderCount = order.prefix { store.entry($0).isFolderForSorting }.count
             reorder(&order, range: 0..<folderCount, ascending: query.sort.ascending) { extras.folderSizes[$0] }
+            // Packages sort among files but show a computed size: order them by it (an unsized package's
+            // `Entry.size` is not bytes, so it goes last like an unsized folder).
+            if extras.folderSizes.keys.contains(where: { store.entry($0).kind == .package }) {
+                reorder(&order, range: folderCount..<order.count, ascending: query.sort.ascending) { idx in
+                    let entry = store.entry(idx)
+                    return entry.kind == .package ? extras.folderSizes[idx] : entry.size
+                }
+            }
         }
         // P2-16 handles extras.column for extended fields here.
     }

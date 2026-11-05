@@ -102,6 +102,32 @@ final class FolderSizeServiceTests: XCTestCase {
         session.stop()
     }
 
+    /// Moving the visible window re-prioritizes only the newly visible queued rows (latest window first, then the
+    /// earlier one, then the rest in queue order); stale queue copies never cause a second scan.
+    func testChangingVisibleRowsKeepsTheRestOfTheQueueAndScansEachRowOnce() async throws {
+        for i in 0..<30 { try sandbox.createFile(String(format: "d%02d/f", i), contents: Data(count: 1)) }
+        let service = FolderSizeService(lanes: env.lanes, mountTable: env.volumes.mountTableStore, changeBus: env.changeBus,
+                                        makeSubtreeWatcher: { _, _ in NoopWatcher() }, maxConcurrentScans: 1)
+        let model = try await model()
+        var order: [String] = []
+        let token = model.observe { e in
+            if case .folderSizes(let ids) = e { for id in ids { if let r = model.row(of: id) { order.append(model.name(atRow: r)) } } }
+        }
+        defer { token.cancel() }
+        let session = service.attach(to: model)
+        session.setVisibleRows(IndexSet(integersIn: 25..<30))
+        session.setVisibleRows(IndexSet(integersIn: 25..<30))           // same rows: no-op
+        session.setVisibleRows(IndexSet(integersIn: 10..<15))
+        XCTAssertEqual(session.pendingCount, 29, "moving rows never duplicates pending work")
+        await session.waitUntilIdle()
+        let name = { (i: Int) in String(format: "d%02d", i) }
+        let expected = (10..<15).map(name) + (25..<30).map(name) + (1..<30).filter { !(10..<15).contains($0) && !(25..<30).contains($0) }.map(name)
+        XCTAssertEqual(Array(order.dropFirst()), expected)
+        XCTAssertEqual(order.count, 30)
+        XCTAssertEqual(session.scansStarted, 30, "every row is scanned exactly once")
+        session.stop()
+    }
+
     func testDeepChangeRescansOnlyThatChild() async throws {
         try sandbox.createFile("big/a.bin", contents: Data(count: 3_000))
         try sandbox.createFile("small/c.bin", contents: Data(count: 1_000))
@@ -256,6 +282,40 @@ final class FolderSizeServiceTests: XCTestCase {
         XCTAssertFalse(session.halted)
         await session.waitUntilIdle()
         XCTAssertEqual(model.folderSize(atRow: model.row(named: "big")!)?.bytes, 100)
+        session.stop()
+    }
+
+    /// One hung volume (a mount point row in /Volumes) halts only its own rows: the other rows keep sizing.
+    func testUnresponsiveMountPointHaltsOnlyItsOwnRows() async throws {
+        try sandbox.createFile("hung/a.bin", contents: Data(count: 10))
+        try sandbox.createFile("ok/b.bin", contents: Data(count: 70))
+        let hungVolume = VolumeID(raw: "uuid:HUNG")
+        let lanes = LanePool(config: WatchdogConfig(stallTimeout: .milliseconds(50), tick: .milliseconds(10), poisonCap: 1))
+        _ = try? await lanes.perform(on: hungVolume, .scan) { _ in Thread.sleep(forTimeInterval: 0.3) }   // no heartbeats
+        let deadline = ContinuousClock.now + .seconds(5)
+        while await lanes.health(of: hungVolume) != .unresponsive, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let health = await lanes.health(of: hungVolume)
+        XCTAssertEqual(health, .unresponsive)
+        let table = MountTableStore(MountTable([
+            VolumeInfoFixtures.volume(id: "uuid:ROOT", mountPoint: URL(filePath: "/", directoryHint: .isDirectory)),
+            VolumeInfoFixtures.volume(id: "uuid:HUNG", mountPoint: sandbox.root.appending(path: "hung", directoryHint: .isDirectory)),
+        ]))
+        let service = FolderSizeService(lanes: lanes, mountTable: table, changeBus: env.changeBus,
+                                        makeSubtreeWatcher: { _, _ in NoopWatcher() }, maxConcurrentScans: 1)
+        let model = try await model()
+        let session = service.attach(to: model)
+        await session.waitUntilIdle()
+        XCTAssertTrue(session.halted)
+        XCTAssertEqual(session.pendingCount, 0)
+        XCTAssertNil(model.folderSize(atRow: try XCTUnwrap(model.row(named: "hung"))), "the hung row stays Calculating…")
+        XCTAssertEqual(model.folderSize(atRow: try XCTUnwrap(model.row(named: "ok")))?.bytes, 70, "the healthy row is sized")
+        await lanes.resetVolume(hungVolume)
+        session.retry()
+        XCTAssertFalse(session.halted)
+        await session.waitUntilIdle()
+        XCTAssertEqual(model.folderSize(atRow: try XCTUnwrap(model.row(named: "hung")))?.bytes, 10)
         session.stop()
     }
 
