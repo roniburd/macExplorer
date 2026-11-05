@@ -38,16 +38,22 @@ import Core
     }
 }
 
+/// Whether the badge's popover should be / is on screen. Held by the toolbar item so a popover request is honoured
+/// even when it arrives before the (hidden) badge's SwiftUI view is mounted (review of Task 8).
+@MainActor @Observable final class UpdateBadgePresenter {
+    /// Drives `.popover(isPresented:)`.
+    var isPresented = false
+    /// True while the popover content is on screen.
+    var isShown = false
+}
+
 /// The pill and its popover (spec §3.1–3.2).
 struct UpdateBadgeView: View {
     let model: UpdateModel
-    /// Whether this badge should answer a popover request (only one window's badge does).
-    let isPopoverTarget: @MainActor () -> Bool
-    let popoverShown: @MainActor (Bool) -> Void
-    @State private var showPopover = false
+    @Bindable var presenter: UpdateBadgePresenter
 
     var body: some View {
-        Button { showPopover = true } label: {
+        Button { presenter.isPresented = true } label: {
             Text(UpdateBadgeText.pill(model.state) ?? "")
                 .font(.callout.weight(.semibold))
                 .padding(.horizontal, 10).padding(.vertical, 3)
@@ -55,11 +61,9 @@ struct UpdateBadgeView: View {
                 .foregroundStyle(isReady ? Color.white : Color.primary)
         }
         .buttonStyle(.plain)
-        .popover(isPresented: $showPopover, arrowEdge: .bottom) { popover }
-        .onChange(of: model.popoverRequest) { if isPopoverTarget() { showPopover = true } }
-        .onChange(of: showPopover) { _, shown in
-            popoverShown(shown)
-            if !shown { model.acknowledge() }
+        .popover(isPresented: $presenter.isPresented, arrowEdge: .bottom) { popover }
+        .onChange(of: presenter.isPresented) { _, presented in
+            if !presented { model.acknowledge() }
         }
     }
 
@@ -78,31 +82,46 @@ struct UpdateBadgeView: View {
                 if let notes { Link(L10n.string("What's New"), destination: notes) }
                 HStack {
                     Spacer()
-                    Button(L10n.string("Later")) { showPopover = false }
-                    Button(L10n.string("Restart Now")) { showPopover = false; model.restartNow() }
+                    Button(L10n.string("Later")) { presenter.isPresented = false }
+                    Button(L10n.string("Restart Now")) { presenter.isPresented = false; model.restartNow() }
                         .keyboardShortcut(.defaultAction)
                 }
             }
         }
         .padding(14)
         .frame(width: 300)
+        // Evidence that the popover is really on screen (`UpdateBadgeItem.isPopoverShown`).
+        .onAppear { presenter.isShown = true }
+        .onDisappear { presenter.isShown = false }
+    }
+}
+
+/// Hosts the badge and reports when it joins a window (a hidden toolbar item's view is not in the window).
+final class UpdateBadgeHostingView: NSHostingView<UpdateBadgeView> {
+    var onWindowChange: (@MainActor () -> Void)?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        onWindowChange?()
     }
 }
 
 /// Toolbar item at the trailing edge; hidden while nothing is worth showing.
 @MainActor final class UpdateBadgeItem: NSToolbarItem {
     private let model: UpdateModel
+    private let presenter = UpdateBadgePresenter()
     private var observation: UpdateObservation?
+    private var requestLoop: ObservationLoop?
+    /// The last `model.popoverRequest` this badge has dealt with (presented, or left to another window's badge).
+    private var handledRequest: Int
     /// True while this badge's popover is on screen (tests and the scenario runner read it).
-    private(set) var isPopoverShown = false
+    var isPopoverShown: Bool { presenter.isShown }
 
     init(model: UpdateModel) {
         self.model = model
+        handledRequest = model.popoverRequest   // a new window never replays an older check's popover
         super.init(itemIdentifier: ToolbarController.updateID)
-        let host = NSHostingView(rootView: UpdateBadgeView(
-            model: model,
-            isPopoverTarget: { [weak self] in self?.isFrontmostBadge ?? false },
-            popoverShown: { [weak self] shown in self?.isPopoverShown = shown }))
+        let host = UpdateBadgeHostingView(rootView: UpdateBadgeView(model: model, presenter: presenter))
         host.setAccessibilityIdentifier(AXID.updateBadge)
         view = host
         label = L10n.string("Update")
@@ -110,6 +129,24 @@ struct UpdateBadgeView: View {
         visibilityPriority = .high
         isHidden = !model.state.isBadgeVisible
         observation = model.addObserver { [weak self] state in self?.isHidden = !state.isBadgeVisible }
+        // A user-initiated check bumps `popoverRequest` and un-hides the badge in the same turn, before its view is
+        // in the window, so an `.onChange` inside the view never sees it (review of Task 8). The item watches the
+        // counter itself and re-checks once the view joins a window.
+        requestLoop = ObservationLoop({ [weak model] in _ = model?.popoverRequest },
+                                      onChange: { [weak self] in self?.schedulePopoverRequest() })
+        host.onWindowChange = { [weak self] in self?.schedulePopoverRequest() }
+    }
+
+    /// Defers to the next main-actor turn so the toolbar has laid the un-hidden item out first.
+    private func schedulePopoverRequest() {
+        Task { @MainActor [weak self] in self?.handlePopoverRequest() }
+    }
+
+    private func handlePopoverRequest() {
+        let request = model.popoverRequest
+        guard request != handledRequest, !isHidden, view?.window != nil else { return }   // not mounted yet: wait
+        handledRequest = request
+        if isFrontmostBadge { presenter.isPresented = true }
     }
 
     /// A user-initiated check opens the popover of exactly one badge: the one in the frontmost window that has

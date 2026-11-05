@@ -90,6 +90,22 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
         toolbarDefaultItemIdentifiers(toolbar) + [.space, .flexibleSpace]
     }
 
+    /// The badge is the only place "Restart to Update" and the manual-check feedback appear (spec §3.1–3.2): the user
+    /// cannot drag it out via Customize Toolbar… (review of Task 8).
+    func toolbarImmovableItemIdentifiers(_ toolbar: NSToolbar) -> Set<NSToolbarItem.Identifier> { [Self.updateID] }
+
+    func toolbar(_ toolbar: NSToolbar, itemIdentifier: NSToolbarItem.Identifier, canBeInsertedAt index: Int) -> Bool {
+        itemIdentifier != Self.updateID || index != NSNotFound
+    }
+
+    /// An autosaved configuration from an older build (or one the user customized before the badge existed) is
+    /// restored as is and never gains new default items, so put the badge back at the trailing edge when it is
+    /// missing (review of Task 8).
+    func ensureUpdateItem(in toolbar: NSToolbar) {
+        guard !toolbar.items.contains(where: { $0.itemIdentifier == Self.updateID }) else { return }
+        toolbar.insertItem(withItemIdentifier: Self.updateID, at: toolbar.items.count)
+    }
+
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
                  willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
         // Customize Toolbar… asks for palette copies: never hand out the live items (their views would move).

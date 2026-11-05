@@ -49,4 +49,68 @@ final class UpdateBadgeTests: XCTestCase {
         let item = try XCTUnwrap(toolbar.items.first { $0.itemIdentifier == ToolbarController.updateID })
         XCTAssertTrue(item.isHidden, "no controller in tests: the model stays idle and the badge hidden")
     }
+
+    // MARK: review of Task 8 — the badge cannot go missing
+
+    func testUpdateItemCannotBeRemovedByTheUser() async throws {
+        let h = try await ShellHarness.make(self)
+        let controller = try await h.openWindow()
+        let toolbar = try XCTUnwrap(controller.window?.toolbar)
+        let delegate = controller.toolbarController
+        XCTAssertTrue(delegate.toolbarImmovableItemIdentifiers(toolbar).contains(ToolbarController.updateID))
+        XCTAssertFalse(delegate.toolbar(toolbar, itemIdentifier: ToolbarController.updateID, canBeInsertedAt: NSNotFound))
+        XCTAssertTrue(delegate.toolbar(toolbar, itemIdentifier: ToolbarController.searchID, canBeInsertedAt: NSNotFound))
+    }
+
+    func testRestoredConfigurationWithoutTheBadgeGetsItBack() async throws {
+        let h = try await ShellHarness.make(self)
+        let controller = try await h.openWindow()
+        let toolbar = try XCTUnwrap(controller.window?.toolbar)
+        // What an autosaved configuration from a build before the badge looks like.
+        toolbar.itemIdentifiers = [ToolbarController.navigationID, ToolbarController.addressID, ToolbarController.searchID,
+                                  ToolbarController.viewSwitcherID]
+        XCTAssertFalse(toolbar.items.contains { $0.itemIdentifier == ToolbarController.updateID }, "precondition")
+        controller.toolbarController.ensureUpdateItem(in: toolbar)
+        XCTAssertEqual(toolbar.items.last?.itemIdentifier, ToolbarController.updateID)
+        controller.toolbarController.ensureUpdateItem(in: toolbar)
+        XCTAssertEqual(toolbar.items.filter { $0.itemIdentifier == ToolbarController.updateID }.count, 1)
+    }
+
+    // MARK: review of Task 8 — Check for Updates… opens the popover (spec §3.2)
+
+    private func badge(_ controller: BrowserWindowController) throws -> UpdateBadgeItem {
+        let toolbar = try XCTUnwrap(controller.window?.toolbar)
+        return try XCTUnwrap(toolbar.items.first { $0.itemIdentifier == ToolbarController.updateID } as? UpdateBadgeItem)
+    }
+
+    func testManualCheckFromIdleOpensThePopover() async throws {
+        let h = try await ShellHarness.make(self)
+        let controller = try await h.openWindow()
+        controller.window?.makeKeyAndOrderFront(nil)
+        let item = try badge(controller)
+        XCTAssertTrue(item.isHidden, "starts idle")
+        var checks: [Bool] = []
+        h.context.updates.checkHandler = { checks.append($0) }
+        h.context.updates.checkNow()
+        XCTAssertEqual(checks, [true])
+        try await h.waitUntil("popover shown") { item.isPopoverShown }
+        XCTAssertFalse(item.isHidden)
+    }
+
+    func testOnlyTheFrontWindowsBadgeOpensThePopover() async throws {
+        let h = try await ShellHarness.make(self)
+        let back = try await h.openWindow()
+        let front = try await h.openWindow()
+        front.window?.makeKeyAndOrderFront(nil)
+        try await h.waitUntil("front window ordered first") {
+            NSApp.orderedWindows.first { $0.isVisible && $0.toolbar != nil } === front.window
+        }
+        let frontItem = try badge(front), backItem = try badge(back)
+        h.context.updates.checkHandler = { _ in }
+        h.context.updates.checkNow()
+        try await h.waitUntil("front popover shown") { frontItem.isPopoverShown }
+        // Give the back badge the same chance to (wrongly) present.
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertFalse(backItem.isPopoverShown)
+    }
 }
