@@ -56,10 +56,26 @@ final class ContextMenuTests: XCTestCase {
         let content = try h.content(of: try await h.openBrowserWindow())
         XCTAssertEqual(ids(content.contextMenu(forRow: 0)), [
             "macx.menu.open", "macx.menu.openWith", "macx.menu.cut", "macx.menu.copy", "macx.menu.copyAsPath",
-            "macx.menu.duplicate", "macx.menu.makeAlias", "macx.menu.makeSymlink", "macx.menu.rename",
+            "macx.menu.copyPathAs", "macx.menu.duplicate", "macx.menu.makeAlias", "macx.menu.makeSymlink", "macx.menu.rename",
             "macx.menu.moveToTrash", "macx.menu.deletePermanently", "macx.menu.new", "macx.menu.revealInFinder",
             "macx.menu.openInTerminal", "macx.menu.share", "macx.menu.properties",
         ])
+    }
+
+    func testCopyPathAsSubmenuActsOnTheSelection() async throws {
+        let h = try await ContentTestHarness.make(self)
+        try h.file("a.txt")
+        let content = try h.content(of: try await h.openBrowserWindow())
+        let menu = content.contextMenu(forRow: 0)
+        let copyPathAs = menu?.items.first { $0.identifier?.rawValue == CopyPathMenu.submenuID }
+        XCTAssertEqual(copyPathAs?.submenu?.items.map(\.title), ["POSIX Path", "~ Path", "File URL", "Name", "Quoted for Shell"])
+        let boxes = (copyPathAs?.submenu?.items ?? []).compactMap { $0.representedObject as? MenuActionBox }
+        XCTAssertEqual(boxes.map(\.command), CopyPathMenu.commands)
+        for box in boxes {
+            guard case .contentSelection = box.target else { return XCTFail("\(box.command) acts on the selection") }
+        }
+        boxes.first { $0.command == .copyName }?.run(nil)
+        XCTAssertEqual(h.environment.clipboard.backend.readString(), "a.txt")
     }
 
     func testItemMenuOffersPasteIntoOnlyForSingleFolder() async throws {

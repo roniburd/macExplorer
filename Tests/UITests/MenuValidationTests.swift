@@ -66,7 +66,8 @@ final class MenuValidationTests: XCTestCase {
     func testEveryCommandHasExactlyOneMainMenuItem() {
         let all = Self.items(in: MainMenuBuilder.build())
         for command in Command.allCases where !MainMenuBuilder.notInMenu.contains(command) {
-            let matching = all.filter { $0.action == Selector(command.selectorName) }
+            // Copy Path As ▸ POSIX Path also sends copyAsPath; Edit › Copy as Path is the command's item (⇧⌘C).
+            let matching = all.filter { $0.action == Selector(command.selectorName) && $0.identifier?.rawValue != CopyPathMenu.posixItemID }
             XCTAssertEqual(matching.count, 1, "\(command) needs one main-menu item")
             guard let item = matching.first else { continue }
             XCTAssertNil(item.target, "\(command) follows the first responder")
@@ -119,7 +120,9 @@ final class MenuValidationTests: XCTestCase {
         let edit = titles("Edit")
         let copyPathAs = Self.item(at: ["Edit", "Copy Path As"], in: menu)
         XCTAssertEqual(edit.firstIndex(of: "Copy Path As"), edit.firstIndex(of: "Copy as Path").map { $0 + 1 })
-        XCTAssertEqual(copyPathAs?.isHidden, true, "placeholder until P2-04")
+        XCTAssertEqual(copyPathAs?.isHidden, false)
+        XCTAssertEqual(copyPathAs?.submenu?.items.map(\.title), ["POSIX Path", "~ Path", "File URL", "Name", "Quoted for Shell"])
+        XCTAssertEqual(Self.items(in: menu).filter { $0.action == Selector(Command.copyAsPath.selectorName) }.count, 2)
     }
 
     func testKeyEquivalentsComeFromKeyMapPrimaries() throws {

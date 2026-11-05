@@ -35,6 +35,9 @@ final class CommandBarView: NSView {
         moreButton = Self.pullDown(id: Self.moreMenuID, title: nil, symbol: "ellipsis",
                                    [.copyAsPath, nil, .selectAll, .selectNone, .invertSelection, nil,
                                     .openInTerminal, .revealInFinder])
+        if let index = moreButton.pullDownMenu.items.firstIndex(where: { $0.action == Selector(Command.copyAsPath.selectorName) }) {
+            moreButton.pullDownMenu.insertItem(CopyPathMenu.submenuItem(), at: index + 1)
+        }
         moreButton.setAccessibilityLabel(L10n.string("More"))
         moreButton.toolTip = L10n.string("More")
         deleteButton = Self.button(.moveToTrash)

@@ -113,25 +113,3 @@ final class AppKitCommandPrompts: CommandPrompts {
         return alert.runModal()
     }
 }
-
-/// "Copy as Path" writes plain text only, with no file URLs, so a later ⌘V doesn't paste files (§5.3 ⋯ menu). It
-/// uses the private pasteboard named by --pasteboard. A sandboxed run without one keeps the text in memory and never
-/// touches NSPasteboard.general (S5-C2).
-@MainActor
-enum TextPasteboard {
-    private(set) static var lastSandboxedText: String?
-
-    static func write(_ text: String, options: LaunchOptions) {
-        let pasteboard: NSPasteboard
-        if let name = options.pasteboardName {
-            pasteboard = NSPasteboard(name: NSPasteboard.Name(name))
-        } else if options.isSandboxed {
-            lastSandboxedText = text
-            return
-        } else {
-            pasteboard = .general
-        }
-        pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
-    }
-}

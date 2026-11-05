@@ -1,0 +1,22 @@
+{"name": "p2-copy-path",
+ "fixture": {"files": ["it's here.txt"], "dirs": ["sub"]},
+ "steps": [
+  {"waitFor": {"rows": ["sub", "it's here.txt"], "state": "complete"}},
+  {"click": "it's here.txt"},
+  {"key": "cmd+shift+c"},
+  {"expect": {"pasteboardText": "{root}/it's here.txt"}},
+  {"menu": ["Edit", "Copy Path As", "Quoted for Shell"]},
+  {"expect": {"pasteboardText": "'{root}/it'\\''s here.txt'"}},
+  {"menu": ["Edit", "Copy Path As", "~ Path"]},
+  {"expect": {"pasteboardText": "~/it's here.txt"}},
+  {"menu": ["Edit", "Copy Path As", "File URL"]},
+  {"expect": {"pasteboardText": "{rootURL}it's%20here.txt"}},
+  {"menu": ["Edit", "Copy Path As", "POSIX Path"]},
+  {"expect": {"pasteboardText": "{root}/it's here.txt"}},
+  {"click": "sub", "modifiers": ["cmd"]},
+  {"expect": {"selection": ["sub", "it's here.txt"]}},
+  {"menu": ["Edit", "Copy Path As", "Name"]},
+  {"expect": {"pasteboardText": "sub\nit's here.txt"}},
+  {"key": "cmd+v"},
+  {"expect": {"rows": ["sub", "it's here.txt"], "filesAbsent": ["it's here copy.txt"]}}
+ ]}

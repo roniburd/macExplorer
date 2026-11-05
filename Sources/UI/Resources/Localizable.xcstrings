@@ -3215,6 +3215,17 @@
         }
       }
     },
+    "POSIX Path" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "POSIX Path"
+          }
+        }
+      }
+    },
     "Preparing…" : {
       "extractionState" : "manual",
       "localizations" : {

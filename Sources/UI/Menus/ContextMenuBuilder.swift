@@ -110,6 +110,7 @@ final class ContextMenuBuilder {
             add(.paste, .folder(folder.url(atRow: row)), handler, to: menu)   // only for one right-clicked folder (§5.6)
         }
         add(.copyAsPath, target, handler, to: menu)
+        menu.addItem(CopyPathMenu.submenuItem(target: target, handler: handler))
         menu.addItem(.separator())
         for command in [Command.duplicate, .makeAlias, .makeSymlink] { add(command, target, handler, to: menu) }
         menu.addItem(.separator())

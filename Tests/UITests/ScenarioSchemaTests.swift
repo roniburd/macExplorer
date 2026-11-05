@@ -163,7 +163,7 @@ final class ScenarioSchemaTests: XCTestCase {
         for hook in ["groupHeaderTitles", "visibleRowNames", "visibleColumnIDs", "quickLookState", "cellText", "columnsChain", "thumbnailNames"] {
             XCTAssertTrue(m.contains { $0.contains(hook) }, "no message names \(hook): \(m)")
         }
-        XCTAssertTrue(m.contains { $0.contains("unsupported until P2-04") })
+        XCTAssertTrue(m.contains { $0.contains("pasteboardText") && $0.contains("no snapshot") })
     }
 
     func testStringsForSortGroupingAndIconSize() {

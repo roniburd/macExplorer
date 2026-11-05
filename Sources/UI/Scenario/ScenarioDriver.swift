@@ -622,7 +622,7 @@ final class ScenarioDriver {
             s.activeColumn = chain.active
         }
         s.thumbnails = hooks.thumbnailNames?()
-        s.pasteboardText = nil    // P2-04 adds PasteboardBackend.readString()
+        s.pasteboardText = context.environment.clipboard.backend.readString() ?? ""
     }
 
     private func snapshot(for expectation: ScenarioFile.Expectation) async throws -> ProbeSnapshot {

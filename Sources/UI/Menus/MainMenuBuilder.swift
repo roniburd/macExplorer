@@ -102,7 +102,7 @@ import Core
     private static func editItems() -> [NSMenuItem] {
         [
             item(.undo), item(.redo), .separator(),
-            item(.cut), item(.copy), item(.paste), item(.moveItemHere), item(.copyAsPath), copyPathAsPlaceholder(), .separator(),
+            item(.cut), item(.copy), item(.paste), item(.moveItemHere), item(.copyAsPath), CopyPathMenu.submenuItem(), .separator(),
             item(.selectAll), item(.selectNone), item(.invertSelection),
         ]
     }
@@ -160,16 +160,6 @@ import Core
             standard("Report a Bug…", FeedbackActions.reportBugAction),
             standard("Request a Feature…", FeedbackActions.requestFeatureAction),
         ]
-    }
-
-    /// Edit › Copy Path As ▸ (P2-04 fills in CopyPathMenu and shows it). Hidden until then; it already carries the
-    /// four variant command items so every Command has its one main-menu item.
-    private static func copyPathAsPlaceholder() -> NSMenuItem {
-        let placeholder = submenu(L10n.string("Copy Path As"), id: "copyPathAs", [
-            item(.copyPathTilde), item(.copyPathFileURL), item(.copyName), item(.copyPathShellQuoted),
-        ])
-        placeholder.isHidden = true
-        return placeholder
     }
 
     // MARK: items

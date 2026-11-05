@@ -29,10 +29,17 @@ enum AppBootstrap {
         let home = (sandboxed ? options.root : nil) ?? FileManager.default.homeDirectoryForCurrentUser
         let environment = CoreEnvironment(
             statePaths: statePaths, lanes: lanes, settingsStorage: settings, volumeScanner: SystemVolumeScanner(),
-            volumeEvents: WorkspaceVolumeEvents(), pasteboard: SystemPasteboard(name: options.pasteboardName),
+            volumeEvents: WorkspaceVolumeEvents(), pasteboard: makePasteboard(options: options),
             launchServices: launchServices, ejector: ejector, trash: trash, home: home)
         environment.undoActionName = { UndoActionNames.name(for: $0) }
         return environment
+    }
+
+    /// The private --pasteboard when given; a sandboxed run without one keeps its clipboard in memory, so it never
+    /// writes NSPasteboard.general (S5-C2, which P2-04 extends from Copy as Path to every clipboard write).
+    static func makePasteboard(options: LaunchOptions) -> any PasteboardBackend {
+        if options.pasteboardName == nil, options.isSandboxed { return InMemoryPasteboard() }
+        return SystemPasteboard(name: options.pasteboardName)
     }
 
     /// Settings in `<state-dir>/settings.json` in sandbox runs, else the app's user defaults.

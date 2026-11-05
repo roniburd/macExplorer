@@ -35,7 +35,7 @@ struct ProbeSnapshot: Equatable {
     var columnsChain: [String]?              // ScenarioHooks.columnsChain
     var activeColumn: Int?                   // ScenarioHooks.columnsChain
     var thumbnails: [String]?                // ScenarioHooks.thumbnailNames
-    var pasteboardText: String?              // clipboard backend readString() (P2-04)
+    var pasteboardText: String?              // clipboard backend readString() (P2-04), "" = no text
 }
 
 enum ScenarioStrings {
@@ -187,12 +187,8 @@ extension ExpectationMatcher {
         hooked("columnsChain", e.columnsChain, s.columnsChain, hook: "columnsChain")
         hooked("activeColumn", e.activeColumn, s.activeColumn, hook: "columnsChain")
         subset("thumbnailsContain", e.thumbnailsContain, s.thumbnails, hook: "thumbnailNames")
-        if let want = e.pasteboardText {
-            if let text = s.pasteboardText {
-                if want != text { m.append("pasteboardText: expected '\(want)', got '\(text)'") }
-            } else {
-                m.append("pasteboardText: unsupported until P2-04 (the pasteboard backend has no readString yet)")
-            }
+        if let want = e.pasteboardText, want != s.pasteboardText {
+            m.append("pasteboardText: expected '\(want)', got \(s.pasteboardText.map { "'\($0)'" } ?? "no snapshot")")
         }
     }
 }

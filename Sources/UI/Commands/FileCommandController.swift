@@ -17,7 +17,6 @@ final class FileCommandController: CommandHandler {
         .openInNewTab, .quickLook, .viewAsColumns,
         .groupByNone, .groupByKind, .groupByDateModified, .groupBySize, .groupByName,
         .toggleFolderSizes, .applyViewToAllFolders,
-        .copyPathTilde, .copyPathFileURL, .copyName, .copyPathShellQuoted,
     ])
 
     var environment: CoreEnvironment { context.environment }
@@ -76,7 +75,8 @@ final class FileCommandController: CommandHandler {
         case .newFolder: enqueue(.newItem(.folder, in: destinationFolder(target)))
         case .newTextFile: enqueue(.newItem(.textFile, in: destinationFolder(target)))
         case .newEmptyFile: enqueue(.newItem(.emptyFile, in: destinationFolder(target)))
-        case .copyAsPath: TextPasteboard.write(subjectURLs(target).map(\.path).joined(separator: "\n"), options: context.options)
+        case .copyAsPath, .copyPathTilde, .copyPathFileURL, .copyName, .copyPathShellQuoted:
+            if let style = Self.pathStyle(for: effective) { copyPaths(style, target: target) }
         case .properties: showProperties(target)
         case .share: share(target, sender: sender)
         case .back, .forward, .up, .refresh, .focusAddressBar, .focusSearch, .cycleFocusForward, .cycleFocusBackward,
@@ -92,9 +92,42 @@ final class FileCommandController: CommandHandler {
         case .newTab, .nextTab, .previousTab, .showTabBar, .showAllTabs, .moveTabToNewWindow, .mergeAllWindows,
              .openInNewTab, .quickLook, .viewAsColumns,
              .groupByNone, .groupByKind, .groupByDateModified, .groupBySize, .groupByName,
-             .toggleFolderSizes, .applyViewToAllFolders,
-             .copyPathTilde, .copyPathFileURL, .copyName, .copyPathShellQuoted:
+             .toggleFolderSizes, .applyViewToAllFolders:
             break   // pendingCommands: canPerform is false, so perform beeps above
+        }
+    }
+
+    // MARK: copy path (P2-04)
+
+    /// Copy as Path is `.posix`; the four Copy Path As ▸ variants map one to one.
+    static func pathStyle(for command: Command) -> PathStyle? {
+        switch command {
+        case .copyAsPath: .posix
+        case .copyPathTilde: .tilde
+        case .copyPathFileURL: .fileURL
+        case .copyName: .name
+        case .copyPathShellQuoted: .shellQuoted
+        default: nil
+        }
+    }
+
+    /// Plain text only (no file URLs, so a later ⌘V pastes no files), through the clipboard's backend: the private
+    /// --pasteboard or, in a sandboxed run without one, memory (never NSPasteboard.general). A stale favorite gives no
+    /// items, so nothing is copied. `perform` revalidates the clipboard afterwards, which drops a replaced cut.
+    private func copyPaths(_ style: PathStyle, target: CommandTarget) {
+        let items = Self.pathItems(for: target)
+        guard !items.isEmpty else { return }
+        environment.clipboard.backend.writeString(PathFormatter.format(items, style: style, home: environment.settings.home))
+    }
+
+    /// The selection in display order (folders and packages carry a directory URL), or the target folder itself.
+    static func pathItems(for target: CommandTarget) -> [PathItem] {
+        switch target {
+        case .contentSelection(let folder): folder.selectedURLs.map { PathItem(url: $0, isDirectory: $0.hasDirectoryPath) }
+        case .currentFolder(let folder): [PathItem(url: folder.directory, isDirectory: true)]
+        case .folder(let url), .location(let url): [PathItem(url: url, isDirectory: true)]
+        case .favorite(let favorite): favorite.url.map { [PathItem(url: $0, isDirectory: true)] } ?? []
+        case .volume(let volume): [PathItem(url: volume.mountPoint, isDirectory: true)]
         }
     }
 

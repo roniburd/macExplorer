@@ -47,7 +47,8 @@ final class CommandBarTests: XCTestCase {
         XCTAssertEqual(actions(bar.moreMenu), [.copyAsPath, .selectAll, .selectNone, .invertSelection,
                                                .openInTerminal, .revealInFinder])
         for menu in [bar.newMenu, bar.sortMenu, bar.viewMenu, bar.moreMenu] {
-            for item in menu.items where item.action != nil { XCTAssertNil(item.target) }
+            for item in menu.items where item.action != nil && item.submenu == nil { XCTAssertNil(item.target) }
+            for item in menu.items.compactMap(\.submenu).flatMap(\.items) { XCTAssertNil(item.target) }
         }
     }
 

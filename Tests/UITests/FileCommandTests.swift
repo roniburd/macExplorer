@@ -134,9 +134,51 @@ final class FileCommandTests: XCTestCase {
         let w = try await world { try $0.file("a.txt"); try $0.file("b.txt") }
         w.select(["a.txt", "b.txt"])
         w.commands.perform(.copyAsPath, target: w.selection, sender: nil)
-        let pasteboard = NSPasteboard(name: NSPasteboard.Name(w.h.pasteboardName))
-        XCTAssertEqual(pasteboard.string(forType: .string), [w.h.url("a.txt").path, w.h.url("b.txt").path].joined(separator: "\n"))
-        XCTAssertFalse(pasteboard.types?.contains(.fileURL) ?? false, "a later ⌘V must not paste files")
+        let backend = w.h.environment.clipboard.backend
+        XCTAssertEqual(backend.readString(), [w.h.url("a.txt").path, w.h.url("b.txt").path].joined(separator: "\n"))
+        XCTAssertFalse(backend.hasFileURLs(), "a later ⌘V must not paste files")
+    }
+
+    func testCopyPathVariantsWriteTheirStyle() async throws {
+        let w = try await world { try $0.dir("sub"); try $0.file("it's here.txt") }
+        let backend = w.h.environment.clipboard.backend
+        func plain(_ url: URL) -> String {
+            var path = url.path(percentEncoded: false)
+            while path.count > 1, path.hasSuffix("/") { path.removeLast() }
+            return path
+        }
+        let root = plain(w.folder.directory), home = plain(w.h.environment.settings.home)
+        XCTAssertTrue(root.hasPrefix(home + "/"), "the sandbox environment's home is its root, which holds the folder")
+        func copy(_ command: Command, _ target: CommandTarget? = nil) -> String? {
+            XCTAssertTrue(w.commands.canPerform(command, target: target ?? w.selection), "\(command)")
+            w.commands.perform(command, target: target ?? w.selection, sender: nil)
+            return backend.readString()
+        }
+        w.select(["it's here.txt"])
+        XCTAssertEqual(copy(.copyAsPath), root + "/it's here.txt")
+        XCTAssertEqual(copy(.copyPathTilde), "~" + root.dropFirst(home.count) + "/it's here.txt")
+        XCTAssertEqual(copy(.copyPathFileURL), URL(filePath: root + "/it's here.txt").absoluteString)
+        XCTAssertEqual(copy(.copyName), "it's here.txt")
+        XCTAssertEqual(copy(.copyPathShellQuoted), "'" + root + #"/it'\''s here.txt'"#)
+        w.select(["sub", "it's here.txt"])
+        XCTAssertEqual(copy(.copyName), "sub\nit's here.txt", "display order, folders first")
+        XCTAssertEqual(copy(.copyPathFileURL), URL(filePath: root + "/sub", directoryHint: .isDirectory).absoluteString + "\n"
+                       + URL(filePath: root + "/it's here.txt").absoluteString)
+        XCTAssertFalse(backend.hasFileURLs())
+    }
+
+    func testCopyPathReplacesACutAndNeedsASelection() async throws {
+        let w = try await world { try $0.file("a.txt") }
+        w.select(["a.txt"])
+        w.commands.perform(.cut, target: w.selection, sender: nil)
+        XCTAssertFalse(w.h.environment.clipboard.cutURLs.isEmpty)
+        w.commands.perform(.copyPathShellQuoted, target: w.selection, sender: nil)
+        XCTAssertTrue(w.h.environment.clipboard.cutURLs.isEmpty, "the text replaced the cut items on the pasteboard")
+        XCTAssertNil(w.h.environment.clipboard.pastePlan(into: w.folder.directory, moveItemHere: false))
+        w.select([])
+        for command in [Command.copyPathTilde, .copyPathFileURL, .copyName, .copyPathShellQuoted] {
+            XCTAssertFalse(w.commands.canPerform(command, target: w.selection), "\(command) with nothing selected")
+        }
     }
 
     func testOpenFolderNavigatesAndDocumentUsesLaunchServices() async throws {

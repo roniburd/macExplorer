@@ -48,6 +48,15 @@ import Foundation
         return path
     }
 
+    @discardableResult public func writeString(_ string: String) -> Int {
+        pasteboard.clearContents()
+        provider = nil
+        pasteboard.setString(string, forType: .string)
+        return pasteboard.changeCount
+    }
+
+    public func readString() -> String? { pasteboard.string(forType: .string) }
+
     public func readFileURLs() -> [URL] {
         if let own = FileURLPasteboardItems.ownURLs(pasteboard, provider: provider, changeCount: providerChangeCount) { return own }
         var urls: [URL] = []
