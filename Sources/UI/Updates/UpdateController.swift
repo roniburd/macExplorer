@@ -19,7 +19,9 @@ public final class UpdateController {
     private let engine: any UpdaterEngine
     private let installedVersion: String
     private let terminate: @MainActor () -> Void
-    private var pendingInstall: (@MainActor () -> Void)?
+    /// Sparkle's "install and relaunch now" action. `reusable` blocks (silent install-on-quit handler, Sparkle >= 2.3;
+    /// `retryTerminatingApplication`) may be invoked again after a cancelled quit; one-shot `reply` blocks may not.
+    private var pendingInstall: (run: @MainActor () -> Void, reusable: Bool)?
     private var foundVersion: String?
 
     init(model: UpdateModel, settings: Core.Settings, engine: any UpdaterEngine, installedVersion: String,
@@ -59,13 +61,16 @@ public final class UpdateController {
     func downloadProgress(_ fraction: Double?) { model.send(.downloadProgress(fraction)) }
 
     /// Silent path: Sparkle downloaded and will install on quit; `install` installs and relaunches now.
+    /// Sparkle documents this block as re-invocable after the app cancels termination, so it stays armed.
     func willInstallOnQuit(version: String, notesURL: URL?, install: @escaping @MainActor () -> Void) {
-        readyToInstall(version: version, notesURL: notesURL, install: install)
+        readyToInstall(version: version, notesURL: notesURL, reusable: true, install: install)
     }
 
-    /// Foreground (user-driver) path: same UI, different Sparkle reply.
-    func readyToInstall(version: String, notesURL: URL?, install: @escaping @MainActor () -> Void) {
-        pendingInstall = install
+    /// Foreground (user-driver) path: same UI, different Sparkle reply. `reusable: false` (a `reply` block) is
+    /// dropped after one use; `reusable: true` (e.g. `retryTerminatingApplication`) stays armed.
+    func readyToInstall(version: String, notesURL: URL?, reusable: Bool = false,
+                        install: @escaping @MainActor () -> Void) {
+        pendingInstall = (install, reusable)
         model.send(.readyToInstall(version: version, notesURL: notesURL))
     }
 
@@ -79,10 +84,10 @@ public final class UpdateController {
 
     private func restart() {
         if let install = pendingInstall {
-            pendingInstall = nil
-            install()
+            if !install.reusable { pendingInstall = nil }
+            install.run()   // asks NSApp to terminate → quit prompt; Cancel keeps us running with the block armed.
         } else if case .readyToRestart = model.state {
-            terminate()   // Sparkle still installs on quit; the quit prompt guards running jobs.
+            terminate()   // Fallback only: no install block on hand. Sparkle still installs on quit.
         }
     }
 

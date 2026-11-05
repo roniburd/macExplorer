@@ -120,7 +120,7 @@ final class UserDriver: NSObject, SPUUserDriver {
     }
     func showInstallingUpdate(withApplicationTerminated applicationTerminated: Bool, retryTerminatingApplication: @escaping () -> Void) {
         // Termination was cancelled (quit prompt → Cancel): keep the badge; Restart Now retries.
-        if !applicationTerminated { controller?.readyToInstall(version: version, notesURL: notes) { retryTerminatingApplication() } }
+        if !applicationTerminated { controller?.readyToInstall(version: version, notesURL: notes, reusable: true) { retryTerminatingApplication() } }
     }
     func showUpdateInstalledAndRelaunched(_ relaunched: Bool, acknowledgement: @escaping () -> Void) { acknowledgement() }
     func showUpdateInFocus() {}

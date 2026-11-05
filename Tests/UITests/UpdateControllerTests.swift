@@ -6,16 +6,25 @@ import XCTest
 private final class FakeEngine: UpdaterEngine {
     var automaticallyChecksForUpdates = true
     private(set) var started = 0, checks = 0
-    func start() throws { started += 1 }
+    var startError: (any Error)?
+    func start() throws {
+        started += 1
+        if let startError { throw startError }
+    }
     func checkInBackground() { checks += 1 }
 }
 
+private struct StartFailure: Error {}
+
 @MainActor
 final class UpdateControllerTests: XCTestCase {
-    private func make(channel: UpdateChannel = .release) -> (UpdateController, UpdateModel, FakeEngine, Core.Settings, () -> Int) {
+    private func make(channel: UpdateChannel = .release, automaticChecks: Bool = true, startError: (any Error)? = nil)
+        -> (UpdateController, UpdateModel, FakeEngine, Core.Settings, () -> Int) {
         let settings = Settings(storage: InMemorySettingsStorage(), home: URL(filePath: "/tmp/macx-tests-home", directoryHint: .isDirectory))
         settings.updateChannel = channel
+        settings.checkForUpdatesAutomatically = automaticChecks
         let model = UpdateModel(), engine = FakeEngine()
+        engine.startError = startError
         var terminations = 0
         let c = UpdateController(model: model, settings: settings, engine: engine, installedVersion: "0.3.1",
                                  terminate: { terminations += 1 })
@@ -32,6 +41,20 @@ final class UpdateControllerTests: XCTestCase {
         model.setAutomaticChecks(false)
         XCTAssertFalse(engine.automaticallyChecksForUpdates)
         XCTAssertFalse(settings.checkForUpdatesAutomatically)
+    }
+
+    func testInitAppliesSavedAutomaticChecksSettingToEngine() {
+        let (_, _, engine, _, _) = make(automaticChecks: false)
+        XCTAssertFalse(engine.automaticallyChecksForUpdates)   // FakeEngine starts true: only init's sync flips it
+    }
+
+    func testStartFailureLeavesModelUnavailableAndInert() {
+        let (_, model, engine, _, _) = make(startError: StartFailure())
+        XCTAssertEqual(engine.started, 1)
+        XCTAssertFalse(model.isAvailable)
+        model.checkNow()
+        XCTAssertEqual(engine.checks, 0)
+        XCTAssertEqual(model.state, .idle)
     }
 
     func testUserCheckFlowsToUpToDate() {
@@ -65,16 +88,35 @@ final class UpdateControllerTests: XCTestCase {
 
     func testRestartWhileJobsActiveDefersToQuitPath() {
         // Sparkle's install block asks NSApp to terminate, which runs AppLifecycle.shouldTerminate (quit prompt).
-        // If the user cancels, the block is spent: a second Restart Now falls back to a plain terminate request,
-        // which goes through the same prompt; Sparkle still installs on quit.
+        // If the user cancels, the badge stays and the block stays armed: Sparkle >= 2.3 documents the silent
+        // install-on-quit handler as re-invocable after a cancelled termination, and only it installs *and relaunches*
+        // (a plain terminate would install on quit without relaunching).
         let (c, model, _, _, terminations) = make()
         var installs = 0
         c.willInstallOnQuit(version: "0.4.0", notesURL: nil) { installs += 1 }
         model.restartNow()
         model.restartNow()
-        XCTAssertEqual(installs, 1)
-        XCTAssertEqual(terminations(), 1)
+        XCTAssertEqual(installs, 2)
+        XCTAssertEqual(terminations(), 0)
         XCTAssertEqual(model.state, .readyToRestart(version: "0.4.0", notesURL: nil))
+    }
+
+    func testOneShotForegroundReplyIsNotReusedButRetryBlockIs() {
+        // Foreground `reply(.install)` must be called once; after a cancelled quit Sparkle re-arms through
+        // showInstallingUpdate's retryTerminatingApplication, which "may be invoked multiple times".
+        let (c, model, _, _, terminations) = make()
+        var replies = 0, retries = 0
+        c.readyToInstall(version: "0.4.0", notesURL: nil) { replies += 1 }
+        model.restartNow()
+        model.restartNow()   // before Sparkle re-arms: no second reply; falls back to a terminate request
+        XCTAssertEqual(replies, 1)
+        XCTAssertEqual(terminations(), 1)
+        c.readyToInstall(version: "0.4.0", notesURL: nil, reusable: true) { retries += 1 }
+        model.restartNow()
+        model.restartNow()
+        XCTAssertEqual(retries, 2)
+        XCTAssertEqual(replies, 1)
+        XCTAssertEqual(terminations(), 1)
     }
 
     func testBackgroundNetworkFailureIsSilent() {
