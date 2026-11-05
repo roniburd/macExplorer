@@ -166,6 +166,8 @@ Per the user safety rule, tests only create, read and delete files in directorie
 - Both fine → ship ad-hoc.
 - Either fails → generate a stable self-signed code-signing certificate once, store it as `SELF_SIGNED_P12` (+ password), and sign every build with it so the designated requirement is stable. Record the result in this section before implementation continues.
 
+**Result (2026-11-05).** Ad-hoc release builds 0.0.1 → 0.0.2 (bundle ID `com.macexplorer.app.spike`, Sparkle 2.10.1, throwaway EdDSA key, appcast served from `http://127.0.0.1` with `SUFeedURL` patched into the scratch copies only, since `bundle.sh` rejects non-HTTPS feeds). (a) **Pass:** Check for Updates… → Restart to Update → Restart Now installed and relaunched 0.0.2. Sparkle logged "Code signature of the new version doesn't match the old version" and accepted the update on its valid EdDSA signature. (b) **Pass:** after the update, opening Desktop did not prompt for access again. **Decision:** `RELEASE_SIGNING=adhoc`; no self-signed certificate needed.
+
 ## 8. Owner one-time setup (documented in README)
 
 1. `generate_keys` (Sparkle) → private key into repo secret `SPARKLE_ED_PRIVATE_KEY`; public key into `Info.plist` `SUPublicEDKey`. Back up the private key offline: losing it means existing installs can't be updated.
