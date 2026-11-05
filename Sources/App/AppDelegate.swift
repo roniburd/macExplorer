@@ -12,6 +12,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var lifecycle: AppLifecycle?
     /// Keeps the Sparkle updater alive for the app's lifetime (nil when updates are off).
     private var updateController: UpdateController?
+    /// This session's dirty-exit marker; removed on clean termination (spec §4.2).
+    private var sessionMarker: DirtyExitMarker?
 
     init(options: LaunchOptions) {
         self.options = options
@@ -32,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.context = launched.context
             self.lifecycle = launched.lifecycle
             self.updateController = launched.updates
+            self.sessionMarker = launched.marker
             ScenarioLaunch.runIfRequested(context: launched.context)
             if options.scenario == nil { NSApp.activate() }   // UI scenarios run inactive (P1-41)
             if let delay = options.smokeExitAfter { scheduleSmokeExit(after: delay) }
@@ -45,6 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         lifecycle?.willTerminate()
+        sessionMarker?.end()
     }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
@@ -107,6 +111,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let report = SmokeReport(windowTitles: titles, root: options.root?.path(percentEncoded: false),
                                      processID: ProcessInfo.processInfo.processIdentifier)
             self.lifecycle?.willTerminate()
+            self.sessionMarker?.end()
             do {
                 try report.write(to: statePaths.root.appending(path: SmokeReport.fileName))
             } catch {

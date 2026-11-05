@@ -1543,6 +1543,28 @@
         }
       }
     },
+    "Don't Send" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Don't Send"
+          }
+        }
+      }
+    },
+    "Don't ask again" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Don't ask again"
+          }
+        }
+      }
+    },
     "Downloading MacExplorer %@…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1939,6 +1961,17 @@
         }
       }
     },
+    "Help fix it by reporting the crash. You'll see the report on GitHub before anything is sent." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Help fix it by reporting the crash. You'll see the report on GitHub before anything is sent."
+          }
+        }
+      }
+    },
     "Hidden" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2309,6 +2342,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "MacExplorer cleaned up after operations that were interrupted"
+          }
+        }
+      }
+    },
+    "MacExplorer quit unexpectedly last time" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MacExplorer quit unexpectedly last time"
           }
         }
       }
@@ -3314,6 +3358,17 @@
         }
       }
     },
+    "Report on GitHub…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Report on GitHub…"
+          }
+        }
+      }
+    },
     "Request a Feature…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3585,6 +3640,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Show Package Contents"
+          }
+        }
+      }
+    },
+    "Show Report" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Report"
           }
         }
       }
