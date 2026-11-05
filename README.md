@@ -117,7 +117,7 @@ UI scenarios run in a separate bundle (`com.macexplorer.app.scenarios`, `.build/
 they never write the preferences of a real install. Scenario files use the schema in
 `Sources/UI/Scenario/ScenarioFile.swift`.
 
-CI (`.github/workflows/ci.yml`, `macos-26` runner) runs the layering checks, release and debug builds, the tests,
+CI (`.github/workflows/ci.yml`, `xcode-27` runner, Xcode 27.2) runs the layering checks, release and debug builds, the tests,
 the bundle, both scenario runners and `macx-bench`. A pull request fails on a benchmark only when a metric is
 more than 20% **and** more than 5 ms slower than the baseline measured on `main` with the same runner image; the
 absolute budgets show up as warnings.
