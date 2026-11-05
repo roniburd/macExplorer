@@ -82,6 +82,20 @@ final class BrowserWindowControllerTests: XCTestCase {
         XCTAssertNil(split.splitView.autosaveName, "no autosave names in sandbox mode")
     }
 
+    func testSidebarCannotBeDragCollapsedButCanBeToggled() async throws {
+        let h = try await ShellHarness.make(self)
+        let controller = try await h.openWindow()
+        let split = try XCTUnwrap(controller.window?.contentViewController as? BrowserSplitViewController)
+        let sidebarItem = split.splitViewItems[0]
+        let sidebarView = sidebarItem.viewController.view
+        XCTAssertFalse(split.splitView(split.splitView, canCollapseSubview: sidebarView), "drag must not collapse to zero")
+        XCTAssertFalse(split.splitView(split.splitView, shouldCollapseSubview: sidebarView, forDoubleClickOnDividerAt: 0))
+        split.toggleSidebar(nil)
+        XCTAssertTrue(sidebarItem.isCollapsed, "menu toggle still hides the sidebar")
+        split.toggleSidebar(nil)
+        XCTAssertFalse(sidebarItem.isCollapsed)
+    }
+
     func testContentShowsTheRowCount() async throws {
         let h = try await ShellHarness.make(self)
         try h.file("a.txt"); try h.file("b.txt")

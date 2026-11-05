@@ -33,4 +33,16 @@ final class BrowserSplitViewController: NSSplitViewController {
         // Sandbox mode sets no autosave names (overview Global Constraints › Safety).
         if !context.options.isSandboxed { splitView.autosaveName = "macx.browser.split" }
     }
+
+    // Dragging the divider past the sidebar's minimum must not collapse it to zero width —
+    // a drag-collapsed sidebar can't be dragged back open. Hiding stays available through
+    // View › Show/Hide Sidebar (⌃⌘S), which collapses programmatically and isn't affected.
+    override func splitView(_ splitView: NSSplitView, canCollapseSubview subview: NSView) -> Bool {
+        false
+    }
+
+    override func splitView(_ splitView: NSSplitView, shouldCollapseSubview subview: NSView,
+                            forDoubleClickOnDividerAt dividerIndex: Int) -> Bool {
+        false
+    }
 }
