@@ -8,6 +8,9 @@ import MacxFS
 public final class FolderSizeCache {
     private struct Slot { var size: FolderSize; var mtime: Int64; var path: String; var used: UInt64 }
     private var slots: [FolderSizeIdentity: Slot] = [:]
+    /// path → identities stored for it, so ancestor invalidation looks up each ancestor of the changed directory
+    /// instead of walking every slot (it runs on main for every posted LocalChange).
+    private var byPath: [String: Set<FolderSizeIdentity>] = [:]
     private var clock: UInt64 = 0
     private let capacity: Int
 
@@ -26,21 +29,44 @@ public final class FolderSizeCache {
 
     public func store(_ size: FolderSize, for key: FolderSizeKey, path: String) {
         clock += 1
-        slots[key.identity] = Slot(size: size, mtime: key.mtime, path: Self.normalize(path), used: clock)
+        let path = Self.normalize(path)
+        if let old = slots[key.identity], old.path != path { unindex(key.identity, path: old.path) }
+        slots[key.identity] = Slot(size: size, mtime: key.mtime, path: path, used: clock)
+        byPath[path, default: []].insert(key.identity)
         // O(n) only when over capacity, at most once per stored scan result: negligible next to the scan.
         if slots.count > capacity, let victim = slots.min(by: { $0.value.used < $1.value.used })?.key {
-            slots[victim] = nil
+            invalidate(victim)
         }
     }
 
-    public func invalidate(_ identity: FolderSizeIdentity) { slots[identity] = nil }
+    public func invalidate(_ identity: FolderSizeIdentity) {
+        guard let slot = slots.removeValue(forKey: identity) else { return }
+        unindex(identity, path: slot.path)
+    }
 
     /// Drops entries whose path is `path` or one of its ancestors (component-wise: "/a/bc" is not under "/a/b").
+    /// One lookup per path component.
     public func invalidateAncestors(ofDirectory path: String) {
         let dir = Self.normalize(path)
-        for (id, slot) in slots where slot.path == dir || dir.hasPrefix(slot.path == "/" ? "/" : slot.path + "/") {
-            slots[id] = nil
+        guard !slots.isEmpty, dir.hasPrefix("/") else { return }
+        drop(path: "/")
+        var prefix = ""
+        for component in dir.split(separator: "/", omittingEmptySubsequences: true) {
+            prefix += "/"
+            prefix += component
+            drop(path: prefix)
         }
+    }
+
+    private func drop(path: String) {
+        guard let ids = byPath.removeValue(forKey: path) else { return }
+        for id in ids { slots[id] = nil }
+    }
+
+    private func unindex(_ identity: FolderSizeIdentity, path: String) {
+        guard var ids = byPath[path] else { return }
+        ids.remove(identity)
+        byPath[path] = ids.isEmpty ? nil : ids
     }
 
     nonisolated static func normalize(_ path: String) -> String { ChangeBus.key(for: URL(filePath: path)) }

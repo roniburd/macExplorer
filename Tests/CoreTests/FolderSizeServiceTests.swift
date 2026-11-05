@@ -108,13 +108,19 @@ final class FolderSizeServiceTests: XCTestCase {
         let model = try await model()
         let session = env.folderSizes.attach(to: model)
         await session.waitUntilIdle()
-        let before = session.scansStarted
+        let big = model.identity(atRow: model.row(named: "big")!), small = model.identity(atRow: model.row(named: "small")!)
+        let before = session.scanCounts
         try sandbox.createFile("big/deep/new.bin", contents: Data(count: 4_000))   // FSEvents → SubtreeWatcher
         await waitUntil { model.folderSize(atRow: model.row(named: "big")!)?.bytes == 7_000 }
         XCTAssertEqual(model.folderSize(atRow: model.row(named: "big")!)?.bytes, 7_000)
         try await Task.sleep(for: .milliseconds(1_500))   // let the 1 s subtree delivery arrive too
         await session.waitUntilIdle()
-        XCTAssertEqual(session.scansStarted - before, 1, "only big was rescanned, once")
+        XCTAssertEqual(session.scanCounts[small], before[small], "small was not rescanned")
+        // Normally once: the folder watcher's mtime change and the subtree delivery are deduplicated by event id.
+        // Under heavy load fseventsd can number the event after the id the rescan read at its start, which costs
+        // one more (rate-limited) rescan; anything beyond that would be a dedup failure.
+        let rescans = session.scanCounts[big, default: 0] - before[big, default: 0]
+        XCTAssertTrue((1...2).contains(rescans), "big was rescanned \(rescans) times")
         session.stop()
     }
 
@@ -182,6 +188,117 @@ final class FolderSizeServiceTests: XCTestCase {
         session.stop()
     }
 
+    func testInvalidateAncestorsFollowsRestoredPathsAndRoot() {
+        let cache = FolderSizeCache()
+        let id = FolderSizeIdentity.object(VolumeID(raw: "v"), 7)
+        cache.store(FolderSize(bytes: 1), for: FolderSizeKey(identity: id, mtime: 0), path: "/a")
+        cache.store(FolderSize(bytes: 2), for: FolderSizeKey(identity: id, mtime: 0), path: "/b")   // renamed
+        cache.invalidateAncestors(ofDirectory: "/a/x")
+        XCTAssertNotNil(cache.value(for: FolderSizeKey(identity: id, mtime: 0)), "the old path no longer holds it")
+        cache.invalidateAncestors(ofDirectory: "/b/y")
+        XCTAssertNil(cache.value(for: FolderSizeKey(identity: id, mtime: 0)))
+        cache.store(FolderSize(bytes: 1), for: FolderSizeKey(identity: .path("/"), mtime: 0), path: "/")
+        cache.invalidateAncestors(ofDirectory: "/q/r")
+        XCTAssertNil(cache.value(for: FolderSizeKey(identity: .path("/"), mtime: 0)), "/ is everyone's ancestor")
+        XCTAssertEqual(cache.count, 0)
+    }
+
+    /// A folder row that is another volume's mount point is scanned on that volume's lanes, so a hung volume
+    /// never poisons the lanes of the volume being listed (§4.2).
+    func testMountPointRowScansOnItsOwnVolumeLanes() async throws {
+        guard DiskImage.isAvailable, let image = try? DiskImage.create(in: sandbox, format: .apfs, sizeMB: 8) else {
+            throw XCTSkip("hdiutil unavailable")
+        }
+        addTeardownBlock { try? image.detach() }
+        try Data(count: 1_000).write(to: image.mountPoint.appending(path: "inside"))   // inside the test's own image
+        let lanes = LanePool()
+        let table = MountTableStore(MountTable([
+            VolumeInfoFixtures.volume(id: "uuid:ROOT", mountPoint: URL(filePath: "/", directoryHint: .isDirectory)),
+            VolumeInfoFixtures.volume(id: "uuid:IMG", mountPoint: image.mountPoint),
+        ]))
+        let service = FolderSizeService(lanes: lanes, mountTable: table, changeBus: env.changeBus,
+                                        makeSubtreeWatcher: { _, _ in NoopWatcher() })
+        let model = try await model()
+        let name = image.mountPoint.lastPathComponent
+        let session = service.attach(to: model)
+        await session.waitUntilIdle()
+        XCTAssertEqual(model.folderSize(atRow: try XCTUnwrap(model.row(named: name)))?.files, 1)
+        let imageLanes = await lanes.liveLaneCount(of: VolumeID(raw: "uuid:IMG"), .scan)
+        XCTAssertEqual(imageLanes, 1, "the mount point row ran on the image's own scan lane")
+        session.stop()
+    }
+
+    /// P2-13 failure rule: `volumeUnresponsive` stops the queue, cells stay "Calculating…", retry() sizes again.
+    func testUnresponsiveVolumeHaltsUntilRetry() async throws {
+        try sandbox.createFile("big/a.bin", contents: Data(count: 100))
+        let volume = VolumeID(raw: "uuid:HUNG")
+        let lanes = LanePool(config: WatchdogConfig(stallTimeout: .milliseconds(50), tick: .milliseconds(10), poisonCap: 1))
+        _ = try? await lanes.perform(on: volume, .scan) { _ in Thread.sleep(forTimeInterval: 0.3) }   // no heartbeats
+        let deadline = ContinuousClock.now + .seconds(5)
+        while await lanes.health(of: volume) != .unresponsive, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let health = await lanes.health(of: volume)
+        XCTAssertEqual(health, .unresponsive)
+        let table = MountTableStore(MountTable([
+            VolumeInfoFixtures.volume(id: "uuid:HUNG", mountPoint: URL(filePath: "/", directoryHint: .isDirectory)),
+        ]))
+        let service = FolderSizeService(lanes: lanes, mountTable: table, changeBus: env.changeBus,
+                                        makeSubtreeWatcher: { _, _ in NoopWatcher() })
+        let model = try await model()
+        let session = service.attach(to: model)
+        await session.waitUntilIdle()
+        XCTAssertTrue(session.halted)
+        XCTAssertEqual(session.pendingCount, 0)
+        XCTAssertNil(model.folderSize(atRow: model.row(named: "big")!), "no size is published")
+        await lanes.resetVolume(volume)
+        session.retry()
+        XCTAssertFalse(session.halted)
+        await session.waitUntilIdle()
+        XCTAssertEqual(model.folderSize(atRow: model.row(named: "big")!)?.bytes, 100)
+        session.stop()
+    }
+
+    /// A busy subtree (~/Library) does not keep a full rescan running back to back: after the first rescan,
+    /// further rescans of a row wait at least `minRescanInterval` and the events of that window are coalesced.
+    func testRepeatedSubtreeEventsAreRateLimited() async throws {
+        try sandbox.createFile("big/a.bin", contents: Data(count: 100))
+        let watcher = ManualWatcher()
+        let service = FolderSizeService(lanes: env.lanes, mountTable: env.volumes.mountTableStore, changeBus: env.changeBus,
+                                        makeSubtreeWatcher: { _, handler in watcher.handler = handler; return watcher },
+                                        minRescanInterval: .seconds(1))
+        let model = try await model()
+        let session = service.attach(to: model)
+        await session.waitUntilIdle()
+        let before = session.scansStarted
+        try sandbox.createFile("big/b.bin", contents: Data(count: 50))
+        for _ in 0..<30 {
+            watcher.handler?(.children(["big"]))
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        await session.waitUntilIdle()
+        XCTAssertEqual(model.folderSize(atRow: model.row(named: "big")!)?.bytes, 150, "the last value still arrives")
+        XCTAssertGreaterThanOrEqual(session.scansStarted - before, 1)
+        XCTAssertLessThanOrEqual(session.scansStarted - before, 3, "rescans are rate limited, not one per event")
+        session.stop()
+    }
+
+    func testChildNamesResolveByIdentityName() async throws {
+        try sandbox.createFile("big/a.bin", contents: Data(count: 100))
+        let watcher = ManualWatcher()
+        let service = FolderSizeService(lanes: env.lanes, mountTable: env.volumes.mountTableStore, changeBus: env.changeBus,
+                                        makeSubtreeWatcher: { _, handler in watcher.handler = handler; return watcher })
+        let model = try await model()
+        let session = service.attach(to: model)
+        await session.waitUntilIdle()
+        let before = session.scansStarted
+        watcher.handler?(.children(["BIG", "nothing-here"]))
+        try await Task.sleep(for: .milliseconds(50))
+        await session.waitUntilIdle()
+        XCTAssertEqual(session.scansStarted - before, model.caseSensitive ? 0 : 1)
+        session.stop()
+    }
+
     func testChangeBusObserveAllSeesEveryDirectoryAfterDirectoryObservers() {
         let bus = ChangeBus()
         var log: [String] = []
@@ -194,4 +311,12 @@ final class FolderSizeServiceTests: XCTestCase {
         XCTAssertEqual(log.count, 3)
         _ = a
     }
+}
+
+/// A subtree watcher the test drives by hand (main actor only).
+final class ManualWatcher: ContentWatching, @unchecked Sendable {
+    var handler: (@Sendable (SubtreeChange) -> Void)?
+    func start() {}
+    func stop() {}
+    var lastEventID: UInt64 { 0 }
 }

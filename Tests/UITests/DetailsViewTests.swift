@@ -190,6 +190,8 @@ final class DetailsViewTests: XCTestCase {
         session.updateViewState { $0.calculateFolderSizes = true }
         session.sizeSession?.stop()                      // sizes are set by hand below
         XCTAssertEqual(details.cellView(row: big, column: .size)?.textField?.stringValue, "Calculating…")
+        XCTAssertEqual(details.cellView(row: big, column: .size)?.textField?.textColor, .secondaryLabelColor,
+                       "pending folder sizes are in the secondary colour")
         folder.select(.names(["big", "f.txt"]))
         XCTAssertEqual(content.statusBar.selectionText, "2 selected (3 bytes + calculating…)")
         folder.setFolderSizes([folder.identity(atRow: big): FolderSize(bytes: 5_000),

@@ -68,6 +68,9 @@ final class FolderModelSizesTests: XCTestCase {
         for name in ["a", "b", "c"] { try sandbox.createDirectory(name) }
         let env = CoreEnvironment.sandboxed(root: sandbox.root); _ = await env.start()
         var ctx = env.folderContext(); ctx.resortCoalescing = .milliseconds(200)
+        // A late FSEvents delivery for the directories just created would re-sort through the patch path (not a
+        // .reset) and race the coalesced re-sort this test counts.
+        ctx.makeWatcher = { _, _, _ in NoopWatcher() }
         let model = FolderModel(directory: sandbox.root, context: ctx, query: ViewQuery(sort: SortDescriptor(field: .size, ascending: true)))
         defer { model.close() }
         model.start()

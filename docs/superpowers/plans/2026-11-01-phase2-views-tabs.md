@@ -4567,6 +4567,16 @@ git commit -m "feat: on-demand folder sizes in the Size column with size sort an
 
 ---
 
+**P2-13/P2-14 implementation notes (2026-11-05, contract deviations):**
+- `FolderWorker`: `resort`, `patch`, `finishLoad` and `finishReread` take `sizes: [RowID: Int64] = [:]` (folder sizes by identity), not `extras: SortExtras = .none`. Main cannot compute storage indices for a store the worker builds (the initial load and re-reads), so the worker maps identities to its own store's indices with `SortExtras.folderSizes(_:in:)` and applies them with `Sorter.applyExtras(_:store:query:extras:)` after its normal sort. The model passes `sortSizes()` (planned as `currentSortExtras()`), which is empty unless the sort field is `.size`.
+- `Sorter.permutation(_:nameKeys:searchKeys:query:kindRanks:extensionKeys:extras:)` keeps Phase 1's `extensionKeys:` parameter (default `nil`) before `extras:`. `Sorter.applyExtras` is public and also used by the worker's patch and re-read paths.
+- `FolderSizeSession` also has public `retry()` (Refresh after `volumeUnresponsive`), `halted`, and `deferredCount`. `FolderSizeService.init` takes `minRescanInterval: Duration = .seconds(5)`.
+- `SelectionSummary.init(count:files:folders:bytes:folderBytes:)` takes `folderBytes: Int64? = nil`. `StatusBarView.update(itemCount:selection:available:folderSizes:)` takes `folderSizes: Bool = false` (whether sizes are on).
+- Review fixes: each scan runs on the lanes of the volume that contains the row (`mountTable.volume(containing:)`), so a mount-point row (an entry of /Volumes, a share mounted under the folder) scans on its own volume and a hung volume cannot poison the listed volume. Such rows are still sized (on their own volume), as before. A row's first change-triggered rescan runs at once. Later ones wait until `max(minRescanInterval, 2 × the previous rescan's duration)` after that rescan finished. Changes in that window coalesce into one rescan, and the old size stays on screen meanwhile. Child names are resolved through an identity-name → RowID map of folder rows that is rebuilt lazily after model changes. `FolderSizeCache` keeps a path → identities index, so `invalidateAncestors` does one lookup per path component.
+- **For P2-16:** do not pass `SortExtras(column:)` (storage indices) to the worker. Pass the extended column's values keyed by `RowID`, the way `sizes` is passed, add a `SortExtras` helper that maps them to the worker's store indices (like `folderSizes(_:in:)`), and handle `extras.column` in `Sorter.applyExtras`.
+
+---
+
 ### Task P2-15: Extended attributes for the new columns (Core)
 
 **Files:**
@@ -4942,6 +4952,7 @@ Rules:
   3. If the query is still current, it re-sorts with `SortExtras(column:)`: integers for Last Opened (ns) and Permissions (`mode & 0o7777`); `SortKeys.nameKey(_, isFolder: false)` bytes for Tags (first tag), Owner and Comments.
   4. Missing values sort last in both directions. Folders stay first.
   5. Until the load finishes, rows keep their previous order. The load is cancelled when the query changes again.
+  6. See the P2-13/P2-14 implementation notes: values reach the worker keyed by `RowID` and are mapped to storage indices there.
 
 - [ ] **Step 1: Write the failing tests**
 

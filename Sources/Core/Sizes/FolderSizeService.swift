@@ -12,17 +12,20 @@ public final class FolderSizeService {
     let mountTable: MountTableStore
     let makeSubtreeWatcher: @MainActor (URL, @escaping @Sendable (SubtreeChange) -> Void) -> any ContentWatching
     let maxConcurrentScans: Int
+    /// After a row's first rescan, its next rescan waits at least max(this, 2 × that scan's duration).
+    let minRescanInterval: Duration
     private var sessions: [ObjectIdentifier: WeakSession] = [:]
     private var busToken: ObserverToken?
     private struct WeakSession { weak var session: FolderSizeSession? }
 
     public init(lanes: LanePool, mountTable: MountTableStore, changeBus: ChangeBus,
                 makeSubtreeWatcher: @escaping @MainActor (URL, @escaping @Sendable (SubtreeChange) -> Void) -> any ContentWatching,
-                maxConcurrentScans: Int = 2) {
+                maxConcurrentScans: Int = 2, minRescanInterval: Duration = .seconds(5)) {
         self.lanes = lanes
         self.mountTable = mountTable
         self.makeSubtreeWatcher = makeSubtreeWatcher
         self.maxConcurrentScans = max(1, maxConcurrentScans)
+        self.minRescanInterval = minRescanInterval
         busToken = changeBus.observeAll { [weak self] change in self?.localChange(change) }
     }
 
@@ -55,7 +58,13 @@ public final class FolderSizeSession {
         var dirtySince: UInt64?
         /// The row's mtime changed during the scan: rescan unless the scan already read that mtime.
         var mtimeChanged = false
+        /// Started because the row changed (not the first scan or a cache revalidation): counts for rate limiting.
+        var isRescan: Bool
+        var started: ContinuousClock.Instant
     }
+
+    /// When the latest change-triggered rescan of a row finished and how long it took (rate limiting).
+    private struct Rescan { var finished: ContinuousClock.Instant; var duration: Duration }
 
     /// What one lane job saw: the FSEvents id current when it started, the folder's own mtime then, and the size.
     private struct ScanResult: Sendable { var since: UInt64; var mtime: Int64?; var size: FolderSize? }
@@ -76,14 +85,26 @@ public final class FolderSizeSession {
     /// The mtime each folder row was last queued for in this session: a different mtime re-queues it.
     private var known: [RowID: Int64] = [:]
     private var scanned: [RowID: Scanned] = [:]
+    /// Rate limiting (busy subtrees such as ~/Library): rows whose rescan waits until the given instant. Changes
+    /// that arrive meanwhile coalesce into that one rescan; the previous size stays on screen.
+    private var deferred: [RowID: ContinuousClock.Instant] = [:]
+    private var lastRescan: [RowID: Rescan] = [:]
+    /// Rows queued because they changed: their scan is a rescan.
+    private var triggered = Set<RowID>()
+    private var wakeTask: Task<Void, Never>?
+    private var wakeAt: ContinuousClock.Instant?
+    /// Identity name → folder row, built on demand and dropped whenever the model's rows change, so subtree
+    /// events and LocalChanges resolve child names in O(1) instead of a normalizing scan per name.
+    private var folderIndex: [String: RowID]?
     private var idleWaiters: [CheckedContinuation<Void, Never>] = []
     private var nextToken: UInt64 = 0
     private var stopped = false
     /// The volume stopped answering: nothing is scanned until `retry()`.
     public private(set) var halted = false
 
-    /// Scans started so far (tests).
+    /// Scans started so far, in total and per row (tests).
     private(set) var scansStarted = 0
+    private(set) var scanCounts: [RowID: Int] = [:]
 
     init(model: FolderModel, service: FolderSizeService) {
         self.model = model
@@ -92,6 +113,7 @@ public final class FolderSizeSession {
 
     isolated deinit {
         for flight in inFlight.values { flight.task.cancel() }
+        wakeTask?.cancel()
         watcher?.stop()
         modelToken?.cancel()
         for waiter in idleWaiters { waiter.resume() }
@@ -99,10 +121,16 @@ public final class FolderSizeSession {
 
     public var pendingCount: Int { queued.count }
     public var inFlightCount: Int { inFlight.count }
+    /// Rows whose rescan waits for the rate limit.
+    public var deferredCount: Int { deferred.count }
 
     func begin() {
         guard let model else { return }
         modelToken = model.observe { [weak self] event in
+            switch event {
+            case .changes, .query, .groups, .state: self?.folderIndex = nil
+            default: break
+            }
             switch event {
             case .changes, .state(.complete): self?.requeueChangedRows()
             default: break
@@ -133,6 +161,7 @@ public final class FolderSizeSession {
         for flight in inFlight.values { flight.task.cancel() }
         inFlight = [:]
         clearQueue()
+        clearDeferred()
         watcher?.stop()
         watcher = nil
         modelToken?.cancel()
@@ -146,6 +175,8 @@ public final class FolderSizeSession {
         halted = false
         known = [:]
         scanned = [:]
+        lastRescan = [:]
+        clearDeferred()
         startAll()
     }
 
@@ -155,7 +186,7 @@ public final class FolderSizeSession {
         await withCheckedContinuation { idleWaiters.append($0) }
     }
 
-    private var isIdle: Bool { stopped || (queued.isEmpty && inFlight.isEmpty) }
+    private var isIdle: Bool { stopped || (queued.isEmpty && inFlight.isEmpty && deferred.isEmpty) }
 
     // MARK: Queueing
 
@@ -202,6 +233,12 @@ public final class FolderSizeSession {
         }
         known = known.filter { model.row(of: $0.key) != nil }
         scanned = scanned.filter { model.row(of: $0.key) != nil }
+        lastRescan = lastRescan.filter { model.row(of: $0.key) != nil }
+        triggered = triggered.filter { model.row(of: $0) != nil }
+        if deferred.contains(where: { model.row(of: $0.key) == nil }) {
+            deferred = deferred.filter { model.row(of: $0.key) != nil }
+            scheduleWake()
+        }
         guard !halted else { resumeWaitersIfIdle(); return }
         var hits: [RowID: FolderSize] = [:]
         for folder in folderRows(model) where known[folder.id] != folder.entry.mtime {
@@ -213,8 +250,12 @@ public final class FolderSizeSession {
             }
             // The model can learn of a folder's new mtime after a subtree event already rescanned it.
             if scanned[folder.id]?.mtime == folder.entry.mtime { continue }
-            if isNew, let size = service.cache.value(for: key(folder.row, model)) { hits[folder.id] = size }
-            enqueue(folder.id)
+            if isNew {
+                if let size = service.cache.value(for: key(folder.row, model)) { hits[folder.id] = size }
+                enqueue(folder.id)
+            } else {
+                requestRescan(folder.id)
+            }
         }
         model.setFolderSizes(hits)
         pump()
@@ -227,7 +268,7 @@ public final class FolderSizeSession {
         let ids: [RowID]
         switch change {
         case .all: ids = folderRows(model).map(\.id)
-        case .children(let names): ids = names.compactMap { name in model.row(named: name).flatMap { folderID(atRow: $0, model) } }
+        case .children(let names): ids = names.compactMap { folderID(named: $0, model) }
         }
         for id in ids { invalidate(id, since: lastEvent) }
         pump()
@@ -239,7 +280,7 @@ public final class FolderSizeSession {
         let base = EventClassifier.components(model.directory.path(percentEncoded: false))
         let parts = EventClassifier.components(dir)
         guard parts.count > base.count, Array(parts.prefix(base.count)) == base,
-              let row = model.row(named: parts[base.count]), let id = folderID(atRow: row, model) else { return }
+              let id = folderID(named: parts[base.count], model) else { return }
         invalidate(id, since: .max)
         pump()
     }
@@ -255,7 +296,64 @@ public final class FolderSizeSession {
             return
         }
         scanned[id] = nil
+        requestRescan(id)
+    }
+
+    /// Queues a change-triggered rescan of `id`, or defers it while the row's previous rescan is recent: the next
+    /// rescan waits until `max(minRescanInterval, 2 × its duration)` after it finished. The first rescan after a
+    /// quiet period runs at once.
+    private func requestRescan(_ id: RowID) {
+        guard !halted, !stopped, deferred[id] == nil, !queued.contains(id) else { return }
+        if let last = lastRescan[id] {
+            let due = last.finished + max(service.minRescanInterval, last.duration * 2)
+            if ContinuousClock.now < due {
+                deferred[id] = due
+                scheduleWake()
+                return
+            }
+        }
+        triggered.insert(id)
         enqueue(id)
+    }
+
+    private func scheduleWake() {
+        guard let due = deferred.values.min() else {
+            wakeTask?.cancel(); wakeTask = nil; wakeAt = nil
+            return
+        }
+        if wakeTask != nil, let wakeAt, wakeAt <= due { return }
+        wakeTask?.cancel()
+        wakeAt = due
+        wakeTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(until: due, clock: .continuous)
+            guard !Task.isCancelled else { return }
+            self?.releaseDeferred()
+        }
+    }
+
+    private func releaseDeferred() {
+        wakeTask = nil
+        wakeAt = nil
+        guard let model, !stopped, !halted else { return }
+        let now = ContinuousClock.now
+        for (id, due) in deferred where due <= now {
+            deferred[id] = nil
+            guard model.row(of: id) != nil else { continue }
+            if inFlight[id] != nil { inFlight[id]?.dirtySince = .max; continue }
+            triggered.insert(id)
+            enqueue(id)
+        }
+        scheduleWake()
+        pump()
+        resumeWaitersIfIdle()
+    }
+
+    private func clearDeferred() {
+        deferred = [:]
+        triggered = []
+        wakeTask?.cancel()
+        wakeTask = nil
+        wakeAt = nil
     }
 
     private func enqueue(_ id: RowID) {
@@ -273,18 +371,23 @@ public final class FolderSizeSession {
 
     private func pump() {
         guard let model, !stopped, !halted else { return }
-        let volume = model.volume?.id ?? .unknown
+        let table = service.mountTable.current()
+        let listedVolume = model.volume?.id ?? .unknown
         while inFlight.count < service.maxConcurrentScans, head < queue.count {
             let id = queue[head]
             head += 1
             if head > 1_024, head * 2 > queue.count { queue.removeFirst(head); head = 0 }
             guard queued.remove(id) != nil, let row = model.row(of: id), folderID(atRow: row, model) != nil else { continue }
             let url = model.url(atRow: row)
+            // The row's own volume: a mount point (an entry of /Volumes, a share under ~/mnt) scans on the lanes
+            // of the volume it shows, so a hung volume never poisons the listed folder's volume (§4.2).
+            let volume = table.volume(containing: url.path(percentEncoded: false))?.id ?? listedVolume
             let key = key(row, model)
             let path = ChangeBus.key(for: url)
             nextToken += 1
             scansStarted += 1
-            let token = nextToken, lanes = service.lanes, table = service.mountTable.current()
+            scanCounts[id, default: 0] += 1
+            let token = nextToken, lanes = service.lanes
             let task = Task { @MainActor [weak self] in
                 let outcome: Result<ScanResult, any Error>
                 do {
@@ -300,7 +403,7 @@ public final class FolderSizeSession {
                 }
                 self?.finish(id, token: token, key: key, path: path, outcome)
             }
-            inFlight[id] = InFlight(token: token, task: task)
+            inFlight[id] = InFlight(token: token, task: task, isRescan: triggered.remove(id) != nil, started: .now)
         }
         if queue.count == head { queue = []; head = 0 }
     }
@@ -316,15 +419,20 @@ public final class FolderSizeSession {
             let mtime = result.mtime ?? key.mtime
             service.cache.store(size, for: FolderSizeKey(identity: key.identity, mtime: mtime), path: path)
             scanned[id] = Scanned(since: result.since, mtime: mtime)
+            if flight.isRescan {
+                let now = ContinuousClock.now
+                lastRescan[id] = Rescan(finished: now, duration: now - flight.started)
+            }
             model?.setFolderSizes([id: size])
             var again = false
             if let dirty = flight.dirtySince, dirty == .max || dirty > result.since { again = true }
             if flight.mtimeChanged, let model, let row = model.row(of: id), model.entry(atRow: row).mtime != mtime { again = true }
-            if again { scanned[id] = nil; enqueue(id) }
+            if again { scanned[id] = nil; requestRescan(id) }
         case .failure(let error):
             if case LaneError.volumeUnresponsive = error {
                 halted = true                                // cells stay "Calculating…" until retry()
                 clearQueue()
+                clearDeferred()
             }
         }
         pump()
@@ -346,6 +454,22 @@ public final class FolderSizeSession {
     }
 
     // MARK: Identity
+
+    /// The folder row named `name` (NameNormalizer identity-name semantics, like `FolderModel.row(named:)`).
+    private func folderID(named name: String, _ model: FolderModel) -> RowID? {
+        let caseSensitive = model.caseSensitive
+        if folderIndex == nil {
+            var index: [String: RowID] = [:]
+            for folder in folderRows(model) {
+                let key = NameNormalizer.identityName(model.name(atRow: folder.row), caseSensitive: caseSensitive)
+                if index[key] == nil { index[key] = folder.id }
+            }
+            folderIndex = index
+        }
+        guard let id = folderIndex?[NameNormalizer.identityName(name, caseSensitive: caseSensitive)],
+              model.row(of: id) != nil else { return nil }
+        return id
+    }
 
     private func folderID(atRow row: Int, _ model: FolderModel) -> RowID? {
         let kind = model.entry(atRow: row).kind
