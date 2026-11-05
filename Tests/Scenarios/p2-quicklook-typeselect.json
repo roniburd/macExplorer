@@ -1,0 +1,12 @@
+{"name": "p2-quicklook-typeselect",
+ "fixture": {"files": ["my file.txt", "my-other.txt", "myz.txt"], "dirs": []},
+ "steps": [
+  {"click": "myz.txt"},
+  {"type": "my f"},
+  {"expect": {"selection": ["my file.txt"], "quickLookVisible": false}},
+  {"sleepMs": 1500},
+  {"key": "space"},
+  {"waitFor": {"quickLookVisible": true, "quickLookItems": ["my file.txt"]}},
+  {"key": "space"},
+  {"waitFor": {"quickLookVisible": false}}
+ ]}

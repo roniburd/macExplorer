@@ -48,6 +48,13 @@ final class TypeSelect {
         lastKey = nil
     }
 
+    /// The buffer is non-empty and the last keystroke is within the timeout: a Space now continues the name being
+    /// typed instead of toggling Quick Look (P2-11, Review Focus 1).
+    var isCollecting: Bool {
+        guard !buffer.isEmpty, let lastKey else { return false }
+        return now() - lastKey <= timeout
+    }
+
     func append(_ characters: String) -> TypeSelectQuery {
         let time = now()
         if let lastKey, time - lastKey > timeout { buffer = "" }
@@ -58,10 +65,11 @@ final class TypeSelect {
         return TypeSelectQuery(text: repeated ? first : buffer, cycle: repeated)
     }
 
-    static func accepts(_ event: NSEvent, bufferEmpty: Bool) -> Bool {
+    /// `collecting`: `isCollecting`. Spaces are accepted only while collecting; a leading space never starts a buffer.
+    static func accepts(_ event: NSEvent, collecting: Bool) -> Bool {
         guard event.specialKey == nil, event.modifierFlags.intersection([.command, .control]).isEmpty,
               let characters = event.characters, !characters.isEmpty else { return false }
-        if characters == " " { return !bufferEmpty }
+        if characters.allSatisfy({ $0 == " " }) { return collecting }
         return characters.unicodeScalars.allSatisfy { !CharacterSet.controlCharacters.contains($0) }
     }
 

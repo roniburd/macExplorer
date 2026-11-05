@@ -42,6 +42,7 @@ enum ContextMenuTitles {
         case .openInNewWindow: L10n.string("Open in New Window")
         case .openInNewTab: L10n.string("Open in New Tab")
         case .showPackageContents: L10n.string("Show Package Contents")
+        case .quickLook: L10n.string("Quick Look")
         case .cut: L10n.string("Cut")
         case .copy: L10n.string("Copy")
         case .paste: L10n.string("Paste")
@@ -107,6 +108,7 @@ final class ContextMenuBuilder {
         let kinds = valid.map { folder.entry(atRow: $0).kind }
         add(.open, target, handler, to: menu)
         if let openWith = openWithItem(rows: valid, folder: folder, handler: handler) { menu.addItem(openWith) }
+        add(.quickLook, target, handler, to: menu)
         if kinds.contains(.directory) {
             add(.openInNewWindow, target, handler, to: menu)
             add(.openInNewTab, target, handler, to: menu)

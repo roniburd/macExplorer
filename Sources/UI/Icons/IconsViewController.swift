@@ -283,6 +283,14 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
         collectionView.scrollToVisible(layout.frame(forItem: row).insetBy(dx: 0, dy: -layout.metrics.spacing.height))
     }
 
+    /// Quick Look's zoom origin (P2-11): the item's frame on screen, nil when it is not on screen. In memory only.
+    func quickLookSourceFrame(forModelRow row: Int) -> NSRect? {
+        guard let window = view.window, row >= 0, row < layout.itemCount else { return nil }
+        let frame = layout.frame(forItem: row)
+        guard frame.intersects(collectionView.visibleRect) else { return nil }
+        return window.convertToScreen(collectionView.convert(frame, to: nil))
+    }
+
     func topVisibleRow() -> Int? {
         let range = layout.indexes(in: collectionView.visibleRect)
         return range.isEmpty ? nil : range.lowerBound
@@ -314,7 +322,8 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
     }
 
     func handleKeyDown(_ event: NSEvent) -> Bool {
-        if KeyRouter.handle(event, focus: .content, returnKey: settings.returnKey, from: collectionView) {
+        if KeyRouter.handle(event, focus: .content, returnKey: settings.returnKey, from: collectionView,
+                            typeSelectActive: typeSelect.isCollecting) {
             typeSelect.reset()
             return true
         }

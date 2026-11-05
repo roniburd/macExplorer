@@ -1,0 +1,16 @@
+{"name": "p2-quicklook",
+ "fixture": {"files": ["a.txt", "b.txt", "c.txt"], "dirs": []},
+ "steps": [
+  {"click": "a.txt"},
+  {"key": "space"},
+  {"waitFor": {"quickLookVisible": true, "quickLookItems": ["a.txt"]}},
+  {"key": "down"},
+  {"waitFor": {"selection": ["b.txt"], "quickLookItems": ["b.txt"]}},
+  {"key": "space"},
+  {"waitFor": {"quickLookVisible": false}},
+  {"click": "c.txt", "modifiers": ["shift"]},
+  {"key": "space"},
+  {"waitFor": {"quickLookVisible": true, "quickLookItems": ["b.txt", "c.txt"]}},
+  {"key": "esc"},
+  {"waitFor": {"quickLookVisible": false}}
+ ]}

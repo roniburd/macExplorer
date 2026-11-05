@@ -14,7 +14,7 @@ final class FileCommandController: CommandHandler {
     /// Commands whose UI arrives in a later Phase 2 task (disabled, never performed). The NSWindow tab commands are
     /// here too: NSWindow and BrowserWindowController handle them, so they never reach a pane's handler.
     static let pendingCommands: Set<Command> = Command.windowTabCommands.union([
-        .quickLook, .viewAsColumns, .toggleFolderSizes,
+        .viewAsColumns, .toggleFolderSizes,
     ])
 
     var environment: CoreEnvironment { context.environment }
@@ -38,15 +38,17 @@ final class FileCommandController: CommandHandler {
         let focus = Self.focus(for: target)
         guard let effective = CommandAvailability.effectiveCommand(command, focus: focus),
               !Self.pendingCommands.contains(effective), let session else { return false }
-        let state = CommandStateBuilder.state(for: target, session: session, environment: environment,
+        var state = CommandStateBuilder.state(for: target, session: session, environment: environment,
                                               needsFolderCount: effective == .openInNewTab)
+        if effective == .quickLook { state.quickLookVisible = window?.quickLook.isVisible ?? false }
         return CommandAvailability.isEnabled(effective, focus: focus, state: state)
     }
 
     func perform(_ command: Command, target: CommandTarget, sender: Any?) {
         guard let effective = CommandAvailability.effectiveCommand(command, focus: Self.focus(for: target)),
               canPerform(command, target: target) else {
-            NSSound.beep()
+            // Space with nothing selected and no panel open does nothing (spec §11), like Finder.
+            if CommandAvailability.effectiveCommand(command, focus: Self.focus(for: target)) != .quickLook { NSSound.beep() }
             return
         }
         defer { environment.clipboard.revalidate() }   // §5.6: after every command
@@ -91,9 +93,12 @@ final class FileCommandController: CommandHandler {
         case .applyViewToAllFolders: applyViewToAllFolders()
         case .eject: eject(target)
         case .removeFromFavorites: removeFavorite(target)
-        case .cancelOperation: environment.clipboard.clearCut()
+        case .cancelOperation:
+            // Esc closes Quick Look first (Finder parity); otherwise it clears a pending cut.
+            if window?.quickLook.hideIfVisible() != true { environment.clipboard.clearCut() }
+        case .quickLook: window?.quickLook.toggle()
         case .newTab, .nextTab, .previousTab, .showTabBar, .showAllTabs, .moveTabToNewWindow, .mergeAllWindows,
-             .quickLook, .viewAsColumns, .toggleFolderSizes:
+             .viewAsColumns, .toggleFolderSizes:
             break   // pendingCommands: canPerform is false, so perform beeps above
         }
     }

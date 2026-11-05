@@ -14,6 +14,9 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
     var focusAddressBar: (() -> Void)?
     /// WindowManager drops the window from its list.
     var onClose: (() -> Void)?
+    /// Quick Look on Space (P2-11); `installQuickLook` sets it in init.
+    var quickLook: QuickLookController!
+    let qlBridge = QuickLookPanelBridge()
 
     private var sessionToken: ObserverToken?
     /// Settings › Advanced "Show the full path in the window title" applies to open windows (P1-30).
@@ -56,6 +59,7 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
 
         installToolbarHooks()
         installNewTabHooks()
+        installQuickLook()
         sessionToken = session.observe { [weak self] event in self?.handle(event) }
         folderDidChange()
         titleLoop = ObservationLoop({ [weak self] in _ = self?.context.environment.settings.showFullPathInTitle },
@@ -152,7 +156,9 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
 
     private func handle(_ event: SessionEvent) {
         switch event {
-        case .folderChanged: folderDidChange()
+        case .folderChanged:
+            quickLook.bind(session.folder)
+            folderDidChange()
         case .historyChanged, .viewModeChanged, .viewStateChanged, .banner: break
         }
     }
@@ -186,6 +192,10 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
     // MARK: NSWindowDelegate
 
     /// Field editor → a per-edit manager (typing undo stays inside the edit); otherwise the app-wide stack (§6.6).
+    public func windowDidBecomeKey(_ notification: Notification) {
+        quickLookWindowDidBecomeKey()
+    }
+
     public func windowWillReturnUndoManager(_ window: NSWindow) -> UndoManager? {
         guard let editor = window.firstResponder as? NSText, editor.isFieldEditor else {
             fieldEditorUndo = nil
@@ -203,6 +213,7 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
     }
 
     public func windowWillClose(_ notification: Notification) {
+        quickLook.bind(nil)
         sessionToken = nil
         titleLoop?.cancel()
         titleLoop = nil

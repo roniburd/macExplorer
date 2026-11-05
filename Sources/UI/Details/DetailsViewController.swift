@@ -291,6 +291,16 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
         tableView.scrollRowToVisible(table)
     }
 
+    /// Quick Look's zoom origin (P2-11): the row's icon on screen, nil when the row is not on screen. In memory only.
+    func quickLookSourceFrame(forModelRow row: Int) -> NSRect? {
+        guard let window = view.window, let table = mapping.tableRow(forModelRow: row), table < tableView.numberOfRows,
+              tableView.rows(in: tableView.visibleRect).contains(table) else { return nil }
+        let column = tableView.column(withIdentifier: DetailsColumns.identifier(.name))
+        guard column >= 0, let icon = (tableView.view(atColumn: column, row: table, makeIfNecessary: false) as? NSTableCellView)?.imageView
+        else { return nil }
+        return window.convertToScreen(icon.convert(icon.bounds, to: nil))
+    }
+
     /// The first item row at or below the top table row, as a model row.
     func topVisibleRow() -> Int? {
         let clip = scrollView.contentView
@@ -348,7 +358,8 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     // MARK: keys
 
     func handleKeyDown(_ event: NSEvent) -> Bool {
-        if KeyRouter.handle(event, focus: .content, returnKey: settings.returnKey, from: tableView) {
+        if KeyRouter.handle(event, focus: .content, returnKey: settings.returnKey, from: tableView,
+                            typeSelectActive: typeSelect.isCollecting) {
             typeSelect.reset()
             return true
         }

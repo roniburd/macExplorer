@@ -9,10 +9,13 @@ import Core
     ///
     /// The action goes to the first responder up the chain from `view` that implements it (so it reaches the view's
     /// own pane even while the app is inactive and has no key window), else nil-targeted to the app.
-    static func handle(_ event: NSEvent, focus: FocusContext, returnKey: ReturnKeyBehavior, from view: NSView) -> Bool {
-        // A command whose UI has not landed yet (Space → Quick Look before P2-11) leaves its key to the view
-        // (type-select), rather than beeping.
-        guard let command = command(for: event, focus: focus, returnKey: returnKey),
+    ///
+    /// `typeSelectActive`: the list's type-select buffer is collecting, so plain Space belongs to it (Review Focus 1).
+    static func handle(_ event: NSEvent, focus: FocusContext, returnKey: ReturnKeyBehavior, from view: NSView,
+                       typeSelectActive: Bool = false) -> Bool {
+        // A command whose UI has not landed yet (a pending Phase 2 command) leaves its key to the view rather than
+        // beeping.
+        guard let command = command(for: event, focus: focus, returnKey: returnKey, typeSelectActive: typeSelectActive),
               !FileCommandController.pendingCommands.contains(command) else { return false }
         let action = Selector(command.selectorName)
         if let responder = responder(for: action, from: view) {
@@ -22,8 +25,17 @@ import Core
     }
 
     /// The command a keyDown maps to (nil: not an alternate here).
-    static func command(for event: NSEvent, focus: FocusContext, returnKey: ReturnKeyBehavior) -> Command? {
+    static func command(for event: NSEvent, focus: FocusContext, returnKey: ReturnKeyBehavior,
+                        typeSelectActive: Bool = false) -> Command? {
         guard event.type == .keyDown, let chord = KeyEventTranslator.chord(for: event) else { return nil }
+        return command(for: chord, focus: focus, returnKey: returnKey, typeSelectActive: typeSelectActive)
+    }
+
+    /// Pure: while type-select is collecting, plain Space is typed into its buffer (`my f` → "my file.txt"), not
+    /// Quick Look (Review Focus 1).
+    static func command(for chord: KeyChord, focus: FocusContext, returnKey: ReturnKeyBehavior,
+                        typeSelectActive: Bool) -> Command? {
+        if typeSelectActive, chord.key == .space, chord.modifiers.isEmpty { return nil }
         return KeyDispatcher(returnKey: returnKey).command(for: chord, in: focus)
     }
 
