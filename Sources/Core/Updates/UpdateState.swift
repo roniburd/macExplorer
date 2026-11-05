@@ -42,10 +42,16 @@ public enum UpdateState: Sendable, Equatable {
     }
 
     /// Pure transition. Events that make no sense in the current state return `self`.
-    public func reduce(_ event: UpdateEvent) -> UpdateState {
+    public func reduce(_ event: UpdateEvent) -> UpdateState { transition(event) ?? self }
+
+    /// Pure transition that distinguishes accepted from illegal events: `nil` means the event is
+    /// illegal in this state and is ignored. Spec §2.1 wants those logged; Core has no logger, so the
+    /// caller (UpdateModel) logs when this returns `nil`. A non-nil result may equal `self`
+    /// (e.g. a duplicate progress tick) — that is accepted, not illegal.
+    public func transition(_ event: UpdateEvent) -> UpdateState? {
         if case .readyToRestart = self {
             if case .readyToInstall(let version, let notes) = event { return .readyToRestart(version: version, notesURL: notes) }
-            return self
+            return nil
         }
         switch (self, event) {
         case (_, .readyToInstall(let version, let notes)):
@@ -77,7 +83,7 @@ public enum UpdateState: Sendable, Equatable {
             return .idle
 
         default:
-            return self
+            return nil
         }
     }
 }

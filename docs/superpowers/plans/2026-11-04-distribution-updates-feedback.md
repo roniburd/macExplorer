@@ -1412,6 +1412,7 @@ final class UpdateControllerTests: XCTestCase {
 ```swift
 import Foundation
 import Observation
+import os
 import Core
 
 /// Removes its observer when released.
@@ -1425,6 +1426,7 @@ import Core
 /// one (debug builds, sandbox runs, updates not configured) the model stays `.idle` and `isAvailable` is false.
 @MainActor @Observable
 public final class UpdateModel {
+    private static let log = Logger(subsystem: "com.macexplorer.app", category: "updates")
     public private(set) var state: UpdateState = .idle
     public var installedVersion: String = ""
     /// Incremented by user-initiated checks: the key window's badge opens its popover.
@@ -1440,7 +1442,11 @@ public final class UpdateModel {
     public var isAvailable: Bool { checkHandler != nil }
 
     public func send(_ event: UpdateEvent) {
-        let next = state.reduce(event)
+        // Spec §2.1: illegal transitions are ignored *and logged* (review of Task 1).
+        guard let next = state.transition(event) else {
+            Self.log.debug("ignored update event \(String(describing: event), privacy: .public) in state \(String(describing: self.state), privacy: .public)")
+            return
+        }
         guard next != state else { return }
         state = next
         for observer in observers.values { observer(next) }

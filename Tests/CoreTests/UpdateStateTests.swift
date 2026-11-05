@@ -76,6 +76,26 @@ final class UpdateStateTests: XCTestCase {
         XCTAssertEqual(UpdateState.upToDate(version: "1").reduce(.downloadProgress(0.4)), .upToDate(version: "1"))
     }
 
+    func testTransitionDistinguishesIllegalFromNoOp() {
+        // Illegal events: nil, so the caller can log them (spec §2.1).
+        XCTAssertNil(UpdateState.idle.transition(.downloadProgress(0.4)))
+        XCTAssertNil(UpdateState.idle.transition(.acknowledged))
+        XCTAssertNil(UpdateState.idle.transition(.failed(.verificationFailed(version: "1"))))
+        XCTAssertNil(UpdateState.idle.transition(.noUpdateFound(currentVersion: "1")))
+        let ready = UpdateState.readyToRestart(version: "2", notesURL: nil)
+        XCTAssertNil(ready.transition(.checkStarted(userInitiated: true)))
+        XCTAssertNil(ready.transition(.updateFound(version: "3")))
+        XCTAssertNil(UpdateState.downloading(version: "2", fraction: 0.1, userInitiated: false).transition(.updateFound(version: "3")))
+        // Accepted events whose result equals the current state: non-nil.
+        let dl = UpdateState.downloading(version: "2", fraction: 0.5, userInitiated: false)
+        XCTAssertEqual(dl.transition(.downloadProgress(0.5)), dl)
+        XCTAssertEqual(UpdateState.checking(userInitiated: true).transition(.checkStarted(userInitiated: false)), .checking(userInitiated: true))
+        XCTAssertEqual(ready.transition(.readyToInstall(version: "2", notesURL: nil)), ready)
+        // reduce agrees with transition.
+        XCTAssertEqual(UpdateState.idle.reduce(.acknowledged), .idle)
+        XCTAssertEqual(UpdateState.idle.reduce(.updateFound(version: "2")), UpdateState.idle.transition(.updateFound(version: "2")))
+    }
+
     @MainActor func testSettingsDefaultsAndPersistence() {
         let storage = InMemorySettingsStorage()
         let s = Settings(storage: storage, home: URL(filePath: "/tmp/macx-tests-home", directoryHint: .isDirectory))
@@ -87,13 +107,25 @@ final class UpdateStateTests: XCTestCase {
         s.checkForUpdatesAutomatically = false
         s.offerToReportCrashes = false
         for i in 0..<25 { s.markCrashReported("macExplorer-\(i).ips") }
-        s.markCrashReported("macExplorer-3.ips")
+        // Re-mark a name that is still in the list (24…5 are kept), so the dedupe actually runs.
+        s.markCrashReported("macExplorer-10.ips")
         let reloaded = Settings(storage: storage, home: s.home)
         XCTAssertEqual(reloaded.updateChannel, .beta)
         XCTAssertFalse(reloaded.checkForUpdatesAutomatically)
         XCTAssertFalse(reloaded.offerToReportCrashes)
         XCTAssertEqual(reloaded.lastReportedCrashes.count, Settings.lastReportedCrashesLimit)
-        XCTAssertEqual(reloaded.lastReportedCrashes.first, "macExplorer-3.ips")
-        XCTAssertEqual(reloaded.lastReportedCrashes.filter { $0 == "macExplorer-3.ips" }.count, 1)
+        XCTAssertEqual(reloaded.lastReportedCrashes.first, "macExplorer-10.ips")
+        XCTAssertEqual(reloaded.lastReportedCrashes.filter { $0 == "macExplorer-10.ips" }.count, 1)
+        XCTAssertEqual(Set(reloaded.lastReportedCrashes).count, reloaded.lastReportedCrashes.count)
+        XCTAssertEqual(reloaded.lastReportedCrashes.dropFirst().first, "macExplorer-24.ips")
+        XCTAssertEqual(reloaded.lastReportedCrashes.last, "macExplorer-5.ips")
+    }
+
+    @MainActor func testLastReportedCrashesAreClampedOnLoad() throws {
+        let storage = InMemorySettingsStorage()
+        let names = (0..<30).map { "macExplorer-\($0).ips" }
+        storage.set(try JSONEncoder().encode(names), forKey: "lastReportedCrashes")
+        let s = Settings(storage: storage, home: URL(filePath: "/tmp/macx-tests-home", directoryHint: .isDirectory))
+        XCTAssertEqual(s.lastReportedCrashes, Array(names.prefix(Settings.lastReportedCrashesLimit)))
     }
 }
