@@ -4,7 +4,11 @@ import Core
 /// CommandState (§5.3 enablement inputs) for a target. Pure in-memory: model, clipboard, undo, history.
 @MainActor
 enum CommandStateBuilder {
-    static func state(for target: CommandTarget?, session: BrowserSession, environment: CoreEnvironment) -> CommandState {
+    /// `needsFolderCount`: scan a content selection for folders (CommandState.selectedFolderCount). Only Open in New
+    /// Tab reads it, and validation runs once per menu item / toolbar item / command-bar button, so callers ask for
+    /// it only when validating that command; otherwise a content selection reports 0.
+    static func state(for target: CommandTarget?, session: BrowserSession, environment: CoreEnvironment,
+                      needsFolderCount: Bool = false) -> CommandState {
         var state = CommandState()
         state.canPaste = environment.clipboard.canPaste
         state.canUndo = environment.undo.canUndo
@@ -18,9 +22,11 @@ enum CommandStateBuilder {
         case .contentSelection(let folder):
             let rows = folder.selection.rows
             state.selectionCount = rows.count
-            // 0 or 1 ("a folder is selected"): every rule only asks for > 0, and menu validation runs per item, so a
-            // 100k-row Select All must not be scanned in full each time.
-            state.selectedFolderCount = rows.contains { $0 < folder.rowCount && folder.entry(atRow: $0).kind == .directory } ? 1 : 0
+            // 0 or 1 ("a folder is selected"): every rule only asks for > 0. Directories only (packages and links to
+            // folders don't count; resolving links would need I/O). Scanned only on request (see needsFolderCount).
+            if needsFolderCount {
+                state.selectedFolderCount = rows.contains { $0 < folder.rowCount && folder.entry(atRow: $0).kind == .directory } ? 1 : 0
+            }
             if rows.count == 1, let row = rows.first, row < folder.rowCount {
                 let entry = folder.entry(atRow: row)
                 state.singleFolderSelected = entry.kind == .directory

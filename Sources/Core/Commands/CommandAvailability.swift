@@ -13,7 +13,8 @@ public struct CommandState: Sendable, Equatable {
     public var targetIsEjectable: Bool
     public var targetIsPackage: Bool
     public var folderIsReadOnly: Bool
-    /// Folders (directories or packages opened as folders) among the selection; Open in New Tab needs one.
+    /// Whether directories are among the selection (0 or 1, not a full count; packages and links to folders don't
+    /// count); Open in New Tab needs one. The UI fills it only when validating Open in New Tab (CommandStateBuilder).
     public var selectedFolderCount: Int
     /// The Quick Look panel is open, so Space closes it even with nothing selected.
     public var quickLookVisible: Bool

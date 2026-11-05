@@ -51,6 +51,21 @@ final class FileCommandTests: XCTestCase {
         return World(h: h, browser: browser, content: content, commands: commands, prompts: prompts)
     }
 
+    /// Review fix: the folder scan behind Open in New Tab runs only when that command is validated, not for every
+    /// menu item / command-bar button (a 100k Select All would be walked once per validated item otherwise).
+    func testSelectedFolderCountIsComputedOnlyForOpenInNewTab() async throws {
+        let w = try await world { try $0.file("a.txt"); try $0.dir("sub") }
+        w.select(["a.txt", "sub"])
+        let env = w.h.environment, session = w.browser.session
+        XCTAssertEqual(CommandStateBuilder.state(for: w.selection, session: session, environment: env).selectedFolderCount, 0)
+        XCTAssertEqual(CommandStateBuilder.state(for: w.selection, session: session, environment: env,
+                                                 needsFolderCount: true).selectedFolderCount, 1)
+        w.select(["a.txt"])
+        XCTAssertEqual(CommandStateBuilder.state(for: w.selection, session: session, environment: env,
+                                                 needsFolderCount: true).selectedFolderCount, 0)
+        XCTAssertFalse(w.commands.canPerform(.openInNewTab, target: w.selection))
+    }
+
     func testCopyPasteIntoSameFolderMakesFinderStyleCopy() async throws {
         let w = try await world { try $0.file("a.txt") }
         w.select(["a.txt"])
@@ -137,6 +152,25 @@ final class FileCommandTests: XCTestCase {
         let backend = w.h.environment.clipboard.backend
         XCTAssertEqual(backend.readString(), [w.h.url("a.txt").path, w.h.url("b.txt").path].joined(separator: "\n"))
         XCTAssertFalse(backend.hasFileURLs(), "a later ⌘V must not paste files")
+    }
+
+    /// Review fix: Copy as Path keeps a precomposed (NFC) on-disk name precomposed (URL.path would decompose it).
+    func testCopyAsPathKeepsNFCNamesFromTheFolder() async throws {
+        let nfc = "caf\u{E9}.txt"
+        // Foundation's file APIs decompose names (fileSystemRepresentation), so create the NFC name with open(2).
+        let w = try await world { h in
+            let path = h.url("").path(percentEncoded: false) + "/" + nfc
+            let fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o644)
+            guard fd >= 0 else { throw POSIXError(.init(rawValue: errno) ?? .EIO) }
+            close(fd)
+        }
+        let row = try XCTUnwrap((0..<w.folder.rowCount).first { w.folder.name(atRow: $0).unicodeScalars.count == 8 })
+        XCTAssertEqual(Array(w.folder.name(atRow: row).unicodeScalars), Array(nfc.unicodeScalars), "APFS keeps the NFC name")
+        w.folder.select(.names([w.folder.name(atRow: row)]))
+        w.commands.perform(.copyName, target: w.selection, sender: nil)
+        XCTAssertEqual(w.h.environment.clipboard.backend.readString().map { Array($0.unicodeScalars) }, Array(nfc.unicodeScalars))
+        w.commands.perform(.copyAsPath, target: w.selection, sender: nil)
+        XCTAssertEqual(w.h.environment.clipboard.backend.readString()?.unicodeScalars.suffix(8).map { $0 }, Array(nfc.unicodeScalars))
     }
 
     func testCopyPathVariantsWriteTheirStyle() async throws {

@@ -120,4 +120,30 @@ final class ScenarioFixturesTests: XCTestCase {
         try sandbox.createSymlink("macx-scenario-root/link", target: "A/n.bin")
         XCTAssertThrowsError(try ScenarioFixtures.writeZeros(1, at: r.appending(path: "link")), "never writes through a symlink")
     }
+    /// Review fix: a root-internal symlink pointing outside, followed by components that don't exist yet, must not
+    /// let fsWrite/fsTags create anything outside the root (resolvingSymlinksInPath leaves such paths unresolved).
+    func testConfinedTargetRefusesSymlinkedAncestorsWithMissingComponents() throws {
+        let r = try root()
+        let outside = try Sandbox(prefix: "macx-tests")
+        defer { outside.destroy() }
+        let real = try XCTUnwrap(realpath(r.path, nil).map { p in defer { free(p) }; return String(cString: p) })
+        let roots = [r.standardizedFileURL.path, real]  // ScenarioDriver.rootPrefixes: /var/... and /private/var/...
+        try sandbox.createSymlink("macx-scenario-root/link", target: outside.root.path(percentEncoded: false))
+        for relative in ["link/new/n.bin", "link/new/deeper/n.bin", "link/n.bin"] {
+            XCTAssertThrowsError(try ScenarioFixtures.confinedTarget(relative, root: r, roots: roots, createParents: true),
+                                 relative)
+        }
+        try sandbox.createDirectory("macx-scenario-root/A")
+        try sandbox.createSymlink("macx-scenario-root/A/dangling", target: outside.root.appending(path: "gone").path)
+        XCTAssertThrowsError(try ScenarioFixtures.confinedTarget("A/dangling/n.bin", root: r, roots: roots, createParents: true))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: outside.root.path), [], "nothing written outside")
+
+        let ok = try ScenarioFixtures.confinedTarget("B/C/n.bin", root: r, roots: roots, createParents: true)
+        XCTAssertEqual(ok.path, real + "/B/C/n.bin")
+        try ScenarioFixtures.writeZeros(4, at: ok)
+        XCTAssertEqual(try Data(contentsOf: ok).count, 4)
+        XCTAssertThrowsError(try ScenarioFixtures.confinedTarget("D/n.bin", root: r, roots: roots, createParents: false))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: r.appending(path: "D").path))
+        XCTAssertThrowsError(try ScenarioFixtures.confinedTarget("../x", root: r, roots: roots, createParents: true))
+    }
 }

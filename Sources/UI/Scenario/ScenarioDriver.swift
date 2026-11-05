@@ -507,27 +507,30 @@ final class ScenarioDriver {
         if let controller = tab.windowController as? BrowserWindowController { focusList(in: controller) }
     }
 
-    /// The guarded target of an fs step: lexically inside the root, and its existing parent resolves inside it too.
-    private func fsTarget(_ relative: String) async throws -> URL {
-        guard let root = rootReal, let url = Self.guardedURL(relative, root: root) else {
+    /// The guarded target of an fs step: lexically inside the root, its deepest existing ancestor realpath'd inside
+    /// it, and missing parents (fsWrite only) created without following symlinks (ScenarioFixtures.confinedTarget).
+    private func fsTarget(_ relative: String, createParents: Bool) async throws -> URL {
+        guard let root = rootReal, Self.guardedURL(relative, root: root) != nil else {
             throw DriverError("fs step: path '\(relative)' is outside root")
         }
         let roots = rootPrefixes
-        let parent = try await lanes.perform(on: .unknown) { _ in url.deletingLastPathComponent().resolvingSymlinksInPath() }
-        guard Self.relativePath(parent.standardizedFileURL.path(percentEncoded: false), roots: roots) != nil else {
-            throw DriverError("fs step: path '\(relative)' resolves outside root (\(parent.path(percentEncoded: false)))")
+        do {
+            return try await lanes.perform(on: .unknown) { _ in
+                try ScenarioFixtures.confinedTarget(relative, root: root, roots: roots, createParents: createParents)
+            }
+        } catch let error as ScenarioFixtureError {
+            throw DriverError("fs step: path '\(relative)': \(error)")
         }
-        return parent.appending(path: url.lastPathComponent)
     }
 
     private func fsWrite(_ write: ScenarioFile.FSWrite) async throws {
-        let url = try await fsTarget(write.path)
+        let url = try await fsTarget(write.path, createParents: true)
         let bytes = write.bytes
         try await lanes.perform(on: .unknown) { _ in try ScenarioFixtures.writeZeros(bytes, at: url) }
     }
 
     private func fsTags(_ step: ScenarioFile.FSTags) async throws {
-        let url = try await fsTarget(step.path)
+        let url = try await fsTarget(step.path, createParents: false)
         let tags = step.tags, path = step.path
         try await lanes.perform(on: .unknown) { _ in try ScenarioFixtures.setFinderTags(tags, at: url, relative: path) }
     }

@@ -23,8 +23,8 @@ final class PathFormatterTests: XCTestCase {
     func testFileURL() {
         XCTAssertEqual(PathFormatter.one(item("/Users/roni/My File.txt"), style: .fileURL, home: home), "file:///Users/roni/My%20File.txt")
         XCTAssertEqual(PathFormatter.one(item("/Users/roni/dev", dir: true), style: .fileURL, home: home), "file:///Users/roni/dev/")
-        // URL(filePath:) stores the file-system representation, so "é" arrives (and is copied) as "e" + U+0301, the
-        // same spelling every path in the app has; APFS treats both spellings as the same name.
+        // A URL-built item goes through URL.path, which decomposes "é" on Darwin (e + U+0301); items built from a
+        // folder's raw names (PathItem(directory:name:)) keep the on-disk spelling (testRawNamesKeepTheirSpelling).
         XCTAssertEqual(PathFormatter.one(item("/tmp/\u{E9}#?.txt"), style: .fileURL, home: home), "file:///tmp/e%CC%81%23%3F.txt")
         XCTAssertEqual(PathFormatter.fileURL("/tmp/\u{E9}", isDirectory: false), "file:///tmp/%C3%A9", "a path string's own bytes")
         XCTAssertEqual(PathFormatter.one(item("/tmp/e\u{301}"), style: .fileURL, home: home), "file:///tmp/e%CC%81", "NFD kept")
@@ -35,6 +35,19 @@ final class PathFormatterTests: XCTestCase {
             XCTAssertEqual(URL(string: PathFormatter.one(item(path), style: .fileURL, home: home))?.path(percentEncoded: false), path,
                            "round-trips: \(name)")
         }
+    }
+
+    /// Review fix: names taken from FolderModel.name(atRow:) are copied exactly (NFC stays NFC, NFD stays NFD).
+    func testRawNamesKeepTheirSpelling() {
+        let dir = URL(filePath: "/tmp/x", directoryHint: .isDirectory)
+        let nfc = PathItem(directory: dir, name: "caf\u{E9}.txt", isDirectory: false)
+        XCTAssertEqual(Array(PathFormatter.one(nfc, style: .posix, home: home).unicodeScalars), Array("/tmp/x/caf\u{E9}.txt".unicodeScalars))
+        XCTAssertEqual(PathFormatter.one(nfc, style: .fileURL, home: home), "file:///tmp/x/caf%C3%A9.txt")
+        XCTAssertEqual(Array(PathFormatter.one(nfc, style: .name, home: home).unicodeScalars), Array("caf\u{E9}.txt".unicodeScalars))
+        let nfd = PathItem(directory: dir, name: "cafe\u{301}", isDirectory: true)
+        XCTAssertEqual(PathFormatter.one(nfd, style: .fileURL, home: home), "file:///tmp/x/cafe%CC%81/")
+        XCTAssertEqual(PathFormatter.one(PathItem(directory: URL(filePath: "/", directoryHint: .isDirectory), name: "a",
+                                                  isDirectory: false), style: .posix, home: home), "/a")
     }
 
     func testName() {

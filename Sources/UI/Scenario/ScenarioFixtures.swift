@@ -112,8 +112,55 @@ enum ScenarioFixtures {
     static let finderCommentXattr = "com.apple.metadata:kMDItemFinderComment"
     static let lastUsedDateXattr = "com.apple.lastuseddate#PS"
 
+    /// The confined target of an fs step (fsWrite/fsTags). Synchronous: lane only. `root` must be symlink-resolved;
+    /// `roots` are its spellings (ScenarioDriver.rootPrefixes). `relative` must pass ScenarioDriver.guardedURL; then
+    /// the deepest *existing* ancestor of the parent is realpath'd and must sit inside `roots` (a link inside the root
+    /// may point out, and resolvingSymlinksInPath leaves a path with missing components unresolved). Missing parent
+    /// components are created one at a time with mkdirat + openat(O_NOFOLLOW | O_DIRECTORY) from that ancestor, so a
+    /// symlink (dangling or not) is never followed. Returns <real parent>/<last component>; with `createParents` false
+    /// a missing parent throws instead.
+    static func confinedTarget(_ relative: String, root: URL, roots: [String],
+                               createParents: Bool) throws(ScenarioFixtureError) -> URL {
+        guard let lexical = ScenarioDriver.guardedURL(relative, root: root) else { throw .unsafePath(relative) }
+        var rootPath = root.standardizedFileURL.path(percentEncoded: false)
+        if rootPath.count > 1, rootPath.hasSuffix("/") { rootPath.removeLast() }
+        let parentRelative = String(lexical.path(percentEncoded: false).dropFirst(rootPath.count))
+            .split(separator: "/").map(String.init).dropLast()
+        var missing: [String] = []
+        var existing = Array(parentRelative)
+        var real: String?
+        while real == nil {
+            let candidate = ([rootPath] + existing).joined(separator: "/")
+            if let resolved = realpath(candidate, nil) {
+                real = String(cString: resolved)
+                free(resolved)
+            } else if errno == ENOENT, let last = existing.popLast() {
+                missing.insert(last, at: 0)
+            } else {
+                throw .io(candidate, errno)
+            }
+        }
+        guard let ancestor = real, ScenarioDriver.relativePath(ancestor, roots: roots) != nil else {
+            throw .unsafePath(relative)
+        }
+        if !missing.isEmpty, !createParents { throw .io(relative, ENOENT) }
+        var fd = open(ancestor, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        guard fd >= 0 else { throw .io(ancestor, errno) }
+        defer { close(fd) }
+        var path = ancestor
+        for component in missing {
+            if mkdirat(fd, component, 0o755) != 0, errno != EEXIST { throw .io(path + "/" + component, errno) }
+            let next = openat(fd, component, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+            guard next >= 0 else { throw .unsafePath(relative) }  // ELOOP/ENOTDIR: a symlink or file is in the way
+            close(fd)
+            fd = next
+            path += "/" + component
+        }
+        return URL(filePath: path, directoryHint: .isDirectory).appending(path: lexical.lastPathComponent)
+    }
+
     /// Writes `count` zero bytes at `url` (creating or replacing it, never through a symlink), creating parents.
-    /// Synchronous: lane only. The caller has confined `url` to the root (ScenarioDriver.guardedURL + resolution).
+    /// Synchronous: lane only. The caller has confined `url` to the root (confinedTarget).
     static func writeZeros(_ count: Int, at url: URL) throws(ScenarioFixtureError) {
         do { try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true) } catch {
             throw .io(url.path, Int32((error as NSError).code))

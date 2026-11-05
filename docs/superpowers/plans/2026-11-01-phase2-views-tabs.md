@@ -316,6 +316,8 @@ extension CommandState {
 // Paths/PathFormatter.swift (P2-04)
 public enum PathStyle: String, Sendable, Codable, CaseIterable { case posix, tilde, fileURL, name, shellQuoted }
 public struct PathItem: Sendable, Equatable { public var url: URL; public var isDirectory: Bool; public init(url: URL, isDirectory: Bool) }
+// As built (P2-04 review fix): PathItem stores `path: String` (not `url`); inits `init(path:isDirectory:)`,
+// `init(url:isDirectory:)` and `init(directory:name:isDirectory:)` (raw row names, no NFD). See "P2-04 result (as built)".
 public enum PathFormatter {
     /// One item per line ("\n"); shellQuoted joins with a single space.
     public static func format(_ items: [PathItem], style: PathStyle, home: URL) -> String
@@ -961,7 +963,7 @@ If Phase 1 has no `focus.isSidebar` helper, add `var isSidebar: Bool` to `FocusC
 
 `MainMenuBuilder` places the new items as follows:
 - File: New Tab (⌘T) after New Window.
-- Edit: "Copy Path As ▸" after Copy as Path. The submenu is built in P2-04, so in this task it is an empty submenu placeholder item, hidden until P2-04.
+- Edit: "Copy Path As ▸" after Copy as Path. The submenu is built in P2-04, so in this task it is an empty submenu placeholder item, hidden until P2-04. (As built: P2-04 replaced the placeholder with `CopyPathMenu.submenuItem()`; the item is visible and populated.)
 - View: "as Columns" (⌘3) after "as Icons"; "Group By ▸" (None, Kind, Date Modified, Size, Name) after the Sort By submenu; "Calculate Folder Sizes"; "Apply to All Folders…".
 - Window: Show Tab Bar, Show All Tabs (⌘⇧\), Show Previous Tab (⌃⇧Tab), Show Next Tab (⌃Tab), Move Tab to New Window, Merge All Windows.
 - File: "Quick Look" with no key equivalent and title `L10n` "Quick Look" (the menu shows no shortcut; Space works in the content view).
@@ -1296,7 +1298,7 @@ Expected: `Executed 7 tests, with 0 failures`; all Phase 1 scenarios still pass.
 - `UI` may not link `MacxFixtures` (check-layering rule `fixtures-in-app`), so the in-app driver cannot use `Sandbox`. `ScenarioFixtures` (UI) carries its own guarded writers with the same encodings: `writeZeros(_:at:)`, `setFinderTags(_:at:relative:)`, `lastUsedDateValue(_:)`, `noon(daysFromToday:)`, `pngData(pixels:)` and the xattr-name constants. `ScenarioFixturesTests.testFixtureEncodingsMatchMacxFixtures` keeps the two in step.
 - `FixtureMetadata` reuses the Phase 1 `setXattr(_:name:value:)` and `setMode(_:_:)` and does not add the plan's `setXattr(_:_:on:)` / `setMode(_:on:)` overloads. `writePNG` writes through `createFile` (O_EXCL, O_NOFOLLOW), and `noon` uses `bySettingHour` so DST days are handled. `Sandbox.finderTagsXattr`, `finderCommentXattr` and `lastUsedDateXattr` name the xattrs.
 - Step validation stays in `ScenarioFile.validate()` (`Step.actions`). `ScenarioDriver.validateSteps` is a thin wrapper around it. `answerAlert` already existed in Phase 1: it searches the modal window and every attached sheet. Validation also rejects `selectTab < 0`, a prefixed `doubleClick`, `tree:` paths outside the root, malformed `sort`/`iconSize`/`groupBy`/`viewMode`, and unsafe fixture or fs-step paths.
-- Only the prefixes `tree:`, `group:` and `header:` route to hooks (`ScenarioTarget`). Any other name containing ":" is a plain row. fs steps also check that the symlink-resolved parent is inside the root.
+- Only the prefixes `tree:`, `group:` and `header:` route to hooks (`ScenarioTarget`). Any other name containing ":" is a plain row. fs steps go through `ScenarioFixtures.confinedTarget(_:root:roots:createParents:)` (review fix): the deepest existing ancestor is realpath'd and must be inside the root, and missing parents (fsWrite only) are created with mkdirat + openat(O_NOFOLLOW), so a link inside the root never leads a write outside it.
 - `TabController` does not exist yet, so `BrowserWindowController.orderedTabWindows(of:)` (`tabbedWindows ?? [window]`) backs `probeTabFolderURLs`, `probeSelectedTabIndex` and `selectTab`. P2-05 replaces it with `TabController.orderedTabs(of:)`. `probeGrouping` returns `.none` until P2-09.
 - `ScenarioCatalogTests` now asserts at least 29 scenario files instead of an exact count. `Tests/Scenarios/p2-scenario-runner.json` exercises the fixture metadata, the tab/sort/icon-size/group expectations, `selectTab`, `fsWrite` and `fsTags`.
 
@@ -1503,6 +1505,16 @@ Expected: `Executed 9 tests, with 0 failures`; `p2-copy-path: passed`. If P1-41'
 git add Sources/Core/Paths Sources/Core/Clipboard Sources/Core/Platform/SystemPasteboard.swift Sources/UI/Menus Sources/UI/Commands Sources/UI/CommandBar Tests/CoreTests/PathFormatterTests.swift Tests/UITests/CopyPathMenuTests.swift Tests/Scenarios/p2-copy-path.json scripts/ui-scenarios.sh
 git commit -m "feat: copy path variants (POSIX, ~, file URL, name, shell-quoted)"
 ```
+
+**P2-04 result (as built): deviations later tasks and scenario authors must know.**
+- `CopyPathMenu.make(target:handler:) -> NSMenu` replaces `make(handler:)`; both parameters default to nil (nil-targeted items for the main menu and the command bar). With a target and handler, items are bound through `MenuActionBox` (context menus). `CopyPathMenu.submenuItem(target:handler:)` wraps it as the "Copy Path As ▸" item (identifier `CopyPathMenu.submenuID`); it replaced P2-02's hidden placeholder in the Edit menu and is used in the item context menu and the command bar's More menu. The POSIX item is titled "POSIX Path" (`CopyPathMenu.title(_:)`).
+- `TextPasteboard` (Phase 1, in `CommandPrompts.swift`) was removed. Every copy-path command writes through `environment.clipboard.backend.writeString(_:)`; tests and the scenario `pasteboardText` probe read `backend.readString()`.
+- Sandboxed runs without `--pasteboard` use `InMemoryPasteboard` (`AppBootstrap.makePasteboard(options:)`), so they never touch the user's general pasteboard. `--pasteboard <name>` still selects a named `SystemPasteboard`.
+- `Settings.home` is `--root` in sandbox runs (`AppBootstrap`: `home = options.root` when sandboxed), so the "~ Path" style yields `~/…` for items inside the root, not the plain path Step 4 says. `p2-copy-path.json` expects `"~/it's here.txt"`.
+- `PathFormatter.fileURL(_:isDirectory:)` percent-encodes the path string by hand (unreserved + RFC 3986 path characters stay; space, `#`, `?`, `%` are encoded) instead of using `URL.absoluteString`, which would re-derive the file-system representation and decompose precomposed characters.
+- Review fix: `PathItem` stores `path: String`, not `url`. `FileCommandController.pathItems(for:)` builds content-selection items with `PathItem(directory:name:isDirectory:)` from `FolderModel.name(atRow:)`, so an NFC on-disk name is copied as NFC. `URL.path` decomposes (NFD) on Darwin, so `PathItem(url:isDirectory:)` (current folder, favorites, volumes) and the folder part of a row's path still come out in Foundation's spelling. Packages count as directories (trailing "/" in File URL).
+- Review fix (P2-02): `CommandStateBuilder.state(for:session:environment:needsFolderCount:)` scans a content selection for directories only when `needsFolderCount` is true; `FileCommandController.canPerform` passes it for `.openInNewTab` only, so other menu/toolbar validation never walks a large selection. `selectedFolderCount` is 0/1 and counts `.directory` entries only (not packages, not links/aliases to folders). P2-05/P2-06 should keep that rule or change it in both places.
+- `scripts/ui-scenarios.sh` takes `--filter <substring>`, not a positional name: run `scripts/ui-scenarios.sh --filter p2-copy-path` (the same applies to every later task's "Run:" line that passes a bare scenario name).
 
 ---
 

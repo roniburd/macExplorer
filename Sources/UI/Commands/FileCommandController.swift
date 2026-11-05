@@ -40,7 +40,8 @@ final class FileCommandController: CommandHandler {
         let focus = Self.focus(for: target)
         guard let effective = CommandAvailability.effectiveCommand(command, focus: focus),
               !Self.pendingCommands.contains(effective), let session else { return false }
-        let state = CommandStateBuilder.state(for: target, session: session, environment: environment)
+        let state = CommandStateBuilder.state(for: target, session: session, environment: environment,
+                                              needsFolderCount: effective == .openInNewTab)
         return CommandAvailability.isEnabled(effective, focus: focus, state: state)
     }
 
@@ -120,10 +121,16 @@ final class FileCommandController: CommandHandler {
         environment.clipboard.backend.writeString(PathFormatter.format(items, style: style, home: environment.settings.home))
     }
 
-    /// The selection in display order (folders and packages carry a directory URL), or the target folder itself.
+    /// The selection in display order, or the target folder itself. Selected rows use their raw names (not
+    /// url(atRow:), whose path text Foundation decomposes) so an NFC name is copied as NFC.
     static func pathItems(for target: CommandTarget) -> [PathItem] {
         switch target {
-        case .contentSelection(let folder): folder.selectedURLs.map { PathItem(url: $0, isDirectory: $0.hasDirectoryPath) }
+        case .contentSelection(let folder):
+            folder.selection.rows.filter { $0 < folder.rowCount }.map { row in
+                let kind = folder.entry(atRow: row).kind
+                return PathItem(directory: folder.directory, name: folder.name(atRow: row),
+                                isDirectory: kind == .directory || kind == .package)
+            }
         case .currentFolder(let folder): [PathItem(url: folder.directory, isDirectory: true)]
         case .folder(let url), .location(let url): [PathItem(url: url, isDirectory: true)]
         case .favorite(let favorite): favorite.url.map { [PathItem(url: $0, isDirectory: true)] } ?? []
