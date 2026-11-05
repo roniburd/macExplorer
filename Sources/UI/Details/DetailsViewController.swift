@@ -39,6 +39,18 @@ final class FileTableView: NSTableView, @MainActor NSServicesMenuRequestor, NSSp
         owner.handleRightMouseDown(event)   // no menu yet (§5.6)
     }
 
+    // MARK: middle-click (P2-06)
+
+    override func otherMouseDown(with event: NSEvent) {
+        guard let owner, event.buttonNumber == 2 else { return super.otherMouseDown(with: event) }
+        owner.handleMiddleMouse(at: event.locationInWindow, down: true)
+    }
+
+    override func otherMouseUp(with event: NSEvent) {
+        guard let owner, event.buttonNumber == 2 else { return super.otherMouseUp(with: event) }
+        owner.handleMiddleMouse(at: event.locationInWindow, down: false)
+    }
+
     override func rightMouseDragged(with event: NSEvent) {
         guard let owner else { return super.rightMouseDragged(with: event) }
         owner.handleRightMouseDragged(event)
@@ -107,6 +119,9 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     /// Installed by ContentViewController (P1-36).
     var dropTarget: DropTarget?
     var onSpringLoad: ((URL) -> Void)?
+    /// Installed by ContentViewController (P2-06): a middle-click on `row` (the selection is not touched).
+    var onNewTabGesture: ((NewTabGesture, Int) -> Void)?
+    private var middleClick = MiddleClickTracker()
     lazy var dragSource = DragSourceController(icons: context.icons)
     var rightDrag = RightDragTracker()
     var rightDownEvent: NSEvent?
@@ -292,6 +307,17 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
         guard let folder else { return }
         mouse.mouseUp(folder: folder)
         reloadSelectionDrawing()
+    }
+
+    /// Button 2: press and release on the same row asks for a new tab (P2-06).
+    func handleMiddleMouse(at windowPoint: NSPoint, down: Bool) {
+        let hit = tableView.row(at: tableView.convert(windowPoint, from: nil))
+        let row = hit >= 0 ? hit : nil
+        if down {
+            middleClick.mouseDown(row: row)
+        } else if let row = middleClick.mouseUp(row: row) {
+            onNewTabGesture?(.middleClick, row)
+        }
     }
 
     // MARK: columns

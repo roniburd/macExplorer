@@ -181,3 +181,13 @@ Run before every release, on Apple Silicon, from a clean checkout of the release
 9. Privacy: with Full Disk Access off, opening `~/Library/Mail` shows the "permission" empty state with Open
    Privacy Settings, and no alert. The onboarding sheet appears once on a fresh install.
 10. Manual file operations for items 6-8 use only a test folder you created on that volume for the release check.
+11. Tab restoration (P2-06 Step 9; not yet run, it needs a person at an unlocked Mac): bundle a copy with its own
+    id (`scripts/bundle.sh debug --bundle-id com.macexplorer.app.restore-check --output .build/macExplorer-restore.app`),
+    first checking that `~/Library/Saved Application State/com.macexplorer.app.restore-check.savedState` and
+    `~/Library/Preferences/com.macexplorer.app.restore-check.plist` do not exist. Launch it with `--skip-onboarding`
+    only, open a fresh `${TMPDIR}macx-scenario-<UUID>/A` (⌘L), ⌘T, open `…/B`, quit and relaunch: expect one window
+    with tabs "A" and "B", "B" selected. Then delete exactly those two paths, the temp folder and the bundle. If the
+    tabs come back as separate windows, file a bug (every tab window is already restorable with
+    `BrowserWindowRestoration` as its restoration class).
+12. Tab-bar drop: drag folder `B` from a second window (⌘N) onto the New Tab toolbar button of a window showing a
+    sandbox folder: a tab "B" opens and `B` stays where it was.

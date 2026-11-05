@@ -95,6 +95,7 @@ final class ContentViewController: CommandHandlingViewController {
         details.contextMenuProvider = { [weak self] row in self?.contextMenu(forRow: row) }
         details.dropTarget = dropTarget
         details.onSpringLoad = { [weak self] url in self?.session.navigate(to: url) }
+        details.onNewTabGesture = { [weak self] gesture, row in self?.newTabGesture(gesture, row: row) }
         NotificationCenter.default.addObserver(self, selector: #selector(applicationDidBecomeActive(_:)),
                                                name: NSApplication.didBecomeActiveNotification, object: nil)
         sessionToken = session.observe { [weak self] event in self?.handle(event) }
@@ -220,6 +221,20 @@ final class ContentViewController: CommandHandlingViewController {
         Task { _ = await operations.perform(request) }
     }
 
+    // MARK: new tabs (P2-06)
+
+    /// A middle-click on a content row: a folder (or a link to one) opens in a background tab; files, packages and
+    /// ⌘-click (a selection toggle here) do nothing. The selection is not touched.
+    @discardableResult
+    func newTabGesture(_ gesture: NewTabGesture, row: Int) -> Bool {
+        let folder = session.folder
+        guard MiddleClickRouter.shouldOpenTab(gesture, in: .content),
+              MiddleClickRouter.folderTarget(row: row, in: folder) != nil,
+              let commands = handler as? FileCommandController else { return false }
+        commands.openInNewTab(rows: [row], in: folder, select: false)
+        return true
+    }
+
     // MARK: context menus and clipboard (P1-35)
 
     /// Right-click rule (§5.6, Review Focus 1). S6's scenario driver calls this for `rightClick` steps.
@@ -268,6 +283,7 @@ final class ContentViewController: CommandHandlingViewController {
         created.contextMenuProvider = { [weak self] row in self?.contextMenu(forRow: row) }
         created.dropTarget = dropTarget
         created.onSpringLoad = { [weak self] url in self?.session.navigate(to: url) }
+        created.onNewTabGesture = { [weak self] gesture, row in self?.newTabGesture(gesture, row: row) }
         icons = created
         return created
     }

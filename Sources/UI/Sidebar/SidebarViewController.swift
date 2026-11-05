@@ -16,6 +16,10 @@ final class SidebarViewController: CommandHandlingViewController {
     private(set) lazy var dragSource = DragSourceController(icons: context.icons)
     let tree: FolderTreeController
     let favorites: SidebarFavoritesModel
+    /// Middle-click / ⌘-click on a row (P2-06): a background tab of this window (tests replace it).
+    lazy var openBackgroundTab: (URL) -> Void = { [weak self] url in
+        (self?.view.window?.windowController as? BrowserWindowController)?.openTabs([url], select: false)
+    }
     /// Locate… picks the new folder (tests replace it). Default: an NSOpenPanel sheet.
     var pickFolder: (_ message: String, _ window: NSWindow?) async -> URL? = SidebarViewController.openPanel
 
@@ -127,6 +131,7 @@ final class SidebarViewController: CommandHandlingViewController {
         outlineView.onActivate = { [weak self] row in self?.activateRow(row) }
         outlineView.menuProvider = { [weak self] row in self?.menu(forRow: row) }
         outlineView.onSecondaryDrag = { [weak self] row, event in self?.beginSecondaryDrag(row: row, event: event) }
+        outlineView.onNewTabGesture = { [weak self] gesture, row in self?.handleNewTabGesture(gesture, row: row) ?? false }
         outlineView.keyHandler = { [weak self] event in
             guard let self else { return false }
             return KeyRouter.handle(event, focus: self.focusContext, returnKey: .open, from: self.outlineView)
@@ -285,6 +290,15 @@ final class SidebarViewController: CommandHandlingViewController {
             await task.value
             if task == revealTask { return }
         }
+    }
+
+    /// Scenario `tree:` targets (P2-06): loads and expands the ancestors of `url` in the Folders tree and returns its
+    /// row (nil when it isn't a listed folder or the section is collapsed). The selection is not changed.
+    func revealRow(for url: URL) async -> Int? {
+        guard let path = await tree.reveal(url), let node = path.last else { return nil }
+        expandPath(path)
+        let row = row(of: .folder(node))
+        return row >= 0 ? row : nil
     }
 
     private func applyReveal(_ path: [FolderTreeNode]?, url: URL) {

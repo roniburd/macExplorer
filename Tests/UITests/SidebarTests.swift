@@ -325,7 +325,7 @@ final class SidebarTests: XCTestCase {
         for command: Command in [.moveToTrash, .deletePermanently, .rename, .cut] { h.sidebar.run(command, sender: nil) }
         XCTAssertTrue(recorder.performed.isEmpty, "the Trash row is a pointer: got \(recorder.performed.map(\.0))")
         let menu = try XCTUnwrap(h.sidebar.menu(forRow: row))
-        XCTAssertEqual(menu.items.map(\.title), ["Open in New Window"])
+        XCTAssertEqual(menu.items.map(\.title), ["Open in New Window", "Open in New Tab"])
     }
 
     func testNoTrashRowWithoutATrashFolder() async throws {
@@ -361,11 +361,11 @@ final class SidebarTests: XCTestCase {
     func testLocationMenus() async throws {
         let h = try await SidebarHarness.make(self)
         let usb = try XCTUnwrap(h.sidebar.menu(forRow: h.row(named: "USB", in: .locations)))
-        XCTAssertEqual(usb.items.map(\.title), ["Open in New Window", "Eject", "Properties"])
+        XCTAssertEqual(usb.items.map(\.title), ["Open in New Window", "Open in New Tab", "Eject", "Properties"])
         let boot = try XCTUnwrap(h.sidebar.menu(forRow: h.row(named: "Macintosh HD", in: .locations)))
-        XCTAssertEqual(boot.items.map(\.title), ["Open in New Window", "Properties"])
+        XCTAssertEqual(boot.items.map(\.title), ["Open in New Window", "Open in New Tab", "Properties"])
         let home = try XCTUnwrap(h.sidebar.menu(forRow: h.row(named: "Home", in: .favorites)))
-        XCTAssertEqual(home.items.filter { !$0.isSeparatorItem }.map(\.title), ["Open in New Window", "Remove from Favorites"])
+        XCTAssertEqual(home.items.filter { !$0.isSeparatorItem }.map(\.title), ["Open in New Window", "Open in New Tab", "Remove from Favorites"])
         XCTAssertNil(h.sidebar.menu(forRow: 0), "headers have no menu")
     }
 

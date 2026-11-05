@@ -24,6 +24,56 @@ extension FileCommandController {
         }
     }
 
+    // MARK: open in new tab (P2-06)
+
+    /// Open in New Tab (File menu, context menu, command bar): every selected folder or link to one, the first new tab
+    /// selected; a sidebar row's folder, selected.
+    func openInNewTab(_ target: CommandTarget) {
+        switch target {
+        case .contentSelection(let folder):
+            openInNewTab(rows: folder.selection.rows.filter { MiddleClickRouter.folderTarget(row: $0, in: folder) != nil },
+                         in: folder, select: true)
+        case .folder, .favorite, .volume, .location:
+            window?.openTabs(subjectURLs(target), select: true)
+        case .currentFolder(let folder):
+            window?.openTabs([folder.directory], select: true)
+        }
+    }
+
+    /// Content rows into tabs: OpenPlanner resolves links (newWindow: true, so folders come back as openInNewWindow),
+    /// only folder targets open, a broken link shows the Phase 1 alert, and more than 10 folders ask first.
+    /// `select: false` (middle-click) opens background tabs.
+    func openInNewTab(rows: [Int], in folder: FolderModel, select: Bool) {
+        let items = rows.filter { $0 >= 0 && $0 < folder.rowCount }.map { row in
+            let entry = folder.entry(atRow: row)
+            return OpenItem(url: folder.url(atRow: row), kind: entry.kind, isApplication: environment.types.isApplication(entry.typeIndex))
+        }
+        guard !items.isEmpty else { return }
+        let lanes = environment.lanes
+        let volumes = environment.volumes
+        Task {
+            let plan = await OpenPlanner.plan(items, newWindow: true, lanes: lanes, volumes: volumes)
+            await self.executeInTabs(plan, select: select)
+        }
+    }
+
+    private func executeInTabs(_ plan: OpenPlan, select: Bool) async {
+        var folders: [URL] = []
+        var broken: [URL] = []
+        for action in plan.actions {
+            switch action {
+            case .navigate(let url), .openInNewWindow(let url): folders.append(url)
+            case .brokenLink(let url): broken.append(url)
+            case .launchApplication, .openDocuments: break   // tabs show folders only
+            }
+        }
+        if plan.needsConfirmation {
+            guard await prompts.confirm(.openManyTabs(folders.count), window: window?.window) else { return }
+        }
+        window?.openTabs(folders, select: select)
+        for url in broken { await handleBrokenLink(url) }
+    }
+
     func execute(_ plan: OpenPlan) async {
         if plan.needsConfirmation {
             let windows = plan.actions.filter { if case .openInNewWindow = $0 { true } else { false } }.count

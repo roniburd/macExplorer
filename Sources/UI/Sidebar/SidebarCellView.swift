@@ -84,7 +84,35 @@ final class SidebarOutlineView: NSOutlineView {
     /// KeyRouter alternates (P1-29), after Return.
     var keyHandler: ((NSEvent) -> Bool)?
 
+    /// Middle-click (button 2, press and release on the same row) and ⌘-click (P2-06). True when the row opened a
+    /// tab; a ⌘-click that opens one never reaches NSOutlineView, so the selection is unchanged.
+    var onNewTabGesture: ((NewTabGesture, Int) -> Bool)?
+    private var middleClick = MiddleClickTracker()
+
     override var acceptsFirstResponder: Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        if event.modifierFlags.intersection([.command, .option, .control, .shift]) == .command {
+            let row = self.row(at: convert(event.locationInWindow, from: nil))
+            if row >= 0, onNewTabGesture?(.commandClick, row) == true { return }
+        }
+        super.mouseDown(with: event)
+    }
+
+    override func otherMouseDown(with event: NSEvent) {
+        guard event.buttonNumber == 2 else { return super.otherMouseDown(with: event) }
+        middleClick.mouseDown(row: rowIndex(at: event))
+    }
+
+    override func otherMouseUp(with event: NSEvent) {
+        guard event.buttonNumber == 2 else { return super.otherMouseUp(with: event) }
+        if let row = middleClick.mouseUp(row: rowIndex(at: event)) { _ = onNewTabGesture?(.middleClick, row) }
+    }
+
+    private func rowIndex(at event: NSEvent) -> Int? {
+        let row = self.row(at: convert(event.locationInWindow, from: nil))
+        return row >= 0 ? row : nil
+    }
 
     override func keyDown(with event: NSEvent) {
         let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])

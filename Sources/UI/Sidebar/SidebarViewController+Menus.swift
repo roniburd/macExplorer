@@ -20,8 +20,8 @@ final class SidebarMenuItem: NSMenuItem {
 }
 
 extension SidebarViewController {
-    /// Right-click menus (§5.4). Favorites: Open in New Window, Remove from Favorites (+ Locate… when stale).
-    /// Locations and tree volume roots: Open in New Window, Eject, Properties. Tree folders: Open in New Window.
+    /// Right-click menus (§5.4). Every row with a folder starts with Open in New Window and Open in New Tab (P2-06).
+    /// Favorites: then Remove from Favorites (+ Locate… when stale). Locations and tree volume roots: Eject, Properties.
     /// Items act on the clicked row, not the selection.
     func menu(forRow row: Int) -> NSMenu? {
         guard let item = item(atRow: row), !item.isHeader else { return nil }
@@ -30,6 +30,9 @@ extension SidebarViewController {
         if let url = item.url {
             menu.addItem(SidebarMenuItem(L10n.string("Open in New Window")) { [weak self] in
                 self?.context.windows.openWindow(at: url)
+            })
+            menu.addItem(SidebarMenuItem(L10n.string("Open in New Tab")) { [weak self] in
+                self?.perform(.openInNewTab, on: item)
             })
         }
         switch item {
@@ -65,5 +68,19 @@ extension SidebarViewController {
     func perform(_ command: Command, on item: SidebarItem) {
         guard let target = item.commandTarget else { return }
         handler?.perform(command, target: target, sender: nil)
+    }
+}
+
+// MARK: new tabs (P2-06)
+
+extension SidebarViewController {
+    /// Middle-click or ⌘-click on a row with a folder (a favorite, location or tree node): a background tab. Neither
+    /// the sidebar selection nor the window's folder changes. False when the row has no folder.
+    @discardableResult
+    func handleNewTabGesture(_ gesture: NewTabGesture, row: Int) -> Bool {
+        guard let item = item(atRow: row), !item.isHeader, let url = item.url,
+              MiddleClickRouter.shouldOpenTab(gesture, in: item.focusContext) else { return false }
+        openBackgroundTab(url)
+        return true
     }
 }

@@ -314,7 +314,7 @@ final class ScenarioDriver {
         else if let name = step.click { try await click(name, modifiers: step.modifiers ?? []) }
         else if let name = step.doubleClick { try await doubleClick(name); await fence() }
         else if let name = step.rightClick { try await openContextMenu(on: name) }
-        else if let target = step.middleClick { try middleClick(target); await fence() }
+        else if let target = step.middleClick { try await middleClick(target); await fence() }
         else if let index = step.selectTab { try selectTab(index); await fence() }
         else if let write = step.fsWrite { try await fsWrite(write) }
         else if let tags = step.fsTags { try await fsTags(tags) }
@@ -417,7 +417,7 @@ final class ScenarioDriver {
             guard let hook = controller.scenarioHooks.clickTarget else {
                 throw DriverError("click '\(target)': ScenarioHooks.clickTarget is not installed")
             }
-            guard hook(target, modifiers) else { throw DriverError("click target '\(target)' not found") }
+            guard await hook(target, modifiers) else { throw DriverError("click target '\(target)' not found") }
             await fence()
             return
         }
@@ -502,12 +502,12 @@ final class ScenarioDriver {
         await fence()
     }
 
-    private func middleClick(_ target: String) throws {
+    private func middleClick(_ target: String) async throws {
         let controller = try browserWindow()
         guard let hook = controller.scenarioHooks.performMiddleClick else {
             throw DriverError("middleClick '\(target)': ScenarioHooks.performMiddleClick is not installed")
         }
-        guard hook(target) else { throw DriverError("middle-click target '\(target)' not found") }
+        guard await hook(target) else { throw DriverError("middle-click target '\(target)' not found") }
     }
 
     private func selectTab(_ index: Int) throws {

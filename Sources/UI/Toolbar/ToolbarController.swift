@@ -3,7 +3,7 @@ import Core
 import MacxFS
 
 /// The browser window's NSToolbar delegate (§5.2): ◀ ▶ ↑ group, address bar (flexible), filter field, Details/Icons
-/// switcher, the Send Feedback menu, and the update badge (hidden unless an update needs attention). Keeps them in sync with the session
+/// switcher, the New Tab button (P2-06), the Send Feedback menu, and the update badge (hidden unless an update needs attention). Keeps them in sync with the session
 /// (folder, history, view mode) and the volume list.
 @MainActor
 final class ToolbarController: NSObject, NSToolbarDelegate {
@@ -13,6 +13,8 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
     static let viewSwitcherID = NSToolbarItem.Identifier("macx.toolbar.viewSwitcher")
     static let feedbackID = NSToolbarItem.Identifier("macx.toolbar.feedback")
     static let updateID = NSToolbarItem.Identifier("macx.toolbar.update")
+    /// New Tab (P2-06): click = ⌘T, drop folders = tabs (the native tab bar has no drop API).
+    static let newTabID = NSToolbarItem.Identifier(AXID.newTabItem)
 
     let navigation: NavigationButtons
     let addressBar: AddressBarView
@@ -22,6 +24,7 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
     let addressItem: NSToolbarItem
     let feedbackItem: NSMenuToolbarItem
     let updateItem: UpdateBadgeItem
+    let newTabItem = NewTabToolbarItem()
 
     private let context: UIContext
     private let session: BrowserSession
@@ -94,7 +97,7 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
     // MARK: NSToolbarDelegate
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [Self.navigationID, Self.addressID, Self.searchID, Self.viewSwitcherID, Self.feedbackID, Self.updateID]
+        [Self.navigationID, Self.addressID, Self.searchID, Self.viewSwitcherID, Self.newTabID, Self.feedbackID, Self.updateID]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -118,6 +121,15 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
             toolbar.insertItem(withItemIdentifier: Self.updateID, at: toolbar.items.count)
         }
         let settings = context.environment.settings
+        if !settings.toolbarNewTabItemOffered {
+            // New Tab (P2-06) is offered once, like Send Feedback: after the view switcher, else before the badge.
+            settings.toolbarNewTabItemOffered = true
+            if !toolbar.items.contains(where: { $0.itemIdentifier == Self.newTabID }) {
+                let index = toolbar.items.firstIndex { $0.itemIdentifier == Self.viewSwitcherID }.map { $0 + 1 }
+                    ?? toolbar.items.firstIndex { $0.itemIdentifier == Self.updateID } ?? toolbar.items.count
+                toolbar.insertItem(withItemIdentifier: Self.newTabID, at: index)
+            }
+        }
         guard !settings.toolbarFeedbackItemOffered else { return }
         settings.toolbarFeedbackItemOffered = true
         guard !toolbar.items.contains(where: { $0.itemIdentifier == Self.feedbackID }) else { return }
@@ -136,6 +148,7 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
         case Self.viewSwitcherID: viewSwitcher
         case Self.feedbackID: feedbackItem
         case Self.updateID: updateItem
+        case Self.newTabID: newTabItem
         default: nil
         }
     }
@@ -150,6 +163,7 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
         case viewSwitcherID: spec = (L10n.string("View"), "list.bullet")
         case feedbackID: spec = (L10n.string("Send Feedback"), "bubble.left")
         case updateID: spec = (L10n.string("Update"), "arrow.down.circle")
+        case newTabID: spec = (L10n.string("New Tab"), "plus.square.on.square")
         default: return nil
         }
         let item = NSToolbarItem(itemIdentifier: identifier)

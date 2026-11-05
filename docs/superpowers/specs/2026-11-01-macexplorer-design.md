@@ -621,6 +621,7 @@ On Apple keyboards F2–F5 are media keys and need fn unless "Use F1, F2, etc. k
 - **Tabs:**
   - Native `NSWindow` tabbing: ⌘T new tab, ⌃Tab next tab, ⌘W close.
   - A folder can be dragged onto the tab bar to open it.
+  - Tab-bar drop: via the New Tab toolbar button (native tab bar has no drop API).
   - Middle-click a folder (content, sidebar or tree), or ⌘-click a folder in the sidebar or tree, opens it in a new tab. ⌘-click in the content view keeps its toggle meaning.
 - **Per-folder view state** (mode, columns, sort, icon size): stored in our own store, keyed by volume UUID and fileID on `idStable` volumes and by path elsewhere (path is also the fallback). "Apply to all folders" resets it.
 - **Group by:** Kind, Date Modified (Today, Yesterday, Earlier this week…), Size buckets, Name first letter. Collapsible group headers, using `NSTableView` floating group rows.

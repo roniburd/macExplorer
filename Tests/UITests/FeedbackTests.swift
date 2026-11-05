@@ -78,6 +78,21 @@ final class FeedbackTests: XCTestCase {
                                                              ToolbarController.feedbackID, ToolbarController.updateID])
     }
 
+    func testRestoredConfigurationGetsTheNewTabButtonOnceAfterTheViewSwitcher() async throws {
+        let h = try await ShellHarness.make(self)
+        let controller = try await h.openWindow()
+        let toolbar = try XCTUnwrap(controller.window?.toolbar)
+        toolbar.itemIdentifiers = [ToolbarController.navigationID, ToolbarController.viewSwitcherID, ToolbarController.updateID]
+        h.context.environment.settings.toolbarNewTabItemOffered = false
+        controller.toolbarController.ensureDefaultItems(in: toolbar)
+        XCTAssertEqual(toolbar.items.map(\.itemIdentifier), [ToolbarController.navigationID, ToolbarController.viewSwitcherID,
+                                                             ToolbarController.newTabID, ToolbarController.updateID])
+        XCTAssertTrue(h.context.environment.settings.toolbarNewTabItemOffered)
+        toolbar.removeItem(at: 2)
+        controller.toolbarController.ensureDefaultItems(in: toolbar)
+        XCTAssertFalse(toolbar.items.contains { $0.itemIdentifier == ToolbarController.newTabID }, "removed on purpose stays removed")
+    }
+
     func testFeedbackItemTheUserRemovedStaysRemoved() async throws {
         let h = try await ShellHarness.make(self)
         let controller = try await h.openWindow()

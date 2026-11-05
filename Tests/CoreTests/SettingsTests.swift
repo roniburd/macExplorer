@@ -157,6 +157,7 @@ final class SettingsTests: XCTestCase {
         XCTAssertFalse(s.showFullPathInTitle)
         XCTAssertFalse(s.onboardingCompleted)
         XCTAssertFalse(s.toolbarFeedbackItemOffered)
+        XCTAssertFalse(s.toolbarNewTabItemOffered)
         XCTAssertNil(s.lastLocation)
         XCTAssertEqual(s.recentLocations, [])
         XCTAssertNil(s.tccOutcome(for: .desktop))
@@ -202,6 +203,7 @@ final class SettingsTests: XCTestCase {
         s.showFullPathInTitle = true
         s.onboardingCompleted = true
         s.toolbarFeedbackItemOffered = true
+        s.toolbarNewTabItemOffered = true
         s.lastLocation = custom
         s.addRecentLocation("/tmp/a")
         s.recordTCCOutcome(.denied, for: .documents)
@@ -233,6 +235,7 @@ final class SettingsTests: XCTestCase {
         XCTAssertTrue(r.showFullPathInTitle)
         XCTAssertTrue(r.onboardingCompleted)
         XCTAssertTrue(r.toolbarFeedbackItemOffered)
+        XCTAssertTrue(r.toolbarNewTabItemOffered)
         XCTAssertEqual(r.lastLocation, custom)
         XCTAssertEqual(r.recentLocations, ["/tmp/a"])
         XCTAssertEqual(r.tccOutcome(for: .documents), .denied)

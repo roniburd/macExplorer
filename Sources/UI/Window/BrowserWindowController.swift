@@ -55,6 +55,7 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
         sidebarPane?.handler = fileCommands
 
         installToolbarHooks()
+        installNewTabHooks()
         sessionToken = session.observe { [weak self] event in self?.handle(event) }
         folderDidChange()
         titleLoop = ObservationLoop({ [weak self] in _ = self?.context.environment.settings.showFullPathInTitle },
@@ -76,6 +77,15 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
         let url = TabController.newTabURL(settings: context.environment.settings, options: context.options,
                                           current: session.folder.directory)
         context.windows.openTab(at: url, in: self, select: true)
+    }
+
+    /// Opens `urls` as tabs at the end of this window's tab group (P2-06: Open in New Tab, middle-click, ⌘-click,
+    /// drops on the New Tab button). With `select`, the first new tab is selected and the rest open behind it;
+    /// otherwise every one is a background tab.
+    func openTabs(_ urls: [URL], select: Bool = true) {
+        for (index, url) in urls.enumerated() {
+            context.windows.openTab(at: url, in: self, select: select && index == 0)
+        }
     }
 
     /// The toolbar's address bar (Phase 4 tests submit through it).

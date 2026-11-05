@@ -2995,6 +2995,17 @@
         }
       }
     },
+    "Open %lld tabs?" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open %lld tabs?"
+          }
+        }
+      }
+    },
     "Open %lld windows?" : {
       "extractionState" : "manual",
       "localizations" : {

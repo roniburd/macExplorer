@@ -33,21 +33,23 @@ public final class WindowManager {
         return controller
     }
 
-    /// Opens `url` as a new tab at the end of `host`'s tab group (P2-05). `select: false` keeps `host`'s tab selected
-    /// (background tab); `select: true` selects the new tab and gives its list the keyboard.
+    /// Opens `url` as a new tab at the end of `host`'s tab group (P2-05). `select: false` keeps the group's selected
+    /// tab selected (a background tab; P2-06 opens several in a row behind the first); `select: true` selects the new
+    /// tab and gives its list the keyboard.
     @discardableResult
     func openTab(at url: URL, in host: BrowserWindowController, selecting name: String? = nil,
                  select: Bool) -> BrowserWindowController {
         let controller = makeController(at: url, selecting: name)
         guard let hostWindow = host.window, let newWindow = controller.window,
               let last = TabController.orderedTabs(of: hostWindow).last else { return controller }
+        let selected = hostWindow.tabGroup?.selectedWindow ?? hostWindow
         last.addTabbedWindow(newWindow, ordered: .above)
         if select {
             hostWindow.tabGroup?.selectedWindow = newWindow
             newWindow.makeKeyAndOrderFront(nil)
             controller.focus(.content)
         } else {
-            hostWindow.tabGroup?.selectedWindow = hostWindow
+            hostWindow.tabGroup?.selectedWindow = selected
         }
         return controller
     }

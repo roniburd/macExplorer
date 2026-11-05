@@ -4,6 +4,7 @@ import Core
 
 enum CommandPrompt: Equatable, Sendable {
     case openManyWindows(Int)
+    case openManyTabs(Int)
     case confirmTrash(Int)
     case confirmDelete(Int)
     case brokenLink(String)
@@ -29,6 +30,9 @@ final class AppKitCommandPrompts: CommandPrompts {
         switch prompt {
         case .openManyWindows(let count):
             alert.messageText = String(format: L10n.string("Open %lld windows?"), count)
+            alert.addButton(withTitle: L10n.string("Open"))
+        case .openManyTabs(let count):
+            alert.messageText = String(format: L10n.string("Open %lld tabs?"), count)
             alert.addButton(withTitle: L10n.string("Open"))
         case .confirmTrash(let count):
             alert.messageText = String(format: L10n.string("Move %lld items to the Trash?"), count)
@@ -103,6 +107,7 @@ final class AppKitCommandPrompts: CommandPrompts {
         case .ejectFailed(let volume, _, _): String(format: L10n.string("“%@” couldn't be ejected."), volume)
         case .brokenLink(let name): String(format: L10n.string("'%@' points to an item that no longer exists."), name)
         case .openManyWindows(let count): String(format: L10n.string("Open %lld windows?"), count)
+        case .openManyTabs(let count): String(format: L10n.string("Open %lld tabs?"), count)
         case .confirmTrash(let count): String(format: L10n.string("Move %lld items to the Trash?"), count)
         case .confirmDelete(let count): String(format: L10n.string("Permanently delete %lld items?"), count)
         }

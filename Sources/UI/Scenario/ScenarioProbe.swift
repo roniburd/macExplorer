@@ -21,8 +21,8 @@ import MacxFS
     var quickLookState: (() -> (visible: Bool, items: [String]))?   // P2-11
     var columnsChain: (() -> (folders: [URL], active: Int))?        // P2-19
     var thumbnailNames: (() -> [String])?                           // P2-17
-    var performMiddleClick: ((String) -> Bool)?                     // P2-06
-    var clickTarget: ((String, [String]) -> Bool)?                  // P2-06 tree:, P2-10 group:, P2-16 header: (target, modifiers)
+    var performMiddleClick: ((String) async -> Bool)?               // P2-06 (async: tree: targets load the tree)
+    var clickTarget: ((String, [String]) async -> Bool)?            // P2-06 tree:, P2-10 group:, P2-16 header: (target, modifiers)
     var rightClickTarget: ((String) -> Bool)?                       // P2-16 header:
 }
 

@@ -1,0 +1,17 @@
+{"name": "p2-tabs-middle-click",
+ "fixture": {"files": ["A/a.txt"], "dirs": ["A", "B"]},
+ "steps": [
+  {"waitFor": {"rows": ["A", "B"], "state": "complete", "tabs": [""], "activeTab": 0}},
+  {"middleClick": "A"},
+  {"waitFor": {"tabs": ["", "A"], "activeTab": 0, "selection": []}},
+  {"click": "tree:B", "modifiers": ["cmd"]},
+  {"waitFor": {"tabs": ["", "A", "B"], "activeTab": 0, "folder": ""}},
+  {"middleClick": "tree:A"},
+  {"waitFor": {"tabs": ["", "A", "B", "A"], "activeTab": 0}},
+  {"selectTab": 1},
+  {"waitFor": {"folder": "A", "rows": ["a.txt"]}},
+  {"selectTab": 0},
+  {"rightClick": "B"},
+  {"chooseMenuItem": "Open in New Tab"},
+  {"waitFor": {"tabs": ["", "A", "B", "A", "B"], "activeTab": 4}}
+ ]}

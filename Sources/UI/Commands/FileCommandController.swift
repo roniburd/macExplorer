@@ -14,7 +14,7 @@ final class FileCommandController: CommandHandler {
     /// Commands whose UI arrives in a later Phase 2 task (disabled, never performed). The NSWindow tab commands are
     /// here too: NSWindow and BrowserWindowController handle them, so they never reach a pane's handler.
     static let pendingCommands: Set<Command> = Command.windowTabCommands.union([
-        .openInNewTab, .quickLook, .viewAsColumns,
+        .quickLook, .viewAsColumns,
         .groupByNone, .groupByKind, .groupByDateModified, .groupBySize, .groupByName,
         .toggleFolderSizes, .applyViewToAllFolders,
     ])
@@ -55,6 +55,7 @@ final class FileCommandController: CommandHandler {
         switch effective {
         case .open: open(target, newWindow: false)
         case .openInNewWindow: open(target, newWindow: true)
+        case .openInNewTab: openInNewTab(target)
         case .showPackageContents: showPackageContents(target)
         case .openInTerminal: openInTerminal(target)
         case .revealInFinder: reveal(target)
@@ -91,7 +92,7 @@ final class FileCommandController: CommandHandler {
         case .removeFromFavorites: removeFavorite(target)
         case .cancelOperation: environment.clipboard.clearCut()
         case .newTab, .nextTab, .previousTab, .showTabBar, .showAllTabs, .moveTabToNewWindow, .mergeAllWindows,
-             .openInNewTab, .quickLook, .viewAsColumns,
+             .quickLook, .viewAsColumns,
              .groupByNone, .groupByKind, .groupByDateModified, .groupBySize, .groupByName,
              .toggleFolderSizes, .applyViewToAllFolders:
             break   // pendingCommands: canPerform is false, so perform beeps above
