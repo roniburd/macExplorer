@@ -1,6 +1,7 @@
 // Tests/UITests/TypeSelectTests.swift
 import XCTest
 import AppKit
+import Synchronization
 @testable import UI
 import Core
 import MacxFS
@@ -66,5 +67,62 @@ final class TypeSelectTests: XCTestCase {
         XCTAssertTrue(folder.selection.rows.isEmpty, "large folders search off main")
         // Correctness, not speed: a loaded CI runner can take several seconds for 2,500 names.
         try await h.waitUntil("type-select applied", timeout: .seconds(30)) { folder.selection.rows == IndexSet(integer: 2_500) }
+    }
+
+    /// CI flake root cause: a watcher patch landing while the off-main search ran bumped the store version, and the
+    /// result (and with it the key press) was silently dropped. The search is gated so the patch lands mid-search.
+    func testLargeFolderSearchRerunsWhenTheFolderChangesMidSearch() async throws {
+        let h = try await ContentTestHarness.make(self)
+        for i in 0..<2_500 { try h.file(String(format: "a%04d", i)) }
+        try h.file("zebra")
+        let folder = try await h.openFolder()
+        let details = DetailsViewController(context: h.context)
+        _ = details.view
+        details.bind(folder)
+        let gate = SearchGate()
+        let typeSelect = TypeSelect(search: { query, store, cursor, mapping in
+            await gate.pass()
+            return TypeSelectSearch.find(query, in: store, from: cursor, mapping: mapping)
+        })
+        typeSelect.handle("z", folder: folder, list: details)
+        try await h.waitUntil("search running") { gate.calls == 1 }
+        let before = folder.store.version
+        try h.file("b0000")
+        folder.applyLocalChange(LocalChange(directory: h.url(""), added: ["b0000"]))
+        try await h.waitUntil("folder patched mid-search") { folder.store.version != before }
+        XCTAssertTrue(folder.selection.rows.isEmpty)
+        gate.open()
+        try await h.waitUntil("type-select applied") { folder.selection.rows == IndexSet(integer: 2_501) }
+        XCTAssertEqual(folder.name(atRow: 2_501), "zebra")
+        // ≥ 2: late FSEvents for the 2,501 creations can patch the store again while the re-run is in flight.
+        XCTAssertGreaterThanOrEqual(gate.calls, 2, "the stale result re-runs the query on the current rows")
+    }
+}
+
+/// Holds searches until `open()`; afterwards they pass straight through.
+private final class SearchGate: Sendable {
+    private let state = Mutex<(open: Bool, calls: Int, waiting: [CheckedContinuation<Void, Never>])>((false, 0, []))
+
+    var calls: Int { state.withLock { $0.calls } }
+
+    func pass() async {
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            let resume = state.withLock { s -> Bool in
+                s.calls += 1
+                if s.open { return true }
+                s.waiting.append(c)
+                return false
+            }
+            if resume { c.resume() }
+        }
+    }
+
+    func open() {
+        let waiting = state.withLock { s -> [CheckedContinuation<Void, Never>] in
+            s.open = true
+            defer { s.waiting = [] }
+            return s.waiting
+        }
+        for c in waiting { c.resume() }
     }
 }

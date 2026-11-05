@@ -105,6 +105,95 @@ final class FolderWatchTests: XCTestCase {
         XCTAssertEqual(calls, [["b"], ["c", "d", "e"]], "one follow-up patch for the coalesced names")
     }
 
+    /// CI flake root cause (inline rename Tab/⇧Tab): the watcher can split a rename into its two names and reads the
+    /// second only after the first applied, so it issues that read after a `reconcile` read and supersedes it.
+    /// "The read issued last wins" does not hold for `reconcile` then: its callback must wait for that watcher read
+    /// too, or it runs on a listing that does not show the rename yet. Every read is held on a gate.
+    func testReconcileWaitsForAWatcherReadIssuedAfterIt() async throws {
+        let w = try await FolderTestWorld.make(self)
+        try w.dir("rc")
+        for name in ["a.txt", "b.txt", "c.txt"] { try w.file("rc/\(name)") }
+        let m = try await w.open("rc")
+        let disk: Set<String> = ["a1.txt", "b.txt", "c.txt"]   // what the item reads see: a.txt was renamed to a1.txt
+        let gates = [HoldGate(), HoldGate(), HoldGate()]
+        defer { for gate in gates { gate.open() } }
+        var calls: [[String]] = []
+        m.itemSource = { names, _, generation in
+            calls.append(names)
+            let call = calls.count
+            if call <= gates.count { await gates[call - 1].wait() }
+            return ItemReadResult(batch: TestBatch.files(generation, names.filter(disk.contains), firstID: UInt64(100 * call)),
+                                  missing: names.filter { !disk.contains($0) }, errors: [:])
+        }
+        try watcher(w).send(.items(["a.txt"]))
+        try await w.waitUntil("watcher read in flight") { gates[0].waiting == 1 }
+        try watcher(w).send(.items(["a1.txt"]))                // coalesced behind the watcher read in flight
+        var reconciled: [String]?
+        m.reconcile(LocalChange(directory: w.url("rc"), renamed: [.init(from: "a.txt", to: "a1.txt")])) {
+            reconciled = m.rowNames
+        }
+        try await w.waitUntil("reconcile read in flight") { gates[1].waiting == 1 }
+        gates[0].open()
+        try await w.waitUntil("watcher follow-up read in flight") { gates[2].waiting == 1 }
+        XCTAssertEqual(calls.count, 3)
+        XCTAssertEqual(calls.last.map(Set.init), ["a1.txt", "a.txt"], "the follow-up, issued after reconcile, covers both sides")
+        gates[1].open()
+        await w.settle()
+        XCTAssertNil(reconciled, "the read issued after reconcile is still in flight: the listing is not final yet")
+        XCTAssertEqual(m.rowNames, ["a.txt", "b.txt", "c.txt"], "the superseded reads applied nothing")
+        gates[2].open()
+        try await w.waitUntil("reconciled") { reconciled != nil }
+        XCTAssertEqual(reconciled, ["a1.txt", "b.txt", "c.txt"], "the callback sees the listing agree with the disk")
+    }
+
+    /// CI flake root cause (inline rename follows its item): a watcher read of only the old name, issued after a
+    /// rename post's read, answers for that name first, so the row was deleted while the new name was not listed
+    /// yet, and the item lost its identity (an open rename field closed). A read covering one side of a rename
+    /// whose read is not applied yet now covers both sides and carries the identity (here: the selection) in one patch.
+    func testAWatcherReadOfOneSideOfAPendingRenameReadsBothSides() async throws {
+        let w = try await FolderTestWorld.make(self)
+        try w.dir("rs")
+        for name in ["m.txt", "x.txt"] { try w.file("rs/\(name)") }
+        let m = try await w.open("rs")
+        let row = try XCTUnwrap(m.row(named: "m.txt"))
+        m.select(.set(IndexSet(integer: row), cursor: row))
+        let disk: Set<String> = ["n.txt", "x.txt"]   // m.txt was renamed to n.txt
+        let gate = HoldGate()
+        defer { gate.open() }
+        var calls: [[String]] = []
+        m.itemSource = { names, _, generation in
+            calls.append(names)
+            if calls.count == 1 { await gate.wait() }   // the rename post's read answers last
+            return ItemReadResult(batch: TestBatch.files(generation, names.filter(disk.contains), firstID: UInt64(100 * calls.count)),
+                                  missing: names.filter { !disk.contains($0) }, errors: [:])
+        }
+        m.applyLocalChange(LocalChange(directory: w.url("rs"), renamed: [.init(from: "m.txt", to: "n.txt")]))
+        try await w.waitUntil("rename read in flight") { gate.waiting == 1 }
+        try watcher(w).send(.items(["m.txt"]))
+        try await w.waitUntil("watcher read applied") { m.rowNames != ["m.txt", "x.txt"] }
+        XCTAssertEqual(calls.last.map(Set.init), ["m.txt", "n.txt"], "the watcher read covers both sides of the rename")
+        XCTAssertEqual(m.rowNames, ["n.txt", "x.txt"], "never the old name gone and the new one not yet listed")
+        XCTAssertEqual(m.selection.rows, IndexSet(integer: 0), "the selection followed the item across the rename")
+        gate.open()
+        await w.settle()
+        XCTAssertEqual(m.rowNames, ["n.txt", "x.txt"])
+        XCTAssertEqual(m.selection.rows, IndexSet(integer: 0))
+    }
+
+    /// A change that names nothing has nothing to wait for; one for another directory is never this model's.
+    func testReconcileWithNothingToReadRunsAtOnce() async throws {
+        let w = try await FolderTestWorld.make(self)
+        try w.dir("rn")
+        let m = try await w.open("rn")
+        var ran = false
+        m.reconcile(LocalChange(directory: w.url("rn"))) { ran = true }
+        XCTAssertTrue(ran, "no names to settle")
+        var other = false
+        m.reconcile(LocalChange(directory: w.url("elsewhere"), added: ["x"])) { other = true }
+        await w.settle()
+        XCTAssertFalse(other, "a change for another directory is not this model's to reconcile")
+    }
+
     /// Coalesced names past the incremental limit become one full re-read instead of a giant patch.
     func testCoalescedItemsPastTheLimitBecomeOneReread() async throws {
         let w = try await FolderTestWorld.make(self)

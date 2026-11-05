@@ -66,13 +66,16 @@ final class FolderTreeController {
     private var pinned: [ObjectIdentifier: FolderTreeNode] = [:]
 
     typealias Listing = [(name: String, hidden: Bool)]
-    /// Lists a folder's subfolders; nil when the read failed or stalled (tests replace it).
-    var lister: @MainActor (URL) async -> Listing?
+    /// Lists a folder's subfolders; nil when the read failed or stalled (tests replace it). A stalled read that
+    /// still completes calls `stalledReadCompleted`, which reads the folder again.
+    var lister: @MainActor (URL) async -> Listing? = { _ in nil }
 
     init(readers: DirectoryReaders, showHidden: Bool) {
         self.showHidden = showHidden
-        lister = { url in await FolderTreeController.listDirectories(url, readers: readers) }
         watcher = TreeWatcher { [weak self] url in self?.watchedDirectoryChanged(url) }
+        lister = { [weak self] url in
+            await FolderTreeController.listDirectories(url, readers: readers) { self?.stalledReadCompleted(url) }
+        }
     }
 
     var watchedCount: Int { watcher.count }
@@ -289,28 +292,59 @@ final class FolderTreeController {
     }
 
     /// Folder names (not packages) with their hidden flag, sorted like Finder; nil when the folder can't be read.
-    private static func listDirectories(_ directory: URL, readers: DirectoryReaders) async -> Listing? {
+    private static func listDirectories(_ directory: URL, readers: DirectoryReaders,
+                                        stalledReadCompleted: @escaping @MainActor () -> Void) async -> Listing? {
         var options = ReadOptions()
         options.directoriesOnly = true
         options.noMaterialization = true
         let stream = await readers.reader(for: directory).read(directory, generation: .initial, options: options)
-        var listed: Listing = []
-        loop: for await event in stream {
-            switch event {
-            case .batch(let batch):
-                for index in 0..<batch.count where batch.entries[index].kind == .directory {
-                    listed.append((batch.name(at: index), batch.entries[index].flags.isHidden))
+        return await listing(from: stream, stalledReadCompleted: stalledReadCompleted)
+    }
+
+    /// The folder names in a read's events; nil once it fails or reports a stall. A stall is only a heartbeat gap
+    /// (a hung volume, but also a lane thread starved of CPU), so the read is still followed to its end without
+    /// holding up the caller: when it completes after all, `stalledReadCompleted` runs (the volume answers again).
+    static func listing(from stream: AsyncStream<ReadEvent>,
+                        stalledReadCompleted: @escaping @MainActor () -> Void) async -> Listing? {
+        await withCheckedContinuation { (answer: CheckedContinuation<Listing?, Never>) in
+            Task {
+                var listed: Listing = []
+                var answered = false
+                func reply(_ result: Listing?) {
+                    if !answered { answered = true; answer.resume(returning: result) }
                 }
-            case .completed:
-                break loop
-            case .failed, .stalled:
-                return nil
-            case .waitingForPermission, .resumed:
-                continue
+                loop: for await event in stream {
+                    switch event {
+                    case .batch(let batch):
+                        for index in 0..<batch.count where batch.entries[index].kind == .directory {
+                            listed.append((batch.name(at: index), batch.entries[index].flags.isHidden))
+                        }
+                    case .completed:
+                        if answered {
+                            stalledReadCompleted()
+                            return
+                        }
+                        listed.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+                        reply(listed)
+                        return
+                    case .failed:
+                        break loop
+                    case .stalled:
+                        reply(nil)
+                    case .waitingForPermission, .resumed:
+                        continue
+                    }
+                }
+                reply(nil)   // failed, or the read was cancelled (volume released)
             }
         }
-        listed.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-        return listed
+    }
+
+    /// A read reported stalled (its caller got nil) and then completed: the volume answers again, so the node
+    /// reads again; a re-read rather than the late listing, which a newer read may already have superseded.
+    func stalledReadCompleted(_ url: URL) {
+        guard let node = node(for: url) else { return }
+        Task { await self.load(node) }
     }
 
     private static func sameName(_ a: String, _ b: String) -> Bool { a.utf8.elementsEqual(b.utf8) }

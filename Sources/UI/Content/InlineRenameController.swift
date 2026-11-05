@@ -217,7 +217,17 @@ final class InlineRenameController: NSObject, NSTextFieldDelegate {
         }
         finish()
         _ = await environment.operations.perform(JobRequest(.rename(url, to: name), origin: origin))
-        beginNext(neighbor)
+        guard let neighbor else { return }
+        // The job returns once its change is posted, not once the model patched it, and a watcher patch can land
+        // first with the old name gone and the new one not yet listed. Opening the neighbor on that listing makes
+        // its own Tab/⇧Tab neighbor wrong (⇧Tab from the next item finds no previous one). Advance once the model
+        // agrees with the disk for both names; skip it if another edit began meanwhile.
+        let change = LocalChange(directory: url.deletingLastPathComponent(),
+                                 renamed: [.init(from: url.lastPathComponent, to: name)])
+        folder.reconcile(change) { [weak self] in
+            guard let self, !self.isEditing else { return }
+            self.beginNext(neighbor)
+        }
     }
 
     private func neighborID(of row: Int, _ advance: RenameAdvance) -> RowID? {
