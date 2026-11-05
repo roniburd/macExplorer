@@ -11,7 +11,8 @@ Status: Phase 1 ("Core"), version `0.x`. Design: `docs/superpowers/specs/2026-11
 ## Requirements
 
 - macOS 26 (Tahoe) or later.
-- Xcode 27.2 (Swift 6.4) for building. SwiftPM only, no Xcode project and no third-party dependencies.
+- Xcode 27.2 (Swift 6.4) for building. SwiftPM only, no Xcode project. The one third-party dependency is
+  [Sparkle 2](https://sparkle-project.org) (binary SwiftPM package) for updates.
 
 ## Build and run
 
@@ -49,6 +50,46 @@ rm -rf "$SB"                              # afterwards
 
 `scripts/make-fixtures.sh` builds a larger fixture tree (NFD names, emoji, symlinks, packages, locked files…)
 under a fresh `${TMPDIR}/macx-fixtures-<UUID>` and prints its path.
+
+## Install
+
+- **Download:** get `MacExplorer-<version>.dmg` from [Releases](https://github.com/roniburd/macExplorer/releases), open it, drag MacExplorer to Applications.
+- **Homebrew:** `brew install --cask roniburd/macexplorer/macexplorer` (or `macexplorer@beta` for betas).
+- MacExplorer isn't notarized yet. The first time, macOS may refuse to open it. Run once:
+  `xattr -dr com.apple.quarantine /Applications/MacExplorer.app`
+
+## Updates
+
+MacExplorer checks for updates once a day and downloads them in the background. When one is ready, a
+**Restart to Update** button appears in the toolbar. Choose **Release** or **Beta** in Settings › General › Updates.
+Moving from Beta back to Release never downgrades: you stay on your beta until a newer release ships.
+
+## Feedback and crashes
+
+Help › **Report a Bug…** / **Request a Feature…** (also in the toolbar's **Send Feedback** menu) open a prefilled
+GitHub issue (you need a GitHub account and you review everything before submitting). If MacExplorer crashes, it
+offers to report it the next time you open it; turn this off in Settings › Advanced.
+
+## Releasing (maintainers)
+
+One-time setup:
+1. `swift package resolve`, then `.build/artifacts/sparkle/Sparkle/bin/generate_keys`. Put the printed public key in
+   `Resources/Info.plist` › `SUPublicEDKey`. Export the private key (`generate_keys -x private.key`), store its
+   contents in the repo secret `SPARKLE_ED_PRIVATE_KEY`, keep an offline backup, delete the file. Losing it means
+   existing installs can't be updated.
+2. Create an orphan `gh-pages` branch with an empty commit and enable GitHub Pages from it.
+3. Create the public repo `roniburd/homebrew-macexplorer`; create a fine-grained token with *Contents: read and write*
+   on that repo only; store it as `HOMEBREW_TAP_TOKEN`.
+4. If the spike chose self-signed signing: create the certificate, store `SELF_SIGNED_P12` (base64),
+   `SELF_SIGNED_P12_PASSWORD`, `SELF_SIGNED_IDENTITY`, and set `RELEASE_SIGNING: self-signed` in
+   `.github/workflows/release.yml` (default `adhoc`).
+5. Later, with an Apple Developer ID: add `DEVELOPER_ID_P12` (base64), `DEVELOPER_ID_P12_PASSWORD`,
+   `NOTARY_API_KEY` (base64 .p8), `NOTARY_API_KEY_ID`, `NOTARY_API_ISSUER`. No code changes; remove the quarantine
+   note above and the cask caveat.
+
+Each release: `git tag -a v0.3.0-beta.1 -m "…" && git push origin v0.3.0-beta.1` (beta) or `v0.3.0` (release).
+Try the pipeline without publishing: Actions › Release › Run workflow (dry run). Until `SUPublicEDKey` is set, only
+dry runs succeed.
 
 ## Tests, scenarios and benchmarks
 
