@@ -32,6 +32,16 @@ final class SorterTests: XCTestCase {
         ("Tool.app", .package, 0, 400, []), ("c10.txt", .file, 20, 200, []), ("c9.txt", .file, 20, 250, []),
     ])
 
+    /// Until P2-14/P2-16 give them values, every non-entry field (extended columns and .path) orders like .name.
+    func testNonEntryFieldsSortLikeName() {
+        for field in SortField.allCases where !SortField.entryFields.contains(field) {
+            for ascending in [true, false] {
+                XCTAssertEqual(names(sample, ViewQuery(sort: SortDescriptor(field: field, ascending: ascending))),
+                               names(sample, ViewQuery(sort: SortDescriptor(field: .name, ascending: ascending))), "\(field)")
+            }
+        }
+    }
+
     /// 100k-row re-sorts run in concurrent chunks (§4.4 < 30 ms); the result must equal the serial order
     /// (two serial half-runs merged), for every field and direction, with hidden rows and ties. 40k rows is above
     /// the 32,768-row concurrency threshold; each 20k half-run is below it.
@@ -47,7 +57,7 @@ final class SorterTests: XCTestCase {
         let keys = SortKeys.nameKeys(s, range: 0..<s.count)
         let ext = SortKeys.extensionKeys(s, range: 0..<s.count)
         let ranks = registry.kindRanks().ranks
-        for field in SortField.allCases {
+        for field in SortField.entryFields {
             for ascending in [true, false] {
                 for showHidden in [false, true] {
                     let query = ViewQuery(sort: SortDescriptor(field: field, ascending: ascending), showHidden: showHidden)
@@ -217,7 +227,7 @@ final class SorterTests: XCTestCase {
         #else
         let budget = Duration.milliseconds(120)
         #endif
-        for field in SortField.allCases {
+        for field in SortField.entryFields {
             let clock = ContinuousClock()
             let elapsed = clock.measure {
                 _ = Sorter.permutation(s, nameKeys: keys, searchKeys: nil, query: ViewQuery(sort: SortDescriptor(field: field, ascending: true)), kindRanks: ranks)

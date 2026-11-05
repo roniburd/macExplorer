@@ -278,7 +278,7 @@ public enum ColumnID: String, Sendable, Codable, CaseIterable {
     case name, dateModified, size, kind, dateCreated, fileExtension            // Phase 1
     case tags, dateLastOpened, permissions, owner, path, comments               // Phase 2
     public var sortField: SortField { get }
-    public var defaultWidth: Double { get }   // 260,150,80,140,150,70, 120,150,100,90,260,200
+    public var defaultWidth: Double { get }   // 280,160,80,150,160,70 (Phase 1's real defaults, P2-01), 120,150,100,90,260,200
 }
 // Settings/Settings.swift (P2-01): schemaVersion becomes 2
 extension Settings {
@@ -805,6 +805,8 @@ extension Settings {
 }
 ```
 In `init`, apply `migrateColumns` to the decoded columns on every load. It is idempotent, so a v2 store passes through unchanged. If the stored version is below 2, write version 2 back once. A fresh install's columns are Phase 1's default visible set followed by the new IDs, invisible.
+
+**P2-01 deviations (as built):** `ColumnID.defaultWidth` keeps Phase 1's real default widths for the six Phase 1 columns (280, 160, 80, 150, 160, 70), and `Settings.defaultColumns` / `DetailsColumns.defaults` are now derived from it (every ColumnID, the four Phase 1 visible columns on), so Phase 1 widths do not change. `DetailsColumns.offered` (`ColumnID.allCases.prefix(6)`) limits the table columns and header chooser until P2-16. The toolbar switcher offers `ToolbarController.switcherModes` (`[.details, .icons]`) until P2-19 adds the Columns segment. Phase 1 tests that pinned schema v1 or the six-case enums were updated.
 
 Update every exhaustive `switch` over `ViewMode`, `ColumnID` and `SortField` that the compiler reports. Until P2-19, `.columns` falls back to the Details list (a `case .columns:` branch that behaves like `.details`, commented `// P2-19`). Until P2-16, new `ColumnID`s are not offered in the chooser (`DetailsColumns` filters on `ColumnID.allCases.prefix(6)`, commented `// P2-16`).
 

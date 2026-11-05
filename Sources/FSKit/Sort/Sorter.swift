@@ -145,6 +145,7 @@ struct Ordering: Sendable {
         case .dateCreated: primary = UInt64(bitPattern: e.ctime) ^ (1 << 63)
         case .size: primary = folder ? 0 : UInt64(bitPattern: e.size) ^ (1 << 63)
         case .kind: primary = Int(e.typeIndex) < kindRanks.count ? UInt64(kindRanks[Int(e.typeIndex)]) : UInt64(UInt16.max)
+        default: primary = 0   // P2-16 orders extended fields; .path sorts like .name
         }
         let (prefix, prefix2) = nameKeys.withKey(Int(index)) { (Ordering.prefix($0, from: 0), Ordering.prefix($0, from: 8)) }
         return Item(group: folder ? 0 : 1, primary: primary, prefix: prefix, prefix2: prefix2, index: index)

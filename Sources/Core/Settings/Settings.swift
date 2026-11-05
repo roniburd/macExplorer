@@ -6,19 +6,15 @@ import Observation
 /// defaults are never written, so a later schema can change them. Values that fail to decode fall back to the default.
 @MainActor @Observable
 public final class Settings {
-    public static let schemaVersion: Int = 1
+    public static let schemaVersion: Int = 2
     public static let schemaVersionKey = "schemaVersion"
     public static let recentLocationsLimit = 20
     public static let lastReportedCrashesLimit = 20
-    /// Phase 1 column defaults (display order). Kept in sync with `DetailsColumns.defaults`.
-    public static let defaultColumns: [ColumnSetting] = [
-        ColumnSetting(id: .name, width: 280, visible: true),
-        ColumnSetting(id: .dateModified, width: 160, visible: true),
-        ColumnSetting(id: .size, width: 80, visible: true),
-        ColumnSetting(id: .kind, width: 150, visible: true),
-        ColumnSetting(id: .dateCreated, width: 160, visible: false),
-        ColumnSetting(id: .fileExtension, width: 70, visible: false),
-    ]
+    /// Column defaults (display order): every ColumnID at its `defaultWidth`; Phase 1's Name, Date Modified, Size
+    /// and Kind visible, everything else hidden. `DetailsColumns.defaults` is this list.
+    public static let defaultColumns: [ColumnSetting] = ColumnID.allCases.map {
+        ColumnSetting(id: $0, width: $0.defaultWidth, visible: [.name, .dateModified, .size, .kind].contains($0))
+    }
 
     @ObservationIgnored private let storage: any SettingsStorage
     public let home: URL
@@ -35,6 +31,12 @@ public final class Settings {
     public var columns: [ColumnSetting] { didSet { save(columns, Key.columns) } }
     public var sort: MacxFS.SortDescriptor { didSet { save(sort, Key.sort) } }
     public var showHidden: Bool { didSet { save(showHidden, Key.showHidden) } }
+    /// Group by for folders without their own view state (Details view only).
+    public var groupBy: GroupBy { didSet { save(groupBy, Key.groupBy) } }
+    /// Icons view shows Quick Look thumbnails in place of type icons.
+    public var showThumbnails: Bool { didSet { save(showThumbnails, Key.showThumbnails) } }
+    /// Columns view column width (the last width the user set).
+    public var columnWidth: Double { didSet { save(columnWidth, Key.columnWidth) } }
     public var commandBarVisible: Bool { didSet { save(commandBarVisible, Key.commandBarVisible) } }
     public var autoRevealInTree: Bool { didSet { save(autoRevealInTree, Key.autoRevealInTree) } }
     public var dateStyle: DateStyle { didSet { save(dateStyle, Key.dateStyle) } }
@@ -80,9 +82,12 @@ public final class Settings {
         iconSize = Self.load(IconSize.self, Key.iconSize, from: storage) ?? .medium
         density = Self.load(Density.self, Key.density, from: storage) ?? .regular
         let storedColumns = Self.load([ColumnSetting].self, Key.columns, from: storage) ?? []
-        columns = storedColumns.isEmpty ? Self.defaultColumns : storedColumns
+        columns = storedColumns.isEmpty ? Self.defaultColumns : Self.migrateColumns(storedColumns)
         sort = Self.load(MacxFS.SortDescriptor.self, Key.sort, from: storage) ?? .default
         showHidden = Self.load(Bool.self, Key.showHidden, from: storage) ?? false
+        groupBy = Self.load(GroupBy.self, Key.groupBy, from: storage) ?? .none
+        showThumbnails = Self.load(Bool.self, Key.showThumbnails, from: storage) ?? true
+        columnWidth = Self.load(Double.self, Key.columnWidth, from: storage) ?? 220
         commandBarVisible = Self.load(Bool.self, Key.commandBarVisible, from: storage) ?? true
         autoRevealInTree = Self.load(Bool.self, Key.autoRevealInTree, from: storage) ?? true
         dateStyle = Self.load(DateStyle.self, Key.dateStyle, from: storage) ?? .relative
@@ -127,6 +132,17 @@ public final class Settings {
         tccOutcomes[location] = outcome
     }
 
+    /// Schema v2 column migration, applied on every load (idempotent): duplicates dropped (first wins), then every
+    /// missing ColumnID appended invisible at its default width, so a Phase 1 store gains the Phase 2 columns hidden.
+    public static func migrateColumns(_ stored: [ColumnSetting]) -> [ColumnSetting] {
+        var seen = Set<ColumnID>()
+        var result = stored.filter { seen.insert($0.id).inserted }
+        for id in ColumnID.allCases where !seen.contains(id) {
+            result.append(ColumnSetting(id: id, width: id.defaultWidth, visible: false))
+        }
+        return result
+    }
+
     public func viewQuery() -> ViewQuery { ViewQuery(sort: sort, showHidden: showHidden, filter: "") }
 
     // MARK: Persistence
@@ -135,6 +151,7 @@ public final class Settings {
         static let startupFolder = "startupFolder", openFoldersIn = "openFoldersIn", returnKey = "returnKey"
         static let terminalApp = "terminalApp", viewMode = "viewMode", iconSize = "iconSize", density = "density"
         static let columns = "columns", sort = "sort", showHidden = "showHidden", commandBarVisible = "commandBarVisible"
+        static let groupBy = "groupBy", showThumbnails = "showThumbnails", columnWidth = "columnWidth"
         static let autoRevealInTree = "autoRevealInTree", dateStyle = "dateStyle", favorites = "favorites"
         static let hiddenDefaultFavorites = "hiddenDefaultFavorites", showICloudInSidebar = "showICloudInSidebar"
         static let showExternalVolumesInSidebar = "showExternalVolumesInSidebar", collapsedSections = "collapsedSections"

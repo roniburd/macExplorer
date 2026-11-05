@@ -5,14 +5,9 @@ import MacxFS
 /// Column definitions and the pure rules behind header menus, persistence, sorting and auto-fit (§5.5).
 @MainActor
 enum DetailsColumns {
-    static let defaults: [ColumnSetting] = [
-        ColumnSetting(id: .name, width: 280, visible: true),
-        ColumnSetting(id: .dateModified, width: 160, visible: true),
-        ColumnSetting(id: .size, width: 80, visible: true),
-        ColumnSetting(id: .kind, width: 150, visible: true),
-        ColumnSetting(id: .dateCreated, width: 160, visible: false),
-        ColumnSetting(id: .fileExtension, width: 70, visible: false),
-    ]
+    static let defaults: [ColumnSetting] = Settings.defaultColumns
+    /// Columns the table shows and the header chooser offers. P2-16 offers the Phase 2 columns.
+    static let offered: [ColumnID] = Array(ColumnID.allCases.prefix(6))
     private static let prefix = "macx.column."
 
     static func identifier(_ id: ColumnID) -> NSUserInterfaceItemIdentifier { .init(prefix + id.rawValue) }
@@ -30,6 +25,12 @@ enum DetailsColumns {
         case .kind: L10n.string("Kind")
         case .dateCreated: L10n.string("Date Created")
         case .fileExtension: L10n.string("Extension")
+        case .tags: L10n.string("Tags")
+        case .dateLastOpened: L10n.string("Date Last Opened")
+        case .permissions: L10n.string("Permissions")
+        case .owner: L10n.string("Owner")
+        case .path: L10n.string("Path")
+        case .comments: L10n.string("Comments")
         }
     }
 
@@ -75,7 +76,7 @@ enum DetailsColumns {
 
     static func headerMenu(columns: [ColumnSetting], target: AnyObject, action: Selector) -> NSMenu {
         let menu = NSMenu(title: L10n.string("Columns"))
-        for column in normalized(columns) where column.id != .name {
+        for column in normalized(columns) where column.id != .name && offered.contains(column.id) {
             let item = NSMenuItem(title: title(column.id), action: action, keyEquivalent: "")
             item.target = target
             item.representedObject = column.id.rawValue

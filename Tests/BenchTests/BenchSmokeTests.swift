@@ -8,7 +8,7 @@ final class BenchSmokeTests: XCTestCase {
         let report = try await Bench.run(BenchOptions(sizes: [300], warmups: 0, iterations: 1))
         var expected: Set<String> = ["enumerate", "firstBatch", "listSorted", "listSorted.busyMain", "sortkeys", "sort", "filter", "modelResort",
                                      "diff", "memory.steady", "pasteboard", "fsevent.incremental", "fsevent.full"]
-        for field in SortField.allCases { expected.insert("resort.\(field.rawValue)") }
+        for field in SortField.entryFields { expected.insert("resort.\(field.rawValue)") }
         XCTAssertEqual(Set(report.metrics.map(\.name)), expected)
         XCTAssertTrue(report.metrics.allSatisfy { $0.size == 300 && $0.samples.count == 1 })
         for metric in report.metrics where metric.unit == "ms" {

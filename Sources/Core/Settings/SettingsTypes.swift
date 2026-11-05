@@ -1,7 +1,7 @@
 import Foundation
 import MacxFS
 
-public enum ViewMode: String, Sendable, Codable, CaseIterable { case details, icons }
+public enum ViewMode: String, Sendable, Codable, CaseIterable { case details, icons, columns }
 
 public enum IconSize: String, Sendable, Codable, CaseIterable {
     case small, medium, large
@@ -26,7 +26,8 @@ public enum Density: String, Sendable, Codable, CaseIterable {
 }
 
 public enum ColumnID: String, Sendable, Codable, CaseIterable {
-    case name, dateModified, size, kind, dateCreated, fileExtension
+    case name, dateModified, size, kind, dateCreated, fileExtension            // Phase 1
+    case tags, dateLastOpened, permissions, owner, path, comments               // Phase 2
     public var sortField: SortField {
         switch self {
         case .name: .name
@@ -35,6 +36,31 @@ public enum ColumnID: String, Sendable, Codable, CaseIterable {
         case .kind: .kind
         case .dateCreated: .dateCreated
         case .fileExtension: .fileExtension
+        case .tags: .tags
+        case .dateLastOpened: .dateLastOpened
+        case .permissions: .permissions
+        case .owner: .owner
+        case .path: .path
+        case .comments: .comments
+        }
+    }
+
+    /// Width a column gets when it first appears (fresh install, or appended by `Settings.migrateColumns`).
+    /// Phase 1 columns keep their Phase 1 default widths.
+    public var defaultWidth: Double {
+        switch self {
+        case .name: 280
+        case .dateModified: 160
+        case .size: 80
+        case .kind: 150
+        case .dateCreated: 160
+        case .fileExtension: 70
+        case .tags: 120
+        case .dateLastOpened: 150
+        case .permissions: 100
+        case .owner: 90
+        case .path: 260
+        case .comments: 200
         }
     }
 }

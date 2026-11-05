@@ -13,11 +13,12 @@ final class SettingsTypesTests: XCTestCase {
 
     func testColumnSortFieldsMapOneToOne() {
         for id in ColumnID.allCases { XCTAssertEqual(id.sortField.rawValue, id.rawValue) }
-        XCTAssertEqual(ColumnID.allCases, [.name, .dateModified, .size, .kind, .dateCreated, .fileExtension])
+        XCTAssertEqual(ColumnID.allCases, [.name, .dateModified, .size, .kind, .dateCreated, .fileExtension,
+                                           .tags, .dateLastOpened, .permissions, .owner, .path, .comments])
     }
 
     func testRawValuesAreStable() {
-        XCTAssertEqual(ViewMode.allCases.map(\.rawValue), ["details", "icons"])
+        XCTAssertEqual(ViewMode.allCases.map(\.rawValue), ["details", "icons", "columns"])
         XCTAssertEqual(DefaultFavorite.allCases.map(\.rawValue), ["home", "desktop", "documents", "downloads", "applications"])
         XCTAssertEqual(SidebarSection.allCases.map(\.rawValue), ["favorites", "locations", "folders"])
         XCTAssertEqual(TCCOutcome.granted.rawValue, "granted")
@@ -122,8 +123,9 @@ final class SettingsStorageTests: XCTestCase {
 final class SettingsTests: XCTestCase {
     private let home = URL(filePath: "/tmp/macx-tests-home", directoryHint: .isDirectory)
 
-    func testSchemaVersionIsOne() {
-        XCTAssertEqual(Settings.schemaVersion, 1)
+    func testSchemaVersionKeyIsStable() {
+        XCTAssertEqual(Settings.schemaVersion, 2, "P2-01: schema v2 (SettingsV2Tests)")
+        XCTAssertEqual(Settings.schemaVersionKey, "schemaVersion")
         XCTAssertFalse(Settings.schemaVersionKey.isEmpty)
     }
 
@@ -168,7 +170,7 @@ final class SettingsTests: XCTestCase {
         let storage = InMemorySettingsStorage()
         _ = Settings(storage: storage, home: home)
         let version = try XCTUnwrap(storage.data(forKey: Settings.schemaVersionKey))
-        XCTAssertEqual(try JSONDecoder().decode(Int.self, from: version), 1)
+        XCTAssertEqual(try JSONDecoder().decode(Int.self, from: version), Settings.schemaVersion)
         XCTAssertEqual(storage.keys, [Settings.schemaVersionKey], "defaults are not written, so later versions can change them")
     }
 
@@ -213,7 +215,8 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(r.viewMode, .icons)
         XCTAssertEqual(r.iconSize, .large)
         XCTAssertEqual(r.density, .compact)
-        XCTAssertEqual(r.columns.map(\.id), [.size, .name], "array order is display order")
+        XCTAssertEqual(r.columns.prefix(2).map(\.id), [.size, .name], "array order is display order")
+        XCTAssertEqual(r.columns.dropFirst(2).filter(\.visible), [], "schema v2 appends the missing columns hidden")
         XCTAssertEqual(r.columns.first?.width, 99)
         XCTAssertEqual(r.sort, SortDescriptor(field: .size, ascending: false))
         XCTAssertTrue(r.showHidden)
@@ -324,7 +327,7 @@ final class SettingsTests: XCTestCase {
         let storage = InMemorySettingsStorage()
         storage.set(try JSONEncoder().encode(0), forKey: Settings.schemaVersionKey)
         _ = Settings(storage: storage, home: home)
-        XCTAssertEqual(try JSONDecoder().decode(Int.self, from: XCTUnwrap(storage.data(forKey: Settings.schemaVersionKey))), 1)
+        XCTAssertEqual(try JSONDecoder().decode(Int.self, from: XCTUnwrap(storage.data(forKey: Settings.schemaVersionKey))), Settings.schemaVersion)
         storage.set(try JSONEncoder().encode(7), forKey: Settings.schemaVersionKey)
         _ = Settings(storage: storage, home: home)
         XCTAssertEqual(try JSONDecoder().decode(Int.self, from: XCTUnwrap(storage.data(forKey: Settings.schemaVersionKey))), 7,

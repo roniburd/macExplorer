@@ -1,4 +1,19 @@
-public enum SortField: String, Sendable, Codable, CaseIterable { case name, dateModified, size, kind, dateCreated, fileExtension }
+public enum SortField: String, Sendable, Codable, CaseIterable {
+    case name, dateModified, size, kind, dateCreated, fileExtension            // Phase 1 (raw values stable)
+    case tags, dateLastOpened, permissions, owner, comments, path               // Phase 2
+}
+
+extension SortField {
+    /// The Phase 1 fields, ordered from `Entry` values alone (in this order).
+    public static let entryFields: [SortField] = [.name, .dateModified, .size, .kind, .dateCreated, .fileExtension]
+    /// Fields whose values come from extended attributes loaded on demand (P2-15/P2-16).
+    public var isExtended: Bool {
+        switch self {
+        case .tags, .dateLastOpened, .permissions, .owner, .comments: true
+        default: false
+        }
+    }
+}
 
 public struct SortDescriptor: Sendable, Codable, Hashable {
     public var field: SortField

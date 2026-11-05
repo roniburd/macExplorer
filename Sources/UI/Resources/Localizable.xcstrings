@@ -1059,6 +1059,17 @@
         }
       }
     },
+    "Comments" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comments"
+          }
+        }
+      }
+    },
     "Compact" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1363,6 +1374,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Date Created"
+          }
+        }
+      }
+    },
+    "Date Last Opened" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Date Last Opened"
           }
         }
       }
@@ -2984,6 +3006,17 @@
         }
       }
     },
+    "Owner" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Owner"
+          }
+        }
+      }
+    },
     "Owner (%@)" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3838,6 +3871,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Subfolders of '%@'"
+          }
+        }
+      }
+    },
+    "Tags" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tags"
           }
         }
       }

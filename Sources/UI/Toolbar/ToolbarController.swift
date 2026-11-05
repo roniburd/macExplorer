@@ -38,7 +38,7 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
         addressItem = NSToolbarItem(itemIdentifier: Self.addressID)
         feedbackItem = NSMenuToolbarItem(itemIdentifier: Self.feedbackID)
         updateItem = UpdateBadgeItem(model: context.updates)
-        let modes = ViewMode.allCases
+        let modes = Self.switcherModes
         viewSwitcher = NSToolbarItemGroup(
             itemIdentifier: Self.viewSwitcherID,
             images: modes.map { NSImage(systemSymbolName: Self.symbol(for: $0), accessibilityDescription: Self.title(for: $0)) ?? NSImage() },
@@ -79,9 +79,12 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
         }
     }
 
-    /// The Details/Icons switcher (segment `index` of ViewMode.allCases).
+    /// The view modes the toolbar switcher offers, in segment order. P2-19 adds the Columns segment.
+    static let switcherModes: [ViewMode] = [.details, .icons]
+
+    /// The Details/Icons switcher (segment `index` of `switcherModes`).
     func selectViewMode(at index: Int) {
-        let modes = ViewMode.allCases
+        let modes = Self.switcherModes
         guard modes.indices.contains(index) else { return }
         session.viewMode = modes[index]
         context.environment.settings.viewMode = modes[index]
@@ -179,7 +182,7 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
     }
 
     private func syncViewMode() {
-        viewSwitcher.selectedIndex = ViewMode.allCases.firstIndex(of: session.viewMode) ?? 0
+        viewSwitcher.selectedIndex = Self.switcherModes.firstIndex(of: session.viewMode) ?? 0
     }
 
     @objc private func viewSwitcherChanged(_ sender: Any?) {
@@ -190,6 +193,7 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
         switch mode {
         case .details: "list.bullet"
         case .icons: "square.grid.2x2"
+        case .columns: "rectangle.split.3x1"
         }
     }
 
@@ -197,6 +201,7 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
         switch mode {
         case .details: L10n.string("Details")
         case .icons: L10n.string("Icons")
+        case .columns: L10n.string("Columns")
         }
     }
 }

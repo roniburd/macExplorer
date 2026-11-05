@@ -300,7 +300,7 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
         isRebuildingColumns = true
         defer { isRebuildingColumns = false }
         for column in tableView.tableColumns { tableView.removeTableColumn(column) }
-        for setting in DetailsColumns.normalized(settings.columns) {
+        for setting in DetailsColumns.normalized(settings.columns) where DetailsColumns.offered.contains(setting.id) {
             let column = NSTableColumn(identifier: DetailsColumns.identifier(setting.id))
             column.title = DetailsColumns.title(setting.id)
             column.minWidth = DetailsColumns.minWidth(setting.id)
@@ -402,6 +402,7 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
         case .size: return Formatters.size(of: entry)
         case .kind: return context.environment.types.localizedDescription(entry.typeIndex)
         case .fileExtension: return Formatters.extensionText(name: folder.name(atRow: row), kind: entry.kind)
+        case .tags, .dateLastOpened, .permissions, .owner, .path, .comments: return ""   // P2-16: never shown before then
         }
     }
 

@@ -250,6 +250,7 @@ final class ContentViewController: CommandHandlingViewController {
         switch mode {
         case .details: list = details
         case .icons: list = iconsController()
+        case .columns: list = details   // P2-19: the Columns view; until then Columns falls back to Details
         }
         guard list !== activeList || mountedListView !== list.view else { return }
         if list !== activeList {

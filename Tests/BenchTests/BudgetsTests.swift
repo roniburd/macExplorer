@@ -19,7 +19,7 @@ final class BudgetsTests: XCTestCase {
     }
 
     func testEveryResortFieldHasA30msBudgetAt100k() {
-        for field in SortField.allCases {
+        for field in SortField.entryFields {
             let budget = Budgets.table.first { $0.metric == "resort.\(field.rawValue)" }
             XCTAssertEqual(budget?.limit, 30, field.rawValue)
             XCTAssertEqual(budget?.sizes, [100_000], field.rawValue)

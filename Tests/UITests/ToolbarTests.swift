@@ -162,8 +162,8 @@ final class ToolbarTests: XCTestCase {
         let h = try await ShellHarness.make(self)
         let controller = try await h.openWindow()
         let switcher = controller.toolbarController.viewSwitcher
-        XCTAssertEqual(switcher.subitems.count, ViewMode.allCases.count)
-        XCTAssertEqual(switcher.selectedIndex, ViewMode.allCases.firstIndex(of: controller.session.viewMode))
+        XCTAssertEqual(switcher.subitems.count, ToolbarController.switcherModes.count)
+        XCTAssertEqual(switcher.selectedIndex, ToolbarController.switcherModes.firstIndex(of: controller.session.viewMode))
         controller.toolbarController.selectViewMode(at: 1)
         XCTAssertEqual(controller.session.viewMode, .icons)
         XCTAssertEqual(h.environment.settings.viewMode, .icons)

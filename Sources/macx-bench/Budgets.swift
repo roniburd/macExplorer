@@ -35,7 +35,7 @@ enum Budgets {
             Budget(metric: "pasteboard", sizes: [1_000, 10_000], limit: 300, unit: "ms", spec: "§4.4 copy of ≤10k items (pasteboard write) < 300 ms"),
             Budget(metric: "pasteboard", sizes: [100_000], limit: 1_500, unit: "ms", spec: "§4.4 copy of 100k items (pasteboard write) < 1.5 s"),
         ]
-        t += SortField.allCases.map {
+        t += SortField.entryFields.map {
             Budget(metric: "resort.\($0.rawValue)", sizes: [100_000], limit: 30, unit: "ms", spec: "§4.4 re-sort 100k by any column < 30 ms")
         }
         return t
