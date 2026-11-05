@@ -171,6 +171,7 @@ final class ContentViewController: CommandHandlingViewController {
         case .query: updateStatus(); updateEmptyState()
         case .groups(let runs):  // the .changes(.reset) that follows redraws
             if details.folder === session.folder { details.applyGroups(runs) }
+        case .folderSizes: break   // the Size column shows them from P2-14
         }
     }
 

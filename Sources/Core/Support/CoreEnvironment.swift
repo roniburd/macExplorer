@@ -13,6 +13,8 @@ public final class CoreEnvironment {
     /// Per-folder view state (P2-07), in the same storage as `settings`; untouched folders follow its defaults.
     public let folderViews: FolderViewStore
     public let changeBus: ChangeBus
+    /// On-demand folder sizes (P2-13): shared cache, one session per folder view with sizes on.
+    public let folderSizes: FolderSizeService
     public let clipboard: Clipboard
     public let launchServices: LaunchServicesCache
     public let ejectCoordinator: EjectCoordinator
@@ -73,6 +75,8 @@ public final class CoreEnvironment {
         self.folderViews = FolderViewStore(storage: settingsStorage, defaults: { [unowned settings] in settings.defaultFolderViewState() })
         let bus = ChangeBus()
         self.changeBus = bus
+        self.folderSizes = FolderSizeService(lanes: lanes, mountTable: volumes.mountTableStore, changeBus: bus,
+                                             makeSubtreeWatcher: { url, handler in SubtreeWatcher(directory: url, handler: handler) })
         self.clipboard = Clipboard(backend: pasteboard)
         self.launchServices = LaunchServicesCache(provider: provider, types: .shared)
         self.ejectCoordinator = EjectCoordinator(volumes: volumes, ejector: ejector)

@@ -253,7 +253,7 @@ final class BrowserSession {
             applyPendingSelection()
         case .selection:
             pendingSelection = nil          // the user (or a file operation) chose a selection meanwhile
-        case .beginRename, .query, .groups:
+        case .beginRename, .query, .groups, .folderSizes:
             break
         }
     }

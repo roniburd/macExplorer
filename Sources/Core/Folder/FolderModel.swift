@@ -14,6 +14,8 @@ public enum FolderEvent: Sendable {
     /// The groups of the order about to be published (P2-09): after each regroup, immediately before its
     /// `.changes(.reset)`. Empty when grouping was turned off.
     case groups([GroupRun])
+    /// These rows' folder sizes changed (P2-13; views show them from P2-14).
+    case folderSizes(Set<RowID>)
 }
 
 /// Services a FolderModel uses (CoreEnvironment.folderContext() builds the real one).
@@ -68,7 +70,9 @@ public final class FolderModel {
 
     public let directory: URL
     public private(set) var state: FolderState = .loading
-    public private(set) var store: EntryStore
+    public private(set) var store: EntryStore {
+        didSet { pruneFolderSizes() }
+    }
     public private(set) var query: ViewQuery
     public private(set) var selection: Selection = .empty
     public private(set) var generation: Generation = .initial
@@ -139,6 +143,9 @@ public final class FolderModel {
     var groupingRevision = 0
     var dateBuckets: DateBuckets
     var dayTask: Task<Void, Never>?
+
+    // Folder sizes (FolderModel+Sizes, P2-13): set by a FolderSizeSession; rows that leave the store are dropped.
+    var sizeTable: [RowID: FolderSize] = [:]
 
     public init(directory: URL, context: FolderContext, query: ViewQuery) {
         self.directory = directory
