@@ -79,7 +79,8 @@ extension FolderModel {
         let carrying: [(RowID, String)] = renames.compactMap { rename in
             sources[rename.from].map { (old.identity($0), rename.to) }
         }
-        let patched = await worker.patch(old, tag: keysTag, result: result, query: query, caseSensitive: caseSensitive)
+        let patched = await worker.patch(old, tag: keysTag, result: result, query: query, caseSensitive: caseSensitive,
+                                         group: currentGroupSpec())
         guard !closed, epoch == self.epoch else { return }
         guard store.version == old.version else { enqueuePatchApply(result, names: names, renames: renames, epoch: epoch); return }
         applyPatch(patched, carrying: carrying)

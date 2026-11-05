@@ -11,6 +11,9 @@ public enum FolderEvent: Sendable {
     case beginRename(row: Int)
     case relocate(to: URL, reason: RelocationReason)   // window navigates; banner for .movedOrDeleted
     case query(ViewQuery)
+    /// The groups of the order about to be published (P2-09): after each regroup, immediately before its
+    /// `.changes(.reset)`. Empty when grouping was turned off.
+    case groups([GroupRun])
 }
 
 /// Services a FolderModel uses (CoreEnvironment.folderContext() builds the real one).
@@ -27,14 +30,21 @@ public struct FolderContext {
     public var recordPermissionOutcome: @MainActor (URL, Bool) -> Void   // granted true / EPERM false
     /// Where a model relocates when its volume goes away (Settings.home: the sandbox root in sandbox mode).
     public var home: URL
+    /// "Now" and the calendar for Date Modified groups (P2-09); tests inject both.
+    public var now: @Sendable () -> Date
+    public var calendar: Calendar
 
     public init(readers: DirectoryReaders, lanes: LanePool, volumes: Volumes, changeBus: ChangeBus,
                 types: TypeRegistry = .shared, pacer: any FramePacer = TimerFramePacer(),
                 makeWatcher: @escaping @MainActor (URL, UInt64, @escaping @Sendable (WatchEvent) -> Void) -> any ContentWatching,
                 permissionPending: @escaping @MainActor (URL) -> Bool,
                 recordPermissionOutcome: @escaping @MainActor (URL, Bool) -> Void,
-                home: URL = FileManager.default.homeDirectoryForCurrentUser) {
+                home: URL = FileManager.default.homeDirectoryForCurrentUser,
+                now: @escaping @Sendable () -> Date = { Date() },
+                calendar: Calendar = .autoupdatingCurrent) {
         self.home = home
+        self.now = now
+        self.calendar = calendar
         self.readers = readers
         self.lanes = lanes
         self.volumes = volumes
@@ -121,6 +131,15 @@ public final class FolderModel {
     var pendingSelect: [String] = []
     var pendingRename: String?
 
+    // Group by (FolderModel+Grouping, P2-09)
+    public internal(set) var grouping: GroupBy = .none
+    /// Groups of the current display order; empty when not grouped.
+    public internal(set) var groups: [GroupRun] = []
+    /// Bumped by every grouping change and new-day regroup: results computed for an older one are redone.
+    var groupingRevision = 0
+    var dateBuckets: DateBuckets
+    var dayTask: Task<Void, Never>?
+
     public init(directory: URL, context: FolderContext, query: ViewQuery) {
         self.directory = directory
         self.context = context
@@ -129,6 +148,7 @@ public final class FolderModel {
         self.store = EntryStore(identityMode: mode)
         self.openedVolume = context.volumes.volume(for: directory)?.id
         self.worker = FolderWorker(types: context.types)
+        self.dateBuckets = DateBuckets(now: context.now(), calendar: context.calendar)
         let readers = context.readers
         readSource = { directory, generation, options in
             await readers.reader(for: directory).read(directory, generation: generation, options: options)
@@ -190,6 +210,7 @@ public final class FolderModel {
         resetItemReads()
         pacerTask = nil
         stopWatcher()
+        cancelDayTimer()
         busToken?.cancel()
         busToken = nil
         volumeToken?.cancel()
@@ -243,14 +264,17 @@ public final class FolderModel {
         }
     }
 
-    private func resortNow() async {
-        let snapshot = store, wanted = query, epoch = self.epoch
+    /// Re-sort (and regroup when grouped) of a complete folder: one `.groups` (when grouped) and one reset.
+    func resortNow() async {
+        let snapshot = store, wanted = query, epoch = self.epoch, group = currentGroupSpec()
         let signpost = PerfSignposts.signposter.beginInterval(PerfSignposts.sort)
-        let order = await worker.resort(snapshot, tag: keysTag, query: wanted)
+        let result = await worker.resort(snapshot, tag: keysTag, query: wanted, group: group)
         PerfSignposts.signposter.endInterval(PerfSignposts.sort, signpost)
-        // A newer setQuery queued its own re-sort; a fresh load replaced the store.
-        guard !closed, epoch == self.epoch, wanted == query, store.version == snapshot.version else { return }
-        store.setOrder(order)
+        // A newer setQuery or grouping change queued its own re-sort; a fresh load replaced the store.
+        guard !closed, epoch == self.epoch, wanted == query, store.version == snapshot.version,
+              result.revision == groupingRevision else { return }
+        store.setOrder(result.order)
+        setGroups(result.runs)
         publishReset()
     }
 
@@ -358,6 +382,7 @@ public final class FolderModel {
         store = EntryStore(identityMode: store.identityMode)
         keysTag = 0
         rowsPresented = false
+        setGroups([])
         emit(.changes(.reset))
         reconcileSelection()
     }
@@ -431,10 +456,10 @@ public final class FolderModel {
                 await pacer.nextFrame()
                 guard let self, !Task.isCancelled, self.isLoading(gen) else { return }
                 guard clock.now >= nextPresent else { continue }
-                guard let order = await worker.takeLoadingOrder(gen) else { continue }
+                guard let result = await worker.takeLoadingOrder(gen, group: self.currentGroupSpec()) else { continue }
                 guard !Task.isCancelled, self.isLoading(gen) else { return }
-                self.presentLoading(order)
-                nextPresent = clock.now + Self.loadingPresentSpacing(rows: order.count)
+                self.presentLoading(result.order, runs: result.runs)
+                nextPresent = clock.now + Self.loadingPresentSpacing(rows: result.order.count)
             }
         }
     }
@@ -456,10 +481,11 @@ public final class FolderModel {
         }
     }
 
-    private func presentLoading(_ order: [UInt32]) {
+    private func presentLoading(_ order: [UInt32], runs: [GroupRun]) {
         if !rowsPresented { PerfSignposts.signposter.emitEvent(PerfSignposts.firstBatch) }
         store.setOrder(order)
         rowsPresented = true
+        setGroups(runs)
         publishReset()
         if state == .loading { setState(.partial) }
     }
@@ -479,15 +505,18 @@ public final class FolderModel {
         case .completed:
             await drainLoadFeed()
             guard !closed, generation == gen else { return }
-            guard let (order, tag) = await worker.finishLoad(gen, query: query), !closed, generation == gen else { return }
+            guard let finished = await worker.finishLoad(gen, query: query, group: currentGroupSpec()),
+                  !closed, generation == gen else { return }
             pacerTask?.cancel()
             pacerTask = nil
-            store.setOrder(order)
-            keysTag = tag
+            store.setOrder(finished.order)
+            keysTag = finished.tag
             rowsPresented = true
             if permissionAsked { context.recordPermissionOutcome(directory, true) }
+            setGroups(finished.runs)
             publishReset()
             setState(.complete)
+            if finished.revision != groupingRevision { regroup() }
             startWatcher()
             flushDeferred()
             flushWatchBuffer()
@@ -518,8 +547,9 @@ public final class FolderModel {
             if let index = carried[name] { substitute(old, with: store.identity(index)) }
         }
         reconcileSelection(emitting: false)
-        if !result.diff.changes.isEmpty { emit(.changes(result.diff.changes)) }
+        publishPatch(result.diff.changes, runs: result.runs)
         if selection != before { emit(.selection(selection)) }
+        if result.groupRevision != groupingRevision { regroup() }
     }
 
     /// Full re-read + diff of a complete folder (refresh, watcher full rescan, readItems failure). At most one runs,
@@ -560,7 +590,8 @@ public final class FolderModel {
             enqueue { [weak self] in
                 guard let self, epoch == self.epoch, self.generation == gen else { return }
                 let old = self.store
-                guard let result = await self.worker.finishReread(gen, old: old, query: self.query) else { return }
+                guard let result = await self.worker.finishReread(gen, old: old, query: self.query,
+                                                                  group: self.currentGroupSpec()) else { return }
                 guard !self.closed, epoch == self.epoch, self.store.version == old.version else { return }
                 self.applyPatch(result)
                 self.rereadDone()

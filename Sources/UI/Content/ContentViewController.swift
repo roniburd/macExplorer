@@ -169,6 +169,7 @@ final class ContentViewController: CommandHandlingViewController {
         case .beginRename(let row): activeList.beginInlineRename(row: row)
         case .relocate: break   // BrowserSession navigates (P1-26) and emits .banner
         case .query: updateStatus(); updateEmptyState()
+        case .groups: break     // the .changes(.reset) that follows redraws; P2-10 draws the group rows
         }
     }
 

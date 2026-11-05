@@ -49,6 +49,7 @@ final class BrowserSession {
         self.viewMode = state.mode
         self.folder = environment.makeFolderModel(initialURL, query: Self.query(for: state, settings: environment.settings))
         self.history = NavigationHistory(current: initialURL)
+        folder.setGrouping(Self.grouping(for: state))
         attach(folder)
         refineLocator()
         // Every window follows Settings.showHidden (⇧⌘. or the Settings window in any window, QA round 1).
@@ -162,6 +163,7 @@ final class BrowserSession {
         self.locator = locator
         editedSinceNavigation = false
         let model = environment.makeFolderModel(url, query: Self.query(for: state, settings: environment.settings))
+        model.setGrouping(Self.grouping(for: state))     // before start: the first listing is already grouped
         folder = model
         pendingSelection = name
         attach(model)
@@ -173,6 +175,11 @@ final class BrowserSession {
 
     private static func query(for state: FolderViewState, settings: Settings) -> ViewQuery {
         ViewQuery(sort: state.sort, showHidden: settings.showHidden)
+    }
+
+    /// Group by applies only while the window displays Details (P2-09); Icons and Columns are never grouped.
+    static func grouping(for state: FolderViewState) -> GroupBy {
+        state.mode == .details ? state.groupBy : .none
     }
 
     /// Identity correction: without a fileID on an idStable volume, probe it on a lane. If the folder is still
@@ -211,6 +218,7 @@ final class BrowserSession {
             folder.setQuery(query)
         }
         setDisplayedMode(state.mode)
+        folder.setGrouping(Self.grouping(for: state))
         if state != old { observers.send(.viewStateChanged(state)) }
     }
 
@@ -245,7 +253,7 @@ final class BrowserSession {
             applyPendingSelection()
         case .selection:
             pendingSelection = nil          // the user (or a file operation) chose a selection meanwhile
-        case .beginRename, .query:
+        case .beginRename, .query, .groups:
             break
         }
     }

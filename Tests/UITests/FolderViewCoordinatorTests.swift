@@ -37,6 +37,27 @@ final class FolderViewCoordinatorTests: XCTestCase {
         XCTAssertEqual(session.viewMode, .details)
     }
 
+    func testGroupByIsPerFolderAndAppliesOnlyInDetails() async throws {
+        let h = try await ShellHarness.make(self)
+        try world(h)
+        let session = try await makeSession(h)
+        XCTAssertEqual(session.folder.grouping, .none)
+        session.updateViewState { $0.groupBy = .kind }
+        XCTAssertEqual(session.folder.grouping, .kind)
+        try await h.waitUntil("grouped") { session.folder.groups.count == 2 }
+        XCTAssertEqual(session.folder.name(atRow: 0), "sub")
+        session.updateViewState { $0.mode = .icons }
+        XCTAssertEqual(session.folder.grouping, .none, "Icons is never grouped")
+        session.updateViewState { $0.mode = .details }
+        XCTAssertEqual(session.folder.grouping, .kind)
+        session.navigate(to: h.url("sub"))
+        XCTAssertEqual(session.folder.grouping, .none, "another folder keeps its own Group by")
+        session.goBack()
+        XCTAssertEqual(session.folder.grouping, .kind, "the model is built with the folder's Group by")
+        try await h.waitUntil("grouped again") { session.folder.state == .complete && session.folder.groups.count == 2 }
+        XCTAssertEqual(h.environment.settings.groupBy, .none, "global default untouched")
+    }
+
     func testSortIsPerFolderAndDrivesTheQuery() async throws {
         let h = try await ShellHarness.make(self)
         try world(h)

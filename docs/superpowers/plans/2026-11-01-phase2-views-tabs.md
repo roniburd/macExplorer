@@ -3187,6 +3187,30 @@ git add Sources/FSKit/Sort/Grouping.swift Sources/Core/Folder Sources/UI/Window/
 git commit -m "feat: group by kind, date, size and name with stable partition and grouped-row mapping"
 ```
 
+**P2-09 result (as built):**
+- The partition runs inside `FolderWorker` (not as a separate main-side hop): every worker call that returns a display
+  order (`takeLoadingOrder`, `finishLoad`, `resort`, `patch`, `finishReread`) takes a `GroupSpec` (`groupBy`, `DateBuckets`,
+  `revision`, default `.none`) and returns the grouped order plus its runs (`Ordered`, `PatchResult.runs/groupRevision`).
+  Loading frames partition the worker's own copy of the store, so main never copies the store per frame.
+  `FolderWorker.partition(_:sorted:by:buckets:)` exists as planned (types come from the worker).
+- Stale results are not dropped: a result computed for an older `groupingRevision` is published consistently (its
+  own order and runs) and is followed by a regroup (`resortNow`) with the current grouping, so patch data is never lost.
+  A grouping change while loading re-presents the next frame even without new batches.
+- `.groups(runs)` is sent before every reset while grouped, and once (`.groups([])`) when grouping turns off; ungrouped
+  Phase 1 folders never see it. A patch whose order and runs are unchanged (reloads only) is published as reloads;
+  anything else as `.groups` + `.reset` (a size change across a bucket boundary with an unchanged order regroups too).
+- Stored grouping state (`grouping`, `groups`, `groupingRevision`, `dateBuckets`, `dayTask`) is declared in
+  `FolderModel.swift` (extensions cannot hold stored properties); `FolderModel+Grouping.swift` has the logic. A date
+  grouping whose day ended (late timer, sleep) gets fresh buckets on the next publish.
+- `Grouping.partition` is a counting sort over per-row group ids with ASCII fast paths (about 45 ms per mode for 100k
+  rows in debug). Signpost `PerfSignposts.group`.
+- `Tests/UITests/Support/ModelLoading.swift` never existed (P2-06 did not add it), so `Tests/CoreTests/Support/ModelLoading.swift`
+  is new. Tests use the real Sandbox API (`createFile`, `createDirectory`, `overwrite`, `setModificationDate`). Extra
+  tests: re-sort inside groups, size-boundary regroup, refresh, grouping set before the listing completes,
+  `regroupForNewDay` no-op, day timer cancellation, and `BrowserSession` applying Group by per folder in Details only
+  (`FolderViewCoordinatorTests.testGroupByIsPerFolderAndAppliesOnlyInDetails`). `probeGrouping` now reports
+  `session.folder.grouping`. Views ignore `.groups` until P2-10.
+
 ---
 
 ### Task P2-10: Grouped Details view (floating, collapsible group rows)

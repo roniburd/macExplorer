@@ -11,6 +11,25 @@ import MacxFS
 actor FolderWorker {
     typealias KeysTag = UInt64
 
+    /// The Group by a result is computed for (P2-09): every display order the worker returns is partitioned with
+    /// it, and carries its `revision`, so main can tell a result computed for an older grouping.
+    struct GroupSpec: Sendable, Equatable {
+        var groupBy: GroupBy
+        var buckets: DateBuckets
+        var revision: Int
+
+        static let none = GroupSpec(groupBy: .none, buckets: DateBuckets(now: Date(timeIntervalSince1970: 0),
+                                                                          calendar: Calendar(identifier: .gregorian)),
+                                    revision: 0)
+    }
+
+    /// A display order and its groups (empty when not grouped).
+    struct Ordered: Sendable {
+        var order: [UInt32]
+        var runs: [GroupRun]
+        var revision: Int
+    }
+
     struct Keys: Sendable {
         var name = SortKeyColumn()
         var ext = SortKeyColumn()
@@ -37,12 +56,17 @@ actor FolderWorker {
         var runs: [[UInt32]] = []
         var dirty = false
         var query: ViewQuery
+        /// Grouping revision of the last loading order handed out (a grouping change re-presents the frame).
+        var presentedRevision: Int?
     }
 
     struct PatchResult: Sendable {
         var store: EntryStore
         var diff: DiffResult
         var tag: KeysTag
+        /// Groups of `store.order` (P2-09) and the grouping revision they were computed for.
+        var runs: [GroupRun] = []
+        var groupRevision = 0
     }
 
     private let types: TypeRegistry
@@ -96,51 +120,68 @@ actor FolderWorker {
 
     /// The sorted permutation of every row merged so far, or nil if nothing changed since the last call
     /// (or `generation` is not the read in progress). At most one call per display frame.
-    func takeLoadingOrder(_ generation: Generation) -> [UInt32]? {
-        guard building?.generation == generation, building!.dirty else { return nil }
+    func takeLoadingOrder(_ generation: Generation, group: GroupSpec = .none) -> Ordered? {
+        guard building?.generation == generation,
+              building!.dirty || building!.presentedRevision.map({ $0 != group.revision }) == true else { return nil }
         mergeRuns()
         building!.dirty = false
-        return building!.order
+        building!.presentedRevision = group.revision
+        let b = building!
+        let (order, runs) = partition(b.store, sorted: b.order, by: group.groupBy, buckets: group.buckets)
+        return Ordered(order: order, runs: runs, revision: group.revision)
     }
 
     /// Initial load or retry finished: main's store holds the same batches in the same order. Returns the final
     /// permutation for `query` and adopts the read's keys; the read's store copy is dropped.
-    func finishLoad(_ generation: Generation, query: ViewQuery) -> (order: [UInt32], tag: KeysTag)? {
+    func finishLoad(_ generation: Generation, query: ViewQuery, group: GroupSpec = .none)
+        -> (order: [UInt32], tag: KeysTag, runs: [GroupRun], revision: Int)? {
         guard building?.generation == generation else { return nil }
         if building!.query != query { setLoadingQuery(query) } else { mergeRuns() }
         let b = building!
         building = nil
         keys = b.keys
-        return (b.order, newTag())
+        let (order, runs) = partition(b.store, sorted: b.order, by: group.groupBy, buckets: group.buckets)
+        return (order, newTag(), runs, group.revision)
     }
 
     /// A re-read (refresh, full rescan) finished: the new listing replaces `old`. Returns the sorted new store
     /// and its diff against `old`.
-    func finishReread(_ generation: Generation, old: EntryStore, query: ViewQuery) -> PatchResult? {
+    func finishReread(_ generation: Generation, old: EntryStore, query: ViewQuery, group: GroupSpec = .none) -> PatchResult? {
         guard building?.generation == generation else { return nil }
         if building!.query != query { setLoadingQuery(query) } else { mergeRuns() }
         var b = building!
         building = nil
-        b.store.setOrder(b.order)
+        let (order, runs) = partition(b.store, sorted: b.order, by: group.groupBy, buckets: group.buckets)
+        b.store.setOrder(order)
         keys = b.keys
         let diff = StoreDiff.diff(old: old, new: b.store)
-        return PatchResult(store: b.store, diff: diff, tag: newTag())
+        return PatchResult(store: b.store, diff: diff, tag: newTag(), runs: runs, groupRevision: group.revision)
     }
 
     // MARK: Complete folders
 
     /// Display permutation of `store` for `query` (re-sort, filter, show hidden).
-    func resort(_ store: EntryStore, tag storeTag: KeysTag, query: ViewQuery) -> [UInt32] {
+    func resort(_ store: EntryStore, tag storeTag: KeysTag, query: ViewQuery, group: GroupSpec = .none) -> Ordered {
         sync(store, storeTag)
         if !query.filter.isEmpty && keys.search == nil { keys.search = SortKeys.searchKeys(store) }
-        return permutation(store, keys, query)
+        let (order, runs) = partition(store, sorted: permutation(store, keys, query), by: group.groupBy, buckets: group.buckets)
+        return Ordered(order: order, runs: runs, revision: group.revision)
+    }
+
+    /// Group by (P2-09): stable partition of a sorted permutation of `snapshot` (CPU only, no file-system calls).
+    func partition(_ snapshot: EntryStore, sorted: [UInt32], by groupBy: GroupBy, buckets: DateBuckets)
+        -> (order: [UInt32], runs: [GroupRun]) {
+        guard groupBy != .none else { return (sorted, []) }
+        let signpost = PerfSignposts.signposter.beginInterval(PerfSignposts.group)
+        defer { PerfSignposts.signposter.endInterval(PerfSignposts.group, signpost) }
+        return Grouping.partition(sorted, store: snapshot, by: groupBy, dateBuckets: buckets, types: types)
     }
 
     /// Applies a stat of some names (watcher incremental path, LocalChange): present names are upserted (and any
     /// other identity holding that name removed, so an atomic save becomes a replacement), missing names lose their
     /// rows, names that failed keep their rows with the errno. Returns the re-sorted store and its diff.
     func patch(_ old: EntryStore, tag storeTag: KeysTag, result: ItemReadResult, query: ViewQuery,
-               caseSensitive: Bool) -> PatchResult {
+               caseSensitive: Bool, group: GroupSpec = .none) -> PatchResult {
         sync(old, storeTag)
         var store = old
         var k = keys
@@ -216,10 +257,11 @@ actor FolderWorker {
         store.remove(removed)
         k.name.remove(removed)
         k.ext.remove(removed)
-        store.setOrder(permutation(store, k, query))
+        let (order, runs) = partition(store, sorted: permutation(store, k, query), by: group.groupBy, buckets: group.buckets)
+        store.setOrder(order)
         keys = k
         let diff = StoreDiff.diff(old: old, new: store, storageMap: storageMap, touched: touchedAfter)
-        return PatchResult(store: store, diff: diff, tag: newTag())
+        return PatchResult(store: store, diff: diff, tag: newTag(), runs: runs, groupRevision: group.revision)
     }
 
     // MARK: Private
