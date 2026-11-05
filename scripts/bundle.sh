@@ -3,7 +3,8 @@
 # Usage: scripts/bundle.sh [debug|release] [--bundle-id ID] [--output PATH] [--version X.Y.Z[-beta.N]] [--build N]
 #                          [--sign IDENTITY] [--feed-url URL] [--ed-public-key KEY] [--universal]
 #   default: debug, com.macexplorer.app, .build/MacExplorer.app, version/build/feed/key from Resources/Info.plist,
-#   --sign - (ad-hoc). A real identity (e.g. "Developer ID Application: ...") also gets a secure timestamp.
+#   --sign - (ad-hoc). Only a "Developer ID Application: ..." identity (passed by name) gets a secure timestamp and
+#   keeps library validation; ad-hoc and self-signed identities (no Team ID) get neither.
 #   --universal builds arm64 + x86_64.
 # Scenario and smoke runs use a separate copy so AppKit's preference writes never touch a real install's domain:
 #   scripts/bundle.sh debug --bundle-id com.macexplorer.app.scenarios --output .build/macExplorer-scenarios.app
@@ -107,18 +108,21 @@ fi
 [ -z "$feed_url" ] || /usr/libexec/PlistBuddy -c "Set :SUFeedURL $feed_url" "$plist"
 [ -z "$ed_key" ] || /usr/libexec/PlistBuddy -c "Set :SUPublicEDKey $ed_key" "$plist"
 
-# Inside-out signing (Sparkle's documented order). Ad-hoc signatures cannot carry a secure timestamp;
-# a Developer ID signature needs one for notarization.
-# Hardened-runtime library validation only loads frameworks signed by the process's Team ID; ad-hoc signatures
-# have none, so an ad-hoc app could not load the embedded Sparkle.framework. Ad-hoc builds alone therefore get
-# disable-library-validation; Developer ID builds sign everything with one Team ID and keep validation on.
+# Inside-out signing (Sparkle's documented order).
+# Hardened-runtime library validation only loads frameworks signed with the process's Team ID. Only Apple-issued
+# Developer ID certificates carry one; ad-hoc and self-signed ("MacExplorer Self-Signed", spec section 7) signatures
+# have none, so those apps could not load the embedded Sparkle.framework and get disable-library-validation.
+# Developer ID builds sign everything with one Team ID, keep validation on, and get the secure timestamp
+# notarization needs; ad-hoc cannot carry one and a self-signed chain does not need one.
 entitlements="$staging/macExplorer.entitlements"
 cp Resources/macExplorer.entitlements "$entitlements"
-timestamp=--timestamp
-if [ "$sign_identity" = "-" ]; then
-    timestamp=--timestamp=none
-    /usr/libexec/PlistBuddy -c "Add :com.apple.security.cs.disable-library-validation bool true" "$entitlements"
-fi
+case "$sign_identity" in
+    "Developer ID Application:"*) timestamp=--timestamp ;;
+    *)
+        timestamp=--timestamp=none
+        /usr/libexec/PlistBuddy -c "Add :com.apple.security.cs.disable-library-validation bool true" "$entitlements"
+        ;;
+esac
 sign() { codesign --force --sign "$sign_identity" --options runtime "$timestamp" "$@"; }
 sparkle="$app/Contents/Frameworks/Sparkle.framework"
 for xpc in "$sparkle"/Versions/B/XPCServices/*.xpc; do
