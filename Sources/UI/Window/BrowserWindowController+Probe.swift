@@ -52,6 +52,28 @@ extension BrowserWindowController {
         return editor.string
     }
 
+    /// The windows of this window's tab group, in tab-bar order (just this window while tabbing is off).
+    /// P2-05's TabController.orderedTabs(of:) takes this over.
+    static func orderedTabWindows(of window: NSWindow) -> [NSWindow] { window.tabbedWindows ?? [window] }
+
+    var probeTabFolderURLs: [URL] {
+        guard let window else { return [session.folder.directory] }
+        return Self.orderedTabWindows(of: window).compactMap {
+            ($0.windowController as? BrowserWindowController)?.session.folder.directory
+        }
+    }
+
+    var probeSelectedTabIndex: Int {
+        guard let window else { return 0 }
+        let selected = window.tabGroup?.selectedWindow ?? window
+        return Self.orderedTabWindows(of: window).firstIndex { $0 === selected } ?? 0
+    }
+
+    var probeSort: MacxFS.SortDescriptor { session.folder.query.sort }
+    /// FolderModel grouping lands in P2-09; until then nothing is grouped.
+    var probeGrouping: GroupBy { .none }
+    var probeIconSize: IconSize { context.environment.settings.iconSize }
+
     func probePerformDrop(sources: [URL], onto targetName: String, modifiers: DragModifiers, secondary: Bool,
                           menuChoice: DragOperation?) async {
         await scenarioHooks.performDrop?(sources, targetName, modifiers, secondary, menuChoice)

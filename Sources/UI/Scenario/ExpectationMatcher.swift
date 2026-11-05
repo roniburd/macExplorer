@@ -1,5 +1,6 @@
 import Core
 import Foundation
+import MacxFS
 
 struct ProbeSnapshot: Equatable {
     var rows: [String] = []
@@ -18,6 +19,23 @@ struct ProbeSnapshot: Equatable {
     var propertiesWindows = 0
     var windowCount = 1
     var fileSizes: [String: Int] = [:]       // requested paths that exist → st_size
+    // Phase 2 (§2.4). Hook-backed values are nil while their hook is not installed, so an expectation on them
+    // fails naming the hook instead of passing silently.
+    var tabs: [String] = [""]                // relative to --root; a tab outside it is "<outside root: path>"
+    var activeTab = 0
+    var sort = "name.asc"
+    var iconSize = "medium"
+    var groupBy = "none"
+    var groups: [String]?                    // ScenarioHooks.groupHeaderTitles
+    var visibleRows: [String]?               // ScenarioHooks.visibleRowNames
+    var visibleColumns: [String]?            // ScenarioHooks.visibleColumnIDs
+    var quickLookVisible: Bool?              // ScenarioHooks.quickLookState
+    var quickLookItems: [String]?            // ScenarioHooks.quickLookState
+    var cells: [String: [String: String]]?   // ScenarioHooks.cellText, requested cells that exist
+    var columnsChain: [String]?              // ScenarioHooks.columnsChain
+    var activeColumn: Int?                   // ScenarioHooks.columnsChain
+    var thumbnails: [String]?                // ScenarioHooks.thumbnailNames
+    var pasteboardText: String?              // clipboard backend readString() (P2-04)
 }
 
 enum ScenarioStrings {
@@ -42,11 +60,49 @@ enum ScenarioStrings {
         }
     }
     static func focus(_ f: FocusContext) -> String { String(describing: f) }
+    static func sort(_ d: MacxFS.SortDescriptor) -> String { "\(d.field.rawValue).\(d.ascending ? "asc" : "desc")" }
+    static func isValidSort(_ s: String) -> Bool {
+        let parts = s.split(separator: ".", omittingEmptySubsequences: false)
+        return parts.count == 2 && SortField(rawValue: String(parts[0])) != nil && ["asc", "desc"].contains(parts[1])
+    }
+}
+
+extension ScenarioFile.Expectation {
+    /// Every expected string with the scenario tokens replaced (§2.4). Relative-path fields (folder, tabs,
+    /// columnsChain, filesExist, filesAbsent, fileSizes) are validated as paths and are left alone.
+    func substituted(root: URL) -> Self {
+        func sub(_ s: String) -> String { ScenarioDriver.substitute(s, root: root) }
+        var e = self
+        e.rows = rows?.map(sub)
+        e.rowsContain = rowsContain?.map(sub)
+        e.selection = selection?.map(sub)
+        e.cut = cut?.map(sub)
+        e.fieldEditorText = fieldEditorText.map(sub)
+        e.renameText = renameText.map(sub)
+        e.emptyState = emptyState.map(sub)
+        e.banner = banner.map(sub)
+        e.groups = groups?.map(sub)
+        e.visibleRows = visibleRows?.map(sub)
+        e.quickLookItems = quickLookItems?.map(sub)
+        e.cells = cells.map { $0.mapValues { $0.mapValues(sub) } }
+        e.thumbnailsContain = thumbnailsContain?.map(sub)
+        e.pasteboardText = pasteboardText.map(sub)
+        return e
+    }
 }
 
 enum ExpectationMatcher {
     static func requestedPaths(_ e: ScenarioFile.Expectation) -> [String] {
         (e.filesExist ?? []) + (e.filesAbsent ?? []) + Array((e.fileSizes ?? [:]).keys)
+    }
+
+    /// A malformed enum-like expectation value (checked at load time), or nil.
+    static func formatProblem(_ e: ScenarioFile.Expectation) -> String? {
+        if let sort = e.sort, !ScenarioStrings.isValidSort(sort) { return "sort '\(sort)' is not '<field>.<asc|desc>'" }
+        if let size = e.iconSize, IconSize(rawValue: size) == nil { return "unknown iconSize '\(size)'" }
+        if let group = e.groupBy, GroupBy(rawValue: group) == nil { return "unknown groupBy '\(group)'" }
+        if let mode = e.viewMode, ViewMode(rawValue: mode) == nil { return "unknown viewMode '\(mode)'" }
+        return nil
     }
 
     static func mismatches(_ e: ScenarioFile.Expectation, _ s: ProbeSnapshot) -> [String] {
@@ -81,6 +137,62 @@ enum ExpectationMatcher {
         for (path, size) in (e.fileSizes ?? [:]).sorted(by: { $0.key < $1.key }) where s.fileSizes[path] != size {
             m.append("fileSizes: '\(path)' expected \(size) bytes, got \(s.fileSizes[path].map { String($0) } ?? "missing")")
         }
+        phase2Mismatches(e, s, into: &m)
         return m
+    }
+}
+
+extension ExpectationMatcher {
+    private static func missingHook(_ label: String, _ hook: String) -> String {
+        "\(label): ScenarioHooks.\(hook) is not installed (the owning task has not landed), cannot check"
+    }
+
+    static func phase2Mismatches(_ e: ScenarioFile.Expectation, _ s: ProbeSnapshot, into m: inout [String]) {
+        func check<T: Equatable>(_ label: String, _ expected: T?, _ actual: T) {
+            if let expected, expected != actual { m.append("\(label): expected \(expected), got \(actual)") }
+        }
+        /// Exact match against a hook value; nil actual = hook missing.
+        func hooked<T: Equatable>(_ label: String, _ expected: T?, _ actual: T?, hook: String) {
+            guard let expected else { return }
+            guard let actual else { return m.append(missingHook(label, hook)) }
+            if expected != actual { m.append("\(label): expected \(expected), got \(actual)") }
+        }
+        func subset(_ label: String, _ expected: [String]?, _ actual: [String]?, hook: String) {
+            guard let expected else { return }
+            guard let actual else { return m.append(missingHook(label, hook)) }
+            let missing = expected.filter { !actual.contains($0) }
+            if !missing.isEmpty { m.append("\(label): missing \(missing) in \(actual)") }
+        }
+        check("tabs", e.tabs, s.tabs)
+        check("activeTab", e.activeTab, s.activeTab)
+        check("sort", e.sort, s.sort)
+        check("iconSize", e.iconSize, s.iconSize)
+        check("groupBy", e.groupBy, s.groupBy)
+        hooked("groups", e.groups, s.groups, hook: "groupHeaderTitles")
+        hooked("visibleRows", e.visibleRows, s.visibleRows, hook: "visibleRowNames")
+        subset("visibleColumnsContain", e.visibleColumnsContain, s.visibleColumns, hook: "visibleColumnIDs")
+        hooked("quickLookVisible", e.quickLookVisible, s.quickLookVisible, hook: "quickLookState")
+        hooked("quickLookItems", e.quickLookItems, s.quickLookItems, hook: "quickLookState")
+        if let want = e.cells {
+            if let cells = s.cells {
+                for (row, columns) in want.sorted(by: { $0.key < $1.key }) {
+                    for (column, text) in columns.sorted(by: { $0.key < $1.key }) where cells[row]?[column] != text {
+                        m.append("cells: '\(row)' [\(column)] expected '\(text)', got \(cells[row]?[column].map { "'\($0)'" } ?? "no such cell")")
+                    }
+                }
+            } else {
+                m.append(missingHook("cells", "cellText"))
+            }
+        }
+        hooked("columnsChain", e.columnsChain, s.columnsChain, hook: "columnsChain")
+        hooked("activeColumn", e.activeColumn, s.activeColumn, hook: "columnsChain")
+        subset("thumbnailsContain", e.thumbnailsContain, s.thumbnails, hook: "thumbnailNames")
+        if let want = e.pasteboardText {
+            if let text = s.pasteboardText {
+                if want != text { m.append("pasteboardText: expected '\(want)', got '\(text)'") }
+            } else {
+                m.append("pasteboardText: unsupported until P2-04 (the pasteboard backend has no readString yet)")
+            }
+        }
     }
 }

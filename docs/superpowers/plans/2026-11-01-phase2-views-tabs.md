@@ -1292,6 +1292,14 @@ static let tabBarDrop = "macx.tabBarDrop"
 Run: `swift test --filter "MacxFixturesTests.FixtureMetadataTests|UITests.ScenarioSchemaTests" 2>&1 | tail -5 && scripts/ui-scenarios.sh 2>&1 | tail -3`
 Expected: `Executed 7 tests, with 0 failures`; all Phase 1 scenarios still pass.
 
+**P2-03 result (2026-11-05): deviations later tasks must know.**
+- `UI` may not link `MacxFixtures` (check-layering rule `fixtures-in-app`), so the in-app driver cannot use `Sandbox`. `ScenarioFixtures` (UI) carries its own guarded writers with the same encodings: `writeZeros(_:at:)`, `setFinderTags(_:at:relative:)`, `lastUsedDateValue(_:)`, `noon(daysFromToday:)`, `pngData(pixels:)` and the xattr-name constants. `ScenarioFixturesTests.testFixtureEncodingsMatchMacxFixtures` keeps the two in step.
+- `FixtureMetadata` reuses the Phase 1 `setXattr(_:name:value:)` and `setMode(_:_:)` and does not add the plan's `setXattr(_:_:on:)` / `setMode(_:on:)` overloads. `writePNG` writes through `createFile` (O_EXCL, O_NOFOLLOW), and `noon` uses `bySettingHour` so DST days are handled. `Sandbox.finderTagsXattr`, `finderCommentXattr` and `lastUsedDateXattr` name the xattrs.
+- Step validation stays in `ScenarioFile.validate()` (`Step.actions`). `ScenarioDriver.validateSteps` is a thin wrapper around it. `answerAlert` already existed in Phase 1: it searches the modal window and every attached sheet. Validation also rejects `selectTab < 0`, a prefixed `doubleClick`, `tree:` paths outside the root, malformed `sort`/`iconSize`/`groupBy`/`viewMode`, and unsafe fixture or fs-step paths.
+- Only the prefixes `tree:`, `group:` and `header:` route to hooks (`ScenarioTarget`). Any other name containing ":" is a plain row. fs steps also check that the symlink-resolved parent is inside the root.
+- `TabController` does not exist yet, so `BrowserWindowController.orderedTabWindows(of:)` (`tabbedWindows ?? [window]`) backs `probeTabFolderURLs`, `probeSelectedTabIndex` and `selectTab`. P2-05 replaces it with `TabController.orderedTabs(of:)`. `probeGrouping` returns `.none` until P2-09.
+- `ScenarioCatalogTests` now asserts at least 29 scenario files instead of an exact count. `Tests/Scenarios/p2-scenario-runner.json` exercises the fixture metadata, the tab/sort/icon-size/group expectations, `selectTab`, `fsWrite` and `fsTags`.
+
 - [ ] **Step 6: Commit**
 
 ```bash

@@ -1,0 +1,16 @@
+{"name": "p2-scenario-runner",
+ "fixture": {"files": ["a.txt", "A/inner.txt"], "dirs": ["A"], "images": ["p.png"],
+             "mtimeDays": {"a.txt": -1}, "tags": {"a.txt": ["Work"]}, "comments": {"a.txt": "note"},
+             "lastOpenedDays": {"a.txt": -3}},
+ "steps": [
+  {"waitFor": {"rows": ["A", "a.txt", "p.png"], "state": "complete"}},
+  {"expect": {"tabs": [""], "activeTab": 0, "viewMode": "details", "sort": "name.asc", "iconSize": "medium", "groupBy": "none"}},
+  {"selectTab": 0},
+  {"fsWrite": {"path": "new.bin", "bytes": 10}},
+  {"waitFor": {"rowsContain": ["new.bin"], "fileSizes": {"new.bin": 10}}, "timeoutMs": 3000},
+  {"fsTags": {"path": "a.txt", "tags": ["Home"]}},
+  {"fsWrite": {"path": "A/n.bin", "bytes": 3}},
+  {"doubleClick": "A"},
+  {"waitFor": {"folder": "A", "rows": ["inner.txt", "n.bin"], "tabs": ["A"]}},
+  {"expect": {"fileSizes": {"A/n.bin": 3}, "activeTab": 0}}
+ ]}

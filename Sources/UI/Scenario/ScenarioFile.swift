@@ -3,7 +3,9 @@ import Foundation
 
 /// §3.14 schema (field names and types exactly as in the contract) plus additive optional fields
 /// (Contract note C6): Fixture.modes, Step.command, Step.answerAlert, Expectation.rowCount/editingAddress/
-/// viewMode/sheetPresent/propertiesWindows/windowCount/fileSizes.
+/// viewMode/sheetPresent/propertiesWindows/windowCount/fileSizes. Phase 2 (plan §2.4, P2-03) adds the fixture
+/// metadata fields, the middleClick/selectTab/fsWrite/fsTags actions, prefixed click targets and the view/tab
+/// expectations.
 struct ScenarioFile: Codable {
     struct Fixture: Codable {
         var files: [String]
@@ -11,7 +13,22 @@ struct ScenarioFile: Codable {
         var hidden: [String]?
         var sizes: [String: Int]?
         var modes: [String: String]?          // additive: octal mode applied after creation, deepest first
+        // Phase 2 (§2.4)
+        var images: [String]?                 // 64×64 solid-colour PNGs at these paths
+        var mtimeDays: [String: Int]?         // path → noon local time, N days from today (0 today, -1 yesterday)
+        var tags: [String: [String]]?         // Finder tags xattr
+        var comments: [String: String]?       // Finder comment xattr
+        var lastOpenedDays: [String: Int]?    // com.apple.lastuseddate#PS at noon N days from today
+
+        /// Every relative path the fixture names (validated before anything is created).
+        var allPaths: [String] {
+            files + dirs + (hidden ?? []) + (images ?? []) + Array((sizes ?? [:]).keys) + Array((modes ?? [:]).keys)
+                + Array((mtimeDays ?? [:]).keys) + Array((tags ?? [:]).keys) + Array((comments ?? [:]).keys)
+                + Array((lastOpenedDays ?? [:]).keys)
+        }
     }
+    struct FSWrite: Codable { var path: String; var bytes: Int }
+    struct FSTags: Codable { var path: String; var tags: [String] }
     struct Step: Codable {
         var key: String?
         var type: String?
@@ -30,6 +47,11 @@ struct ScenarioFile: Codable {
         var sleepMs: Int?
         var command: String?                  // additive: Command raw value, performed via its main-menu item
         var answerAlert: String?              // additive: press this button of an AppKit alert/sheet
+        // Phase 2 (§2.4)
+        var middleClick: String?              // click target (see ScenarioTarget)
+        var selectTab: Int?                   // tab index in the key window's tab group
+        var fsWrite: FSWrite?                 // {path, bytes}: writes inside --root (guarded), simulating another app
+        var fsTags: FSTags?                   // {path, tags}: rewrites the tags xattr inside --root (guarded)
 
         var actions: [String] {
             let named: [(String, Bool)] = [
@@ -37,6 +59,8 @@ struct ScenarioFile: Codable {
                 ("click", click != nil), ("doubleClick", doubleClick != nil), ("rightClick", rightClick != nil),
                 ("chooseMenuItem", chooseMenuItem != nil), ("drop", drop != nil), ("answerConflict", answerConflict != nil),
                 ("answerAlert", answerAlert != nil), ("waitFor", waitFor != nil), ("expect", expect != nil), ("sleepMs", sleepMs != nil),
+                ("middleClick", middleClick != nil), ("selectTab", selectTab != nil), ("fsWrite", fsWrite != nil),
+                ("fsTags", fsTags != nil),
             ]
             return named.filter { $0.1 }.map { $0.0 }
         }
@@ -68,6 +92,22 @@ struct ScenarioFile: Codable {
         var propertiesWindows: Int?
         var windowCount: Int?
         var fileSizes: [String: Int]?
+        // Phase 2 (§2.4). Every string is token-substituted first (ScenarioDriver.substitute).
+        var tabs: [String]?                   // tab folders relative to --root, "" = the root, in tab order
+        var activeTab: Int?
+        var sort: String?                     // "<SortField raw>.<asc|desc>"
+        var iconSize: String?                 // IconSize raw value
+        var groupBy: String?                  // GroupBy raw value
+        var groups: [String]?                 // group header titles, exact ("Today (2)")
+        var visibleRows: [String]?            // item rows in the table (headers excluded), exact
+        var visibleColumnsContain: [String]?  // ColumnID raw values, subset
+        var quickLookVisible: Bool?
+        var quickLookItems: [String]?         // exact
+        var cells: [String: [String: String]]? // row name → ColumnID raw → text
+        var columnsChain: [String]?           // Columns view folders relative to --root, exact
+        var activeColumn: Int?
+        var thumbnailsContain: [String]?      // subset
+        var pasteboardText: String?
     }
     var name: String
     var fixture: Fixture
@@ -83,6 +123,10 @@ struct ScenarioFile: Codable {
         case unsafePath(String)
         case unsafeTypedPath(step: Int, String)
         case badMode(String, String)
+        case badTab(step: Int, Int)
+        case badTarget(step: Int, String)
+        case badExpectation(step: Int, String)
+        case badSize(step: Int, Int)
         var description: String {
             switch self {
             case .actionCount(let s, let a): "step \(s): exactly one action required, found \(a)"
@@ -94,17 +138,20 @@ struct ScenarioFile: Codable {
             case .unsafePath(let p): "unsafe relative path '\(p)'"
             case .unsafeTypedPath(let s, let t): "step \(s): typed text '\(t)' is an absolute or home path outside --root"
             case .badMode(let p, let m): "bad octal mode '\(m)' for '\(p)'"
+            case .badTab(let s, let i): "step \(s): tab index \(i) must be ≥ 0"
+            case .badTarget(let s, let t): "step \(s): unsupported click target '\(t)' (prefixed targets: tree:<path in root>, group:, header:; doubleClick takes row names only)"
+            case .badExpectation(let s, let what): "step \(s): \(what)"
+            case .badSize(let s, let n): "step \(s): fsWrite bytes \(n) must be in 0...\(ScenarioFile.maxWriteBytes)"
             }
         }
     }
 
     static let modifierNames: Set<String> = ["cmd", "shift", "opt", "ctrl"]
     static let dropChoices: Set<String> = ["copy", "move", "alias", "cancel"]
+    static let maxWriteBytes = 64 << 20
 
     func validate() throws(ValidationError) {
-        let fixturePaths = fixture.files + fixture.dirs + (fixture.hidden ?? [])
-            + Array((fixture.sizes ?? [:]).keys) + Array((fixture.modes ?? [:]).keys)
-        for path in fixturePaths where !ScenarioPath.isSafeRelative(path) { throw .unsafePath(path) }
+        for path in fixture.allPaths where !ScenarioPath.isSafeRelative(path) { throw .unsafePath(path) }
         for (path, mode) in fixture.modes ?? [:] where mode.count > 4 || UInt16(mode, radix: 8) == nil { throw .badMode(path, mode) }
         for (index, step) in steps.enumerated() {
             let actions = step.actions
@@ -115,10 +162,22 @@ struct ScenarioFile: Codable {
             if let command = step.command, Command(rawValue: command) == nil { throw .badCommand(step: index, command) }
             for modifier in step.modifiers ?? [] where !Self.modifierNames.contains(modifier) { throw .badModifier(step: index, modifier) }
             if let text = step.type, text.hasPrefix("/") || text.hasPrefix("~") { throw .unsafeTypedPath(step: index, text) }
+            if let tab = step.selectTab, tab < 0 { throw .badTab(step: index, tab) }
+            for target in [step.click, step.rightClick, step.middleClick].compactMap({ $0 }) where !ScenarioTarget.isValid(target) {
+                throw .badTarget(step: index, target)
+            }
+            if let target = step.doubleClick, ScenarioTarget(parsing: target) != .row(target) { throw .badTarget(step: index, target) }
+            if let bytes = step.fsWrite?.bytes, !(0...Self.maxWriteBytes).contains(bytes) { throw .badSize(step: index, bytes) }
+            for expectation in [step.waitFor, step.expect].compactMap({ $0 }) {
+                if let problem = ExpectationMatcher.formatProblem(expectation) { throw .badExpectation(step: index, problem) }
+            }
             let dropPaths = step.drop.map { $0.sources + [$0.onto] } ?? []
-            let paths = dropPaths + (step.waitFor.map(ExpectationMatcher.requestedPaths) ?? [])
+            let fsPaths = [step.fsWrite?.path, step.fsTags?.path].compactMap { $0 }
+            let paths = dropPaths + fsPaths + (step.waitFor.map(ExpectationMatcher.requestedPaths) ?? [])
                 + (step.expect.map(ExpectationMatcher.requestedPaths) ?? [])
             for path in paths where !ScenarioPath.isSafeRelative(path) { throw .unsafePath(path) }
+            let folderPaths = [step.waitFor, step.expect].compactMap { $0 }.flatMap { ($0.tabs ?? []) + ($0.columnsChain ?? []) }
+            for path in folderPaths where !path.isEmpty && !ScenarioPath.isSafeRelative(path) { throw .unsafePath(path) }
         }
     }
 
@@ -126,6 +185,31 @@ struct ScenarioFile: Codable {
         let file = try JSONDecoder().decode(ScenarioFile.self, from: data)
         try file.validate()
         return file
+    }
+}
+
+/// A click / rightClick / middleClick target (§2.4): a row name in the active list (or active column), or a
+/// prefixed target that the owning task's hook resolves: "tree:<path relative to root>" ("" = the root node),
+/// "group:<group title>", "header:<ColumnID raw value>". Only these prefixes route to hooks, so a row whose name
+/// contains ":" still works as a plain row.
+enum ScenarioTarget: Equatable {
+    case row(String)
+    case prefixed(String)
+
+    static let prefixes = ["tree:", "group:", "header:"]
+
+    init(parsing raw: String) {
+        self = Self.prefixes.contains(where: raw.hasPrefix) ? .prefixed(raw) : .row(raw)
+    }
+
+    /// tree: paths must stay inside the root; group: and header: need a non-empty name.
+    static func isValid(_ raw: String) -> Bool {
+        if raw.hasPrefix("tree:") {
+            let path = String(raw.dropFirst("tree:".count))
+            return path.isEmpty || ScenarioPath.isSafeRelative(path)
+        }
+        if let prefix = prefixes.first(where: raw.hasPrefix) { return raw.count > prefix.count }
+        return true
     }
 }
 

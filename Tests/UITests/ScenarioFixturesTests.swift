@@ -50,4 +50,74 @@ final class ScenarioFixturesTests: XCTestCase {
         }
         XCTAssertFalse(FileManager.default.fileExists(atPath: sandbox.root.appending(path: "escape.txt").path))
     }
+
+    private func xattr(_ name: String, _ url: URL) -> Data? {
+        let n = getxattr(url.path, name, nil, 0, 0, XATTR_NOFOLLOW)
+        guard n > 0 else { return nil }
+        var buffer = [UInt8](repeating: 0, count: n)
+        return getxattr(url.path, name, &buffer, n, 0, XATTR_NOFOLLOW) == n ? Data(buffer) : nil
+    }
+
+    func testPhase2ImagesModesMetadataAndDates() throws {
+        let r = try root()
+        var f = ScenarioFile.Fixture(files: ["a.txt", "A/b.txt"], dirs: ["A", "E"])
+        f.images = ["img/p.png"]
+        f.tags = ["a.txt": ["Work", "Home"]]
+        f.comments = ["A/b.txt": "note"]
+        f.lastOpenedDays = ["a.txt": -3]
+        f.mtimeDays = ["a.txt": -1, "A": -2]
+        try ScenarioFixtures.create(f, in: r)
+
+        var st = stat()
+        for (path, mode) in [("a.txt", 0o644), ("A/b.txt", 0o644), ("img/p.png", 0o644), ("A", 0o755), ("E", 0o755), ("img", 0o755)] {
+            XCTAssertEqual(lstat(r.appending(path: path).path, &st), 0, path)
+            XCTAssertEqual(Int(st.st_mode & 0o777), mode, path)
+        }
+        let png = try Data(contentsOf: r.appending(path: "img/p.png"))
+        XCTAssertEqual(Array(png.prefix(4)), [0x89, 0x50, 0x4E, 0x47])
+        let tags = try PropertyListSerialization.propertyList(from: XCTUnwrap(xattr(ScenarioFixtures.finderTagsXattr, r.appending(path: "a.txt"))), format: nil)
+        XCTAssertEqual(tags as? [String], ["Work", "Home"])
+        let comment = try PropertyListSerialization.propertyList(from: XCTUnwrap(xattr(ScenarioFixtures.finderCommentXattr, r.appending(path: "A/b.txt"))), format: nil)
+        XCTAssertEqual(comment as? String, "note")
+        let used = try XCTUnwrap(xattr(ScenarioFixtures.lastUsedDateXattr, r.appending(path: "a.txt")))
+        XCTAssertEqual(used.count, 16)
+        let secs = used.prefix(8).withUnsafeBytes { Int64(littleEndian: $0.loadUnaligned(as: Int64.self)) }
+        XCTAssertEqual(Double(secs), ScenarioFixtures.noon(daysFromToday: -3).timeIntervalSince1970, accuracy: 1)
+        // mtimes survive the later writes (A got a child after its directory was created).
+        for (path, days) in [("a.txt", -1), ("A", -2)] {
+            let date = try FileManager.default.attributesOfItem(atPath: r.appending(path: path).path)[.modificationDate] as? Date
+            XCTAssertEqual(try XCTUnwrap(date).timeIntervalSince1970, ScenarioFixtures.noon(daysFromToday: days).timeIntervalSince1970,
+                           accuracy: 1, path)
+        }
+        XCTAssertEqual(ScenarioFixtures.topLevelVisibleNames(f), ["a.txt", "A", "E", "img"])
+    }
+
+    func testFixtureEncodingsMatchMacxFixtures() {
+        let date = Date(timeIntervalSince1970: 1_800_000_000.5)
+        XCTAssertEqual(ScenarioFixtures.lastUsedDateValue(date), Sandbox.lastUsedDateValue(date))
+        XCTAssertEqual(ScenarioFixtures.finderTagsXattr, Sandbox.finderTagsXattr)
+        XCTAssertEqual(ScenarioFixtures.finderCommentXattr, Sandbox.finderCommentXattr)
+        XCTAssertEqual(ScenarioFixtures.lastUsedDateXattr, Sandbox.lastUsedDateXattr)
+        XCTAssertEqual(ScenarioFixtures.noon(daysFromToday: -2), Sandbox.noon(daysFromToday: -2))
+    }
+
+    func testMetadataFixturesRefuseEscapingPaths() throws {
+        let r = try root()
+        var f = ScenarioFile.Fixture(files: ["a.txt"], dirs: [])
+        f.tags = ["../escape.txt": ["x"]]
+        XCTAssertThrowsError(try ScenarioFixtures.create(f, in: r)) {
+            XCTAssertEqual($0 as? ScenarioFixtureError, .unsafePath("../escape.txt"))
+        }
+    }
+
+    func testWriteZerosCreatesParentsAndReplaces() throws {
+        let r = try root()
+        let url = r.appending(path: "A/n.bin")
+        try ScenarioFixtures.writeZeros(10, at: url)
+        XCTAssertEqual(try Data(contentsOf: url), Data(count: 10))
+        try ScenarioFixtures.writeZeros(3, at: url)
+        XCTAssertEqual(try Data(contentsOf: url).count, 3)
+        try sandbox.createSymlink("macx-scenario-root/link", target: "A/n.bin")
+        XCTAssertThrowsError(try ScenarioFixtures.writeZeros(1, at: r.appending(path: "link")), "never writes through a symlink")
+    }
 }

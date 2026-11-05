@@ -73,6 +73,32 @@ final class ScenarioDriver {
         return url
     }
 
+    /// Indices of steps that do not have exactly one action field (ScenarioFile.validate reports the first as an error).
+    nonisolated static func validateSteps(_ steps: [ScenarioFile.Step]) -> [Int] {
+        steps.indices.filter { steps[$0].actions.count != 1 }
+    }
+
+    /// §2.4 tokens: "{root}" = POSIX path of --root as the app holds it (no trailing slash), "{rootURL}" = its file
+    /// URL (trailing slash), "{user}" = NSUserName(). "{rootURL}" goes first because "{root}" is a prefix of it.
+    nonisolated static func substitute(_ s: String, root: URL) -> String {
+        guard s.contains("{") else { return s }
+        var path = root.path(percentEncoded: false)
+        if path.count > 1, path.hasSuffix("/") { path.removeLast() }
+        return s.replacing("{rootURL}", with: URL(filePath: path, directoryHint: .isDirectory).absoluteString)
+            .replacing("{root}", with: path)
+            .replacing("{user}", with: NSUserName())
+    }
+
+    /// nil unless `relative` stays inside `root` lexically (non-empty, not absolute, no "..", ".", "~"). fs steps
+    /// also check the symlink-resolved parent on a lane (a link inside the root may point out).
+    nonisolated static func guardedURL(_ relative: String, root: URL) -> URL? {
+        guard ScenarioPath.isSafeRelative(relative) else { return nil }
+        let url = root.appending(path: relative).standardizedFileURL
+        let rootPath = root.standardizedFileURL.path(percentEncoded: false)
+        let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+        return url.path(percentEncoded: false).hasPrefix(prefix) ? url : nil
+    }
+
     // MARK: run
 
     func run() async -> Bool {
@@ -275,6 +301,10 @@ final class ScenarioDriver {
         else if let name = step.click { try await click(name, modifiers: step.modifiers ?? []) }
         else if let name = step.doubleClick { try await doubleClick(name); await fence() }
         else if let name = step.rightClick { try await openContextMenu(on: name) }
+        else if let target = step.middleClick { try middleClick(target); await fence() }
+        else if let index = step.selectTab { try selectTab(index); await fence() }
+        else if let write = step.fsWrite { try await fsWrite(write) }
+        else if let tags = step.fsTags { try await fsTags(tags) }
         else if let title = step.chooseMenuItem { try chooseMenuItem(title); await fence() }
         else if let drop = step.drop { try await performDrop(drop, modifiers: step.modifiers ?? []) }
         else if let action = step.answerConflict {
@@ -282,7 +312,8 @@ final class ScenarioDriver {
         }
         else if let title = step.answerAlert { try await answerAlert(title, timeout: milliseconds(step.timeoutMs, default: 3_000)) }
         else if let expectation = step.waitFor { try await waitFor(expectation, timeout: milliseconds(step.timeoutMs, default: 3_000)) }
-        else if let expectation = step.expect {
+        else if let raw = step.expect {
+            let expectation = substituted(raw)
             let problems = ExpectationMatcher.mismatches(expectation, try await snapshot(for: expectation))
             if !problems.isEmpty { throw DriverError(problems.joined(separator: "; ")) }
         }
@@ -369,6 +400,14 @@ final class ScenarioDriver {
     /// Model-level click: the SelectionCommand P1-33 maps the click to (fact 4: synthesized clicks don't work inactive).
     private func click(_ name: String, modifiers: [String]) async throws {
         let controller = try browserWindow()
+        if case .prefixed(let target) = ScenarioTarget(parsing: name) {
+            guard let hook = controller.scenarioHooks.clickTarget else {
+                throw DriverError("click '\(target)': ScenarioHooks.clickTarget is not installed")
+            }
+            guard hook(target, modifiers) else { throw DriverError("click target '\(target)' not found") }
+            await fence()
+            return
+        }
         let row = try await row(named: name, in: controller)
         let command: SelectionCommand =
             modifiers.contains("cmd") ? .toggle(row)
@@ -387,6 +426,13 @@ final class ScenarioDriver {
 
     private func openContextMenu(on name: String) async throws {
         let controller = try browserWindow()
+        if case .prefixed(let target) = ScenarioTarget(parsing: name) {
+            guard let hook = controller.scenarioHooks.rightClickTarget else {
+                throw DriverError("rightClick '\(target)': ScenarioHooks.rightClickTarget is not installed")
+            }
+            guard hook(target) else { throw DriverError("right-click target '\(target)' not found") }
+            return
+        }
         guard let content = contentController(in: controller), let handler = content.handler else {
             throw DriverError("content view controller or its command handler not found")
         }
@@ -443,6 +489,49 @@ final class ScenarioDriver {
         await fence()
     }
 
+    private func middleClick(_ target: String) throws {
+        let controller = try browserWindow()
+        guard let hook = controller.scenarioHooks.performMiddleClick else {
+            throw DriverError("middleClick '\(target)': ScenarioHooks.performMiddleClick is not installed")
+        }
+        guard hook(target) else { throw DriverError("middle-click target '\(target)' not found") }
+    }
+
+    private func selectTab(_ index: Int) throws {
+        guard let window = try browserWindow().window else { throw DriverError("browser window has no NSWindow") }
+        let tabs = BrowserWindowController.orderedTabWindows(of: window)
+        guard tabs.indices.contains(index) else { throw DriverError("no tab \(index): the window has \(tabs.count) tab(s)") }
+        let tab = tabs[index]
+        MacxApplication.scenarioKeyWindow = tab
+        tab.makeKeyAndOrderFront(nil)
+        if let controller = tab.windowController as? BrowserWindowController { focusList(in: controller) }
+    }
+
+    /// The guarded target of an fs step: lexically inside the root, and its existing parent resolves inside it too.
+    private func fsTarget(_ relative: String) async throws -> URL {
+        guard let root = rootReal, let url = Self.guardedURL(relative, root: root) else {
+            throw DriverError("fs step: path '\(relative)' is outside root")
+        }
+        let roots = rootPrefixes
+        let parent = try await lanes.perform(on: .unknown) { _ in url.deletingLastPathComponent().resolvingSymlinksInPath() }
+        guard Self.relativePath(parent.standardizedFileURL.path(percentEncoded: false), roots: roots) != nil else {
+            throw DriverError("fs step: path '\(relative)' resolves outside root (\(parent.path(percentEncoded: false)))")
+        }
+        return parent.appending(path: url.lastPathComponent)
+    }
+
+    private func fsWrite(_ write: ScenarioFile.FSWrite) async throws {
+        let url = try await fsTarget(write.path)
+        let bytes = write.bytes
+        try await lanes.perform(on: .unknown) { _ in try ScenarioFixtures.writeZeros(bytes, at: url) }
+    }
+
+    private func fsTags(_ step: ScenarioFile.FSTags) async throws {
+        let url = try await fsTarget(step.path)
+        let tags = step.tags, path = step.path
+        try await lanes.perform(on: .unknown) { _ in try ScenarioFixtures.setFinderTags(tags, at: url, relative: path) }
+    }
+
     private func answerConflict(_ raw: String, all: Bool, timeout: Duration) async throws {
         guard let action = ConflictAction(rawValue: raw), let decorator else { throw DriverError("bad conflict answer '\(raw)'") }
         try await waitUntil("a conflict to be asked", timeout: timeout) { decorator.pendingCount > 0 }
@@ -482,7 +571,8 @@ final class ScenarioDriver {
         throw DriverError("no alert button '\(title)' (buttons seen: \(found))")
     }
 
-    private func waitFor(_ expectation: ScenarioFile.Expectation, timeout: Duration) async throws {
+    private func waitFor(_ raw: ScenarioFile.Expectation, timeout: Duration) async throws {
+        let expectation = substituted(raw)
         let clock = ContinuousClock()
         let deadline = clock.now + timeout
         var problems: [String] = []
@@ -492,6 +582,47 @@ final class ScenarioDriver {
             try await Task.sleep(for: .milliseconds(20))
         } while clock.now < deadline
         throw DriverError("after \(timeout): " + problems.joined(separator: "; "))
+    }
+
+    private func substituted(_ e: ScenarioFile.Expectation) -> ScenarioFile.Expectation {
+        guard let root = context.options.root else { return e }
+        return e.substituted(root: root)
+    }
+
+    private func relativeOrMarked(_ url: URL) -> String {
+        let path = url.standardizedFileURL.path(percentEncoded: false)
+        let trimmed = path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
+        return Self.relativePath(trimmed, roots: rootPrefixes) ?? "<outside root: \(trimmed)>"
+    }
+
+    /// Phase 2 values (§2.4). Hook-backed ones stay nil while the hook is missing.
+    private func addPhase2(to s: inout ProbeSnapshot, from w: BrowserWindowController, for e: ScenarioFile.Expectation) {
+        s.tabs = w.probeTabFolderURLs.map(relativeOrMarked)
+        s.activeTab = w.probeSelectedTabIndex
+        s.sort = ScenarioStrings.sort(w.probeSort)
+        s.iconSize = w.probeIconSize.rawValue
+        s.groupBy = w.probeGrouping.rawValue
+        let hooks = w.scenarioHooks
+        s.groups = hooks.groupHeaderTitles?()
+        s.visibleRows = hooks.visibleRowNames?()
+        s.visibleColumns = hooks.visibleColumnIDs?()
+        if let state = hooks.quickLookState?() {
+            s.quickLookVisible = state.visible
+            s.quickLookItems = state.items
+        }
+        if let cellText = hooks.cellText, let wanted = e.cells {
+            var cells: [String: [String: String]] = [:]
+            for (row, columns) in wanted {
+                for column in columns.keys { if let text = cellText(row, column) { cells[row, default: [:]][column] = text } }
+            }
+            s.cells = cells
+        }
+        if let chain = hooks.columnsChain?() {
+            s.columnsChain = chain.folders.map(relativeOrMarked)
+            s.activeColumn = chain.active
+        }
+        s.thumbnails = hooks.thumbnailNames?()
+        s.pasteboardText = nil    // P2-04 adds PasteboardBackend.readString()
     }
 
     private func snapshot(for expectation: ScenarioFile.Expectation) async throws -> ProbeSnapshot {
@@ -514,6 +645,7 @@ final class ScenarioDriver {
             $0.isVisible && ($0.identifier?.rawValue == AXID.propertiesWindow || $0.accessibilityIdentifier() == AXID.propertiesWindow)
         }.count
         s.windowCount = context.windows.windows.count
+        addPhase2(to: &s, from: w, for: expectation)
         let paths = ExpectationMatcher.requestedPaths(expectation).filter(ScenarioPath.isSafeRelative)
         if !paths.isEmpty, let root = rootReal {
             s.fileSizes = try await lanes.perform(on: .unknown) { _ in

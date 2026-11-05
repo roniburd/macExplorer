@@ -12,6 +12,18 @@ import MacxFS
     var emptyStateText: (() -> String?)?
     var bannerText: (() -> String?)?
     var performDrop: (([URL], String, DragModifiers, Bool, DragOperation?) async -> Void)?
+    // Phase 2 (plan P2-03). Nil until the owning task installs it; an expectation or step that needs a missing
+    // hook fails with a message naming it.
+    var visibleColumnIDs: (() -> [String])?                         // P2-16
+    var visibleRowNames: (() -> [String])?                          // P2-10 (item rows in the table, headers excluded)
+    var groupHeaderTitles: (() -> [String])?                        // P2-10
+    var cellText: ((String, String) -> String?)?                    // P2-14/P2-16 (row name, ColumnID raw value)
+    var quickLookState: (() -> (visible: Bool, items: [String]))?   // P2-11
+    var columnsChain: (() -> (folders: [URL], active: Int))?        // P2-19
+    var thumbnailNames: (() -> [String])?                           // P2-17
+    var performMiddleClick: ((String) -> Bool)?                     // P2-06
+    var clickTarget: ((String, [String]) -> Bool)?                  // P2-06 tree:, P2-10 group:, P2-16 header: (target, modifiers)
+    var rightClickTarget: ((String) -> Bool)?                       // P2-16 header:
 }
 
 /// What the in-process scenario driver (P1-41) reads from a browser window. BrowserWindowController conforms.
@@ -29,6 +41,12 @@ import MacxFS
     var probeEmptyStateText: String? { get }
     var probeBannerText: String? { get }
     var probeFieldEditorText: String? { get }      // whatever field editor is first responder
+    // Phase 2 (plan P2-03)
+    var probeTabFolderURLs: [URL] { get }          // each tab's folder, in tab order
+    var probeSelectedTabIndex: Int { get }         // index of the tab group's selected window in that order
+    var probeSort: MacxFS.SortDescriptor { get }
+    var probeGrouping: GroupBy { get }
+    var probeIconSize: IconSize { get }
     /// Scenario-only drop entry point (drag sessions can't be synthesized in-process). Runs the same
     /// DropPolicy + DropMenu + job path as a real drop onto `targetName` ("" = current folder).
     func probePerformDrop(sources: [URL], onto targetName: String, modifiers: DragModifiers, secondary: Bool, menuChoice: DragOperation?) async

@@ -29,4 +29,10 @@ enum AXID {
     static let automaticUpdateChecks = "macx.settings.automaticUpdateChecks"
     static let checkForUpdatesNow = "macx.settings.checkForUpdatesNow"
     static let offerCrashReports = "macx.settings.offerCrashReports"
+    // Phase 2 (plan P2-03)
+    static func groupHeader(_ title: String) -> String { "macx.group.\(title)" }
+    static let columnsView = "macx.columns"
+    static func column(_ index: Int) -> String { "macx.column.\(index)" }
+    static let newTabItem = "macx.newTab"
+    static let tabBarDrop = "macx.tabBarDrop"
 }
