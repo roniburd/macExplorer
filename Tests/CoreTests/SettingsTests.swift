@@ -154,6 +154,7 @@ final class SettingsTests: XCTestCase {
         XCTAssertTrue(s.confirmBeforeDelete, "locked on")
         XCTAssertFalse(s.showFullPathInTitle)
         XCTAssertFalse(s.onboardingCompleted)
+        XCTAssertFalse(s.toolbarFeedbackItemOffered)
         XCTAssertNil(s.lastLocation)
         XCTAssertEqual(s.recentLocations, [])
         XCTAssertNil(s.tccOutcome(for: .desktop))
@@ -198,6 +199,7 @@ final class SettingsTests: XCTestCase {
         s.confirmBeforeTrash = true
         s.showFullPathInTitle = true
         s.onboardingCompleted = true
+        s.toolbarFeedbackItemOffered = true
         s.lastLocation = custom
         s.addRecentLocation("/tmp/a")
         s.recordTCCOutcome(.denied, for: .documents)
@@ -227,6 +229,7 @@ final class SettingsTests: XCTestCase {
         XCTAssertTrue(r.confirmBeforeTrash)
         XCTAssertTrue(r.showFullPathInTitle)
         XCTAssertTrue(r.onboardingCompleted)
+        XCTAssertTrue(r.toolbarFeedbackItemOffered)
         XCTAssertEqual(r.lastLocation, custom)
         XCTAssertEqual(r.recentLocations, ["/tmp/a"])
         XCTAssertEqual(r.tccOutcome(for: .documents), .denied)

@@ -70,9 +70,9 @@ final class UpdateBadgeTests: XCTestCase {
         toolbar.itemIdentifiers = [ToolbarController.navigationID, ToolbarController.addressID, ToolbarController.searchID,
                                   ToolbarController.viewSwitcherID]
         XCTAssertFalse(toolbar.items.contains { $0.itemIdentifier == ToolbarController.updateID }, "precondition")
-        controller.toolbarController.ensureUpdateItem(in: toolbar)
+        controller.toolbarController.ensureDefaultItems(in: toolbar)
         XCTAssertEqual(toolbar.items.last?.itemIdentifier, ToolbarController.updateID)
-        controller.toolbarController.ensureUpdateItem(in: toolbar)
+        controller.toolbarController.ensureDefaultItems(in: toolbar)
         XCTAssertEqual(toolbar.items.filter { $0.itemIdentifier == ToolbarController.updateID }.count, 1)
     }
 

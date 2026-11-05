@@ -40,7 +40,7 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
         toolbar.delegate = toolbarController
         toolbar.allowsUserCustomization = true
         window.toolbar = toolbar
-        toolbarController.ensureUpdateItem(in: toolbar)
+        toolbarController.ensureDefaultItems(in: toolbar)
         window.toolbarStyle = .unified
         window.titleVisibility = .hidden     // the address bar shows where we are; the title still names the window
         window.isRestorable = !context.options.isSandboxed

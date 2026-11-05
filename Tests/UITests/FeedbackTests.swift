@@ -42,4 +42,51 @@ final class FeedbackTests: XCTestCase {
         XCTAssertEqual(item.menu.items.compactMap(\.action).map(NSStringFromSelector), ["macx_reportBug:", "macx_requestFeature:"])
         XCTAssertFalse(item.label.isEmpty)
     }
+
+    // MARK: review of Task 10 — restored toolbar configurations get the feedback menu once
+
+    func testFirstWindowMarksTheFeedbackItemOffered() async throws {
+        let h = try await ShellHarness.make(self)
+        XCTAssertFalse(h.context.environment.settings.toolbarFeedbackItemOffered, "precondition")
+        _ = try await h.openWindow()
+        XCTAssertTrue(h.context.environment.settings.toolbarFeedbackItemOffered)
+    }
+
+    func testRestoredConfigurationWithoutFeedbackGetsItOnceBeforeTheBadge() async throws {
+        let h = try await ShellHarness.make(self)
+        let controller = try await h.openWindow()
+        let toolbar = try XCTUnwrap(controller.window?.toolbar)
+        // What an autosaved configuration from a build before the feedback menu looks like, on a first launch of this build.
+        toolbar.itemIdentifiers = [ToolbarController.navigationID, ToolbarController.addressID, ToolbarController.searchID,
+                                  ToolbarController.viewSwitcherID, ToolbarController.updateID]
+        h.context.environment.settings.toolbarFeedbackItemOffered = false
+        controller.toolbarController.ensureDefaultItems(in: toolbar)
+        XCTAssertEqual(Array(toolbar.items.map(\.itemIdentifier).suffix(2)), [ToolbarController.feedbackID, ToolbarController.updateID])
+        XCTAssertTrue(h.context.environment.settings.toolbarFeedbackItemOffered)
+        controller.toolbarController.ensureDefaultItems(in: toolbar)
+        XCTAssertEqual(toolbar.items.filter { $0.itemIdentifier == ToolbarController.feedbackID }.count, 1)
+    }
+
+    func testRestoredConfigurationMissingBothGetsFeedbackThenBadge() async throws {
+        let h = try await ShellHarness.make(self)
+        let controller = try await h.openWindow()
+        let toolbar = try XCTUnwrap(controller.window?.toolbar)
+        toolbar.itemIdentifiers = [ToolbarController.navigationID, ToolbarController.addressID]   // a Phase 1 customization
+        h.context.environment.settings.toolbarFeedbackItemOffered = false
+        controller.toolbarController.ensureDefaultItems(in: toolbar)
+        XCTAssertEqual(toolbar.items.map(\.itemIdentifier), [ToolbarController.navigationID, ToolbarController.addressID,
+                                                             ToolbarController.feedbackID, ToolbarController.updateID])
+    }
+
+    func testFeedbackItemTheUserRemovedStaysRemoved() async throws {
+        let h = try await ShellHarness.make(self)
+        let controller = try await h.openWindow()
+        let toolbar = try XCTUnwrap(controller.window?.toolbar)
+        XCTAssertTrue(h.context.environment.settings.toolbarFeedbackItemOffered, "already offered by the first window")
+        let index = try XCTUnwrap(toolbar.items.firstIndex { $0.itemIdentifier == ToolbarController.feedbackID })
+        toolbar.removeItem(at: index)
+        controller.toolbarController.ensureDefaultItems(in: toolbar)
+        XCTAssertFalse(toolbar.items.contains { $0.itemIdentifier == ToolbarController.feedbackID })
+        XCTAssertTrue(toolbar.items.contains { $0.itemIdentifier == ToolbarController.updateID })
+    }
 }

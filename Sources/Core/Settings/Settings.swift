@@ -55,6 +55,10 @@ public final class Settings {
     /// `.ips` file names already offered (newest first, ≤ 20), so one crash prompts once.
     public private(set) var lastReportedCrashes: [String] { didSet { save(lastReportedCrashes, Key.lastReportedCrashes) } }
     public var onboardingCompleted: Bool { didSet { save(onboardingCompleted, Key.onboardingCompleted) } }
+    /// Set once the toolbar has been given the Send Feedback item (or already had it). A restored toolbar
+    /// configuration never gains new default items; this one-time flag lets the first window of this build add it
+    /// without overriding a user who later removes it on purpose (review of Task 10).
+    public var toolbarFeedbackItemOffered: Bool { didSet { save(toolbarFeedbackItemOffered, Key.toolbarFeedbackItemOffered) } }
     public var lastLocation: URL? { didSet { save(lastLocation, Key.lastLocation) } }
     /// ≤ 20, most recent first. Settable (§3.9; e.g. "clear recents" assigns []); longer lists are clamped.
     public var recentLocations: [String] {
@@ -91,6 +95,7 @@ public final class Settings {
         confirmBeforeTrash = Self.load(Bool.self, Key.confirmBeforeTrash, from: storage) ?? false
         showFullPathInTitle = Self.load(Bool.self, Key.showFullPathInTitle, from: storage) ?? false
         onboardingCompleted = Self.load(Bool.self, Key.onboardingCompleted, from: storage) ?? false
+        toolbarFeedbackItemOffered = Self.load(Bool.self, Key.toolbarFeedbackItemOffered, from: storage) ?? false
         lastLocation = Self.load(URL.self, Key.lastLocation, from: storage)
         recents = Array((Self.load([String].self, Key.recentLocations, from: storage) ?? []).prefix(Self.recentLocationsLimit))
         let records = Self.load([TCCRecord].self, Key.tccOutcomes, from: storage) ?? []
@@ -135,6 +140,7 @@ public final class Settings {
         static let showExternalVolumesInSidebar = "showExternalVolumesInSidebar", collapsedSections = "collapsedSections"
         static let confirmBeforeTrash = "confirmBeforeTrash", showFullPathInTitle = "showFullPathInTitle"
         static let onboardingCompleted = "onboardingCompleted", lastLocation = "lastLocation"
+        static let toolbarFeedbackItemOffered = "toolbarFeedbackItemOffered"
         static let recentLocations = "recentLocations", tccOutcomes = "tccOutcomes"
         static let showCloudStorageInSidebar = "showCloudStorageInSidebar"
         static let updateChannel = "updateChannel", checkForUpdatesAutomatically = "checkForUpdatesAutomatically"

@@ -106,12 +106,20 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
         itemIdentifier != Self.updateID || index != NSNotFound
     }
 
-    /// An autosaved configuration from an older build (or one the user customized before the badge existed) is
-    /// restored as is and never gains new default items, so put the badge back at the trailing edge when it is
-    /// missing (review of Task 8).
-    func ensureUpdateItem(in toolbar: NSToolbar) {
-        guard !toolbar.items.contains(where: { $0.itemIdentifier == Self.updateID }) else { return }
-        toolbar.insertItem(withItemIdentifier: Self.updateID, at: toolbar.items.count)
+    /// An autosaved configuration from an older build (or one the user customized before these items existed) is
+    /// restored as is and never gains new default items. The badge is put back at the trailing edge whenever it is
+    /// missing (review of Task 8). The Send Feedback menu is movable, so it is added just before the badge only once
+    /// (`Settings.toolbarFeedbackItemOffered`); a user who removes it afterwards keeps it removed (review of Task 10).
+    func ensureDefaultItems(in toolbar: NSToolbar) {
+        if !toolbar.items.contains(where: { $0.itemIdentifier == Self.updateID }) {
+            toolbar.insertItem(withItemIdentifier: Self.updateID, at: toolbar.items.count)
+        }
+        let settings = context.environment.settings
+        guard !settings.toolbarFeedbackItemOffered else { return }
+        settings.toolbarFeedbackItemOffered = true
+        guard !toolbar.items.contains(where: { $0.itemIdentifier == Self.feedbackID }) else { return }
+        let badge = toolbar.items.firstIndex { $0.itemIdentifier == Self.updateID } ?? toolbar.items.count
+        toolbar.insertItem(withItemIdentifier: Self.feedbackID, at: badge)
     }
 
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
