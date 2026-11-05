@@ -118,36 +118,50 @@ final class DetailsViewTests: XCTestCase {
         try await h.waitUntil("comfortable rows") { details.tableView.rowHeight == 30 }
     }
 
-    func testHeaderClickSortsAndPersists() async throws {
+    func testHeaderClickSortsAndReportsTheSort() async throws {
         let h = try await ContentTestHarness.make(self)
         try h.file("big.txt", bytes: 3_000); try h.file("small.txt", bytes: 10); try h.file("mid.txt", bytes: 500)
         let (details, folder) = try await makeDetails(h)
+        var reported: [MacxFS.SortDescriptor] = []
+        details.onSortChanged = { sort in   // as BrowserSession.updateViewState does (P2-08)
+            reported.append(sort)
+            var query = folder.query
+            query.sort = sort
+            folder.setQuery(query)
+        }
         let sizeColumn = try XCTUnwrap(details.tableView.tableColumns.first { DetailsColumns.columnID($0.identifier) == .size })
         details.tableView(details.tableView, didClick: sizeColumn)
         try await h.waitUntil("ascending by size") { (0..<3).map(folder.name(atRow:)) == ["small.txt", "mid.txt", "big.txt"] }
         details.tableView(details.tableView, didClick: sizeColumn)
         try await h.waitUntil("descending by size") { (0..<3).map(folder.name(atRow:)) == ["big.txt", "mid.txt", "small.txt"] }
-        XCTAssertEqual(h.environment.settings.sort, MacxFS.SortDescriptor(field: .size, ascending: false))
+        XCTAssertEqual(reported.last, MacxFS.SortDescriptor(field: .size, ascending: false))
+        XCTAssertEqual(h.environment.settings.sort, .default, "per-folder state, not the global default (P2-08)")
         XCTAssertNotNil(details.tableView.indicatorImage(in: sizeColumn))
     }
 
-    func testHidingColumnPersistsToSettings() async throws {
+    func testHidingColumnReportsTheColumns() async throws {
         let h = try await ContentTestHarness.make(self)
         try h.file("a.txt")
         let (details, _) = try await makeDetails(h)
+        var reported: [ColumnSetting]?
+        details.onColumnsChanged = { reported = $0 }
         let item = try XCTUnwrap(details.tableView.headerView?.menu?.items.first { $0.representedObject as? String == ColumnID.kind.rawValue })
         details.toggleColumn(item)
-        XCTAssertEqual(h.environment.settings.columns.first { $0.id == .kind }?.visible, false)
+        XCTAssertEqual(reported?.first { $0.id == .kind }?.visible, false)
+        XCTAssertEqual(h.environment.settings.columns.first { $0.id == .kind }?.visible, true, "global default untouched (P2-08)")
         XCTAssertEqual(details.tableView.tableColumns.first { DetailsColumns.columnID($0.identifier) == .kind }?.isHidden, true)
     }
 
-    func testColumnMovePersistsOrder() async throws {
+    func testColumnMoveReportsTheOrder() async throws {
         let h = try await ContentTestHarness.make(self)
         try h.file("a.txt")
         let (details, _) = try await makeDetails(h)
+        var reported: [ColumnSetting]?
+        details.onColumnsChanged = { reported = $0 }
         let moved = DetailsColumns.columnID(details.tableView.tableColumns[1].identifier)
         details.tableView.moveColumn(1, toColumn: 3)
-        XCTAssertEqual(h.environment.settings.columns.map(\.id)[3], moved)
+        XCTAssertEqual(reported?.map(\.id)[3], moved)
+        XCTAssertEqual(details.columns.map(\.id)[3], moved)
     }
 
     func testLocalChangeInsertsRowThroughContentController() async throws {

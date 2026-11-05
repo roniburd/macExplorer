@@ -2624,6 +2624,36 @@ git add Sources/UI Tests/UITests/FolderViewCoordinatorTests.swift Tests/Scenario
 git commit -m "feat: apply and save view mode, columns, sort and icon size per folder; apply to all folders"
 ```
 
+
+**P2-08 result (as built):**
+- Tests use `ShellHarness` (session-only tests, no window server) and `ContentTestHarness` (window tests) instead of
+  a hand-built `CoreEnvironment.sandboxed`; 13 tests, not 4 (extra: event order, edits made before the identity probe
+  returns, reload after new defaults, the open command passing the row's fileID, view/sort/icon-size commands, the
+  toolbar switcher, column edits and header sort, and the Apply to All command with Cancel and with Apply across
+  windows). `BrowserSession.locator` is `private(set)` (internal) so tests can see the refined fileID.
+- Event order on navigation: `.folderChanged`, then `.viewModeChanged` (only when the mode differs), then
+  `.viewStateChanged`. `updateViewState`/`reloadViewState` emit `.viewStateChanged` only when the state changed.
+- Identity correction refinements: if the user changed the view before the probe returned, that change is saved
+  under the refined locator (never overwritten by an older object record); if the refined lookup gives the same
+  state and a record exists, it is re-saved so a path record becomes an object record (survives a later rename).
+  `FolderViewCoordinator` gained `hasOverride(for:)` for this.
+- `DetailsColumns.apply`/`onColumnsChanged` live on `DetailsViewController` (`apply(columns:sort:)`, which rebuilds
+  only when the columns differ and also sets the sort indicator; `onColumnsChanged`; plus `onSortChanged` for header
+  clicks, falling back to setting the folder query when the table is hosted on its own). Non-offered columns keep
+  their stored width/visibility. `IconsViewController.setIconSize(_:)` replaces its `Settings.iconSize` observation.
+- Apply to All asks through `CommandPrompts.confirm(.applyViewToAllFolders)` (AppKit: a window-modal `NSAlert`
+  sheet with the plan's title, text and buttons) so tests can script it, then reloads every
+  `context.windows.windows` session (each tab is a `BrowserWindowController`). `applyViewToAllFolders` left
+  `FileCommandController.pendingCommands`.
+- Opening one plain folder row passes its `entry.fileID` through `execute(_:folderID:)` and
+  `BrowserWindowController.navigate(to:selecting:folderID:)`. `ShellCommandHandler`'s sidebar view commands also
+  call `updateViewState`. `ContextMenuBuilder.emptySpaceMenu(for:viewState:handler:)` takes its View ▸ checkmarks
+  from the folder's state, and the scenario probe `iconSize` reads `session.viewState.iconSize`.
+- Phase 1 tests that asserted writes to the global `Settings.viewMode/sort/iconSize/columns` now assert the
+  per-folder state (BrowserSessionTests, ToolbarTests, DetailsViewTests, FileCommandTests, IconsViewTests).
+- Scenario: adds an initial `waitFor` for the listing and a `waitFor` after ⌘1; the runner filter is
+  `scripts/ui-scenarios.sh --filter p2-per-folder-view`.
+
 ---
 
 ### Task P2-09: Group by: partition, grouped-row mapping, FolderModel grouping

@@ -16,7 +16,7 @@ final class FileCommandController: CommandHandler {
     static let pendingCommands: Set<Command> = Command.windowTabCommands.union([
         .quickLook, .viewAsColumns,
         .groupByNone, .groupByKind, .groupByDateModified, .groupBySize, .groupByName,
-        .toggleFolderSizes, .applyViewToAllFolders,
+        .toggleFolderSizes,
     ])
 
     var environment: CoreEnvironment { context.environment }
@@ -88,13 +88,14 @@ final class FileCommandController: CommandHandler {
              .densityComfortable, .toggleHidden, .toggleCommandBar, .sortByName, .sortByDateModified, .sortBySize, .sortByKind,
              .sortByDateCreated, .sortAscending, .sortDescending:
             performViewCommand(effective)
+        case .applyViewToAllFolders: applyViewToAllFolders()
         case .eject: eject(target)
         case .removeFromFavorites: removeFavorite(target)
         case .cancelOperation: environment.clipboard.clearCut()
         case .newTab, .nextTab, .previousTab, .showTabBar, .showAllTabs, .moveTabToNewWindow, .mergeAllWindows,
              .quickLook, .viewAsColumns,
              .groupByNone, .groupByKind, .groupByDateModified, .groupBySize, .groupByName,
-             .toggleFolderSizes, .applyViewToAllFolders:
+             .toggleFolderSizes:
             break   // pendingCommands: canPerform is false, so perform beeps above
         }
     }

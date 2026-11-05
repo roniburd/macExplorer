@@ -89,8 +89,7 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
     func selectViewMode(at index: Int) {
         let modes = Self.switcherModes
         guard modes.indices.contains(index) else { return }
-        session.viewMode = modes[index]
-        context.environment.settings.viewMode = modes[index]
+        session.updateViewState { $0.mode = modes[index] }   // this folder only (P2-08)
         syncViewMode()
     }
 
@@ -185,7 +184,7 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
             navigation.update()
         case .viewModeChanged:
             syncViewMode()
-        case .banner:
+        case .banner, .viewStateChanged:
             break
         }
     }

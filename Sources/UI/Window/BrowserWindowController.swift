@@ -67,8 +67,8 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
     /// The window number (stable while the window exists); job origins and sheet hosts use it.
     public var origin: OriginID { OriginID(raw: window?.windowNumber ?? 0) }
 
-    public func navigate(to url: URL, selecting name: String? = nil) {
-        session.navigate(to: url, selecting: name)
+    public func navigate(to url: URL, selecting name: String? = nil, folderID: UInt64? = nil) {
+        session.navigate(to: url, selecting: name, folderID: folderID)
     }
 
     /// ⌘T and the tab bar's "+" (NSWindow sends newWindowForTab: up the responder chain; the panes never implement
@@ -153,7 +153,7 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
     private func handle(_ event: SessionEvent) {
         switch event {
         case .folderChanged: folderDidChange()
-        case .historyChanged, .viewModeChanged, .banner: break
+        case .historyChanged, .viewModeChanged, .viewStateChanged, .banner: break
         }
     }
 

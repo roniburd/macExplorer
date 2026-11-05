@@ -166,8 +166,8 @@ final class ToolbarTests: XCTestCase {
         XCTAssertEqual(switcher.selectedIndex, ToolbarController.switcherModes.firstIndex(of: controller.session.viewMode))
         controller.toolbarController.selectViewMode(at: 1)
         XCTAssertEqual(controller.session.viewMode, .icons)
-        XCTAssertEqual(h.environment.settings.viewMode, .icons)
-        controller.session.viewMode = .details
+        XCTAssertEqual(h.environment.settings.viewMode, .details, "saved for this folder only (P2-08)")
+        controller.session.updateViewState { $0.mode = .details }
         XCTAssertEqual(switcher.selectedIndex, 0)
         XCTAssertTrue(switcher.subitems.allSatisfy { !$0.label.isEmpty })
     }

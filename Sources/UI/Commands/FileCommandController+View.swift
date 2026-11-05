@@ -27,9 +27,9 @@ extension FileCommandController {
         switch command {
         case .viewAsDetails: setViewMode(.details)
         case .viewAsIcons: setViewMode(.icons)
-        case .iconSizeSmall: settings.iconSize = .small; setViewMode(.icons)
-        case .iconSizeMedium: settings.iconSize = .medium; setViewMode(.icons)
-        case .iconSizeLarge: settings.iconSize = .large; setViewMode(.icons)
+        case .iconSizeSmall: setIconSize(.small)
+        case .iconSizeMedium: setIconSize(.medium)
+        case .iconSizeLarge: setIconSize(.large)
         case .densityCompact: settings.density = .compact
         case .densityRegular: settings.density = .regular
         case .densityComfortable: settings.density = .comfortable
@@ -52,19 +52,36 @@ extension FileCommandController {
         }
     }
 
+    // View, icon-size and sort commands change this folder's view state only (P2-08); the session applies it.
+
     private func setViewMode(_ mode: ViewMode) {
-        session?.viewMode = mode
-        environment.settings.viewMode = mode
-        contentController()?.setViewMode(mode)
+        session?.updateViewState { $0.mode = mode }
+    }
+
+    private func setIconSize(_ size: IconSize) {
+        session?.updateViewState { $0.iconSize = size; $0.mode = .icons }
     }
 
     private func setSort(field: SortField? = nil, ascending: Bool? = nil) {
-        guard let folder = session?.folder else { return }
-        var query = folder.query
-        let newField = field ?? query.sort.field
-        let keepDirection = newField == query.sort.field
-        query.sort = SortDescriptor(field: newField, ascending: ascending ?? (keepDirection ? query.sort.ascending : true))
-        folder.setQuery(query)
-        environment.settings.sort = query.sort
+        guard let session else { return }
+        let current = session.folder.query.sort
+        let newField = field ?? current.field
+        let keepDirection = newField == current.field
+        let sort = SortDescriptor(field: newField, ascending: ascending ?? (keepDirection ? current.ascending : true))
+        session.updateViewState { $0.sort = sort }
+    }
+
+    /// "Apply to All Folders…": asks on a sheet, then this folder's view becomes the default, every folder's own
+    /// state is dropped and every open window and tab re-reads its state.
+    func applyViewToAllFolders() {
+        guard let session else { return }
+        let state = session.viewState
+        let environment = self.environment, windows = context.windows
+        Task {
+            guard await self.prompts.confirm(.applyViewToAllFolders, window: self.window?.window) else { return }
+            FolderViewCoordinator(store: environment.folderViews, settings: environment.settings,
+                                  lanes: environment.lanes, volumes: environment.volumes).applyToAll(state)
+            for controller in windows.windows { controller.session.reloadViewState() }
+        }
     }
 }

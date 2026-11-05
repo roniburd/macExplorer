@@ -452,7 +452,7 @@ final class ScenarioDriver {
         let folder = controller.session.folder
         let builder = ContextMenuBuilder(context: context)
         if name.isEmpty {
-            contextMenu = builder.emptySpaceMenu(for: folder, handler: handler)
+            contextMenu = builder.emptySpaceMenu(for: folder, viewState: controller.session.viewState, handler: handler)
         } else {
             let row = try await row(named: name, in: controller)
             if !folder.selection.rows.contains(row) { folder.select(.set(IndexSet(integer: row), cursor: row)) }

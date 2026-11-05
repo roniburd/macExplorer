@@ -96,6 +96,8 @@ final class ContentViewController: CommandHandlingViewController {
         details.dropTarget = dropTarget
         details.onSpringLoad = { [weak self] url in self?.session.navigate(to: url) }
         details.onNewTabGesture = { [weak self] gesture, row in self?.newTabGesture(gesture, row: row) }
+        details.onColumnsChanged = { [weak self] columns in self?.session.updateViewState { $0.columns = columns } }
+        details.onSortChanged = { [weak self] sort in self?.session.updateViewState { $0.sort = sort } }
         NotificationCenter.default.addObserver(self, selector: #selector(applicationDidBecomeActive(_:)),
                                                name: NSApplication.didBecomeActiveNotification, object: nil)
         sessionToken = session.observe { [weak self] event in self?.handle(event) }
@@ -109,6 +111,7 @@ final class ContentViewController: CommandHandlingViewController {
             self?.applyCommandBarVisibility()
         }
         applyCommandBarVisibility()
+        applyViewState(session.viewState)
         setViewMode(session.viewMode)
         bind(session.folder)
         installOperationsCapsule()
@@ -139,6 +142,7 @@ final class ContentViewController: CommandHandlingViewController {
         switch event {
         case .folderChanged(let model): bind(model)
         case .viewModeChanged(let mode): setViewMode(mode)
+        case .viewStateChanged(let state): applyViewState(state)
         case .historyChanged: updateCommandBar()
         case .banner(let text): showBanner(text)
         }
@@ -244,7 +248,7 @@ final class ContentViewController: CommandHandlingViewController {
         let rule = ContextMenuBuilder.contextRows(clickedRow: row, selectedRows: folder.selection.rows)
         if let select = rule.select { folder.select(select) }
         if let rows = rule.rows, !rows.isEmpty { return menuBuilder.itemMenu(for: rows, in: folder, handler: handler) }
-        return menuBuilder.emptySpaceMenu(for: folder, handler: handler)
+        return menuBuilder.emptySpaceMenu(for: folder, viewState: session.viewState, handler: handler)
     }
 
     func refreshCutNames() {
@@ -258,7 +262,13 @@ final class ContentViewController: CommandHandlingViewController {
         context.environment.clipboard.revalidate()   // §5.6: poll changeCount on activation
     }
 
-    // MARK: view mode
+    // MARK: view mode and per-folder view state (P2-08)
+
+    /// The folder's columns (order, widths, visibility), sort indicator and icon size.
+    func applyViewState(_ state: FolderViewState) {
+        details.apply(columns: state.columns, sort: state.sort)
+        icons?.setIconSize(state.iconSize)
+    }
 
     func setViewMode(_ mode: ViewMode) {
         let list: FileListView
@@ -279,6 +289,7 @@ final class ContentViewController: CommandHandlingViewController {
     private func iconsController() -> IconsViewController {
         if let icons { return icons }
         let created = IconsViewController(context: context)
+        created.setIconSize(session.viewState.iconSize)
         addChild(created)
         created.contextMenuProvider = { [weak self] row in self?.contextMenu(forRow: row) }
         created.dropTarget = dropTarget

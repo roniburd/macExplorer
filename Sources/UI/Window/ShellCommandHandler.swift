@@ -112,7 +112,6 @@ final class ShellCommandHandler: CommandHandler {
     }
 
     private func setViewMode(_ mode: ViewMode) {
-        window?.session.viewMode = mode
-        context.environment.settings.viewMode = mode
+        window?.session.updateViewState { $0.mode = mode }   // this folder only (P2-08)
     }
 }

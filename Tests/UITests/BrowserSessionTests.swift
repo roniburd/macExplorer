@@ -34,6 +34,7 @@ final class BrowserSessionTests: XCTestCase {
             case .folderChanged(let model): events.append("folder:" + model.directory.lastPathComponent)
             case .historyChanged: events.append("history")
             case .viewModeChanged: events.append("viewMode")
+            case .viewStateChanged: events.append("viewState")
             case .banner(let text): events.append("banner:\(text ?? "nil")")
             }
         }
@@ -41,7 +42,7 @@ final class BrowserSessionTests: XCTestCase {
         let old = session.folder
         session.navigate(to: h.url("sub"))
         XCTAssertFalse(old === session.folder)
-        XCTAssertEqual(events, ["folder:sub", "history"])
+        XCTAssertEqual(events, ["folder:sub", "viewState", "history"])
         try await h.waitUntil("sub complete") { session.folder.state == .complete }
         XCTAssertEqual(ShellHarness.names(session.folder), ["inner.txt"])
         XCTAssertTrue(session.history.canGoBack)
@@ -144,9 +145,9 @@ final class BrowserSessionTests: XCTestCase {
         var modes: [ViewMode] = []
         let token = session.observe { if case .viewModeChanged(let m) = $0 { modes.append(m) } }
         defer { token.cancel() }
-        session.viewMode = .icons
-        session.viewMode = .icons
-        session.viewMode = .details
+        session.updateViewState { $0.mode = .icons }
+        session.updateViewState { $0.mode = .icons }
+        session.updateViewState { $0.mode = .details }
         XCTAssertEqual(modes, [.icons, .details])
     }
 

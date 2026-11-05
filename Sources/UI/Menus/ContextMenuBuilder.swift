@@ -132,16 +132,18 @@ final class ContextMenuBuilder {
         return menu   // AppKit appends Services ▸ for the list views' NSServicesMenuRequestor when it pops the menu
     }
 
-    func emptySpaceMenu(for folder: FolderModel, handler: CommandHandler) -> NSMenu {
+    /// `viewState` is the folder's view state (P2-08), for the View ▸ checkmarks; nil uses the defaults.
+    func emptySpaceMenu(for folder: FolderModel, viewState: FolderViewState? = nil, handler: CommandHandler) -> NSMenu {
+        let view = viewState ?? context.environment.settings.defaultFolderViewState()
         let menu = NSMenu()
         let target = CommandTarget.currentFolder(folder)
         add(.paste, target, handler, to: menu)
         menu.addItem(newSubmenu(folder: folder, handler: handler))
         menu.addItem(submenu(L10n.string("View"), id: "view", [.viewAsDetails, .viewAsIcons, .iconSizeSmall, .iconSizeMedium,
                                                               .iconSizeLarge, .densityCompact, .densityRegular, .densityComfortable,
-                                                              .toggleHidden, .toggleCommandBar], target, handler, folder))
+                                                              .toggleHidden, .toggleCommandBar], target, handler, folder, view))
         menu.addItem(submenu(L10n.string("Sort By"), id: "sortBy", [.sortByName, .sortByDateModified, .sortBySize, .sortByKind,
-                                                                   .sortByDateCreated, .sortAscending, .sortDescending], target, handler, folder))
+                                                                   .sortByDateCreated, .sortAscending, .sortDescending], target, handler, folder, view))
         add(.refresh, target, handler, to: menu)
         menu.addItem(.separator())
         add(.openInTerminal, target, handler, to: menu)
@@ -168,24 +170,25 @@ final class ContextMenuBuilder {
     }
 
     private func submenu(_ title: String, id: String, _ commands: [Command], _ target: CommandTarget,
-                         _ handler: CommandHandler, _ folder: FolderModel) -> NSMenuItem {
+                         _ handler: CommandHandler, _ folder: FolderModel, _ view: FolderViewState? = nil) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
         item.identifier = NSUserInterfaceItemIdentifier("macx.menu.\(id)")
         let submenu = NSMenu(title: title)
-        for command in commands { add(command, target, handler, to: submenu).state = state(command, folder: folder) }
+        let view = view ?? context.environment.settings.defaultFolderViewState()
+        for command in commands { add(command, target, handler, to: submenu).state = state(command, folder: folder, view: view) }
         item.submenu = submenu
         return item
     }
 
-    private func state(_ command: Command, folder: FolderModel) -> NSControl.StateValue {
+    private func state(_ command: Command, folder: FolderModel, view: FolderViewState) -> NSControl.StateValue {
         let settings = context.environment.settings
         let sort = folder.query.sort
         let on: Bool = switch command {
-        case .viewAsDetails: settings.viewMode == .details
-        case .viewAsIcons: settings.viewMode == .icons
-        case .iconSizeSmall: settings.iconSize == .small
-        case .iconSizeMedium: settings.iconSize == .medium
-        case .iconSizeLarge: settings.iconSize == .large
+        case .viewAsDetails: view.mode == .details
+        case .viewAsIcons: view.mode == .icons
+        case .iconSizeSmall: view.iconSize == .small
+        case .iconSizeMedium: view.iconSize == .medium
+        case .iconSizeLarge: view.iconSize == .large
         case .densityCompact: settings.density == .compact
         case .densityRegular: settings.density == .regular
         case .densityComfortable: settings.density == .comfortable

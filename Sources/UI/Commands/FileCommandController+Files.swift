@@ -13,9 +13,19 @@ extension FileCommandController {
                 return OpenItem(url: folder.url(atRow: row), kind: entry.kind, isApplication: environment.types.isApplication(entry.typeIndex))
             }
             guard !items.isEmpty else { return }
+            // One plain folder row: its fileID keys its view state at once (P2-08); other routes probe for it.
+            var folderID: (url: URL, id: UInt64)?
+            if items.count == 1, let row = folder.selection.rows.first(where: { $0 < folder.rowCount }),
+               items[0].kind == .directory, !items[0].isApplication {
+                let id = folder.entry(atRow: row).fileID
+                if id != 0 { folderID = (items[0].url, id) }
+            }
             let lanes = environment.lanes
             let volumes = environment.volumes
-            Task { await self.execute(await OpenPlanner.plan(items, newWindow: newWindow, lanes: lanes, volumes: volumes)) }
+            Task {
+                await self.execute(await OpenPlanner.plan(items, newWindow: newWindow, lanes: lanes, volumes: volumes),
+                                   folderID: folderID)
+            }
         case .folder, .favorite, .volume, .location:
             guard let url = subjectURLs(target).first else { return }
             if newWindow { context.windows.openWindow(at: url) } else { window?.navigate(to: url) }
@@ -74,14 +84,14 @@ extension FileCommandController {
         for url in broken { await handleBrokenLink(url) }
     }
 
-    func execute(_ plan: OpenPlan) async {
+    func execute(_ plan: OpenPlan, folderID: (url: URL, id: UInt64)? = nil) async {
         if plan.needsConfirmation {
             let windows = plan.actions.filter { if case .openInNewWindow = $0 { true } else { false } }.count
             guard await prompts.confirm(.openManyWindows(windows), window: window?.window) else { return }
         }
         for action in plan.actions {
             switch action {
-            case .navigate(let url): window?.navigate(to: url)
+            case .navigate(let url): window?.navigate(to: url, folderID: folderID?.url == url ? folderID?.id : nil)
             case .openInNewWindow(let url): context.windows.openWindow(at: url)
             case .launchApplication(let url): await openWithErrors([url], app: nil)
             case .openDocuments(let urls): await openWithErrors(urls, app: nil)

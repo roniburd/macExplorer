@@ -269,14 +269,16 @@ final class FileCommandTests: XCTestCase {
         XCTAssertTrue(w.folder.selection.isEmpty)
     }
 
-    func testViewAndSortCommandsUpdateSettingsAndModel() async throws {
+    func testViewAndSortCommandsUpdateTheFolderViewStateAndModel() async throws {
         let w = try await world { try $0.file("a.txt") }
         w.commands.perform(.viewAsIcons, target: w.selection, sender: nil)
         XCTAssertTrue(w.content.activeList === w.content.icons)
-        XCTAssertEqual(w.h.environment.settings.viewMode, .icons)
+        XCTAssertEqual(w.browser.session.viewState.mode, .icons)
+        XCTAssertEqual(w.h.environment.settings.viewMode, .details, "per folder (P2-08)")
         w.commands.perform(.sortBySize, target: w.selection, sender: nil)
         XCTAssertEqual(w.folder.query.sort.field, .size)
-        XCTAssertEqual(w.h.environment.settings.sort.field, .size)
+        XCTAssertEqual(w.browser.session.viewState.sort.field, .size)
+        XCTAssertEqual(w.h.environment.settings.sort.field, .name)
         let hidden = w.h.environment.settings.showHidden
         w.commands.perform(.toggleHidden, target: w.selection, sender: nil)
         XCTAssertEqual(w.h.environment.settings.showHidden, !hidden)

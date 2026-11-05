@@ -1906,6 +1906,17 @@
         }
       }
     },
+    "Folders that have their own view settings will be reset to this view." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Folders that have their own view settings will be reset to this view."
+          }
+        }
+      }
+    },
     "Format" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4520,6 +4531,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Use Terminal"
+          }
+        }
+      }
+    },
+    "Use this view for all folders?" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use this view for all folders?"
           }
         }
       }

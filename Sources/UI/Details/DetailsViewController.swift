@@ -121,6 +121,13 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     var onSpringLoad: ((URL) -> Void)?
     /// Installed by ContentViewController (P2-06): a middle-click on `row` (the selection is not touched).
     var onNewTabGesture: ((NewTabGesture, Int) -> Void)?
+    /// The folder's columns (order, widths, visibility), from its view state (P2-08). `apply(columns:)` sets them.
+    private(set) lazy var columns: [ColumnSetting] = DetailsColumns.normalized(settings.columns)
+    /// Installed by ContentViewController (P2-08): the user resized, moved, showed or hid a column.
+    var onColumnsChanged: (([ColumnSetting]) -> Void)?
+    /// Installed by ContentViewController (P2-08): a header click asks for this sort. Without it (a table hosted on
+    /// its own) the click sets the folder's query directly.
+    var onSortChanged: ((MacxFS.SortDescriptor) -> Void)?
     private var middleClick = MiddleClickTracker()
     lazy var dragSource = DragSourceController(icons: context.icons)
     var rightDrag = RightDragTracker()
@@ -326,7 +333,7 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
         isRebuildingColumns = true
         defer { isRebuildingColumns = false }
         for column in tableView.tableColumns { tableView.removeTableColumn(column) }
-        for setting in DetailsColumns.normalized(settings.columns) where DetailsColumns.offered.contains(setting.id) {
+        for setting in columns where DetailsColumns.offered.contains(setting.id) {
             let column = NSTableColumn(identifier: DetailsColumns.identifier(setting.id))
             column.title = DetailsColumns.title(setting.id)
             column.minWidth = DetailsColumns.minWidth(setting.id)
@@ -336,23 +343,46 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
             column.headerCell.alignment = setting.id == .size ? .right : .left
             tableView.addTableColumn(column)
         }
-        tableView.headerView?.menu = DetailsColumns.headerMenu(columns: settings.columns, target: self,
+        tableView.headerView?.menu = DetailsColumns.headerMenu(columns: columns, target: self,
                                                                action: #selector(toggleColumn(_:)))
         updateSortIndicator(folder?.query.sort ?? settings.sort)
     }
 
+    /// The folder's view state (P2-08): its columns (rebuilt only when they differ from what the table shows, so a
+    /// resize in progress is never interrupted) and the sort indicator.
+    func apply(columns new: [ColumnSetting], sort: MacxFS.SortDescriptor) {
+        let normalized = DetailsColumns.normalized(new)
+        if normalized != columns {
+            columns = normalized
+            if isViewLoaded { rebuildColumns() }
+        }
+        if isViewLoaded { updateSortIndicator(sort) }
+    }
+
     @objc func toggleColumn(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String, let id = ColumnID(rawValue: raw) else { return }
-        settings.columns = DetailsColumns.toggling(DetailsColumns.settings(fromTableColumns: tableView.tableColumns), id)
+        columns = DetailsColumns.toggling(merged(DetailsColumns.settings(fromTableColumns: tableView.tableColumns)), id)
         rebuildColumns()
+        onColumnsChanged?(columns)
     }
 
     @objc private func columnsChanged(_ note: Notification) {
         guard !isRebuildingColumns else { return }
-        settings.columns = DetailsColumns.settings(fromTableColumns: tableView.tableColumns)
+        let next = merged(DetailsColumns.settings(fromTableColumns: tableView.tableColumns))
+        guard next != columns else { return }
+        columns = next
+        onColumnsChanged?(next)
+    }
+
+    /// The table only holds the offered columns: the others keep their stored width and visibility.
+    private func merged(_ shown: [ColumnSetting]) -> [ColumnSetting] {
+        let offered = Set(DetailsColumns.offered)
+        let stored = Dictionary(columns.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return DetailsColumns.normalized(shown.map { offered.contains($0.id) ? $0 : (stored[$0.id] ?? $0) })
     }
 
     private func updateSortIndicator(_ sort: MacxFS.SortDescriptor) {
+        tableView.highlightedTableColumn = nil
         for column in tableView.tableColumns {
             let sorted = DetailsColumns.columnID(column.identifier)?.sortField == sort.field
             tableView.setIndicatorImage(sorted ? NSImage(named: sort.ascending ? "NSAscendingSortIndicator" : "NSDescendingSortIndicator") : nil,
@@ -364,10 +394,13 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     func tableView(_ tableView: NSTableView, didClick tableColumn: NSTableColumn) {
         guard let folder, let id = DetailsColumns.columnID(tableColumn.identifier) else { return }
         let next = DetailsColumns.nextSort(current: folder.query.sort, clicked: id)
-        var query = folder.query
-        query.sort = next
-        folder.setQuery(query)
-        settings.sort = next
+        if let onSortChanged {
+            onSortChanged(next)          // saved for this folder; the session sets the query
+        } else {
+            var query = folder.query
+            query.sort = next
+            folder.setQuery(query)
+        }
         updateSortIndicator(next)
     }
 

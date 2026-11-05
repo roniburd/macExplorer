@@ -177,7 +177,8 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
     let collectionView = FileCollectionView()
     let scrollView = NSScrollView()
     private(set) var folder: FolderModel?
-    private var settingsLoop: ObservationLoop?
+    /// The folder's icon size, from its view state (P2-08). `setIconSize` changes it.
+    private(set) lazy var iconSize: IconSize = settings.iconSize
     private var isRestoringScroll = false
     let mouse = ListMouseHandler()
     let typeSelect = TypeSelect()
@@ -205,7 +206,7 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
     required init?(coder: NSCoder) { fatalError("IconsViewController is created in code") }
 
     override func loadView() {
-        layout.iconSize = settings.iconSize
+        layout.iconSize = iconSize
         collectionView.collectionViewLayout = layout
         collectionView.dataSource = self
         collectionView.delegate = self
@@ -224,11 +225,6 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
         NotificationCenter.default.addObserver(self, selector: #selector(clipBoundsChanged(_:)),
                                                name: NSView.boundsDidChangeNotification, object: scrollView.contentView)
         view = scrollView
-        settingsLoop = ObservationLoop { [weak self] in
-            _ = self?.settings.iconSize
-        } onChange: { [weak self] in
-            self?.applyIconSize()
-        }
     }
 
     // MARK: FileListView
@@ -381,10 +377,12 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
         folder.select(.set(RubberBand.selection(base: base, hits: hits, mode: mode), cursor: hits.last))
     }
 
-    private func applyIconSize() {
-        guard layout.iconSize != settings.iconSize else { return }
+    /// The folder's view state (P2-08): relayout keeping the scroll anchor.
+    func setIconSize(_ size: IconSize) {
+        iconSize = size
+        guard isViewLoaded, layout.iconSize != size else { return }
         let anchor = folder?.scrollAnchor
-        layout.iconSize = settings.iconSize
+        layout.iconSize = size
         collectionView.reloadData()
         restoreScroll(anchor: anchor)
     }

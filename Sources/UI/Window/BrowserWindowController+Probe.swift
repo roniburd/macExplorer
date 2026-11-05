@@ -68,7 +68,7 @@ extension BrowserWindowController {
     var probeSort: MacxFS.SortDescriptor { session.folder.query.sort }
     /// FolderModel grouping lands in P2-09; until then nothing is grouped.
     var probeGrouping: GroupBy { .none }
-    var probeIconSize: IconSize { context.environment.settings.iconSize }
+    var probeIconSize: IconSize { session.viewState.iconSize }
 
     func probePerformDrop(sources: [URL], onto targetName: String, modifiers: DragModifiers, secondary: Bool,
                           menuChoice: DragOperation?) async {

@@ -1,0 +1,23 @@
+{"name": "p2-per-folder-view",
+ "fixture": {"files": ["A/x.txt", "y.txt"], "dirs": ["A"]},
+ "steps": [
+  {"waitFor": {"rows": ["A", "y.txt"], "state": "complete"}},
+  {"doubleClick": "A"},
+  {"waitFor": {"folder": "A", "viewMode": "details"}},
+  {"key": "cmd+2"},
+  {"expect": {"viewMode": "icons"}},
+  {"key": "cmd+["},
+  {"waitFor": {"folder": "", "viewMode": "details"}},
+  {"key": "cmd+]"},
+  {"waitFor": {"folder": "A", "viewMode": "icons"}},
+  {"menu": ["View", "Apply to All Folders…"]},
+  {"answerAlert": "Apply", "timeoutMs": 3000},
+  {"key": "cmd+["},
+  {"waitFor": {"folder": "", "viewMode": "icons"}},
+  {"key": "cmd+1"},
+  {"waitFor": {"viewMode": "details"}},
+  {"key": "cmd+]"},
+  {"waitFor": {"folder": "A", "viewMode": "icons"}},
+  {"key": "cmd+["},
+  {"waitFor": {"folder": "", "viewMode": "details"}}
+ ]}

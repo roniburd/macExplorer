@@ -5,6 +5,7 @@ import Core
 enum CommandPrompt: Equatable, Sendable {
     case openManyWindows(Int)
     case openManyTabs(Int)
+    case applyViewToAllFolders
     case confirmTrash(Int)
     case confirmDelete(Int)
     case brokenLink(String)
@@ -34,6 +35,10 @@ final class AppKitCommandPrompts: CommandPrompts {
         case .openManyTabs(let count):
             alert.messageText = String(format: L10n.string("Open %lld tabs?"), count)
             alert.addButton(withTitle: L10n.string("Open"))
+        case .applyViewToAllFolders:
+            alert.messageText = L10n.string("Use this view for all folders?")
+            alert.informativeText = L10n.string("Folders that have their own view settings will be reset to this view.")
+            alert.addButton(withTitle: L10n.string("Apply"))
         case .confirmTrash(let count):
             alert.messageText = String(format: L10n.string("Move %lld items to the Trash?"), count)
             alert.addButton(withTitle: L10n.string("Move to Trash"))
@@ -108,6 +113,7 @@ final class AppKitCommandPrompts: CommandPrompts {
         case .brokenLink(let name): String(format: L10n.string("'%@' points to an item that no longer exists."), name)
         case .openManyWindows(let count): String(format: L10n.string("Open %lld windows?"), count)
         case .openManyTabs(let count): String(format: L10n.string("Open %lld tabs?"), count)
+        case .applyViewToAllFolders: L10n.string("Use this view for all folders?")
         case .confirmTrash(let count): String(format: L10n.string("Move %lld items to the Trash?"), count)
         case .confirmDelete(let count): String(format: L10n.string("Permanently delete %lld items?"), count)
         }
