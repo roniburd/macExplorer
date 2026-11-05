@@ -10,6 +10,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let statePaths: StatePaths
     private(set) var context: UIContext?
     private(set) var lifecycle: AppLifecycle?
+    /// Keeps the Sparkle updater alive for the app's lifetime (nil when updates are off).
+    private var updateController: UpdateController?
 
     init(options: LaunchOptions) {
         self.options = options
@@ -29,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let launched = await AppBootstrap.launch(options: options, statePaths: statePaths)
             self.context = launched.context
             self.lifecycle = launched.lifecycle
+            self.updateController = launched.updates
             ScenarioLaunch.runIfRequested(context: launched.context)
             if options.scenario == nil { NSApp.activate() }   // UI scenarios run inactive (P1-41)
             if let delay = options.smokeExitAfter { scheduleSmokeExit(after: delay) }
@@ -77,6 +80,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Window › Operations when no browser window handles it (AppLifecycle's Window › Operations entry).
     @objc func macx_showOperations(_ sender: Any?) {
         lifecycle?.showOperations()
+    }
+
+    /// macExplorer › Check for Updates…: the key window's update badge shows the result.
+    @objc func macx_checkForUpdates(_ sender: Any?) {
+        guard let context else { return }
+        if context.windows.windows.isEmpty { newWindow(nil) }
+        context.updates.checkNow()
+    }
+
+    @objc func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if item.action == NSSelectorFromString("macx_checkForUpdates:") { return context?.updates.isAvailable ?? false }
+        return true
     }
 
     private func scheduleSmokeExit(after delay: Duration) {

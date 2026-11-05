@@ -41,8 +41,10 @@ enum AppBootstrap {
     }
 
     /// Environment → UIContext → launch recovery and Core start → initial windows → AppLifecycle (onboarding sheet,
-    /// recovery notice when the RecoveryReport is not empty, Dock badge).
-    static func launch(options: LaunchOptions, statePaths: StatePaths) async -> (context: UIContext, lifecycle: AppLifecycle) {
+    /// recovery notice when the RecoveryReport is not empty, Dock badge) → the updater (nil in debug, sandbox and
+    /// scenario runs, or when Info.plist has no real feed/key).
+    static func launch(options: LaunchOptions, statePaths: StatePaths)
+        async -> (context: UIContext, lifecycle: AppLifecycle, updates: UpdateController?) {
         let storage = makeSettingsStorage(options: options, statePaths: statePaths)
         let environment = makeEnvironment(options: options, statePaths: statePaths, settingsStorage: storage)
         let context = UIContext(environment: environment, options: options)
@@ -50,6 +52,7 @@ enum AppBootstrap {
         await context.windows.restoreOrOpenInitial()
         let lifecycle = AppLifecycle(context: context, flushSettings: { (storage as? FileSettingsStorage)?.flush() })
         lifecycle.didLaunch(recovery: recovery)
-        return (context, lifecycle)
+        let updates = UpdateController.live(model: context.updates, settings: environment.settings, options: options)
+        return (context, lifecycle, updates)
     }
 }

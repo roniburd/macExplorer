@@ -7,6 +7,8 @@ import Core
 public final class UIContext {
     public let environment: CoreEnvironment
     public let options: LaunchOptions
+    /// Update state for the badge, the app menu and Settings; inert unless the app installs an UpdateController.
+    public let updates = UpdateModel()
     /// Created on first use (it holds an unowned reference back to this context); `init` touches it once so the
     /// volume-release handler is registered at launch.
     public private(set) lazy var windows: WindowManager = WindowManager(context: self)
