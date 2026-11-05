@@ -109,7 +109,7 @@ class FileOpsTestCase: XCTestCase {
     func exists(_ u: URL) -> Bool { var st = stat(); return lstat(u.path, &st) == 0 }
     func lst(_ u: URL) -> stat { var st = stat(); _ = lstat(u.path, &st); return st }
 
-    func waitUntil(timeout: Duration = .seconds(5), _ condition: @escaping @Sendable () async -> Bool,
+    func waitUntil(timeout: Duration = .seconds(30), _ condition: @escaping @Sendable () async -> Bool,
                    file: StaticString = #filePath, line: UInt = #line) async {
         let deadline = ContinuousClock.now + timeout
         while ContinuousClock.now < deadline {
@@ -164,7 +164,7 @@ struct FileOpsWorld: Sendable {
         return await queue.outcome(of: id)
     }
 
-    func waitUntil(timeout: Duration = .seconds(5), _ condition: @escaping @Sendable () async -> Bool,
+    func waitUntil(timeout: Duration = .seconds(30), _ condition: @escaping @Sendable () async -> Bool,
                    file: StaticString = #filePath, line: UInt = #line) async {
         let deadline = ContinuousClock.now + timeout
         while ContinuousClock.now < deadline {

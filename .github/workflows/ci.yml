@@ -115,7 +115,7 @@ jobs:
           if [ -f .build/bench-baseline.json ]; then args+=(--compare .build/bench-baseline.json); fi
           swift run -c release macx-bench "${args[@]}" | tee "$RUNNER_TEMP/bench.txt"
           status=${PIPESTATUS[0]}
-          { echo '### macx-bench'; echo '```'; grep -vE '^::' "$RUNNER_TEMP/bench.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          { echo '### macx-bench'; echo '```'; grep -vE '^::' "$RUNNER_TEMP/bench.txt" || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
       - name: Keep this run as the main baseline
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

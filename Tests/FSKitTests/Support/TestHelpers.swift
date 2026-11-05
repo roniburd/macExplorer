@@ -16,7 +16,7 @@ final class Gate: Sendable {
 }
 
 /// Polls `condition` every 10 ms until true or `timeout`.
-func eventually(timeout: Duration = .seconds(3), _ condition: @Sendable () async -> Bool) async -> Bool {
+func eventually(timeout: Duration = .seconds(30), _ condition: @Sendable () async -> Bool) async -> Bool {
     let deadline = ContinuousClock.now + timeout
     while ContinuousClock.now < deadline {
         if await condition() { return true }

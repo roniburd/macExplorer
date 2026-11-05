@@ -29,7 +29,7 @@ final class WatcherTests: XCTestCase {
         return s
     }
 
-    private func wait(_ what: String, timeout: Duration = .seconds(10), _ condition: () -> Bool) async throws {
+    private func wait(_ what: String, timeout: Duration = .seconds(30), _ condition: () -> Bool) async throws {
         let deadline = ContinuousClock.now + timeout
         while !condition() {
             if ContinuousClock.now >= deadline { throw WaitTimeout(what: what) }

@@ -824,7 +824,7 @@ final class FolderModelTests: XCTestCase {
 
     // MARK: helpers
 
-    private func waitAsync(timeout: Duration = .seconds(5), _ condition: () async -> Bool) async throws -> Bool {
+    private func waitAsync(timeout: Duration = .seconds(30), _ condition: () async -> Bool) async throws -> Bool {
         let deadline = ContinuousClock.now + timeout
         while ContinuousClock.now < deadline {
             if await condition() { return true }

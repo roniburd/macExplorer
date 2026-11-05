@@ -64,6 +64,7 @@ final class TypeSelectTests: XCTestCase {
         details.bind(folder)
         details.typeSelect.handle("z", folder: folder, list: details)
         XCTAssertTrue(folder.selection.rows.isEmpty, "large folders search off main")
-        try await h.waitUntil("type-select applied") { folder.selection.rows == IndexSet(integer: 2_500) }
+        // Correctness, not speed: a loaded CI runner can take several seconds for 2,500 names.
+        try await h.waitUntil("type-select applied", timeout: .seconds(30)) { folder.selection.rows == IndexSet(integer: 2_500) }
     }
 }

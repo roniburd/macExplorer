@@ -54,7 +54,7 @@ final class LaunchServicesCacheTests: XCTestCase {
     private let fileA = URL(filePath: "/tmp/macx-none/a.txt")
     private let fileB = URL(filePath: "/tmp/macx-none/b.txt")
 
-    private func eventually(_ what: String, timeout: Duration = .seconds(5), _ condition: () -> Bool) async {
+    private func eventually(_ what: String, timeout: Duration = .seconds(30), _ condition: () -> Bool) async {
         let deadline = ContinuousClock.now + timeout
         while !condition() {
             if ContinuousClock.now > deadline { XCTFail("timed out waiting for \(what)"); return }
@@ -195,9 +195,12 @@ final class LaunchServicesCacheTests: XCTestCase {
         cache.prefetch(file: fileA, typeIndex: txt)
         await eventually("default") { cache.cachedDefault(for: fileA) != nil }
         try? await Task.sleep(for: .milliseconds(80))
+        let lookupsBeforeMiss = fake.defaultLookups().count
         XCTAssertTrue(cache.cachedDefault(for: fileA) == nil, "expired: a miss that refetches")
+        // Keep the refetched value alive: on a slow runner the polling below can outlast 50 ms and expire it again.
+        cache.defaultLifetime = .seconds(60)
         await eventually("refetched") { cache.cachedDefault(for: fileA) != nil }
-        XCTAssertEqual(fake.defaultLookups().count, 2)
+        XCTAssertEqual(fake.defaultLookups().count, lookupsBeforeMiss + 1, "the miss caused exactly one refetch")
     }
 
     func testStaleApplicationsAreServedAndRefreshedInTheBackground() async {

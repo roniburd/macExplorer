@@ -213,7 +213,7 @@ final class FolderTestWorld {
 
     func keep(_ token: ObserverToken) { tokens.append(token) }
 
-    func waitUntil(_ what: String, timeout: Duration = .seconds(10), _ condition: () -> Bool) async throws {
+    func waitUntil(_ what: String, timeout: Duration = .seconds(30), _ condition: () -> Bool) async throws {
         let deadline = ContinuousClock.now + timeout
         while !condition() {
             if ContinuousClock.now >= deadline { throw WaitTimeout(what: what) }

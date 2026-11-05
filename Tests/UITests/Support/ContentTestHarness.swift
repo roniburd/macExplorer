@@ -135,7 +135,7 @@ final class ContentTestHarness {
         try XCTUnwrap(controller.contentViewController?.firstDescendant(of: ContentViewController.self))
     }
 
-    func waitUntil(_ what: String, timeout: Duration = .seconds(5), _ condition: () -> Bool) async throws {
+    func waitUntil(_ what: String, timeout: Duration = .seconds(30), _ condition: () -> Bool) async throws {
         let deadline = ContinuousClock.now + timeout
         while !condition() {
             guard ContinuousClock.now < deadline else { throw HarnessError.timeout(what) }
