@@ -158,6 +158,75 @@ final class FolderTreeTests: XCTestCase {
         XCTAssertEqual(names(tree.children(of: usb)), ["x"], "a failed re-read keeps the previous children")
     }
 
+    /// CI flake root cause: a `.stalled` notice is a heartbeat gap, which a lane thread starved of CPU also produces.
+    /// The listing gave up on it (fine: the caller gets nil and can retry), but the read then completed and nothing
+    /// read the folder again, so the node stayed unloaded or kept its old children.
+    func testAStalledReadThatCompletesReportsTheRecovery() async throws {
+        let (stream, events) = AsyncStream<ReadEvent>.makeStream()
+        var recovered = 0
+        events.yield(.batch(Self.batch(["a"])))
+        events.yield(.stalled)
+        let listed = await FolderTreeController.listing(from: stream) { recovered += 1 }
+        XCTAssertNil(listed, "a stall answers nil at once")
+        XCTAssertEqual(recovered, 0)
+        events.yield(.resumed)
+        events.yield(.completed(ReadSummary(entryCount: 1, degradedCount: 0, usedFallback: false, elapsed: .zero)))
+        events.finish()
+        let deadline = ContinuousClock.now + .seconds(30)
+        while recovered == 0, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(recovered, 1, "the stalled read completed after all")
+    }
+
+    func testListingCompletesFailsOrIsCancelledWithoutRecovery() async throws {
+        var recovered = 0
+        let (ok, okEvents) = AsyncStream<ReadEvent>.makeStream()
+        okEvents.yield(.batch(Self.batch(["b", ".h", "a10", "a2"], hidden: [".h"])))
+        okEvents.yield(.completed(ReadSummary(entryCount: 4, degradedCount: 0, usedFallback: false, elapsed: .zero)))
+        okEvents.finish()
+        let listed = await FolderTreeController.listing(from: ok) { recovered += 1 }
+        XCTAssertEqual(listed?.map(\.name), [".h", "a2", "a10", "b"])
+        XCTAssertEqual(listed?.map(\.hidden), [true, false, false, false])
+
+        let (failed, failedEvents) = AsyncStream<ReadEvent>.makeStream()
+        failedEvents.yield(.failed(ReadFailure(code: EACCES, stage: .open)))
+        failedEvents.finish()
+        let none = await FolderTreeController.listing(from: failed) { recovered += 1 }
+        XCTAssertNil(none)
+
+        let (stalled, stalledEvents) = AsyncStream<ReadEvent>.makeStream()
+        stalledEvents.yield(.stalled)
+        let stalledNone = await FolderTreeController.listing(from: stalled) { recovered += 1 }
+        XCTAssertNil(stalledNone)
+        stalledEvents.finish()                      // cancelled (volume released): no completion
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertEqual(recovered, 0)
+    }
+
+    func testRecoveryAfterAStalledReadReadsTheNodeAgain() async throws {
+        let (h, tree) = try await make()
+        let usb = tree.roots[1]
+        let script = ScriptedLister(results: [nil, [("x", false)]])
+        tree.lister = { _ in script.next() }
+        tree.didExpand(usb)
+        try await h.waitUntil("stalled read") { script.reads == 1 }
+        XCTAssertFalse(usb.isLoaded)
+        tree.stalledReadCompleted(usb.url)
+        try await h.waitUntil("read again") { usb.isLoaded }
+        XCTAssertEqual(names(tree.children(of: usb)), ["x"])
+        XCTAssertEqual(script.reads, 2)
+    }
+
+    private static func batch(_ names: [String], hidden: Set<String> = []) -> Batch {
+        var batch = Batch(generation: .initial)
+        for (i, name) in names.enumerated() {
+            let flags: EntryFlags = hidden.contains(name) ? [.dotName] : []
+            let entry = Entry(rowID: UInt64(i + 1), fileID: UInt64(i + 1), size: 0, allocSize: 0, mtime: 0, ctime: 0,
+                              nameOffset: 0, nameLen: 0, kind: .directory, flags: flags, typeIndex: TypeRegistry.folderIndex)
+            Array(name.utf8).withUnsafeBufferPointer { batch.append(entry, nameBytes: $0) }
+        }
+        return batch
+    }
+
     func testARequestDuringAReadRunsOneMoreRead() async throws {
         let (_, tree) = try await make()
         let usb = tree.roots[1]

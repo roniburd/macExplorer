@@ -29,16 +29,27 @@ enum TypeSelectSearch {
 @MainActor
 final class TypeSelect {
     static let inlineLimit = 2_000
+    /// Off-main searches that may come back stale (the folder changed under them) before one runs inline.
+    static let offMainAttempts = 3
+    typealias Search = @Sendable (TypeSelectQuery, EntryStore, Int?) async -> Int?
     private(set) var buffer = ""
     private var lastKey: ContinuousClock.Instant?
     private let timeout: Duration
     private let now: () -> ContinuousClock.Instant
+    /// Runs a large folder's search off main (tests gate it to change the folder mid-search).
+    private let search: Search
     private var generation = 0
     private var searchTask: Task<Void, Never>?
 
-    init(timeout: Duration = .seconds(1), now: @escaping () -> ContinuousClock.Instant = { ContinuousClock.now }) {
+    init(timeout: Duration = .seconds(1), now: @escaping () -> ContinuousClock.Instant = { ContinuousClock.now },
+         search: @escaping Search = TypeSelect.searchOffMain) {
         self.timeout = timeout
         self.now = now
+        self.search = search
+    }
+
+    nonisolated static func searchOffMain(_ query: TypeSelectQuery, in store: EntryStore, from cursor: Int?) async -> Int? {
+        await Task.detached(priority: .userInitiated) { TypeSelectSearch.find(query, in: store, from: cursor) }.value
     }
 
     func reset() {
@@ -65,25 +76,36 @@ final class TypeSelect {
 
     func handle(_ characters: String, folder: FolderModel, list: FileListView) {
         let query = append(characters)
+        generation += 1
+        run(query, token: generation, folder: folder, list: list, attempt: 1)
+    }
+
+    /// A newer key press (`token`) supersedes a search. A store that changed while the search ran (a watcher patch,
+    /// a re-sort) makes its row stale but not the key press: the query runs again on the current rows, so the
+    /// keystroke is never dropped. After `offMainAttempts` stale results (a folder that keeps changing) it runs inline.
+    private func run(_ query: TypeSelectQuery, token: Int, folder: FolderModel, list: FileListView, attempt: Int) {
         let store = folder.store
         let cursor = folder.selection.cursor.flatMap { folder.row(of: $0) }
-        generation += 1
-        let token = generation
-        let version = store.version
-        if store.visibleCount <= Self.inlineLimit {
-            apply(TypeSelectSearch.find(query, in: store, from: cursor), token: token, version: version, folder: folder, list: list)
+        searchTask?.cancel()
+        searchTask = nil
+        if store.visibleCount <= Self.inlineLimit || attempt > Self.offMainAttempts {
+            apply(TypeSelectSearch.find(query, in: store, from: cursor), folder: folder, list: list)
             return
         }
-        searchTask?.cancel()
+        let version = store.version, search = self.search
         searchTask = Task { [weak self, weak folder, weak list] in
-            let row = await Task.detached(priority: .userInitiated) { TypeSelectSearch.find(query, in: store, from: cursor) }.value
-            guard let self, let folder, let list else { return }
-            self.apply(row, token: token, version: version, folder: folder, list: list)
+            let row = await search(query, store, cursor)
+            guard let self, let folder, let list, token == self.generation else { return }
+            guard folder.store.version == version else {
+                self.run(query, token: token, folder: folder, list: list, attempt: attempt + 1)
+                return
+            }
+            self.apply(row, folder: folder, list: list)
         }
     }
 
-    private func apply(_ row: Int?, token: Int, version: UInt64, folder: FolderModel, list: FileListView) {
-        guard let row, token == generation, folder.store.version == version else { return }
+    private func apply(_ row: Int?, folder: FolderModel, list: FileListView) {
+        guard let row else { return }
         folder.select(.set(IndexSet(integer: row), cursor: row))
         list.scrollToRow(row)
     }

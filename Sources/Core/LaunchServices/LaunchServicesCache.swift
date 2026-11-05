@@ -10,6 +10,8 @@ import UniformTypeIdentifiers
 public final class LaunchServicesCache {
     public let provider: any LaunchServicesProviding
     private let types: TypeRegistry
+    /// Time source for entry ages (injectable so expiry can be tested without wall-clock sleeps).
+    private let now: @MainActor () -> ContinuousClock.Instant
 
     /// How long a per-file default stays valid (spec: "cached briefly per file URL").
     public var defaultLifetime: Duration = .seconds(30)
@@ -31,9 +33,11 @@ public final class LaunchServicesCache {
     private var fileTypes: [String: String] = [:]             // path → UTType identifier last seen
     private let observers = Observers<URL>()
 
-    public init(provider: any LaunchServicesProviding, types: TypeRegistry = .shared) {
+    public init(provider: any LaunchServicesProviding, types: TypeRegistry = .shared,
+                now: @escaping @MainActor () -> ContinuousClock.Instant = { ContinuousClock.now }) {
         self.provider = provider
         self.types = types
+        self.now = now
     }
 
     /// Cache hit or nil (a miss schedules a background fetch; observers fire when it lands). Never blocks.
@@ -44,7 +48,7 @@ public final class LaunchServicesCache {
             fetchApplications(type: type, sample: file)
             return nil
         }
-        if entry.stale || ContinuousClock.now - entry.fetched > applicationsLifetime {
+        if entry.stale || now() - entry.fetched > applicationsLifetime {
             fetchApplications(type: type, sample: file)
         }
         return entry.apps
@@ -53,7 +57,7 @@ public final class LaunchServicesCache {
     /// `.some(nil)` = known "no default"; nil = not known yet (a fetch is scheduled).
     public func cachedDefault(for file: URL) -> AppInfo?? {
         let key = fileKey(file)
-        if let entry = defaults[key], ContinuousClock.now - entry.fetched <= defaultLifetime {
+        if let entry = defaults[key], now() - entry.fetched <= defaultLifetime {
             return .some(entry.app)
         }
         defaults[key] = nil
@@ -98,7 +102,7 @@ public final class LaunchServicesCache {
 
     private func landApplications(_ found: [AppInfo], type: String) {
         appsInFlight.remove(type)
-        apps[type] = AppsEntry(apps: found, fetched: .now, stale: false)
+        apps[type] = AppsEntry(apps: found, fetched: now(), stale: false)
         let waiters = appsWaiters.removeValue(forKey: type) ?? []
         for file in waiters { observers.send(file) }
     }
@@ -122,14 +126,14 @@ public final class LaunchServicesCache {
             return
         }
         if defaults.count >= maxDefaultEntries { prune() }
-        defaults[key] = DefaultEntry(app: found, fetched: .now)
+        defaults[key] = DefaultEntry(app: found, fetched: now())
         let waiters = defaultsWaiters.removeValue(forKey: key) ?? []
         for file in waiters { observers.send(file) }
     }
 
     private func prune() {
-        let now = ContinuousClock.now
-        defaults = defaults.filter { now - $0.value.fetched <= defaultLifetime }
+        let time = now()
+        defaults = defaults.filter { time - $0.value.fetched <= defaultLifetime }
         if defaults.count >= maxDefaultEntries { defaults.removeAll() }
         if fileTypes.count >= maxDefaultEntries * 4 { fileTypes.removeAll() }
     }

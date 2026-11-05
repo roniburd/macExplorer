@@ -112,6 +112,12 @@ public final class FolderModel {
     var itemReadSeq = 0
     var latestItemRead: [String: Int] = [:]
     var itemReadsInFlight = 0
+    /// Per identity name, item reads issued and not yet applied or dropped (FolderModel+Changes `reconcile`).
+    var unappliedItemReads: [String: Int] = [:]
+    /// `reconcile` callbacks waiting until no read, and no coalesced watcher event, still covers their names.
+    var settleWaiters: [(names: Set<String>, then: @MainActor () -> Void)] = []
+    /// Renames carried by item reads not yet applied, by read seq: a later read of either side covers both.
+    var unappliedRenames: [Int: [LocalChange.Rename]] = [:]
     var rereadInFlight = false
     var rereadPending = false
     /// The re-read in flight reported .stalled/.waitingForPermission and has not resumed.
@@ -351,6 +357,9 @@ public final class FolderModel {
     func resetItemReads() {
         latestItemRead = [:]
         itemReadsInFlight = 0
+        unappliedItemReads = [:]
+        settleWaiters = []
+        unappliedRenames = [:]
         resetWatchPatches()
     }
 

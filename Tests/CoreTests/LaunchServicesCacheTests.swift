@@ -16,6 +16,7 @@ private final class GatedProvider: LaunchServicesProviding {
         var defaultApp: AppInfo? = textEdit
         var appLookups = 0
         var defaultLookups = 0
+        var rescued = false
     }
     private let state = Mutex(State())
 
@@ -23,6 +24,10 @@ private final class GatedProvider: LaunchServicesProviding {
     func setDefault(_ app: AppInfo?) { state.withLock { $0.defaultApp = app } }
     var appLookups: Int { state.withLock { $0.appLookups } }
     var defaultLookups: Int { state.withLock { $0.defaultLookups } }
+
+    /// Watchdog escape hatch: opens the gate and records that something was stuck waiting on it.
+    func rescue() { state.withLock { $0.rescued = true; $0.open = true } }
+    var rescued: Bool { state.withLock { $0.rescued } }
 
     private func waitForGate() async {
         while !state.withLock({ $0.open }) { try? await Task.sleep(for: .milliseconds(5)) }
@@ -44,6 +49,14 @@ private final class GatedProvider: LaunchServicesProviding {
     func setDefaultApplication(_ app: URL, forContentTypeOf file: URL) async throws {}
     func setDefaultApplication(_ app: URL, forFile file: URL) async throws {}
     func revealInFinder(_ urls: [URL]) async {}
+}
+
+/// A manual time source for the cache: time only moves when a test advances it, so entry expiry never depends on
+/// how quickly a (possibly loaded) runner gets through the test's polling.
+@MainActor
+private final class TestClock {
+    private(set) var now = ContinuousClock.now
+    func advance(by duration: Duration) { now += duration }
 }
 
 @MainActor
@@ -126,18 +139,30 @@ final class LaunchServicesCacheTests: XCTestCase {
         provider.setOpen(true)
         await eventually("landed") { cache.cachedDefault(for: fileA) != nil }
         await eventually("both waiters notified") { notified.isSuperset(of: [fileA, fileB]) }
+        XCTAssertEqual(provider.appLookups, 1, "the waiters shared the one lookup")
+        XCTAssertEqual(provider.defaultLookups, 1, "the waiters shared the one lookup")
         token.cancel()
     }
 
     func testMenuRebuildNeverBlocksOnAHungProvider() {
-        let provider = GatedProvider()   // never opened
+        let provider = GatedProvider()   // never opened by the test
         let cache = LaunchServicesCache(provider: provider, types: types)
+        // If a lookup ever made the caller wait for the provider, this loop would hang forever on the closed gate.
+        // The watchdog turns such a hang into a failure (it releases the gate and records that it had to); a cache
+        // that never waits finishes the loop with the gate still closed, however slow the runner is.
+        let watchdog = DispatchWorkItem { provider.rescue() }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 30, execute: watchdog)
         let start = ContinuousClock.now
         for _ in 0..<100 {
-            _ = cache.cachedApplications(for: fileA, typeIndex: txt)
-            _ = cache.cachedDefault(for: fileA)
+            XCTAssertNil(cache.cachedApplications(for: fileA, typeIndex: txt), "a miss while the provider hangs")
+            XCTAssertTrue(cache.cachedDefault(for: fileA) == nil, "a miss while the provider hangs")
         }
-        XCTAssertLessThan(ContinuousClock.now - start, .milliseconds(200))
+        let elapsed = ContinuousClock.now - start
+        watchdog.cancel()
+        XCTAssertFalse(provider.rescued, "a cache lookup waited on the hung provider")
+        // A bounded stall (a lookup that blocks main for a while, then gives up) never trips the watchdog, so the
+        // menu-rebuild budget stays: 200 cache calls are microseconds of work, far inside it even on a loaded runner.
+        XCTAssertLessThan(elapsed, .milliseconds(200), "a menu rebuild stalled the main thread")
         provider.setOpen(true)
     }
 
@@ -190,29 +215,35 @@ final class LaunchServicesCacheTests: XCTestCase {
 
     func testDefaultExpiresAfterItsLifetime() async {
         let fake = FakeLaunchServices(apps: [textEdit], defaultApp: textEdit)
-        let cache = LaunchServicesCache(provider: fake, types: types)
+        let clock = TestClock()
+        let cache = LaunchServicesCache(provider: fake, types: types, now: { clock.now })
         cache.defaultLifetime = .milliseconds(50)
         cache.prefetch(file: fileA, typeIndex: txt)
         await eventually("default") { cache.cachedDefault(for: fileA) != nil }
-        try? await Task.sleep(for: .milliseconds(80))
-        let lookupsBeforeMiss = fake.defaultLookups().count
+        XCTAssertEqual(fake.defaultLookups().count, 1)
+        clock.advance(by: .milliseconds(50))
+        XCTAssertEqual(cache.cachedDefault(for: fileA), .some(textEdit), "still valid at exactly its lifetime")
+        clock.advance(by: .milliseconds(30))
         XCTAssertTrue(cache.cachedDefault(for: fileA) == nil, "expired: a miss that refetches")
-        // Keep the refetched value alive: on a slow runner the polling below can outlast 50 ms and expire it again.
-        cache.defaultLifetime = .seconds(60)
         await eventually("refetched") { cache.cachedDefault(for: fileA) != nil }
-        XCTAssertEqual(fake.defaultLookups().count, lookupsBeforeMiss + 1, "the miss caused exactly one refetch")
+        XCTAssertEqual(fake.defaultLookups().count, 2, "the miss caused exactly one refetch")
     }
 
     func testStaleApplicationsAreServedAndRefreshedInTheBackground() async {
         let fake = FakeLaunchServices(apps: [textEdit], defaultApp: textEdit)
-        let cache = LaunchServicesCache(provider: fake, types: types)
+        let clock = TestClock()
+        let cache = LaunchServicesCache(provider: fake, types: types, now: { clock.now })
         cache.applicationsLifetime = .milliseconds(50)
         cache.prefetch(file: fileA, typeIndex: txt)
         await eventually("apps") { cache.cachedApplications(for: fileA, typeIndex: txt) != nil }
         fake.setApplications([other])
-        try? await Task.sleep(for: .milliseconds(80))
+        clock.advance(by: .milliseconds(50))
+        XCTAssertEqual(cache.cachedApplications(for: fileA, typeIndex: txt), [textEdit], "fresh at exactly its lifetime")
+        XCTAssertEqual(fake.applicationLookups().count, 1, "no refresh while still fresh")
+        clock.advance(by: .milliseconds(30))
         XCTAssertEqual(cache.cachedApplications(for: fileA, typeIndex: txt), [textEdit], "stale hit, never nil")
         await eventually("refreshed") { cache.cachedApplications(for: fileA, typeIndex: txt) == [other] }
+        XCTAssertEqual(fake.applicationLookups().count, 2, "the stale hit caused exactly one refresh")
     }
 
     func testCancelledObserverIsNotCalled() async {

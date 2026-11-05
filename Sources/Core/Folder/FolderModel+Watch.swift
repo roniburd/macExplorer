@@ -72,6 +72,7 @@ extension FolderModel {
         watchPending = WatchBuffer()
         watchPatchInFlight = false
         for event in pending.events { handleWatch(event) }
+        runSettledWaiters()
     }
 
     /// A fresh load re-reads everything: drop the coalescing state of the previous epoch.

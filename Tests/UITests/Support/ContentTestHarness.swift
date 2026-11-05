@@ -135,10 +135,17 @@ final class ContentTestHarness {
         try XCTUnwrap(controller.contentViewController?.firstDescendant(of: ContentViewController.self))
     }
 
-    func waitUntil(_ what: String, timeout: Duration = .seconds(30), _ condition: () -> Bool) async throws {
+    /// A timeout is also recorded with XCTFail at the caller's line: a thrown error alone can be reported as an
+    /// unrelated `InvalidTransition { phase: idle, targetPhase: failed(deinit) }` when a view controller the test
+    /// created (DetailsViewController) is released while the error unwinds, which hid what was being waited for.
+    func waitUntil(_ what: String, timeout: Duration = .seconds(30), file: StaticString = #filePath, line: UInt = #line,
+                   _ condition: () -> Bool) async throws {
         let deadline = ContinuousClock.now + timeout
         while !condition() {
-            guard ContinuousClock.now < deadline else { throw HarnessError.timeout(what) }
+            guard ContinuousClock.now < deadline else {
+                XCTFail("timed out after \(timeout) waiting for: \(what)", file: file, line: line)
+                throw HarnessError.timeout(what)
+            }
             try await Task.sleep(for: .milliseconds(10))
         }
     }
