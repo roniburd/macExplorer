@@ -84,8 +84,8 @@ One-time setup:
    `SELF_SIGNED_P12_PASSWORD`, `SELF_SIGNED_IDENTITY`, and set `RELEASE_SIGNING: self-signed` in
    `.github/workflows/release.yml` (default `adhoc`).
 5. Later, with an Apple Developer ID: add `DEVELOPER_ID_P12` (base64), `DEVELOPER_ID_P12_PASSWORD`,
-   `NOTARY_API_KEY` (base64 .p8), `NOTARY_API_KEY_ID`, `NOTARY_API_ISSUER`. No code changes; remove the quarantine
-   note above and the cask caveat.
+   `NOTARY_API_KEY` (base64 .p8), `NOTARY_API_KEY_ID`, `NOTARY_API_ISSUER`. No workflow changes; then remove the
+   quarantine note above and the `caveats` block in `scripts/release/render-cask.sh`.
 
 Each release: `git tag -a v0.3.0-beta.1 -m "…" && git push origin v0.3.0-beta.1` (beta) or `v0.3.0` (release).
 Try the pipeline without publishing: Actions › Release › Run workflow (dry run). Until `SUPublicEDKey` is set, only
