@@ -15,8 +15,8 @@ private final class ScriptedCrashPrompt: CrashPrompting {
 @MainActor
 final class CrashReportFlowTests: XCTestCase {
     private var sandbox: Sandbox!
-    override func setUpWithError() throws { sandbox = try Sandbox() }
-    override func tearDown() { sandbox.destroy(); sandbox = nil }
+    override func setUp() async throws { sandbox = try Sandbox() }
+    override func tearDown() async throws { sandbox.destroy(); sandbox = nil }
 
     private let env = EnvironmentSummary(appVersion: "0.4.0", build: "812", channel: "release", macOS: "26.1", hardwareModel: "Mac16,10", architecture: "arm64")
     private let launched = Date(timeIntervalSince1970: 1_793_815_000)   // before the fixture's 10:11:12 -0800
