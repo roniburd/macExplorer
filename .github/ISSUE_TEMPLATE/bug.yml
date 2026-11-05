@@ -1,0 +1,42 @@
+name: Bug report
+description: Something in MacExplorer doesn't work the way it should.
+labels: [bug, from-app]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you see?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. Open …\n2. Press …"
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+  - type: input
+    id: version
+    attributes:
+      label: MacExplorer version
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+  - type: input
+    id: hardware
+    attributes:
+      label: Mac model
+  - type: input
+    id: channel
+    attributes:
+      label: Update channel
+  - type: textarea
+    id: crash-log
+    attributes:
+      label: Crash log
+      description: If MacExplorer crashed, the app copied the full report to your clipboard — paste it here, or drag the .ips file in.
+      render: text
