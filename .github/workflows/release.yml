@@ -20,8 +20,12 @@ on:
 permissions:
   contents: write
 
+# Publishing runs share one group so gh-pages/tap pushes are serialised. GitHub keeps at most one pending
+# run per group and cancels the older pending one when another joins, so dry runs get a group of their own
+# (they publish nothing) and cannot cancel a queued tag release. Push release tags one at a time; if a
+# release run ever shows as cancelled, re-run it (the publish steps are re-runnable).
 concurrency:
-  group: release
+  group: ${{ (github.event_name == 'push' || inputs.dry_run == false) && 'release-publish' || format('release-dry-{0}', github.run_id) }}
   cancel-in-progress: false
 
 defaults:
@@ -66,8 +70,14 @@ jobs:
           else
             echo "::error::bad version $version (want X.Y.Z or X.Y.Z-beta.N)"; exit 1
           fi
-          if [ "$dry" = "false" ] && ! git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
-            echo "::error::tag v$version does not exist; push the tag to publish"; exit 1
+          if [ "$dry" = "false" ]; then
+            if ! git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+              echo "::error::tag v$version does not exist; push the tag to publish"; exit 1
+            fi
+            # Spec §2: the build number and every published artifact come from the tagged commit.
+            if [ "$(git rev-parse HEAD)" != "$(git rev-parse "refs/tags/v$version^{commit}")" ]; then
+              echo "::error::checked-out commit is not tag v$version; dispatch the workflow from the tag ref v$version"; exit 1
+            fi
           fi
           {
             echo "version=$version"; echo "build=$(git rev-list --count HEAD)"; echo "channel=$channel"
@@ -237,7 +247,13 @@ jobs:
           if [ "$(git cat-file -t "refs/tags/$tag")" = "tag" ]; then flags=(--verify-tag --notes-from-tag)
           else flags=(--verify-tag --generate-notes); fi
           [ "$PRERELEASE" = "true" ] && flags+=(--prerelease)
-          gh release create "$tag" "$ZIP" "$DMG" --title "MacExplorer $VERSION" "${flags[@]}"
+          # Re-runnable: if an earlier attempt already created the release, replace its assets instead.
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "::notice::release $tag already exists; re-uploading assets"
+            gh release upload "$tag" "$ZIP" "$DMG" --clobber
+          else
+            gh release create "$tag" "$ZIP" "$DMG" --title "MacExplorer $VERSION" "${flags[@]}"
+          fi
 
       - name: Publish appcast
         if: steps.v.outputs.dry != 'true'
@@ -249,6 +265,7 @@ jobs:
           git worktree add "$RUNNER_TEMP/pages" gh-pages
           cp dist/pages/appcast.xml "$RUNNER_TEMP/pages/appcast.xml"
           git -C "$RUNNER_TEMP/pages" add appcast.xml
+          if git -C "$RUNNER_TEMP/pages" diff --cached --quiet; then echo "::notice::appcast already has $VERSION"; exit 0; fi
           git -C "$RUNNER_TEMP/pages" commit -m "appcast: $VERSION"
           git -C "$RUNNER_TEMP/pages" push origin gh-pages
 
