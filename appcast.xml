@@ -1,0 +1,18 @@
+<?xml version='1.0' encoding='utf-8'?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+  <channel>
+    <title>MacExplorer</title>
+    <link>https://roniburd.github.io/macExplorer/appcast.xml</link>
+    <language>en</language>
+    <item>
+      <title>MacExplorer 0.2.0-beta.1</title>
+      <pubDate>Thu, 05 Nov 2026 09:50:22 GMT</pubDate>
+      <sparkle:version>109</sparkle:version>
+      <sparkle:shortVersionString>0.2.0-beta.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:releaseNotesLink>https://github.com/roniburd/macExplorer/releases/tag/v0.2.0-beta.1</sparkle:releaseNotesLink>
+      <sparkle:channel>beta</sparkle:channel>
+      <enclosure url="https://github.com/roniburd/macExplorer/releases/download/v0.2.0-beta.1/MacExplorer-0.2.0-beta.1.zip" length="6533492" type="application/octet-stream" sparkle:edSignature="lR3XFBHKjqG9NeV0PiVAQlDZUM4TMqVVtvAPNI2F8c/HgnlxKJQnmg3bohTO3fZlJIag6ynwmFzUE3t/UNKODA==" />
+    </item>
+  </channel>
+</rss>
