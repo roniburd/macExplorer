@@ -96,6 +96,20 @@ enum StartupFolderChoice: String, CaseIterable, Hashable {
 
     static func resetTerminalApp(in settings: Core.Settings) { settings.terminalApp = nil }
 
+    // MARK: updates
+
+    /// Release → Beta checks right away (in the background); Beta → Release never downgrades, so it doesn't.
+    static func selectChannel(_ channel: UpdateChannel, in settings: Core.Settings, updates: UpdateModel) {
+        let old = settings.updateChannel
+        settings.updateChannel = channel
+        if old == .release, channel == .beta { updates.checkNow(userInitiated: false) }
+    }
+
+    /// Running a beta with the Release channel selected: the user stays on this beta until a newer release ships.
+    static func showsBetaToReleaseNote(settings: Core.Settings, installedVersion: String) -> Bool {
+        settings.updateChannel == .release && installedVersion.contains("-beta")
+    }
+
     // MARK: sidebar
 
     static func isVisible(_ favorite: DefaultFavorite, in settings: Core.Settings) -> Bool {
@@ -119,6 +133,13 @@ enum StartupFolderChoice: String, CaseIterable, Hashable {
         case .documents: L10n.string("Documents")
         case .downloads: L10n.string("Downloads")
         case .applications: L10n.string("Applications")
+        }
+    }
+
+    static func title(for channel: UpdateChannel) -> String {
+        switch channel {
+        case .release: L10n.string("Release")
+        case .beta: L10n.string("Beta")
         }
     }
 

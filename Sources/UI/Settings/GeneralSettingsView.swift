@@ -1,10 +1,12 @@
 import SwiftUI
 import Core
 
-/// §7 General: startup folder (Home / last location / custom), open folders in, Return key, Terminal app.
+/// §7 General: startup folder (Home / last location / custom), open folders in, Return key, Terminal app; Updates
+/// (channel, automatic checks, Check Now).
 struct GeneralSettingsView: View {
     @Bindable var settings: Core.Settings
     let panels: any SettingsPanels
+    let updates: UpdateModel
 
     var body: some View {
         Form {
@@ -38,6 +40,24 @@ struct GeneralSettingsView: View {
                         Button(L10n.string("Use Terminal")) { SettingsChoices.resetTerminalApp(in: settings) }
                     }
                 }
+            }
+            Section(L10n.string("Updates")) {
+                Picker(L10n.string("Channel:"), selection: Binding(
+                    get: { settings.updateChannel },
+                    set: { SettingsChoices.selectChannel($0, in: settings, updates: updates) })) {
+                    ForEach(UpdateChannel.allCases, id: \.self) { Text(SettingsChoices.title(for: $0)).tag($0) }
+                }
+                if SettingsChoices.showsBetaToReleaseNote(settings: settings, installedVersion: updates.installedVersion) {
+                    Text(L10n.string("You'll move to the next release that's newer than this beta."))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Toggle(L10n.string("Check for updates automatically"), isOn: Binding(
+                    get: { settings.checkForUpdatesAutomatically },
+                    set: { on in
+                        if updates.isAvailable { updates.setAutomaticChecks(on) } else { settings.checkForUpdatesAutomatically = on }
+                    }))
+                Button(L10n.string("Check Now")) { updates.checkNow() }
+                    .disabled(!updates.isAvailable)
             }
         }
         .formStyle(.grouped)

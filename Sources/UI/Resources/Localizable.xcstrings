@@ -707,6 +707,17 @@
         }
       }
     },
+    "Beta" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beta"
+          }
+        }
+      }
+    },
     "Bring All to Front" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -883,6 +894,28 @@
         }
       }
     },
+    "Channel:" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Channel:"
+          }
+        }
+      }
+    },
+    "Check Now" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check Now"
+          }
+        }
+      }
+    },
     "Check for Updates…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -890,6 +923,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Check for Updates…"
+          }
+        }
+      }
+    },
+    "Check for updates automatically" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check for updates automatically"
           }
         }
       }
@@ -2753,6 +2797,17 @@
         }
       }
     },
+    "Offer to report crashes" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offer to report crashes"
+          }
+        }
+      }
+    },
     "Open" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3145,6 +3200,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Relative"
+          }
+        }
+      }
+    },
+    "Release" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Release"
           }
         }
       }
@@ -4062,6 +4128,17 @@
         }
       }
     },
+    "Updates" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Updates"
+          }
+        }
+      }
+    },
     "Use .%@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4421,6 +4498,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "You don't have permission to view '%@'"
+          }
+        }
+      }
+    },
+    "You'll move to the next release that's newer than this beta." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You'll move to the next release that's newer than this beta."
           }
         }
       }

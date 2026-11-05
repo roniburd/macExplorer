@@ -6,11 +6,13 @@ import Core
 struct SettingsView: View {
     let settings: Core.Settings
     let panels: any SettingsPanels
+    let updates: UpdateModel
     @State private var section: SettingsSection
 
-    init(settings: Core.Settings, panels: any SettingsPanels, initialSection: SettingsSection = .general) {
+    init(settings: Core.Settings, panels: any SettingsPanels, updates: UpdateModel, initialSection: SettingsSection = .general) {
         self.settings = settings
         self.panels = panels
+        self.updates = updates
         _section = State(initialValue: initialSection)
     }
 
@@ -28,7 +30,7 @@ struct SettingsView: View {
 
     @ViewBuilder private func page(_ section: SettingsSection) -> some View {
         switch section {
-        case .general: GeneralSettingsView(settings: settings, panels: panels)
+        case .general: GeneralSettingsView(settings: settings, panels: panels, updates: updates)
         case .view: ViewSettingsView(settings: settings)
         case .sidebar: SidebarSettingsView(settings: settings)
         case .advanced: AdvancedSettingsView(settings: settings)

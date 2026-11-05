@@ -2,7 +2,7 @@ import SwiftUI
 import Core
 
 /// §7 Advanced: confirm before trash (off by default), confirm before delete (always on, shown locked), full path in
-/// the window title.
+/// the window title, offer to report crashes on the next launch.
 struct AdvancedSettingsView: View {
     @Bindable var settings: Core.Settings
 
@@ -13,6 +13,7 @@ struct AdvancedSettingsView: View {
                 .disabled(true)
                 .help(L10n.string("Permanent deletes can't be undone, so they always ask first."))
             Toggle(L10n.string("Show the full path in the window title"), isOn: $settings.showFullPathInTitle)
+            Toggle(L10n.string("Offer to report crashes"), isOn: $settings.offerToReportCrashes)
         }
         .formStyle(.grouped)
     }
