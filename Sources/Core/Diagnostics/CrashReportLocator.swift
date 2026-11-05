@@ -31,15 +31,21 @@ public struct CrashReportLocator: Sendable {
     }
 
     public func newest(after launchedAt: Date?, excluding reported: Set<String>) -> CrashReport? {
+        candidates(after: launchedAt, excluding: reported).first
+    }
+
+    /// Every matching report, newest first. Only headers are checked here, so a caller that needs the body should
+    /// fall back to the next candidate when one turns out truncated or garbage (review of the branch).
+    public func candidates(after launchedAt: Date?, excluding reported: Set<String>) -> [CrashReport] {
         let keys: [URLResourceKey] = [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey]
         guard let urls = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: keys) else {
-            return nil
+            return []
         }
-        return urls.lazy
+        return urls
             .filter { !reported.contains($0.lastPathComponent) }
             .compactMap { report(at: $0, keys: Set(keys)) }
             .filter { report in launchedAt.map { report.timestamp > $0 } ?? true }
-            .max { $0.timestamp < $1.timestamp }
+            .sorted { $0.timestamp > $1.timestamp }
     }
 
     private func report(at url: URL, keys: Set<URLResourceKey>) -> CrashReport? {

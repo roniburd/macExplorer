@@ -34,6 +34,19 @@ final class UpdateSettingsTests: XCTestCase {
         XCTAssertEqual(SettingsChoices.title(for: UpdateChannel.beta), "Beta")
     }
 
+    func testCheckNowGoesThroughTheAppCheckForUpdatesAction() {
+        // Branch review: the app action opens a browser window when none is open, so a badge shows the result.
+        let model = UpdateModel()
+        var checks: [Bool] = [], sent: [Selector] = []
+        model.checkHandler = { checks.append($0) }
+        SettingsChoices.checkNow(updates: model) { sent.append($0); return true }
+        XCTAssertEqual(sent, [UpdateCommands.checkForUpdates])
+        XCTAssertEqual(checks, [], "the app action does the check")
+        SettingsChoices.checkNow(updates: model) { sent.append($0); return false }
+        XCTAssertEqual(checks, [true], "nobody handled the action: the model checks directly")
+        XCTAssertEqual(UpdateCommands.checkForUpdates, NSSelectorFromString("macx_checkForUpdates:"))
+    }
+
     func testSettingsWindowStillOpens() async throws {
         let h = try await ShellHarness.make(self)
         let controller = SettingsWindowController.show(context: h.context)

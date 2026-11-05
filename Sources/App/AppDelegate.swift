@@ -100,7 +100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func macx_requestFeature(_ sender: Any?) { if let context { FeedbackActions.open(.feature, context: context) } }
 
     @objc func validateMenuItem(_ item: NSMenuItem) -> Bool {
-        if item.action == NSSelectorFromString("macx_checkForUpdates:") { return context?.updates.isAvailable ?? false }
+        if item.action == UpdateCommands.checkForUpdates { return context?.updates.isAvailable ?? false }
         return true
     }
 

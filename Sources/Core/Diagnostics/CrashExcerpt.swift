@@ -37,14 +37,22 @@ public struct CrashExcerpt: Sendable, Equatable {
 
     /// Replaces the home path with `~` in free text and in raw `.ips` JSON, where "/" is written as "\/"
     /// (so `/Users/x` appears as `\/Users\/x`); use it for the full report text that goes to the clipboard.
-    /// A match is replaced only at a path boundary, never inside a longer name (`/Users/testerX`).
+    /// A match is replaced unless the next character continues the user name (`/Users/testerX`, `tester.old`,
+    /// or a JSON `\u` escape that may encode a letter); any other character (`/`, `\/`, a quote, newline,
+    /// space, `:`, `)`, an escaped `\n`) ends the home path.
     public static func redact(_ text: String, home: String) -> String {
         let h = home.hasSuffix("/") ? String(home.dropLast()) : home
         guard !h.isEmpty else { return text }
         let escaped = h.replacingOccurrences(of: "/", with: "\\/")
-        let plain = replace(h, in: text) { $0.isEmpty || $0.hasPrefix("/") || $0.hasPrefix("\"") }
+        let plain = replace(h, in: text, atBoundary: endsHomePath)
         guard escaped != h else { return plain }
-        return replace(escaped, in: plain) { $0.isEmpty || $0.hasPrefix("\\/") || $0.hasPrefix("\"") }
+        return replace(escaped, in: plain, atBoundary: endsHomePath)
+    }
+
+    private static func endsHomePath(_ after: Substring) -> Bool {
+        guard let next = after.first else { return true }
+        if next.isLetter || next.isNumber || "._-".contains(next) { return false }
+        return !after.hasPrefix("\\u")
     }
 
     private static func replace(_ needle: String, in text: String, atBoundary: (Substring) -> Bool) -> String {

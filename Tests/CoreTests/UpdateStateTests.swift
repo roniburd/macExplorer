@@ -76,6 +76,15 @@ final class UpdateStateTests: XCTestCase {
         XCTAssertEqual(UpdateState.upToDate(version: "1").reduce(.downloadProgress(0.4)), .upToDate(version: "1"))
     }
 
+    func testSessionEndedResolvesOnlyInFlightStates() {
+        XCTAssertEqual(UpdateState.checking(userInitiated: true).transition(.sessionEnded), .idle)
+        XCTAssertEqual(UpdateState.downloading(version: "2", fraction: nil, userInitiated: true).transition(.sessionEnded), .idle)
+        XCTAssertNil(UpdateState.idle.transition(.sessionEnded))
+        XCTAssertNil(UpdateState.upToDate(version: "1").transition(.sessionEnded))
+        XCTAssertNil(UpdateState.failed(.offline, userInitiated: true).transition(.sessionEnded))
+        XCTAssertNil(UpdateState.readyToRestart(version: "2", notesURL: nil).transition(.sessionEnded))
+    }
+
     func testTransitionDistinguishesIllegalFromNoOp() {
         // Illegal events: nil, so the caller can log them (spec §2.1).
         XCTAssertNil(UpdateState.idle.transition(.downloadProgress(0.4)))

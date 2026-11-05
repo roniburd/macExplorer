@@ -22,8 +22,10 @@ scripts/bundle.sh release                 # assembles and ad-hoc signs .build/Ma
 open .build/MacExplorer.app
 ```
 
-`scripts/bundle.sh [debug|release] [--bundle-id ID] [--output PATH]` defaults to a debug build at
-`.build/MacExplorer.app`.
+`scripts/bundle.sh [debug|release] [--bundle-id ID] [--output PATH] [--version X.Y.Z[-beta.N]] [--build N]
+[--sign IDENTITY] [--feed-url URL] [--ed-public-key KEY] [--universal]` defaults to an ad-hoc signed debug build at
+`.build/MacExplorer.app`, with version, build, feed URL and EdDSA key from `Resources/Info.plist`; `--universal`
+builds arm64 + x86_64.
 
 ### Running against a sandbox folder
 
@@ -88,8 +90,12 @@ One-time setup:
    quarantine note above and the `caveats` block in `scripts/release/render-cask.sh`.
 
 Each release: `git tag -a v0.3.0-beta.1 -m "…" && git push origin v0.3.0-beta.1` (beta) or `v0.3.0` (release).
-Try the pipeline without publishing: Actions › Release › Run workflow (dry run). Until `SUPublicEDKey` is set, only
-dry runs succeed.
+Try the pipeline without publishing: Actions › Release › Run workflow (dry run). GitHub shows *Run workflow* only for
+workflows on the repository's default branch, so `release.yml` has to be on the default branch first (tag pushes
+don't need that: they run the workflow file at the tagged commit). `ci.yml`'s push trigger and its benchmark baseline
+also watch `main`; if the default branch isn't `main`, rename it or change that trigger. A publishing run (a tag
+push, or a dispatch with dry run off) stops before building unless `SUPublicEDKey` is set, `SPARKLE_ED_PRIVATE_KEY`
+belongs to it, and `HOMEBREW_TAP_TOKEN` is set; until then only dry runs succeed.
 
 ## Tests, scenarios and benchmarks
 

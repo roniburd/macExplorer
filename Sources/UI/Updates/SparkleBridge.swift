@@ -3,9 +3,9 @@ import Core
 import Sparkle
 
 /// Sparkle 2 behind `UpdaterEngine` (spec §2.2). Delegate and user-driver callbacks are forwarded to UpdateController;
-/// nothing here decides UI. Silent path: SUAutomaticallyUpdate downloads in the background and calls
-/// `willInstallUpdateOnQuit` with an "install now" block. Foreground path (user driver) covers updates Sparkle can't
-/// install silently.
+/// nothing here decides anything, it only translates Sparkle types (the decisions are unit-tested on the
+/// controller). Silent path: SUAutomaticallyUpdate downloads in the background and calls `willInstallUpdateOnQuit`
+/// with an "install now" block. Foreground path (user driver) covers updates Sparkle can't install silently.
 @MainActor
 enum SparkleBridge {
     static func makeController(model: UpdateModel, settings: Core.Settings, bundle: Bundle) -> UpdateController {
@@ -19,6 +19,8 @@ enum SparkleBridge {
         forwarder.controller = controller
         return controller
     }
+
+    static func notes(_ item: SUAppcastItem) -> URL? { item.fullReleaseNotesURL ?? item.releaseNotesURL ?? item.infoURL }
 }
 
 @MainActor
@@ -46,8 +48,16 @@ final class Forwarder: NSObject, SPUUpdaterDelegate {
         controller?.allowedChannels() ?? []
     }
 
+    func updater(_ updater: SPUUpdater, shouldProceedWithUpdate updateItem: SUAppcastItem,
+                 updateCheck: SPUUpdateCheck) throws {
+        let version = updateItem.displayVersionString
+        guard let controller, !controller.shouldProceed(version: version) else { return }
+        throw UpdateController.suppressedError(version: version)
+    }
+
     func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
-        controller?.didFindUpdate(version: item.displayVersionString)
+        controller?.validUpdateFound(version: item.displayVersionString,
+                                     needsUserAttention: item.isInformationOnlyUpdate || item.isMajorUpgrade)
     }
 
     func updaterDidNotFindUpdate(_ updater: SPUUpdater, error: any Error) {
@@ -57,16 +67,17 @@ final class Forwarder: NSObject, SPUUpdaterDelegate {
     func updater(_ updater: SPUUpdater, willInstallUpdateOnQuit item: SUAppcastItem,
                  immediateInstallationBlock immediateInstallHandler: @escaping () -> Void) -> Bool {
         guard let controller else { return false }
-        let notes = item.fullReleaseNotesURL ?? item.releaseNotesURL ?? item.infoURL
-        controller.willInstallOnQuit(version: item.displayVersionString, notesURL: notes,
+        controller.willInstallOnQuit(version: item.displayVersionString, notesURL: SparkleBridge.notes(item),
                                      install: { immediateInstallHandler() })
         return true
     }
 
     func updater(_ updater: SPUUpdater, didAbortWithError error: any Error) {
-        let e = error as NSError
-        guard !(e.domain == SUSparkleErrorDomain && e.code == Int(SUError.noUpdateError.rawValue)) else { return }
-        controller?.didAbort(domain: e.domain, code: e.code, message: e.localizedDescription)
+        controller?.didAbort(UpdateFailure(error))
+    }
+
+    func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: (any Error)?) {
+        controller?.didFinishUpdateCycle()
     }
 }
 
@@ -75,9 +86,6 @@ final class Forwarder: NSObject, SPUUpdaterDelegate {
 final class UserDriver: NSObject, SPUUserDriver {
     private let forwarder: Forwarder
     private let settings: Core.Settings
-    private var expected: UInt64 = 0, received: UInt64 = 0
-    private var version = ""
-    private var notes: URL?
 
     init(forwarder: Forwarder, settings: Core.Settings) { self.forwarder = forwarder; self.settings = settings }
     private var controller: UpdateController? { forwarder.controller }
@@ -87,13 +95,15 @@ final class UserDriver: NSObject, SPUUserDriver {
     }
     func showUserInitiatedUpdateCheck(cancellation: @escaping () -> Void) {}
     func showUpdateFound(with appcastItem: SUAppcastItem, state: SPUUserUpdateState, reply: @escaping (SPUUserUpdateChoice) -> Void) {
-        version = appcastItem.displayVersionString
-        notes = appcastItem.fullReleaseNotesURL ?? appcastItem.releaseNotesURL ?? appcastItem.infoURL
-        if state.stage == .notDownloaded {
-            controller?.didFindUpdate(version: version)
-            reply(.install)   // download now; showReady follows
-        } else {
-            controller?.readyToInstall(version: version, notesURL: notes) { reply(.install) }
+        let stage: FoundUpdateStage = switch state.stage {
+        case .downloaded: .downloaded
+        case .installing: .installing
+        default: .notDownloaded
+        }
+        guard let controller else { reply(.dismiss); return }
+        controller.userDriverFoundUpdate(version: appcastItem.displayVersionString, notesURL: SparkleBridge.notes(appcastItem),
+                                         informationOnly: appcastItem.isInformationOnlyUpdate, stage: stage) { choice in
+            reply(choice == .install ? .install : .dismiss)
         }
     }
     func showUpdateReleaseNotes(with downloadData: SPUDownloadData) {}
@@ -103,24 +113,21 @@ final class UserDriver: NSObject, SPUUserDriver {
         acknowledgement()
     }
     func showUpdaterError(_ error: any Error, acknowledgement: @escaping () -> Void) {
-        let e = error as NSError
-        controller?.didAbort(domain: e.domain, code: e.code, message: e.localizedDescription)
+        controller?.didAbort(UpdateFailure(error))
         acknowledgement()
     }
-    func showDownloadInitiated(cancellation: @escaping () -> Void) { expected = 0; received = 0; controller?.downloadProgress(nil) }
-    func showDownloadDidReceiveExpectedContentLength(_ expectedContentLength: UInt64) { expected = expectedContentLength }
-    func showDownloadDidReceiveData(ofLength length: UInt64) {
-        received += length
-        controller?.downloadProgress(expected > 0 ? min(1, Double(received) / Double(expected)) : nil)
+    func showDownloadInitiated(cancellation: @escaping () -> Void) { controller?.userDriverDownloadStarted() }
+    func showDownloadDidReceiveExpectedContentLength(_ expectedContentLength: UInt64) {
+        controller?.userDriverDownloadExpectedLength(expectedContentLength)
     }
+    func showDownloadDidReceiveData(ofLength length: UInt64) { controller?.userDriverDownloadReceived(length) }
     func showDownloadDidStartExtractingUpdate() { controller?.downloadProgress(nil) }
     func showExtractionReceivedProgress(_ progress: Double) {}
     func showReady(toInstallAndRelaunch reply: @escaping (SPUUserUpdateChoice) -> Void) {
-        controller?.readyToInstall(version: version, notesURL: notes) { reply(.install) }
+        controller?.userDriverReadyToInstall { reply(.install) }
     }
     func showInstallingUpdate(withApplicationTerminated applicationTerminated: Bool, retryTerminatingApplication: @escaping () -> Void) {
-        // Termination was cancelled (quit prompt → Cancel): keep the badge; Restart Now retries.
-        if !applicationTerminated { controller?.readyToInstall(version: version, notesURL: notes, reusable: true) { retryTerminatingApplication() } }
+        controller?.userDriverInstalling(applicationTerminated: applicationTerminated) { retryTerminatingApplication() }
     }
     func showUpdateInstalledAndRelaunched(_ relaunched: Bool, acknowledgement: @escaping () -> Void) { acknowledgement() }
     func showUpdateInFocus() {}

@@ -24,5 +24,11 @@ final class AXIDTests: XCTestCase {
         XCTAssertEqual(AXID.propertiesWindow, "macx.properties")
         XCTAssertEqual(AXID.settingsWindow, "macx.settings")
         XCTAssertEqual(AXID.onboardingSheet, "macx.onboarding")
+        XCTAssertEqual(AXID.updateBadge, "macx.updateBadge")
+        XCTAssertEqual(AXID.feedbackMenu, "macx.feedback")
+        XCTAssertEqual(AXID.updateChannel, "macx.settings.updateChannel")
+        XCTAssertEqual(AXID.automaticUpdateChecks, "macx.settings.automaticUpdateChecks")
+        XCTAssertEqual(AXID.checkForUpdatesNow, "macx.settings.checkForUpdatesNow")
+        XCTAssertEqual(AXID.offerCrashReports, "macx.settings.offerCrashReports")
     }
 }

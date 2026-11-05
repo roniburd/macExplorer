@@ -25,4 +25,8 @@ enum AXID {
     static let onboardingSheet = "macx.onboarding"       // additive, P1-30
     static let updateBadge = "macx.updateBadge"
     static let feedbackMenu = "macx.feedback"
+    static let updateChannel = "macx.settings.updateChannel"
+    static let automaticUpdateChecks = "macx.settings.automaticUpdateChecks"
+    static let checkForUpdatesNow = "macx.settings.checkForUpdatesNow"
+    static let offerCrashReports = "macx.settings.offerCrashReports"
 }

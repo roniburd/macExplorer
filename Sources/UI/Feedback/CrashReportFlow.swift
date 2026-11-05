@@ -28,6 +28,9 @@ import Core
         self.reveal = reveal
     }
 
+    /// At most this many reports are read in full per launch (each is at most CrashReportLocator.maxFileSize).
+    nonisolated static let maxCandidates = 5
+
     private struct Found: Sendable {
         var report: CrashReport
         var excerpt: CrashExcerpt
@@ -46,11 +49,15 @@ import Core
         }
         let locator = self.locator, reported = Set(settings.lastReportedCrashes), home = self.home
         let found = await Task.detached(priority: .utility) { () -> Found? in
-            guard let report = locator.newest(after: after, excluding: reported),
-                  let data = try? Data(contentsOf: report.fileURL),
-                  let text = String(data: data, encoding: .utf8),
-                  let excerpt = CrashExcerpt.parse(text, home: home) else { return nil }
-            return Found(report: report, excerpt: excerpt, fullRedacted: CrashExcerpt.redact(text, home: home))
+            // Newest first; a report whose header looks right but whose body is truncated or not UTF-8 is skipped
+            // so an older, readable report from the same session is still offered.
+            for report in locator.candidates(after: after, excluding: reported).prefix(Self.maxCandidates) {
+                guard let data = try? Data(contentsOf: report.fileURL),
+                      let text = String(data: data, encoding: .utf8),
+                      let excerpt = CrashExcerpt.parse(text, home: home) else { continue }
+                return Found(report: report, excerpt: excerpt, fullRedacted: CrashExcerpt.redact(text, home: home))
+            }
+            return nil
         }.value
         guard let found else {
             NSLog("MacExplorer: previous session ended without a clean quit; no crash report found")

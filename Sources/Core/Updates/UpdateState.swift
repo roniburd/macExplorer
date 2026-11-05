@@ -18,6 +18,9 @@ public enum UpdateEvent: Sendable, Equatable {
     case failed(UpdateError)
     /// The user closed the popover on a transient result (up to date, failed).
     case acknowledged
+    /// Sparkle's update cycle ended without a result this model saw (an informational item was dismissed, a
+    /// session aborted early): an in-flight check or download must not stay on screen forever.
+    case sessionEnded
 }
 
 /// Spec §3: background work is invisible until an update is ready; user-initiated checks show every step.
@@ -80,6 +83,9 @@ public enum UpdateState: Sendable, Equatable {
             return user ? .failed(error, userInitiated: true) : .idle
 
         case (.upToDate, .acknowledged), (.failed, .acknowledged):
+            return .idle
+
+        case (.checking, .sessionEnded), (.downloading, .sessionEnded):
             return .idle
 
         default:

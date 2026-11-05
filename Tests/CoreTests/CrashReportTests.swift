@@ -103,6 +103,32 @@ final class CrashReportTests: XCTestCase {
                        "/Users/testerX \\/Users\\/testerX")
     }
 
+    /// Branch review: any character that can't continue the user name ends the home path.
+    func testRedactTreatsEveryNonNameCharacterAsABoundary() {
+        let home = "/Users/tester"
+        XCTAssertEqual(CrashExcerpt.redact("cwd /Users/tester\nnext", home: home), "cwd ~\nnext")
+        XCTAssertEqual(CrashExcerpt.redact("at /Users/tester then", home: home), "at ~ then")
+        XCTAssertEqual(CrashExcerpt.redact("(/Users/tester)", home: home), "(~)")
+        XCTAssertEqual(CrashExcerpt.redact("/Users/tester: denied, /Users/tester'", home: home), "~: denied, ~'")
+        XCTAssertEqual(CrashExcerpt.redact(#"{"m":"cd \/Users\/tester\n"}"#, home: home), #"{"m":"cd ~\n"}"#)
+        XCTAssertEqual(CrashExcerpt.redact(#"{"m":"cd /Users/tester\t"}"#, home: home), #"{"m":"cd ~\t"}"#)
+        // Still never inside a longer name.
+        for longer in ["/Users/testerX", "/Users/tester.old", "/Users/tester_2", "/Users/tester-b", "/Users/tester9",
+                       "/Users/testeré", #"\/Users\/testeré"#, #"\/Users\/testerX"#] {
+            XCTAssertEqual(CrashExcerpt.redact(longer, home: home), longer)
+        }
+    }
+
+    func testCandidatesAreNewestFirst() throws {
+        try plant("macExplorer-a.ips", IPSFixture.make())
+        try plant("macExplorer-c.ips", IPSFixture.make(timestamp: "2026-11-04 12:11:12.00 -0800"))
+        try plant("macExplorer-b.ips", IPSFixture.make(timestamp: "2026-11-04 11:11:12.00 -0800"))
+        try plant("macExplorer-x.ips", "garbage")
+        XCTAssertEqual(locator().candidates(after: nil, excluding: ["macExplorer-b.ips"]).map(\.fileName),
+                       ["macExplorer-c.ips", "macExplorer-a.ips"])
+        XCTAssertEqual(locator().newest(after: nil, excluding: [])?.fileName, "macExplorer-c.ips")
+    }
+
     func testParseNeverTrapsOnTruncations() {
         let full = IPSFixture.make()
         for cut in stride(from: 0, to: full.count, by: 97) {

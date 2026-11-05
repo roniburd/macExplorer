@@ -91,6 +91,29 @@ final class CrashReportFlowTests: XCTestCase {
         XCTAssertEqual(revealed?.lastPathComponent, "macExplorer-2026-11-04-101112.ips")
     }
 
+    func testNewerReportWithGarbageBodyFallsBackToTheOlderValidOne() async throws {
+        // Review Focus 3 (branch review): the header is valid, the body is truncated or not UTF-8.
+        let s = settings(), prompt = ScriptedCrashPrompt(CrashAnswer(choice: .dontSend, dontAskAgain: false))
+        let f = try flow(s, previous: dirty, prompt: prompt, opener: RecordingURLOpener())
+        let newer = IPSFixture.make(timestamp: "2026-11-04 10:20:00.00 -0800")
+        let header = String(newer[..<newer.firstIndex(of: "\n")!])
+        _ = try sandbox.createFile("DiagnosticReports/macExplorer-2026-11-04-102000.ips",
+                                   contents: Data((header + "\n{\"threads\": [{\"frames\"").utf8))
+        _ = try sandbox.createFile("DiagnosticReports/macExplorer-2026-11-04-101500.ips",
+                                   contents: Data((header + "\n").utf8) + Data([0xFF, 0xFE, 0x7B, 0x80]))
+        let answer = await f.run(on: nil)
+        XCTAssertEqual(answer?.choice, .dontSend)
+        XCTAssertEqual(prompt.titles.count, 1)
+        XCTAssertEqual(s.lastReportedCrashes, ["macExplorer-2026-11-04-101112.ips"])
+    }
+
+    func testEscapeDismissesTheCrashSheetAsDontSend() {
+        let alert = AlertCrashPrompt.makeAlert(title: "Crash: EXC_BAD_ACCESS (SIGSEGV) in 0.4.0")
+        XCTAssertEqual(alert.buttons.map(\.title), ["Report on GitHub…", "Show Report", "Don't Send"])
+        XCTAssertEqual(alert.buttons[0].keyEquivalent, "\r")
+        XCTAssertEqual(alert.buttons[2].keyEquivalent, "\u{1b}")
+    }
+
     func testDirtyUnknownStillFindsUnreportedCrash() async throws {
         let prompt = ScriptedCrashPrompt(CrashAnswer(choice: .dontSend, dontAskAgain: false))
         _ = try await flow(settings(), previous: .dirtyUnknown, prompt: prompt, opener: RecordingURLOpener()).run(on: nil)

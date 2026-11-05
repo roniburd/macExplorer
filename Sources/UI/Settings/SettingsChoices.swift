@@ -105,6 +105,13 @@ enum StartupFolderChoice: String, CaseIterable, Hashable {
         if old == .release, channel == .beta { updates.checkNow(userInitiated: false) }
     }
 
+    /// Settings › Check Now: the same app action as the menu item, so a browser window (and its badge) exists to show
+    /// the result even when Settings is the only window. `send` is a nil-targeted `NSApp.sendAction`; when nothing
+    /// handles the action (no AppDelegate, as in tests) the model checks directly.
+    static func checkNow(updates: UpdateModel, send: (Selector) -> Bool) {
+        if !send(UpdateCommands.checkForUpdates) { updates.checkNow() }
+    }
+
     /// Running a beta with the Release channel selected: the user stays on this beta until a newer release ships.
     static func showsBetaToReleaseNote(settings: Core.Settings, installedVersion: String) -> Bool {
         settings.updateChannel == .release && installedVersion.contains("-beta")

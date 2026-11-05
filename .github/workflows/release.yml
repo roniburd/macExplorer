@@ -85,6 +85,31 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "Release $version (channel $channel, dry run: $dry)" >> "$GITHUB_STEP_SUMMARY"
 
+      # Before anything is built or published: a publishing run needs every publish prerequisite (success
+      # criterion 1: a tag updates the release, appcast and cask with no manual steps), and the EdDSA secret must
+      # belong to SUPublicEDKey, or every installed copy would reject the update.
+      - name: Check publish prerequisites
+        env:
+          DRY: ${{ steps.v.outputs.dry }}
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          key="$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' Resources/Info.plist)"
+          placeholder=REPLACE_WITH_SPARKLE_PUBLIC_KEY
+          if [ "$DRY" != "true" ]; then
+            missing=0
+            [ "$key" != "$placeholder" ] || { echo "::error::Set SUPublicEDKey in Resources/Info.plist (README › Releasing)"; missing=1; }
+            [ -n "$SPARKLE_ED_PRIVATE_KEY" ] || { echo "::error::secret SPARKLE_ED_PRIVATE_KEY is not set (README › Releasing)"; missing=1; }
+            [ -n "$HOMEBREW_TAP_TOKEN" ] || { echo "::error::secret HOMEBREW_TAP_TOKEN is not set (README › Releasing)"; missing=1; }
+            [ "$missing" = 0 ] || exit 1
+          fi
+          if [ -n "$SPARKLE_ED_PRIVATE_KEY" ] && [ "$key" != "$placeholder" ]; then
+            derived="$(printf '%s\n' "$SPARKLE_ED_PRIVATE_KEY" | scripts/release/ed-public-key.sh)" \
+              || { echo "::error::can't derive a public key from SPARKLE_ED_PRIVATE_KEY"; exit 1; }
+            [ "$derived" = "$key" ] \
+              || { echo "::error::SPARKLE_ED_PRIVATE_KEY does not belong to SUPublicEDKey in Resources/Info.plist"; exit 1; }
+          fi
+
       - name: Test
         run: swift test --parallel
 
@@ -122,15 +147,6 @@ jobs:
             echo "identity=-" >> "$GITHUB_OUTPUT"; echo "notarize=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Check Sparkle public key
-        env:
-          DRY: ${{ steps.v.outputs.dry }}
-        run: |
-          key="$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' Resources/Info.plist)"
-          if [ "$key" = "REPLACE_WITH_SPARKLE_PUBLIC_KEY" ] && [ "$DRY" != "true" ]; then
-            echo "::error::Set SUPublicEDKey in Resources/Info.plist before publishing (README › Releasing)"; exit 1
-          fi
-
       - name: Bundle
         env:
           VERSION: ${{ steps.v.outputs.version }}
@@ -163,6 +179,7 @@ jobs:
         env:
           VERSION: ${{ steps.v.outputs.version }}
           IDENTITY: ${{ steps.sign.outputs.identity }}
+          NOTARIZE: ${{ steps.sign.outputs.notarize }}
         run: |
           zip="dist/MacExplorer-$VERSION.zip"; dmg="dist/MacExplorer-$VERSION.dmg"
           ditto -c -k --keepParent dist/MacExplorer.app "$zip"
@@ -173,8 +190,25 @@ jobs:
             [ "$attempt" -lt 3 ] || exit 1
             sleep 10
           done
-          [ "$IDENTITY" = "-" ] || codesign --force --sign "$IDENTITY" "$dmg"
+          # Gatekeeper judges a quarantined disk image by its own signature: a signed but un-notarized image (or one
+          # signed by the untrusted self-signed certificate) can be refused outright, while an unsigned image opens and
+          # the app inside is judged on its own. So the image is signed only when it is notarized too.
+          [ "$NOTARIZE" != "true" ] || codesign --force --sign "$IDENTITY" "$dmg"
           { echo "zip=$zip"; echo "dmg=$dmg"; echo "length=$(stat -f%z "$zip")"; echo "sha=$(shasum -a 256 "$zip" | cut -d' ' -f1)"; } >> "$GITHUB_OUTPUT"
+
+      - name: Notarize disk image
+        if: steps.sign.outputs.notarize == 'true'
+        env:
+          NOTARY_API_KEY: ${{ secrets.NOTARY_API_KEY }}
+          NOTARY_API_KEY_ID: ${{ secrets.NOTARY_API_KEY_ID }}
+          NOTARY_API_ISSUER: ${{ secrets.NOTARY_API_ISSUER }}
+          DMG: ${{ steps.pkg.outputs.dmg }}
+        run: |
+          printf '%s' "$NOTARY_API_KEY" | base64 --decode > "$RUNNER_TEMP/notary.p8"
+          trap 'rm -f "$RUNNER_TEMP/notary.p8"' EXIT
+          xcrun notarytool submit "$DMG" --key "$RUNNER_TEMP/notary.p8" \
+            --key-id "$NOTARY_API_KEY_ID" --issuer "$NOTARY_API_ISSUER" --wait
+          xcrun stapler staple "$DMG"
 
       - name: Sign update (EdDSA)
         id: ed
@@ -276,7 +310,7 @@ jobs:
           VERSION: ${{ steps.v.outputs.version }}
           TOKEN: ${{ steps.v.outputs.token }}
         run: |
-          [ -n "$HOMEBREW_TAP_TOKEN" ] || { echo "::warning::HOMEBREW_TAP_TOKEN not set; skipping tap"; exit 0; }
+          [ -n "$HOMEBREW_TAP_TOKEN" ] || { echo "::error::HOMEBREW_TAP_TOKEN not set; the cask was not updated"; exit 1; }
           git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/roniburd/homebrew-macexplorer.git" "$RUNNER_TEMP/tap"
           mkdir -p "$RUNNER_TEMP/tap/Casks"
           cp "dist/$TOKEN.rb" "$RUNNER_TEMP/tap/Casks/"

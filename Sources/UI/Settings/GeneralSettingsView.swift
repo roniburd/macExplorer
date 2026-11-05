@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import Core
 
@@ -47,6 +48,7 @@ struct GeneralSettingsView: View {
                     set: { SettingsChoices.selectChannel($0, in: settings, updates: updates) })) {
                     ForEach(UpdateChannel.allCases, id: \.self) { Text(SettingsChoices.title(for: $0)).tag($0) }
                 }
+                .accessibilityIdentifier(AXID.updateChannel)
                 if SettingsChoices.showsBetaToReleaseNote(settings: settings, installedVersion: updates.installedVersion) {
                     Text(L10n.string("You'll move to the next release that's newer than this beta."))
                         .font(.caption).foregroundStyle(.secondary)
@@ -56,8 +58,12 @@ struct GeneralSettingsView: View {
                     set: { on in
                         if updates.isAvailable { updates.setAutomaticChecks(on) } else { settings.checkForUpdatesAutomatically = on }
                     }))
-                Button(L10n.string("Check Now")) { updates.checkNow() }
-                    .disabled(!updates.isAvailable)
+                .accessibilityIdentifier(AXID.automaticUpdateChecks)
+                Button(L10n.string("Check Now")) {
+                    SettingsChoices.checkNow(updates: updates) { NSApp.sendAction($0, to: nil, from: nil) }
+                }
+                .disabled(!updates.isAvailable)
+                .accessibilityIdentifier(AXID.checkForUpdatesNow)
             }
         }
         .formStyle(.grouped)

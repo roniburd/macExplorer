@@ -14,6 +14,7 @@ struct AdvancedSettingsView: View {
                 .help(L10n.string("Permanent deletes can't be undone, so they always ask first."))
             Toggle(L10n.string("Show the full path in the window title"), isOn: $settings.showFullPathInTitle)
             Toggle(L10n.string("Offer to report crashes"), isOn: $settings.offerToReportCrashes)
+                .accessibilityIdentifier(AXID.offerCrashReports)
         }
         .formStyle(.grouped)
     }

@@ -34,7 +34,7 @@ import Core
 
     static func detail(_ s: UpdateState) -> String? {
         guard case .downloading(_, let f?, _) = s else { return nil }
-        return "\(Int((f * 100).rounded()))%"
+        return f.formatted(.percent.precision(.fractionLength(0)))   // locale-aware ("50 %" in some locales)
     }
 }
 

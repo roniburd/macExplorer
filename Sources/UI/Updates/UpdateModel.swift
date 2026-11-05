@@ -10,6 +10,12 @@ import Core
     isolated deinit { cancel() }
 }
 
+/// The app-level Check for Updates… action (AppDelegate implements it: it opens a browser window when none is
+/// open, so a badge is there to show the result). The menu item and Settings › Check Now both send it.
+public enum UpdateCommands {
+    public static let checkForUpdates = NSSelectorFromString("macx_checkForUpdates:")
+}
+
 /// What the toolbar badge, the menu and Settings read (spec §3). `UpdateController` installs the handlers; without
 /// one (debug builds, sandbox runs, updates not configured) the model stays `.idle` and `isAvailable` is false.
 @MainActor @Observable
