@@ -16,6 +16,8 @@ public enum FolderEvent: Sendable {
     case groups([GroupRun])
     /// These rows' folder sizes changed (P2-13; views show them from P2-14).
     case folderSizes(Set<RowID>)
+    /// These rows' extended attributes (tags, last opened, permissions, owner, comment) were read (P2-15).
+    case extendedAttributes(Set<RowID>)
 }
 
 /// Services a FolderModel uses (CoreEnvironment.folderContext() builds the real one).
@@ -37,6 +39,8 @@ public struct FolderContext {
     public var calendar: Calendar
     /// While folder sizes stream in, the size sort re-sorts at most once per this interval (P2-14); tests pass .zero.
     public var resortCoalescing: Duration
+    /// uid → user name for the Owner column (P2-15); CoreEnvironment shares one cache across folders.
+    public var ownerNames: OwnerNameCache
 
     public init(readers: DirectoryReaders, lanes: LanePool, volumes: Volumes, changeBus: ChangeBus,
                 types: TypeRegistry = .shared, pacer: any FramePacer = TimerFramePacer(),
@@ -46,8 +50,10 @@ public struct FolderContext {
                 home: URL = FileManager.default.homeDirectoryForCurrentUser,
                 now: @escaping @Sendable () -> Date = { Date() },
                 calendar: Calendar = .autoupdatingCurrent,
-                resortCoalescing: Duration = .milliseconds(500)) {
+                resortCoalescing: Duration = .milliseconds(500),
+                ownerNames: OwnerNameCache = OwnerNameCache()) {
         self.home = home
+        self.ownerNames = ownerNames
         self.resortCoalescing = resortCoalescing
         self.now = now
         self.calendar = calendar
@@ -75,7 +81,7 @@ public final class FolderModel {
     public let directory: URL
     public private(set) var state: FolderState = .loading
     public private(set) var store: EntryStore {
-        didSet { pruneFolderSizes() }
+        didSet { pruneFolderSizes(); storeChangedForAttributes() }
     }
     public private(set) var query: ViewQuery
     public private(set) var selection: Selection = .empty
@@ -156,6 +162,17 @@ public final class FolderModel {
     var sizeResortTask: Task<Void, Never>?
     /// `selectionSummary`'s cached walk, kept current by `setFolderSizes`.
     var selectionTotals: SelectionTotals?
+    // Extended attributes (FolderModel+Attributes, P2-15), by identity; rows that leave the store are dropped.
+    var attributeTable: [RowID: ExtendedAttributes] = [:]
+    /// Entries the watcher or a patch invalidated, with the `attributeSerial` of that invalidation. They keep
+    /// their values (no blank cells) until a read that began after it replaces them.
+    var staleAttributes: [RowID: Int] = [:]
+    var attributeSerial = 0
+    var lastAttributeRequest: AttributeRequest?
+    /// The one attribute read in flight, and the latest request made meanwhile.
+    var attributeTask: Task<Void, Never>?
+    var pendingAttributeRequest: AttributeRequest?
+    var attributeRefreshScheduled = false
     /// Full selection walks so far (tests).
     private(set) var selectionSummaryPasses = 0
 
@@ -199,6 +216,7 @@ public final class FolderModel {
         switch state {
         case .complete:
             if rereadInFlight && rereadStalled { abandonReread() }
+            invalidateAllExtendedAttributes()       // F5 re-reads the visible rows' attributes too (P2-15)
             beginReread()
         case .loading, .partial: break
         case .error, .unresponsive, .waitingForPermission: retry()
@@ -232,6 +250,7 @@ public final class FolderModel {
         cancelDayTimer()
         sizeResortTask?.cancel()
         sizeResortTask = nil
+        cancelExtendedAttributes()
         busToken?.cancel()
         busToken = nil
         volumeToken?.cancel()
@@ -435,6 +454,7 @@ public final class FolderModel {
         rereadPending = false
         rereadStalled = false
         resetItemReads()
+        resetExtendedAttributes()
         let gen = generation, directory = self.directory, worker = self.worker, query = self.query
         let identityMode = store.identityMode
         var options = ReadOptions()
@@ -583,6 +603,7 @@ public final class FolderModel {
             if let index = carried[name] { substitute(old, with: store.identity(index)) }
         }
         reconcileSelection(emitting: false)
+        invalidateReloadedAttributes(result.diff.changes)
         publishPatch(result.diff.changes, runs: result.runs)
         if selection != before { emit(.selection(selection)) }
         if result.groupRevision != groupingRevision { regroup() }

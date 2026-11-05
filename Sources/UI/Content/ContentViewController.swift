@@ -184,6 +184,7 @@ final class ContentViewController: CommandHandlingViewController {
             // Only a selected row's size changes the status bar's selection total.
             let selected = session.folder.selection.ids
             if ids.contains(where: selected.contains) { updateStatus() }
+        case .extendedAttributes: break   // Details' extended columns reload these rows from P2-16
         }
     }
 

@@ -15,6 +15,8 @@ public final class CoreEnvironment {
     public let changeBus: ChangeBus
     /// On-demand folder sizes (P2-13): shared cache, one session per folder view with sizes on.
     public let folderSizes: FolderSizeService
+    /// uid → user name for the Owner column (P2-15), shared by every folder.
+    public let ownerNames = OwnerNameCache()
     public let clipboard: Clipboard
     public let launchServices: LaunchServicesCache
     public let ejectCoordinator: EjectCoordinator
@@ -129,7 +131,7 @@ public final class CoreEnvironment {
                 guard let location = Self.protectedLocation(url, settings: settings, volumes: volumes) else { return }
                 settings.recordTCCOutcome(granted ? .granted : .denied, for: location)
             },
-            home: settings.home)
+            home: settings.home, ownerNames: ownerNames)
     }
 
     static func protectedLocation(_ url: URL, settings: Settings, volumes: Volumes) -> ProtectedLocation? {

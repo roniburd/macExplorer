@@ -41,6 +41,9 @@ extension FolderModel {
     /// Called on main for every classified event of this model's watcher.
     func handleWatch(_ event: WatchEvent) {
         guard !closed, !relocated else { return }
+        // Before any patch: an xattr-only change (tags, comment) leaves mtime alone, so the store diff reports
+        // nothing; the event itself is what re-reads the item's extended attributes (P2-15, Review Focus 2).
+        invalidateExtendedAttributes(for: event)
         switch state {
         case .complete: applyWatch(event)
         case .loading, .partial, .unresponsive, .waitingForPermission: watchBuffer.add(event)
