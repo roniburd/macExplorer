@@ -53,7 +53,7 @@
 	<key>SUFeedURL</key>
 	<string>https://roniburd.github.io/macExplorer/appcast.xml</string>
 	<key>SUPublicEDKey</key>
-	<string>REPLACE_WITH_SPARKLE_PUBLIC_KEY</string>
+	<string>3QXd9SQSxrYnwkcfToQAZPmf1TqKUckPPDbPxDZP/y4=</string>
 	<key>SUScheduledCheckInterval</key>
 	<integer>86400</integer>
 </dict>
