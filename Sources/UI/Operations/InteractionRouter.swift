@@ -61,7 +61,9 @@ final class SerialGate {
 
 /// Answers every FileOpInteraction question with a dialog (§6.2, §6.4, §6.5): a sheet on the window that started the
 /// job, or the Operations panel when that window has closed (also while the question was waiting or showing).
-/// Questions for one host are shown one at a time; errors from Properties windows are answered Skip and shown there.
+/// Questions for one host are shown one at a time, and so are questions for the tabs of one tab group (selecting a
+/// tab for its sheet would hide a sibling tab's sheet, Review Focus 4); errors from Properties windows are answered
+/// Skip and shown there.
 @MainActor
 final class InteractionRouter: FileOpInteraction {
     private let windows: WindowManager
@@ -71,7 +73,7 @@ final class InteractionRouter: FileOpInteraction {
     /// Origins whose job errors are answered .skip without a dialog; the window shows them inline (§5.8).
     var answersInline: @MainActor (OriginID) -> Bool = { PropertiesWindowController.answersErrorsInline($0) }
     private let resolveHost: (@MainActor (OriginID?) -> DialogHost)?
-    private var gates: [DialogHost: SerialGate] = [:]
+    private var gates: [GateKey: SerialGate] = [:]
     /// Where each waiting job's question is showing (Operations list "Show", tests).
     private(set) var pendingHosts: [JobID: DialogHost] = [:]
     /// The presenting Task of each open dialog, so Stop and Quit can end them.
@@ -172,7 +174,8 @@ final class InteractionRouter: FileOpInteraction {
         if case .error = question, let origin = job.origin, answersInline(origin) { return .error(.skip) }
         var host = route(job.origin)
         while true {
-            let gate = gate(for: host)
+            let key = gateKey(for: host)
+            let gate = gate(for: key)
             await gate.enter()
             if Task.isCancelled || isStopping {
                 gate.leave()
@@ -181,6 +184,10 @@ final class InteractionRouter: FileOpInteraction {
             if case .window(let origin) = host, route(origin) != host {   // closed while this question waited
                 gate.leave()
                 host = .operationsPanel
+                continue
+            }
+            if gateKey(for: host) != key {   // the tab moved to another group (or out of one) while waiting
+                gate.leave()
                 continue
             }
             pendingHosts[job.id] = host
@@ -207,10 +214,24 @@ final class InteractionRouter: FileOpInteraction {
         }
     }
 
-    private func gate(for host: DialogHost) -> SerialGate {
-        if let gate = gates[host] { return gate }
+    /// What one gate serializes: all tabs of one tab group share a gate (only the selected tab's sheet is
+    /// visible); any other host has its own.
+    private enum GateKey: Hashable {
+        case host(DialogHost)
+        case tabGroup(ObjectIdentifier)
+    }
+
+    private func gateKey(for host: DialogHost) -> GateKey {
+        if case .window(let origin) = host, let group = candidateWindow(for: origin)?.tabGroup {
+            return .tabGroup(ObjectIdentifier(group))
+        }
+        return .host(host)
+    }
+
+    private func gate(for key: GateKey) -> SerialGate {
+        if let gate = gates[key] { return gate }
         let gate = SerialGate()
-        gates[host] = gate
+        gates[key] = gate
         return gate
     }
 

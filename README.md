@@ -186,11 +186,18 @@ Run before every release, on Apple Silicon, from a clean checkout of the release
     first checking that `~/Library/Saved Application State/com.macexplorer.app.restore-check.savedState` and
     `~/Library/Preferences/com.macexplorer.app.restore-check.plist` do not exist. Launch it with `--skip-onboarding`
     only, open a fresh `${TMPDIR}macx-scenario-<UUID>/A` (⌘L), ⌘T, open `…/B`, quit and relaunch: expect one window
-    with tabs "A" and "B", "B" selected. Then delete exactly those two paths, the temp folder and the bundle. If the
-    tabs come back as separate windows, file a bug (every tab window is already restorable with
-    `BrowserWindowRestoration` as its restoration class).
+    with tabs "A" and "B", "B" selected. Then delete exactly those two paths, the temp folder and the bundle.
+    Every tab window is already restorable with `BrowserWindowRestoration` as its restoration class, so AppKit's
+    native tab restoration should apply. Risk: launch restoration opens each queued request with
+    `WindowManager.openWindow(at:)` (cascaded, shown as its own window) only after Core has started, then calls
+    AppKit's completion handler, and macExplorer itself records no tab-group membership. If the tabs come back as
+    separate windows, do not sign off: encode the tab group's identity and tab order in
+    `BrowserWindowController.window(_:willEncodeRestorableState:)` (`BrowserWindowRestoration.encode`), and have
+    `restoreOrOpenInitial` / `BrowserWindowRestoration.drain` rebuild each group with
+    `openTab(at:in:select:)` instead of `openWindow(at:)`, selecting the tab that was selected. Then repeat this check.
     Status: still not run (2026-11-05). It cannot run in sandbox mode, which disables restoration, so an agent
-    bound to `--root` sandbox launches cannot do it; it is a Phase 2 sign-off gate for the operator.
+    bound to `--root` sandbox launches cannot do it; it is a Phase 2 sign-off gate for the operator. Record the
+    result (date, pass, or the fix applied) here.
 12. Tab-bar drop: drag folder `B` from a second window (⌘N) onto the New Tab toolbar button of a window showing a
     sandbox folder: the cursor shows the link badge, a tab "B" opens and `B` stays where it was. Automated coverage
     (`MiddleClickTests.testRealDraggingInfoOnTheNewTabButtonIsALinkAndOpensTabs`) drives `draggingEntered` /

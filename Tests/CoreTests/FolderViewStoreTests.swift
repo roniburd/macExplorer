@@ -63,6 +63,37 @@ final class FolderViewStoreTests: XCTestCase {
         XCTAssertFalse(store.hasOverride(for: loc("/u/Photos", v, 99)))
     }
 
+    /// Review fix: P (fileID 42) was renamed away by another app and a new folder created at its old path. An edit
+    /// made there before the identity probe returns must not overwrite P's record; once the probe returns, the edit
+    /// moves to the new folder's own object record.
+    func testEditBeforeProbeAtOldPathOfRenamedFolderKeepsItsRecord() {
+        let v = volume(id: "uuid:ABC", idStable: true)
+        let store = makeStore()
+        store.save(icons, for: loc("/u/Photos", v, 42))
+        var list = defaults; list.mode = .columns
+        store.save(list, for: loc("/u/Photos", v, nil))                     // edit before the probe returns
+        XCTAssertEqual(store.state(for: loc("/u/Photos", v, nil)), list, "the edit shows at the path meanwhile")
+        XCTAssertEqual(store.state(for: loc("/u/Pictures", v, 42)), icons, "P keeps its own view")
+        store.save(list, for: loc("/u/Photos", v, 99))                      // the probe returned
+        XCTAssertEqual(store.state(for: loc("/u/Photos", v, 99)), list)
+        XCTAssertEqual(store.state(for: loc("/u/Pictures", v, 42)), icons)
+        XCTAssertEqual(store.count, 2, "the pending path record became the new folder's object record")
+    }
+
+    /// The same edit-before-probe in the folder itself (not renamed): one record, keyed by its object key.
+    func testEditBeforeProbeInSameFolderEndsAsOneObjectRecord() {
+        let v = volume(id: "uuid:ABC", idStable: true)
+        let store = makeStore()
+        store.save(icons, for: loc("/u/dev", v, 7))
+        var list = defaults; list.mode = .columns
+        store.save(list, for: loc("/u/dev", v, nil))
+        XCTAssertEqual(store.state(for: loc("/u/dev", v, nil)), list)
+        store.save(list, for: loc("/u/dev", v, 7))
+        XCTAssertEqual(store.count, 1)
+        XCTAssertEqual(store.state(for: loc("/u/dev", v, 7)), list)
+        XCTAssertEqual(store.state(for: loc("/u/dev", v, nil)), list)
+    }
+
     func testPathKeyOnCaseInsensitiveNonStableVolume() {
         let exfat = volume(id: "uuid:USB", idStable: false, caseSensitive: false)
         let store = makeStore()

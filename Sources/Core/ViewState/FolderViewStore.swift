@@ -81,10 +81,10 @@ public final class FolderViewStore {
     public func hasOverride(for locator: FolderViewLocator) -> Bool { lookup(locator) != nil }
 
     public func save(_ state: FolderViewState, for locator: FolderViewLocator) {
-        // Without a fileID (identity probe pending), update the object record already indexed at this path rather
-        // than adding a duplicate path record next to it.
-        var key = locator.primaryKey
-        if locator.objectKey == nil, let existing = lookup(locator), case .object = existing.key { key = existing.key }
+        // Without a fileID (identity probe pending) this is a path record, even when the path index points at an
+        // object record: that record may be a folder renamed away from this path (review fix), and it must keep its
+        // own view. When the probe returns, the save under the object key replaces this path record (no duplicate).
+        let key = locator.primaryKey
         dropPathRecord(at: locator.pathKey, keeping: key)   // path → object migration
         if let existing = records[key], existing.pathKey != locator.pathKey, byPath[existing.pathKey] == key {
             byPath[existing.pathKey] = nil

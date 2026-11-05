@@ -18,7 +18,7 @@ enum FolderViewBench {
                                 isReadOnly: false, isBrowsable: true, totalCapacity: nil,
                                 capabilities: VolumeCapabilities(idStable: true, renameExcl: true, clone: true, caseSensitive: false))
         func locator(_ i: Int) -> FolderViewLocator {
-            FolderViewLocator(url: URL(filePath: "/Users/bench/Projects/area-\(i % 97)/folder-\(i)", directoryHint: .isDirectory),
+            FolderViewLocator(url: URL(filePath: "/Volumes/Bench/Projects/area-\(i % 97)/folder-\(i)", directoryHint: .isDirectory),
                               volume: volume, fileID: UInt64(10_000_000 + i))
         }
         var state = FolderViewState(mode: .icons, columns: Settings.defaultColumns, sort: .default, iconSize: .large,

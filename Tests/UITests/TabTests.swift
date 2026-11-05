@@ -147,6 +147,40 @@ final class TabTests: XCTestCase {
         XCTAssertTrue(host.window?.tabGroup?.selectedWindow === host.window)
     }
 
+    /// Review fix (Review Focus 4): two tabs of one window each have a waiting question. Only one sheet shows at a
+    /// time (the tab group shares one gate), and each tab is the selected one when its sheet appears.
+    func testQuestionsFromTwoTabsOfOneGroupAreShownOneAtATime() async throws {
+        let h = try await harness()
+        let host = try await h.openWindow()
+        let a = h.context.windows.openTab(at: h.url("A"), in: host, select: false)
+        let presenter = TabRecordingPresenter()
+        let router = InteractionRouter(windows: h.context.windows, presenter: presenter)
+        router.answersInline = { _ in false }
+        let e = FileOpError(kind: .inUse, url: h.url("A"))   // a value only; nothing is touched
+        let first = Task { await router.resolveError(e, job: Self.job(host.origin)) }
+        try await h.waitUntil("first sheet") { presenter.shown.count == 1 }
+        let second = Task { await router.resolveError(e, job: Self.job(a.origin)) }
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertEqual(presenter.shown.count, 1, "the other tab's question waits while a sheet shows in the group")
+        XCTAssertTrue(host.window?.tabGroup?.selectedWindow === host.window, "the showing sheet's tab stays selected")
+        presenter.answerOldest(.error(.skip))
+        try await h.waitUntil("second sheet") { presenter.shown.count == 2 }
+        XCTAssertEqual(presenter.openCount, 1)
+        presenter.answerOldest(.error(.cancel))
+        let answer1 = await first.value, answer2 = await second.value
+        XCTAssertEqual(answer1, .skip)
+        XCTAssertEqual(answer2, .cancel)
+        XCTAssertTrue(presenter.shown[0].window === host.window && presenter.shown[0].selected === host.window)
+        XCTAssertTrue(presenter.shown[1].window === a.window && presenter.shown[1].selected === a.window,
+                      "the origin tab is selected when its sheet appears")
+    }
+
+    private static func job(_ origin: OriginID) -> JobSnapshot {
+        JobSnapshot(id: JobID(), description: JobDescription(verb: .copying, itemCount: 1, firstItemName: "a.txt",
+                                                             sourceFolderName: "src", destinationFolderName: "dst"),
+                    state: .waitingForUser, progress: .zero, origin: origin, startedAt: .now)
+    }
+
     func testRouterFallsBackToPanelWhenOriginTabClosed() async throws {
         let h = try await harness()
         let host = try await h.openWindow()
@@ -157,6 +191,24 @@ final class TabTests: XCTestCase {
         XCTAssertNil(router.hostWindow(for: origin))
         XCTAssertEqual(router.route(origin), .operationsPanel)
         XCTAssertTrue(router.hostWindow(for: host.origin) === host.window)
+    }
+}
+
+/// Records each sheet's window and the tab group's selected tab at the moment it is presented.
+@MainActor
+private final class TabRecordingPresenter: DialogPresenting {
+    struct Shown { let window: NSWindow?; let selected: NSWindow? }
+    private(set) var shown: [Shown] = []
+    private var open: [CheckedContinuation<InteractionAnswer?, Never>] = []
+    var openCount: Int { open.count }
+
+    func present(_ question: InteractionQuestion, job: JobSnapshot, on window: NSWindow?) async -> InteractionAnswer? {
+        shown.append(Shown(window: window, selected: window?.tabGroup?.selectedWindow))
+        return await withCheckedContinuation { open.append($0) }
+    }
+
+    func answerOldest(_ answer: InteractionAnswer?) {
+        if !open.isEmpty { open.removeFirst().resume(returning: answer) }
     }
 }
 
