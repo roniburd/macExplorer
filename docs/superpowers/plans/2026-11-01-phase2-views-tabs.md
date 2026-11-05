@@ -2354,6 +2354,20 @@ git add Sources/Core/ViewState Sources/Core/Settings/Settings.swift Sources/Core
 git commit -m "feat: per-folder view state store keyed by volume UUID + fileID or path"
 ```
 
+**P2-07 result (as built):**
+- `FolderViewState.sort` is spelled `MacxFS.SortDescriptor` (Foundation's `SortDescriptor` clashes in Core).
+- `FolderIdentityProbe.fileID` uses `stat` (follows a final symlink, so the key is the folder shown) and returns nil
+  for non-directories. §2.2's `encodeComment`/`encodeLastUsed` lines sit under `FolderIdentityProbe` by mistake; they
+  belong to `FinderMetadata` (P2-15), and P2-07 does not add them.
+- Store refinements over the plan code: `save` without a fileID updates the object record already indexed at that
+  path (no duplicate path record while the identity probe is pending); a path hit is rejected when the locator's
+  object key names another volume/fileID; a renamed visit moves the path index, drops a superseded path record at
+  the new path and schedules a flush; eviction takes the single oldest with `min` (no sort per save); a stored list
+  is decoded most-recent-first and capped at `capacity`.
+- `AppLifecycle.willTerminate()` calls `environment.folderViews.flush()` before `flushSettings()` (so the
+  `FileSettingsStorage` write includes it). 14 tests, not 10 (extra: no record on lookup, flush round trip, corrupt
+  storage, sandboxed environment wiring).
+
 ---
 
 ### Task P2-08: Apply per-folder view state when browsing, plus "Apply to All Folders"

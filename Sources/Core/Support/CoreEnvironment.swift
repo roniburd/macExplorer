@@ -10,6 +10,8 @@ public final class CoreEnvironment {
     public let readers: DirectoryReaders
     public let volumes: Volumes
     public let settings: Settings
+    /// Per-folder view state (P2-07), in the same storage as `settings`; untouched folders follow its defaults.
+    public let folderViews: FolderViewStore
     public let changeBus: ChangeBus
     public let clipboard: Clipboard
     public let launchServices: LaunchServicesCache
@@ -66,7 +68,9 @@ public final class CoreEnvironment {
         self.volumes = volumes
         let readers = DirectoryReaders(lanes: lanes, mountTable: volumes.mountTableStore, types: .shared)
         self.readers = readers
-        self.settings = Settings(storage: settingsStorage, home: home)
+        let settings = Settings(storage: settingsStorage, home: home)
+        self.settings = settings
+        self.folderViews = FolderViewStore(storage: settingsStorage, defaults: { [unowned settings] in settings.defaultFolderViewState() })
         let bus = ChangeBus()
         self.changeBus = bus
         self.clipboard = Clipboard(backend: pasteboard)

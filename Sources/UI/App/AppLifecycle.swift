@@ -97,9 +97,10 @@ public final class AppLifecycle {
         return .terminateLater
     }
 
-    /// `applicationWillTerminate(_:)` (and the smoke exit): write pending settings, clear the Dock badge, release the
+    /// `applicationWillTerminate(_:)` (and the smoke exit): write pending per-folder view state and settings, clear the Dock badge, release the
     /// private pasteboard of a sandboxed run.
     public func willTerminate() {
+        context.environment.folderViews.flush()   // into the settings storage, which flushSettings then writes
         flushSettings()
         dockBadge?.stop()
         dockBadge = nil

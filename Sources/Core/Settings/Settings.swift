@@ -187,3 +187,22 @@ public final class Settings {
         storage.set(try? encoder.encode(value), forKey: key)
     }
 }
+
+// MARK: per-folder view defaults (P2-07)
+
+extension Settings {
+    /// The view of every folder without its own record (`FolderViewStore`). Folder sizes are always per folder.
+    public func defaultFolderViewState() -> FolderViewState {
+        FolderViewState(mode: viewMode, columns: columns, sort: sort, iconSize: iconSize, groupBy: groupBy,
+                        calculateFolderSizes: false)
+    }
+
+    /// "Apply to All Folders": `state` becomes the default (mode, columns, sort, icon size, Group by; never sizes).
+    public func applyDefaultView(_ state: FolderViewState) {
+        viewMode = state.mode
+        columns = state.columns
+        sort = state.sort
+        iconSize = state.iconSize
+        groupBy = state.groupBy
+    }
+}
