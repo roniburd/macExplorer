@@ -21,6 +21,7 @@ import Core
         ] {
             main.addItem(submenu(L10n.string(title), id: id, items))
         }
+        main.items.first { $0.identifier?.rawValue == "macx.menu.file" }?.submenu?.delegate = CloseItemTitler.shared
         return main
     }
 
@@ -190,5 +191,19 @@ import Core
         item.submenu = menu
         item.identifier = NSUserInterfaceItemIdentifier("macx.menu.\(id)")
         return item
+    }
+}
+
+/// Retitles File › Close Window / Close Tab for the key window when the File menu opens, so windows whose panes do
+/// not validate it (Settings, Properties, the Operations panel) never show a stale "Close Tab" (P2-05).
+@MainActor
+final class CloseItemTitler: NSObject, NSMenuDelegate {
+    static let shared = CloseItemTitler()
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        let action = Selector(Command.closeWindow.selectorName)
+        for item in menu.items where item.action == action {
+            MenuValidation.updateTitle(of: item, command: .closeWindow, window: NSApp.keyWindow)
+        }
     }
 }

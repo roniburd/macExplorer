@@ -48,6 +48,7 @@ enum CommandTarget {
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         guard let command = MenuValidation.command(for: menuItem.action) else { return false }
+        MenuValidation.updateTitle(of: menuItem, command: command, window: viewIfLoaded?.window)
         // While a field editor (rename, address bar) is first responder, the colliding keys belong to it.
         if MenuValidation.blockedByFieldEditor(command, window: viewIfLoaded?.window) { return false }
         guard let handler, let target = commandTarget else { return false }

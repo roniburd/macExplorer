@@ -18,11 +18,9 @@ public final class WindowManager {
     }
 
     @discardableResult public func openWindow(at url: URL, selecting name: String? = nil) -> BrowserWindowController {
-        let controller = BrowserWindowController(context: context, initialURL: url)
-        if let name { controller.session.selectWhenListed(name) }
-        controller.onClose = { [weak self, unowned controller] in self?.remove(controller) }
+        let controller = makeController(at: url, selecting: name)
         if let window = controller.window {
-            if let previous = (NSApp.keyWindow?.windowController as? BrowserWindowController) ?? controllers.last,
+            if let previous = (NSApp.keyWindow?.windowController as? BrowserWindowController) ?? controllers.dropLast().last,
                let previousWindow = previous.window {
                 window.setFrameTopLeftPoint(previousWindow.cascadeTopLeft(from: NSPoint(x: previousWindow.frame.minX,
                                                                                         y: previousWindow.frame.maxY)))
@@ -30,9 +28,37 @@ public final class WindowManager {
                 window.center()
             }
         }
-        controllers.append(controller)
         controller.showWindow(nil)
         controller.focus(.content)
+        return controller
+    }
+
+    /// Opens `url` as a new tab at the end of `host`'s tab group (P2-05). `select: false` keeps `host`'s tab selected
+    /// (background tab); `select: true` selects the new tab and gives its list the keyboard.
+    @discardableResult
+    func openTab(at url: URL, in host: BrowserWindowController, selecting name: String? = nil,
+                 select: Bool) -> BrowserWindowController {
+        let controller = makeController(at: url, selecting: name)
+        guard let hostWindow = host.window, let newWindow = controller.window,
+              let last = TabController.orderedTabs(of: hostWindow).last else { return controller }
+        last.addTabbedWindow(newWindow, ordered: .above)
+        if select {
+            hostWindow.tabGroup?.selectedWindow = newWindow
+            newWindow.makeKeyAndOrderFront(nil)
+            controller.focus(.content)
+        } else {
+            hostWindow.tabGroup?.selectedWindow = hostWindow
+        }
+        return controller
+    }
+
+    /// A registered controller for `url` whose window is not shown yet (openWindow shows it, openTab adds it to a tab
+    /// group).
+    private func makeController(at url: URL, selecting name: String?) -> BrowserWindowController {
+        let controller = BrowserWindowController(context: context, initialURL: url)
+        if let name { controller.session.selectWhenListed(name) }
+        controller.onClose = { [weak self, unowned controller] in self?.remove(controller) }
+        controllers.append(controller)
         return controller
     }
 

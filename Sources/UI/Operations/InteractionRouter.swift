@@ -115,9 +115,23 @@ final class InteractionRouter: FileOpInteraction {
 
     // MARK: hosts
 
-    /// The window that shows sheets for `origin`: an open browser window, or an open Properties window. nil means the
-    /// Operations panel. P2-05 extends this to select the origin tab first.
+    /// The window that shows sheets for `origin`: an open browser window (tab), or an open Properties window. nil
+    /// means the Operations panel. A browser tab that is not the selected one in its tab group is selected first, so
+    /// the sheet never appears behind another tab (P2-05, Review Focus 4).
     func hostWindow(for origin: OriginID?) -> NSWindow? {
+        guard let window = candidateWindow(for: origin) else { return nil }
+        if let group = window.tabGroup, group.selectedWindow !== window { group.selectedWindow = window }
+        return window
+    }
+
+    func route(_ origin: OriginID?) -> DialogHost {
+        if let resolveHost { return resolveHost(origin) }
+        guard let origin, candidateWindow(for: origin) != nil else { return .operationsPanel }
+        return .window(origin)
+    }
+
+    /// hostWindow(for:) without selecting a tab: routing and re-checks must not switch tabs on their own.
+    private func candidateWindow(for origin: OriginID?) -> NSWindow? {
         guard let origin else { return nil }
         if let window = windows.window(for: origin)?.window, Self.canHostSheet(window) { return window }
         if let window = NSApp.window(withWindowNumber: origin.raw), window.identifier?.rawValue == AXID.propertiesWindow,
@@ -125,12 +139,6 @@ final class InteractionRouter: FileOpInteraction {
             return window
         }
         return nil
-    }
-
-    func route(_ origin: OriginID?) -> DialogHost {
-        if let resolveHost { return resolveHost(origin) }
-        guard let origin, hostWindow(for: origin) != nil else { return .operationsPanel }
-        return .window(origin)
     }
 
     func window(for host: DialogHost) -> NSWindow? {
@@ -206,7 +214,12 @@ final class InteractionRouter: FileOpInteraction {
         return gate
     }
 
+    /// Visible or minimized; a background tab counts when its tab group's selected tab does (it is ordered out only
+    /// because another tab is selected).
     private static func canHostSheet(_ window: NSWindow) -> Bool {
-        window.isVisible || window.isMiniaturized
+        if window.isVisible || window.isMiniaturized { return true }
+        guard let group = window.tabGroup, group.windows.contains(where: { $0 === window }),
+              let selected = group.selectedWindow, selected !== window else { return false }
+        return selected.isVisible || selected.isMiniaturized
     }
 }

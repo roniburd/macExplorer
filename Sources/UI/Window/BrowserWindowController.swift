@@ -33,7 +33,7 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
         window.identifier = BrowserWindowRestoration.identifier
         window.setAccessibilityIdentifier(AXID.window)
         window.minSize = NSSize(width: 520, height: 320)
-        window.tabbingMode = .disallowed
+        TabController.configure(window)
         let toolbar = NSToolbar(identifier: "macx.browser.toolbar")
         toolbar.displayMode = .iconOnly
         if !context.options.isSandboxed { toolbar.autosavesConfiguration = true }
@@ -68,6 +68,14 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
 
     public func navigate(to url: URL, selecting name: String? = nil) {
         session.navigate(to: url, selecting: name)
+    }
+
+    /// ⌘T and the tab bar's "+" (NSWindow sends newWindowForTab: up the responder chain; the panes never implement
+    /// it): a new, selected tab at the end of this window's tab group (P2-05).
+    @objc public override func newWindowForTab(_ sender: Any?) {
+        let url = TabController.newTabURL(settings: context.environment.settings, options: context.options,
+                                          current: session.folder.directory)
+        context.windows.openTab(at: url, in: self, select: true)
     }
 
     /// The toolbar's address bar (Phase 4 tests submit through it).
@@ -151,6 +159,9 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
         let isVolumeRoot = volume.map { Self.samePath($0.mountPoint, folder.directory) } ?? false
         window?.title = WindowTitle.title(for: folder.directory, volumeName: isVolumeRoot ? volume?.name : nil,
                                           fullPath: context.environment.settings.showFullPathInTitle)
+        // The tab always shows the folder's name; the full path is its tooltip (P2-05).
+        window?.tab.title = TabController.tabTitle(for: folder.directory, volumes: context.environment.volumes)
+        window?.tab.toolTip = TabController.tabToolTip(for: folder.directory)
     }
 
     private static func samePath(_ a: URL, _ b: URL) -> Bool {

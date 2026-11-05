@@ -140,13 +140,21 @@ final class ScenarioDriver {
 
     private func prepare(_ fixture: ScenarioFile.Fixture) async throws {
         guard let given = context.options.root else { throw DriverError("--scenario requires --root") }
-        let real = try await lanes.perform(on: .unknown) { _ in
+        let (real, canonical) = try await lanes.perform(on: .unknown) { _ in
             let resolved = given.resolvingSymlinksInPath()
             try ScenarioFixtures.create(fixture, in: resolved)
-            return resolved
+            // realpath(3)'s spelling keeps /private (resolvingSymlinksInPath drops it); fs-step guards compare
+            // realpath results against these prefixes.
+            var canonical: String?
+            if let c = realpath(resolved.path(percentEncoded: false), nil) {
+                canonical = String(cString: c)
+                free(c)
+            }
+            return (resolved, canonical)
         }
         rootReal = real
         rootPrefixes = [given.standardizedFileURL.path, real.standardizedFileURL.path]
+        if let canonical, !rootPrefixes.contains(canonical) { rootPrefixes.append(canonical) }
         installRouting()
         let window = try browserWindow()
         window.session.reload()
@@ -210,6 +218,11 @@ final class ScenarioDriver {
             return
         }
         let pinned = MacxApplication.scenarioKeyWindow
+        // A tab switch (⌃Tab, ⌃⇧Tab, closing the selected tab) moves the key window to the group's selected tab.
+        if let selected = pinned?.tabGroup?.selectedWindow, selected !== pinned, selected.isVisible {
+            MacxApplication.scenarioKeyWindow = selected
+            return
+        }
         if let pinned, pinned.isVisible, windows.contains(where: { $0 === pinned }) { return }
         if let index = Self.pickKeyWindow(candidates) { MacxApplication.scenarioKeyWindow = windows[index] }
     }
@@ -499,9 +512,10 @@ final class ScenarioDriver {
 
     private func selectTab(_ index: Int) throws {
         guard let window = try browserWindow().window else { throw DriverError("browser window has no NSWindow") }
-        let tabs = BrowserWindowController.orderedTabWindows(of: window)
+        let tabs = TabController.orderedTabs(of: window)
         guard tabs.indices.contains(index) else { throw DriverError("no tab \(index): the window has \(tabs.count) tab(s)") }
         let tab = tabs[index]
+        tab.tabGroup?.selectedWindow = tab   // what clicking the tab does, also while the app cannot activate
         MacxApplication.scenarioKeyWindow = tab
         tab.makeKeyAndOrderFront(nil)
         if let controller = tab.windowController as? BrowserWindowController { focusList(in: controller) }

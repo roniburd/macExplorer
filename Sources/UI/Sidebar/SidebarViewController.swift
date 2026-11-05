@@ -66,6 +66,7 @@ final class SidebarViewController: CommandHandlingViewController {
 
     override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         guard let command = MenuValidation.command(for: menuItem.action) else { return false }
+        MenuValidation.updateTitle(of: menuItem, command: command, window: viewIfLoaded?.window)
         if MenuValidation.blockedByFieldEditor(command, window: viewIfLoaded?.window) { return false }
         guard let (effective, target) = resolve(command), let handler else { return false }
         return handler.canPerform(effective, target: target)

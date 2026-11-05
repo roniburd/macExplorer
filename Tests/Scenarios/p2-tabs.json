@@ -1,0 +1,17 @@
+{"name": "p2-tabs",
+ "fixture": {"files": ["A/a1.txt", "B/b1.txt"], "dirs": ["A", "B"]},
+ "steps": [
+  {"waitFor": {"rows": ["A", "B"], "state": "complete", "tabs": [""], "activeTab": 0}},
+  {"key": "cmd+t"},
+  {"waitFor": {"tabs": ["", ""], "activeTab": 1, "rows": ["A", "B"], "state": "complete"}},
+  {"doubleClick": "A"},
+  {"waitFor": {"tabs": ["", "A"], "rows": ["a1.txt"], "folder": "A"}},
+  {"key": "ctrl+tab"},
+  {"waitFor": {"activeTab": 0, "folder": ""}},
+  {"key": "ctrl+shift+tab"},
+  {"waitFor": {"activeTab": 1, "folder": "A"}},
+  {"selectTab": 0},
+  {"waitFor": {"activeTab": 0, "folder": ""}},
+  {"key": "cmd+w"},
+  {"waitFor": {"tabs": ["A"], "activeTab": 0, "folder": "A"}}
+ ]}

@@ -1026,6 +1026,17 @@
         }
       }
     },
+    "Close Tab" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close Tab"
+          }
+        }
+      }
+    },
     "Close Window" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3138,6 +3149,17 @@
         }
       }
     },
+    "POSIX Path" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "POSIX Path"
+          }
+        }
+      }
+    },
     "Paste" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3211,17 +3233,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Permissions"
-          }
-        }
-      }
-    },
-    "POSIX Path" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "POSIX Path"
           }
         }
       }

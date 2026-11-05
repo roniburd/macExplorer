@@ -52,13 +52,9 @@ extension BrowserWindowController {
         return editor.string
     }
 
-    /// The windows of this window's tab group, in tab-bar order (just this window while tabbing is off).
-    /// P2-05's TabController.orderedTabs(of:) takes this over.
-    static func orderedTabWindows(of window: NSWindow) -> [NSWindow] { window.tabbedWindows ?? [window] }
-
     var probeTabFolderURLs: [URL] {
         guard let window else { return [session.folder.directory] }
-        return Self.orderedTabWindows(of: window).compactMap {
+        return TabController.orderedTabs(of: window).compactMap {
             ($0.windowController as? BrowserWindowController)?.session.folder.directory
         }
     }
@@ -66,7 +62,7 @@ extension BrowserWindowController {
     var probeSelectedTabIndex: Int {
         guard let window else { return 0 }
         let selected = window.tabGroup?.selectedWindow ?? window
-        return Self.orderedTabWindows(of: window).firstIndex { $0 === selected } ?? 0
+        return TabController.orderedTabs(of: window).firstIndex { $0 === selected } ?? 0
     }
 
     var probeSort: MacxFS.SortDescriptor { session.folder.query.sort }

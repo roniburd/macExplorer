@@ -17,6 +17,19 @@ import Core
         (window?.firstResponder as? NSText)?.isFieldEditor ?? false
     }
 
+    /// ⌘W's title (P2-05): "Close Tab" while `window` has other tabs, else "Close Window". AppKit closes only the
+    /// selected tab either way, and closing a tab never cancels jobs (§6.7).
+    static func closeTitle(for window: NSWindow?) -> String {
+        (window?.tabbedWindows?.count ?? 0) > 1 ? L10n.string("Close Tab") : MainMenuTitles.title(.closeWindow)
+    }
+
+    /// Validation-time title updates for items whose title depends on the window (Close Tab / Close Window).
+    static func updateTitle(of item: NSMenuItem, command: Command, window: NSWindow?) {
+        guard command == .closeWindow else { return }
+        let title = closeTitle(for: window)
+        if item.title != title { item.title = title }
+    }
+
     private static let commandsBySelector: [String: Command] = {
         var table: [String: Command] = [:]
         for command in Command.allCases { table[command.selectorName] = command }

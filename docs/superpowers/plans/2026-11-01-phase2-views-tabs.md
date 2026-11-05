@@ -1741,6 +1741,13 @@ git add Sources/UI/Tabs Sources/UI/App/WindowManager.swift Sources/UI/Window/Bro
 git commit -m "feat: native window tabs with new tab, next/previous tab and per-tab dialogs"
 ```
 
+**P2-05 result (as built, 2026-11-05):**
+- Tests use `ShellHarness` (sandbox `files/` root, `--root` set) instead of a hand-built `UIContext`; GUI tests skip through `ShellHarness.requireWindowServer()`. Added tests: tab title/tooltip follow navigation and ignore `showFullPathInTitle`, the pane never responds to `newWindowForTab:`, Close Tab / Close Window titling, the File-menu retitler, and `route(_:)` keeping a background tab as `.window(origin)` without switching tabs.
+- `InteractionRouter`: `route(_:)` uses a non-selecting `candidateWindow(for:)`; only `hostWindow(for:)` (reached through `window(for: DialogHost)` right before presenting, and from "Show") selects the origin tab. `canHostSheet` also accepts a background tab whose group's selected tab is visible (background tabs are ordered out, so `isVisible` is false).
+- `TabController.configure` also sets `NSWindow.allowsAutomaticWindowTabbing = false` (idempotent with `MainMenuBuilder.build()`), so windows made without the main menu (tests) never follow "Prefer tabs". `tabTitle` reuses `WindowTitle.title(fullPath: false)`; `tabToolTip(for:)` (added) is `WindowTitle.title(fullPath: true)`. `BrowserWindowController+Probe.orderedTabWindows` was removed in favour of `TabController.orderedTabs`.
+- `MenuValidation.closeTitle(for:)` / `updateTitle(of:command:window:)` run from both pane `validateMenuItem`s; a File-menu `CloseItemTitler` delegate retitles the item for windows without panes (Settings, Properties) so a stale "Close Tab" never shows.
+- Scenario driver fixes: the pinned key window follows its tab group's selected tab (⌃Tab, ⌃⇧Tab, ⌘W), and `selectTab` sets `tabGroup.selectedWindow` explicitly (an inactive app's `makeKeyAndOrderFront` does not switch tabs). P2-03 fix: `rootPrefixes` also holds the realpath(3) spelling of the root (`/private/var/...`), which `fsWrite`/`fsTags` guards compare against; `p2-scenario-runner` failed its `fsWrite` step without it.
+
 ---
 
 ### Task P2-06: Open in new tab (middle-click, ⌘-click, context menu, tab-bar drop) and tab restoration
