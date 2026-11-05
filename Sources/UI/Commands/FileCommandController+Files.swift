@@ -13,18 +13,13 @@ extension FileCommandController {
                 return OpenItem(url: folder.url(atRow: row), kind: entry.kind, isApplication: environment.types.isApplication(entry.typeIndex))
             }
             guard !items.isEmpty else { return }
-            // One plain folder row: its fileID keys its view state at once (P2-08); other routes probe for it.
-            var folderID: (url: URL, id: UInt64)?
-            if items.count == 1, let row = folder.selection.rows.first(where: { $0 < folder.rowCount }),
-               items[0].kind == .directory, !items[0].isApplication {
-                let id = folder.entry(atRow: row).fileID
-                if id != 0 { folderID = (items[0].url, id) }
-            }
+            // No listing fileID shortcut for the folder's view state (P2-08 review fix): for a mount point (and
+            // possibly a firmlink) the listing reports the covered folder while every other route's stat probe
+            // reports the mounted root, so the folder would get two keys. The session probes, as on every route.
             let lanes = environment.lanes
             let volumes = environment.volumes
             Task {
-                await self.execute(await OpenPlanner.plan(items, newWindow: newWindow, lanes: lanes, volumes: volumes),
-                                   folderID: folderID)
+                await self.execute(await OpenPlanner.plan(items, newWindow: newWindow, lanes: lanes, volumes: volumes))
             }
         case .folder, .favorite, .volume, .location:
             guard let url = subjectURLs(target).first else { return }
@@ -84,14 +79,14 @@ extension FileCommandController {
         for url in broken { await handleBrokenLink(url) }
     }
 
-    func execute(_ plan: OpenPlan, folderID: (url: URL, id: UInt64)? = nil) async {
+    func execute(_ plan: OpenPlan) async {
         if plan.needsConfirmation {
             let windows = plan.actions.filter { if case .openInNewWindow = $0 { true } else { false } }.count
             guard await prompts.confirm(.openManyWindows(windows), window: window?.window) else { return }
         }
         for action in plan.actions {
             switch action {
-            case .navigate(let url): window?.navigate(to: url, folderID: folderID?.url == url ? folderID?.id : nil)
+            case .navigate(let url): window?.navigate(to: url)
             case .openInNewWindow(let url): context.windows.openWindow(at: url)
             case .launchApplication(let url): await openWithErrors([url], app: nil)
             case .openDocuments(let urls): await openWithErrors(urls, app: nil)

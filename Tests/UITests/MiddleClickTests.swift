@@ -338,4 +338,33 @@ final class MiddleClickTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: w.h.url("A").path, isDirectory: &isDir) && isDir.boolValue)
         XCTAssertTrue(FileManager.default.fileExists(atPath: w.h.url("B").path))
     }
+
+    /// Review fix: the drop goes through NSDraggingInfo (the drag pasteboard path), not only `openDropped`. The drag
+    /// is offered as a link only, and the dropped folders open as tabs and stay where they were.
+    func testRealDraggingInfoOnTheNewTabButtonIsALinkAndOpensTabs() async throws {
+        let w = try await world { try $0.dir("A"); try $0.dir("B"); try $0.file("f.txt") }
+        let toolbar = try XCTUnwrap(w.host.window?.toolbar)
+        let item = try XCTUnwrap(toolbar.items.first { $0.itemIdentifier == ToolbarController.newTabID } as? NewTabToolbarItem)
+        let dirs = ["A", "B"].map { URL(filePath: w.h.url($0).path(percentEncoded: false), directoryHint: .isDirectory) }
+        let file = URL(filePath: w.h.url("f.txt").path(percentEncoded: false), directoryHint: .notDirectory)
+
+        let onlyFile = FakeDraggingInfo(fileURLs: [file])
+        defer { onlyFile.release() }
+        XCTAssertEqual(item.button.draggingEntered(onlyFile), [])
+        XCTAssertFalse(item.button.performDragOperation(onlyFile))
+
+        let drag = FakeDraggingInfo(fileURLs: dirs + [file])
+        defer { drag.release() }
+        XCTAssertEqual(item.button.draggingEntered(drag), .link)
+        XCTAssertEqual(item.button.draggingUpdated(drag), .link)
+        XCTAssertTrue(item.button.performDragOperation(drag))
+        try await w.h.waitUntil("tabs opened") { w.tabs.count == 3 }
+        XCTAssertEqual(w.tabs, ["files", "A", "B"])
+        for name in ["A", "B"] {
+            var isDir: ObjCBool = false
+            XCTAssertTrue(FileManager.default.fileExists(atPath: w.h.url(name).path, isDirectory: &isDir) && isDir.boolValue,
+                          "\(name) stays where it was")
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: w.h.url("f.txt").path))
+    }
 }

@@ -2645,8 +2645,11 @@ git commit -m "feat: apply and save view mode, columns, sort and icon size per f
   sheet with the plan's title, text and buttons) so tests can script it, then reloads every
   `context.windows.windows` session (each tab is a `BrowserWindowController`). `applyViewToAllFolders` left
   `FileCommandController.pendingCommands`.
-- Opening one plain folder row passes its `entry.fileID` through `execute(_:folderID:)` and
-  `BrowserWindowController.navigate(to:selecting:folderID:)`. `ShellCommandHandler`'s sidebar view commands also
+- ~~Opening one plain folder row passes its `entry.fileID` through `execute(_:folderID:)` and
+  `BrowserWindowController.navigate(to:selecting:folderID:)`.~~ Review fix (P2-05..P2-08): removed. For a mount point
+  the listing's fileID is the covered folder's while the stat probe used on every other route returns the mounted
+  root's, so the folder got two keys. Row opens now probe like every other route; `folderID:` stays on the session API
+  for callers that have the probe's value. `ShellCommandHandler`'s sidebar view commands also
   call `updateViewState`. `ContextMenuBuilder.emptySpaceMenu(for:viewState:handler:)` takes its View ▸ checkmarks
   from the folder's state, and the scenario probe `iconSize` reads `session.viewState.iconSize`.
 - Phase 1 tests that asserted writes to the global `Settings.viewMode/sort/iconSize/columns` now assert the

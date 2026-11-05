@@ -189,5 +189,10 @@ Run before every release, on Apple Silicon, from a clean checkout of the release
     with tabs "A" and "B", "B" selected. Then delete exactly those two paths, the temp folder and the bundle. If the
     tabs come back as separate windows, file a bug (every tab window is already restorable with
     `BrowserWindowRestoration` as its restoration class).
+    Status: still not run (2026-11-05). It cannot run in sandbox mode, which disables restoration, so an agent
+    bound to `--root` sandbox launches cannot do it; it is a Phase 2 sign-off gate for the operator.
 12. Tab-bar drop: drag folder `B` from a second window (⌘N) onto the New Tab toolbar button of a window showing a
-    sandbox folder: a tab "B" opens and `B` stays where it was.
+    sandbox folder: the cursor shows the link badge, a tab "B" opens and `B` stays where it was. Automated coverage
+    (`MiddleClickTests.testRealDraggingInfoOnTheNewTabButtonIsALinkAndOpensTabs`) drives `draggingEntered` /
+    `performDragOperation` with an `NSDraggingInfo` on a private pasteboard and gets `.link` only; the real
+    window-server drag is still not run (2026-11-05) and stays a sign-off gate for the operator.

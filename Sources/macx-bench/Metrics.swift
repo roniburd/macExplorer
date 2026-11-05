@@ -8,11 +8,13 @@ enum BenchFailure: Error, CustomStringConvertible {
     case read(Int32)
     case streamEnded
     case timeout(String)
+    case check(String)
     var description: String {
         switch self {
         case .read(let code): "directory read failed: errno \(code)"
         case .streamEnded: "read stream ended without .completed"
         case .timeout(let what): "timed out waiting for \(what)"
+        case .check(let what): "check failed: \(what)"
         }
     }
 }
@@ -368,6 +370,9 @@ enum Bench {
                 let directory = sandbox.flat(relative, count: size)
                 let suite = MetricSuite(env: env, sandbox: sandbox, relativeDir: relative, directory: directory, size: size, options: options)
                 metrics += try await suite.runAll()
+            }
+            metrics += try await FolderViewBench.run(options) { name in
+                options.metrics.map { filter in filter.contains { name.hasPrefix($0) } } ?? true
             }
         } catch {
             failure = error

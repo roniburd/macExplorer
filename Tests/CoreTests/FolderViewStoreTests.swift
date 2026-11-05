@@ -109,6 +109,90 @@ final class FolderViewStoreTests: XCTestCase {
         XCTAssertEqual(reloaded.state(for: loc("/u/Renamed", v, 42)), icons, "object key survives a reload")
     }
 
+    /// Review fix (P2-07 perf): a full store stays small. Every record carries all 12 columns (as saved from the
+    /// defaults); the shared column list is written once, not once per record.
+    func testFullStoreIsCompact() {
+        let storage = InMemorySettingsStorage()
+        let store = makeStore(storage)
+        let v = volume(id: "uuid:0F1E2D3C-4B5A-6978-8796-A5B4C3D2E1F0", idStable: true)
+        var state = icons; state.columns = Settings.defaultColumns
+        for i in 0..<FolderViewStore.capacity {
+            store.save(state, for: loc("/Users/someone/Projects/folder-\(i)", v, UInt64(1_000_000 + i)))
+        }
+        store.flush()
+        let bytes = storage.data(forKey: FolderViewStore.storageKey)?.count ?? 0
+        XCTAssertGreaterThan(bytes, 0)
+        XCTAssertLessThan(bytes, FolderViewStore.capacity * 200, "\(bytes) bytes for \(FolderViewStore.capacity) records")
+        let reloaded = makeStore(storage)
+        XCTAssertEqual(reloaded.count, FolderViewStore.capacity)
+        XCTAssertEqual(reloaded.state(for: loc("/Users/someone/Projects/folder-7", v, 1_000_007)), state)
+    }
+
+    /// Review fix (P2-07 perf): the debounced write sorts and encodes off the main thread; only `storage.set` runs
+    /// on main.
+    func testDebouncedFlushEncodesOffMain() async throws {
+        let storage = InMemorySettingsStorage()
+        let store = makeStore(storage, delay: .milliseconds(10))
+        store.save(icons, for: loc("/a", nil, nil))
+        let deadline = Date().addingTimeInterval(30)
+        while storage.data(forKey: FolderViewStore.storageKey) == nil, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertNotNil(storage.data(forKey: FolderViewStore.storageKey))
+        XCTAssertEqual(store.backgroundEncodeCount, 1)
+        XCTAssertFalse(store.lastEncodeWasOnMain)
+        XCTAssertEqual(makeStore(storage).state(for: loc("/a", nil, nil)), icons)
+    }
+
+    /// A background encode that finishes after a newer synchronous write (removeAll, termination flush) is dropped.
+    func testStaleBackgroundEncodeNeverOverwritesANewerWrite() async throws {
+        let storage = InMemorySettingsStorage()
+        let store = makeStore(storage, delay: .zero)
+        store.save(icons, for: loc("/a", nil, nil))
+        try await Task.sleep(for: .milliseconds(1))     // the debounced encode may now be in flight
+        store.removeAll()
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(makeStore(storage).count, 0)
+    }
+
+    /// The text format escapes the separators: a folder name may hold a tab, newline, CR LF or backslash.
+    func testPersistedPathsWithSeparatorCharactersRoundTrip() {
+        let storage = InMemorySettingsStorage()
+        let v = volume(id: "uuid:ABC", idStable: true, caseSensitive: true)
+        let store = makeStore(storage)
+        let weird = ["/u/tab\there", "/u/new\nline", "/u/cr\r\nlf", "/u/back\\slash\\t", "/u/caf\u{00E9} \u{1F600}"]
+        for (i, path) in weird.enumerated() { store.save(icons, for: loc(path, v, UInt64(100 + i))) }
+        store.save(icons, for: loc("/plain/path\tkey", nil, nil))
+        store.flush()
+        let reloaded = makeStore(storage)
+        XCTAssertEqual(reloaded.count, weird.count + 1)
+        for (i, path) in weird.enumerated() {
+            XCTAssertTrue(reloaded.hasOverride(for: loc(path, v, nil)), path)
+            XCTAssertTrue(reloaded.hasOverride(for: loc("/moved", v, UInt64(100 + i))), path)
+        }
+        XCTAssertTrue(reloaded.hasOverride(for: loc("/plain/path\tkey", nil, nil)))
+    }
+
+    /// Distinct column lists per record (the bench's worst case) and an empty list both round-trip exactly.
+    func testEncodeDecodeRoundTripsEveryField() throws {
+        let v = volume(id: "uuid:ABC", idStable: true)
+        var records: [FolderViewStore.Record] = []
+        var state = FolderViewState(mode: .columns, columns: Settings.defaultColumns,
+                                    sort: MacxFS.SortDescriptor(field: .dateModified, ascending: false), iconSize: .small,
+                                    groupBy: .nameFirstLetter, calculateFolderSizes: true)
+        for i in 0..<50 {
+            state.columns[i % state.columns.count].width += 0.5
+            state.columns[(i + 3) % state.columns.count].visible.toggle()
+            let l = loc("/r/\(i)", i.isMultiple(of: 2) ? v : nil, i.isMultiple(of: 2) ? UInt64(i) : nil)
+            records.append(.init(key: l.primaryKey, pathKey: l.pathKey, state: i == 7 ? defaults : state,
+                                 lastUsed: Date(timeIntervalSinceReferenceDate: 1_000_000.25 - Double(i))))
+        }
+        let data = try XCTUnwrap(FolderViewStore.encode(records))
+        XCTAssertEqual(FolderViewStore.decode(data), records)
+        XCTAssertNil(FolderViewStore.decode(Data("macx-folder-views\t2\nR\tbad\n".utf8)))
+        XCTAssertEqual(FolderViewStore.decode(Data("macx-folder-views\t2\n".utf8)), [])
+    }
+
     func testCorruptStorageIsEmptyStore() {
         let storage = InMemorySettingsStorage()
         storage.set(Data("not json".utf8), forKey: FolderViewStore.storageKey)

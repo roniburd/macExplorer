@@ -4,6 +4,7 @@ import AppKit
 @testable import UI
 import Core
 import MacxFS
+import MacxFixtures
 
 @MainActor
 final class ScriptedCommandPrompts: CommandPrompts {
@@ -226,6 +227,35 @@ final class FileCommandTests: XCTestCase {
         let fake = try XCTUnwrap(w.h.environment.launchServices.provider as? FakeLaunchServices)
         try await w.h.waitUntil("opened with the default app") { fake.opened().last?.files.first?.lastPathComponent == "doc.txt" }
         XCTAssertNil(fake.opened().last?.app)
+    }
+
+    /// Review fix (P2-08): a mount point's listed fileID is the covered folder's, while every other route probes
+    /// with stat (the mounted volume's root). Opening the row must key its view state the same way as back/forward,
+    /// so one folder never gets two records. The image is created and mounted -nobrowse inside the test sandbox.
+    func testOpeningAMountPointRowKeysItsViewStateLikeEveryOtherRoute() async throws {
+        try XCTSkipUnless(DiskImage.isAvailable, "hdiutil not available")
+        let w = try await world { try $0.file("a.txt") }
+        let image = try DiskImage.create(in: w.h.sandbox, format: .apfs, sizeMB: 16)
+        defer { try? image.detach() }
+        let session = w.browser.session
+        let env = w.h.environment
+        await env.volumes.refresh()
+        let mount = image.mountPoint.standardizedFileURL
+        let mounted = try XCTUnwrap(env.volumes.volume(for: mount))
+        try XCTSkipUnless(mounted.capabilities.idStable && mounted.id.raw.hasPrefix("uuid:"), "image volume lacks stable IDs")
+        session.navigate(to: w.h.sandbox.root)
+        try await w.h.waitUntil("sandbox root listed") { session.folder.state == .complete }
+        w.select([image.relativeMountPath])
+        w.commands.perform(.open, target: w.selection, sender: nil)
+        try await w.h.waitUntil("opened the mount point") {
+            session.folder.directory.standardizedFileURL.path == mount.path
+        }
+        try await w.h.waitUntil("identity known") { session.locator.fileID != nil }
+        let opened = try XCTUnwrap(session.locator.objectKey)
+        session.goBack()
+        session.goForward()
+        try await w.h.waitUntil("identity known again") { session.locator.fileID != nil }
+        XCTAssertEqual(session.locator.objectKey, opened, "one folder, one key, whichever way it was reached")
     }
 
     func testOpenInTerminalUsesConfiguredApp() async throws {

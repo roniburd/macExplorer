@@ -269,14 +269,19 @@ final class FolderViewCoordinatorTests: XCTestCase {
         XCTAssertEqual(w.session.viewMode, .icons)
     }
 
-    func testOpenCommandOnAFolderRowPassesItsFileID() async throws {
+    /// Review fix: opening a row no longer passes the listing's fileID (wrong for mount points); the session's stat
+    /// probe supplies it, as on every other route. For a plain folder the two agree.
+    func testOpenCommandOnAFolderRowKeysItByTheProbedIdentity() async throws {
         let w = try await windowWorld()
         let folder = w.session.folder
         let row = try XCTUnwrap(folder.row(named: "sub"))
         let fileID = folder.entry(atRow: row).fileID
+        let volume = w.h.environment.volumes.volume(for: w.h.url(""))
+        try XCTSkipUnless(volume?.capabilities.idStable == true, "temp volume lacks stable IDs")
         folder.select(.names(["sub"]))
         w.commands.perform(.open, target: .contentSelection(folder), sender: nil)
         try await w.h.waitUntil("opened sub") { w.session.folder.directory.lastPathComponent == "sub" }
+        try await w.h.waitUntil("identity probed") { w.session.locator.fileID != nil }
         XCTAssertEqual(w.session.locator.fileID, fileID)
     }
 }

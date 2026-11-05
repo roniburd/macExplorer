@@ -57,7 +57,8 @@ final class BrowserSession {
     }
 
     /// Closes the previous model, opens `url`, and (optionally) records it in history. `folderID` is the folder's
-    /// fileID when the caller knows it (opening a directory row); otherwise a lane probe adds it later.
+    /// fileID when the caller has it from the same `stat` probe (`FolderIdentityProbe`); otherwise a lane probe adds
+    /// it later. Never pass a listing's `Entry.fileID`: for a mount point it is the covered folder's (review fix).
     func navigate(to url: URL, selecting name: String? = nil, recordHistory: Bool = true, folderID: UInt64? = nil) {
         guard !closed else { return }
         showBanner(nil)

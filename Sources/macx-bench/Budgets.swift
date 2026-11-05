@@ -34,6 +34,13 @@ enum Budgets {
             // Overview §4.4 pasteboard decision (2026-11-03): ≤10k < 300 ms, 100k < 1.5 s.
             Budget(metric: "pasteboard", sizes: [1_000, 10_000], limit: 300, unit: "ms", spec: "§4.4 copy of ≤10k items (pasteboard write) < 300 ms"),
             Budget(metric: "pasteboard", sizes: [100_000], limit: 1_500, unit: "ms", spec: "§4.4 copy of 100k items (pasteboard write) < 1.5 s"),
+            // P2-07 review fix: the per-folder view store, full (5,000 records), on the main actor.
+            Budget(metric: "folderViews.load", sizes: nil, limit: 30, unit: "ms",
+                   spec: "§4.4 no main-thread hang > 100 ms: launch decode of a full folder-view store"),
+            Budget(metric: "folderViews.flush", sizes: nil, limit: 50, unit: "ms",
+                   spec: "§4.4 no main-thread hang > 100 ms: synchronous folder-view flush (termination)"),
+            Budget(metric: "folderViews.save", sizes: nil, limit: 2, unit: "ms",
+                   spec: "§4.4 no main-thread hang > 100 ms: saving one folder's view into a full store"),
         ]
         t += SortField.entryFields.map {
             Budget(metric: "resort.\($0.rawValue)", sizes: [100_000], limit: 30, unit: "ms", spec: "§4.4 re-sort 100k by any column < 30 ms")
