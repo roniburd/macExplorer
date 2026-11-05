@@ -12,6 +12,9 @@ let package = Package(
         .executable(name: "macx-bench", targets: ["macx-bench"]),
         .executable(name: "macx-scenarios", targets: ["macx-scenarios"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.1"),
+    ],
     targets: [
         .target(
             name: "CFSKit",
@@ -21,7 +24,7 @@ let package = Package(
         .target(name: "Core", dependencies: ["MacxFS"], swiftSettings: strict),
         .target(
             name: "UI",
-            dependencies: ["Core", "MacxFS"],
+            dependencies: ["Core", "MacxFS", .product(name: "Sparkle", package: "Sparkle")],
             resources: [.process("Resources")],
             swiftSettings: strict
         ),

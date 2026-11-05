@@ -93,6 +93,9 @@ new_case users-uitest;     put users-uitest Tests/UITests/ScenarioBadTests.swift
 new_case users-other-ok;   put users-other-ok Tests/UITests/BreadcrumbTests.swift 'let p = "/Users/me"'
 new_case platform-ok;      put platform-ok Sources/Core/Platform/Workspace.swift 'import AppKit'
 new_case two-escapes;      put two-escapes Sources/Core/Bad.swift $'final class A: @unchecked Sendable {}\nnonisolated(unsafe) var b = 0'
+new_case sparkle-elsewhere; put sparkle-elsewhere Sources/UI/Settings/Bad.swift 'import Sparkle'
+new_case sparkle-in-test;  put sparkle-in-test Tests/UITests/Bad.swift '@testable import Sparkle'
+new_case sparkle-bridge-ok; put sparkle-bridge-ok Sources/UI/Updates/SparkleBridge.swift $'import AppKit\nimport Sparkle'
 
 run_case appkit-in-core 1 appkit-in-core
 run_case swiftui-in-fs 1 appkit-in-core
@@ -116,6 +119,9 @@ run_case users-uitest 1 users-literal
 run_case users-other-ok 0
 run_case platform-ok 0
 run_case two-escapes 1 unsafe-escape
+run_case sparkle-elsewhere 1 sparkle-confined
+run_case sparkle-in-test 1 sparkle-confined
+run_case sparkle-bridge-ok 0
 
 if [ "$fails" -gt 0 ]; then echo "test-check-layering: $fails case(s) failed"; exit 1; fi
 echo "test-check-layering: all cases passed"

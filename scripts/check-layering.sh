@@ -127,8 +127,11 @@ report unsafe-escape keep < <(
     fi
   done)
 
+# 9. Sparkle is imported in exactly one file (distribution spec §2): everything else talks to UpdateController.
+report sparkle-confined < <(scan "${IMPORT}Sparkle${END}" Sources Tests | grep -v '^Sources/UI/Updates/SparkleBridge.swift:')
+
 if [ "$violations" -gt 0 ]; then
   echo "check-layering: $violations violation(s)"
   exit 1
 fi
-echo "check-layering: OK (8 rules)"
+echo "check-layering: OK (9 rules)"
