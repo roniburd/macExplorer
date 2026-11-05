@@ -10,6 +10,9 @@ import MacxFS
 @MainActor
 final class FakeQuickLookPanel: QuickLookPanelControlling {
     var isVisible = false
+    /// False: another window or tab's bridge is the shown panel's data source.
+    var controlsPanel = true
+    var isControlling: Bool { isVisible && controlsPanel }
     var reloads = 0
     var shows = 0
     func show() { isVisible = true; shows += 1 }
@@ -100,6 +103,23 @@ final class QuickLookControllerTests: XCTestCase {
         let builds = controller.itemBuilds
         big.select(.all)
         XCTAssertEqual(controller.itemBuilds, builds, "hidden again: no builds")
+    }
+
+    /// Review (P2-11): while another window or tab controls the shared panel, this controller builds no URLs.
+    func testPanelShownByAnotherControllerBuildsNoItems() async throws {
+        for i in 0..<300 { try h.file(String(format: "n%03d.txt", i)) }
+        let big = try await h.openFolder()
+        controller.bind(big)
+        panel.isVisible = true
+        panel.controlsPanel = false
+        let builds = controller.itemBuilds
+        big.select(.all)
+        big.select(.invert)
+        big.setQuery(big.query)
+        XCTAssertEqual(controller.itemBuilds, builds, "a panel this window does not control builds nothing")
+        XCTAssertEqual(panel.reloads, 0)
+        XCTAssertTrue(controller.isVisible, "Space and Esc still see the globally visible panel")
+        XCTAssertTrue(controller.hideIfVisible())
     }
 
     func testRebindToAnotherFolderReloadsVisiblePanel() async throws {

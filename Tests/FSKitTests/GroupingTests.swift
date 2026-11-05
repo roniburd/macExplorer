@@ -116,4 +116,41 @@ final class GroupingTests: XCTestCase {
             XCTAssertLessThan(elapsed, .milliseconds(120), "\(g): 4x the 30 ms re-sort budget in debug")
         }
     }
+
+    /// Review (P2-09): non-ASCII first letters (CJK, Cyrillic, precomposed and decomposed accents, an ASCII letter
+    /// followed by a non-ASCII byte) stay within budget: the key is cached by the first grapheme's bytes.
+    func testPartition100kNonASCIIWithinDebugBudget() {
+        let prefixes = ["日本語", "中文", "한국어", "Привет", "Ωmega", "Äpfel", "A\u{0308}pfel", "e\u{0301}clair", "éclair", "aé", "Ａbc", "１x"]
+        let items = (0..<100_000).map { (name: "\(prefixes[$0 % prefixes.count])\(["", " ", "-", "x"][$0 % 4])\($0).txt",
+                                         kind: Kind.file, size: Int64($0), mtime: Int64($0)) }
+        let store = makeStore(items)
+        let b = DateBuckets(now: Date(timeIntervalSince1970: 0), calendar: utc)
+        let start = ContinuousClock.now
+        let (order, runs) = Grouping.partition(store.order, store: store, by: .nameFirstLetter, dateBuckets: b, types: .shared)
+        let elapsed = ContinuousClock.now - start
+        XCTAssertLessThan(elapsed, .milliseconds(120), "4x the 30 ms re-sort budget in debug")
+        for run in runs {
+            for row in run.rows { XCTAssertEqual(.letter(Grouping.letterKey(store.name(order[row]))), run.key) }
+        }
+        XCTAssertEqual(runs.map(\.key), [.letter(.digits), .letter(.letter("A")), .letter(.letter("E")), .letter(.letter("Ω")),
+                                          .letter(.letter("П")), .letter(.letter("中")), .letter(.letter("日")), .letter(.letter("한"))]
+                       .sorted(by: Grouping.groupOrder))
+    }
+
+    /// The grapheme-prefix cache gives the same key as `letterKey` on edge cases: combining marks, emoji sequences,
+    /// regional indicators, leading dots, names that end after one scalar.
+    func testPartitionLetterKeysMatchLetterKeyOnEdgeCases() {
+        let names = ["e\u{0301}", "e\u{0301}\u{0302}x", "e", "é", "🇫🇷x", "🇫🇷🇩🇪", "👩‍💻a", "😀", ".é", "..日", "Ä", "A\u{0308}",
+                     "a\u{0308}\u{0301}\u{0302}\u{0303}\u{0304}\u{0305}z", "\u{0301}a", "ß", "ǆa", "ＡＢ", "\r\n", "क्षa", "\u{FFFD}"]
+        let store = makeStore(names.enumerated().map { (name: $1, kind: Kind.file, size: Int64($0), mtime: 0) })
+        let b = DateBuckets(now: Date(timeIntervalSince1970: 0), calendar: utc)
+        let (order, runs) = Grouping.partition(store.order, store: store, by: .nameFirstLetter, dateBuckets: b, types: .shared)
+        for run in runs {
+            for row in run.rows {
+                let name = store.name(order[row])
+                XCTAssertEqual(.letter(Grouping.letterKey(name)), run.key, name.debugDescription)
+            }
+        }
+        XCTAssertEqual(runs.map(\.rows.count).reduce(0, +), names.count)
+    }
 }

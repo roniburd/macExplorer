@@ -129,7 +129,7 @@ public enum Grouping {
     }
 
     /// Stable partition of an already sorted permutation into contiguous groups (in-group order preserved).
-    /// `.none` returns (sorted, []). O(n) plus one key computation per distinct type/bucket and per non-ASCII name.
+    /// `.none` returns (sorted, []). O(n) plus one key computation per distinct type/bucket and per distinct first-grapheme prefix.
     public static func partition(_ sorted: [UInt32], store: EntryStore, by groupBy: GroupBy,
                                  dateBuckets: DateBuckets, types: TypeRegistry) -> (order: [UInt32], runs: [GroupRun]) {
         guard groupBy != .none, !sorted.isEmpty else { return (sorted, []) }
@@ -184,17 +184,18 @@ public enum Grouping {
             }
         case .nameFirstLetter:
             var ascii = [Int32](repeating: -1, count: 128)
+            var prefixes = PrefixTable()
             for (i, index) in sorted.enumerated() {
                 assigned[i] = store.withNameBytes(index) { bytes -> Int32 in
                     let start = bytes.firstIndex { $0 != UInt8(ascii: ".") } ?? bytes.endIndex
+                    if start == bytes.endIndex { return id(.letter(.other)) }
                     // ASCII fast path: an ASCII first byte not followed by a combining (non-ASCII) scalar.
-                    if start < bytes.endIndex, bytes[start] < 0x80, start + 1 == bytes.endIndex || bytes[start + 1] < 0x80 {
+                    if bytes[start] < 0x80, start + 1 == bytes.endIndex || bytes[start + 1] < 0x80 {
                         let b = Int(bytes[start])
                         if ascii[b] < 0 { ascii[b] = id(.letter(asciiLetterKey(UInt8(b)))) }
                         return ascii[b]
                     }
-                    let end = min(bytes.endIndex, start + 32)
-                    return id(.letter(letterKey(String(decoding: UnsafeBufferPointer(rebasing: bytes[start..<end]), as: UTF8.self))))
+                    return cachedLetterID(bytes, from: start, cache: &prefixes, id: id)
                 }
             }
         }
@@ -218,6 +219,137 @@ public enum Grouping {
             offsets[g] += 1
         }
         return (order, runs)
+    }
+
+    /// The UTF-8 bytes of a name's first grapheme plus the scalar after it (or the name's end), ≤ 16 bytes packed.
+    /// A grapheme boundary depends only on the scalars before it and the one scalar after it (UAX #29), so such a
+    /// prefix decides the first grapheme of every name that starts with it.
+    struct GraphemePrefix: Equatable {
+        var lo: UInt64 = 0, hi: UInt64 = 0
+        static let capacity = 15
+
+        init() {}
+
+        /// `count` and `ended` go in the top byte of `hi` (15 bytes of payload fit beside it).
+        init(_ bytes: UnsafeBufferPointer<UInt8>, _ range: Range<Int>, ended: Bool) {
+            var j = range.lowerBound, k = 0
+            while j < range.upperBound {
+                if k < 8 { lo |= UInt64(bytes[j]) << (8 * k) } else { hi |= UInt64(bytes[j]) << (8 * (k - 8)) }
+                j += 1; k += 1
+            }
+            hi |= UInt64(range.count) << 56 | (ended ? 1 << 63 : 0)
+        }
+    }
+
+    /// GraphemePrefix → entry, open addressing over plain arrays (a generic Dictionary is several times slower in
+    /// debug builds, and the 100k partition does one or two lookups per row). Entries: ≥ 0 is a group id (the
+    /// prefix's first k scalars are the first grapheme); `longer` means they are not (a combining mark, ZWJ or
+    /// regional indicator follows), so look up the prefix one scalar longer. `hi == 0` marks an empty slot (a real
+    /// key's `hi` carries its count).
+    struct PrefixTable {
+        static let longer: Int32 = -2
+        private var lo = [UInt64](repeating: 0, count: 64)
+        private var hi = [UInt64](repeating: 0, count: 64)
+        private var values = [Int32](repeating: 0, count: 64)
+        private var used = 0
+        /// The last key looked up (rows sorted by name share it): one comparison instead of a probe.
+        private var last = GraphemePrefix(), lastValue: Int32 = 0
+
+        private func slot(_ key: GraphemePrefix) -> Int {
+            let mask = lo.count - 1
+            var i = Int(truncatingIfNeeded: ((key.lo ^ (key.hi << 32 | key.hi >> 32)) &* 0x9E37_79B9_7F4A_7C15) >> 40) & mask
+            while hi[i] != 0, lo[i] != key.lo || hi[i] != key.hi { i = (i + 1) & mask }
+            return i
+        }
+
+        mutating func value(_ key: GraphemePrefix) -> Int32? {
+            if key == last { return lastValue }
+            let i = slot(key)
+            guard hi[i] != 0 else { return nil }
+            last = key
+            lastValue = values[i]
+            return values[i]
+        }
+
+        mutating func set(_ key: GraphemePrefix, _ value: Int32) {
+            if (used + 1) * 2 > lo.count { grow() }
+            let i = slot(key)
+            if hi[i] == 0 { used += 1 }
+            lo[i] = key.lo; hi[i] = key.hi; values[i] = value
+        }
+
+        private mutating func grow() {
+            let old = (lo, hi, values)
+            lo = [UInt64](repeating: 0, count: old.0.count * 2)
+            hi = [UInt64](repeating: 0, count: old.0.count * 2)
+            values = [Int32](repeating: 0, count: old.0.count * 2)
+            for j in old.0.indices where old.1[j] != 0 {
+                var key = GraphemePrefix()
+                key.lo = old.0[j]; key.hi = old.1[j]
+                let i = slot(key)
+                lo[i] = key.lo; hi[i] = key.hi; values[i] = old.2[j]
+            }
+        }
+    }
+
+    /// The name-group id of the name whose letters start at `start`, computed once per distinct grapheme prefix:
+    /// most rows cost one or two small-key hash lookups. Invalid UTF-8 and graphemes over 15 bytes are uncached.
+    private static func cachedLetterID(_ bytes: UnsafeBufferPointer<UInt8>, from start: Int,
+                                       cache: inout PrefixTable, id: (GroupKey) -> Int32) -> Int32 {
+        func uncached() -> Int32 {
+            let end = min(bytes.endIndex, start + 64)
+            return id(.letter(letterKey(String(decoding: UnsafeBufferPointer(rebasing: bytes[start..<end]), as: UTF8.self))))
+        }
+        guard let first = scalarLength(bytes, at: start) else { return uncached() }
+        var graphemeEnd = start + first
+        while true {
+            let ended = graphemeEnd == bytes.endIndex
+            var keyEnd = graphemeEnd
+            if !ended {
+                guard let next = scalarLength(bytes, at: graphemeEnd) else { return uncached() }
+                keyEnd += next
+            }
+            guard keyEnd - start <= GraphemePrefix.capacity else { return uncached() }
+            let key = GraphemePrefix(bytes, start..<keyEnd, ended: ended)
+            if let value = cache.value(key) {
+                if value != PrefixTable.longer { return value }
+                graphemeEnd = keyEnd
+                continue
+            }
+            let prefix = String(decoding: UnsafeBufferPointer(rebasing: bytes[start..<keyEnd]), as: UTF8.self)
+            if ended || prefix.first!.utf8.count <= graphemeEnd - start {
+                let g = id(.letter(letterKey(prefix)))
+                cache.set(key, g)
+                return g
+            }
+            cache.set(key, PrefixTable.longer)
+            graphemeEnd = keyEnd
+        }
+    }
+
+    /// Byte length of the well-formed UTF-8 scalar at `i`, nil for ill-formed input (overlong, surrogate, truncated).
+    /// Plain comparisons, no range patterns: those are generic calls in debug builds.
+    static func scalarLength(_ b: UnsafeBufferPointer<UInt8>, at i: Int) -> Int? {
+        let lead = b[i]
+        if lead < 0x80 { return 1 }
+        let n: Int
+        var lo: UInt8 = 0x80, hi: UInt8 = 0xBF
+        if lead < 0xC2 { return nil }
+        else if lead < 0xE0 { n = 2 }
+        else if lead < 0xF0 {
+            n = 3
+            if lead == 0xE0 { lo = 0xA0 } else if lead == 0xED { hi = 0x9F }
+        } else if lead < 0xF5 {
+            n = 4
+            if lead == 0xF0 { lo = 0x90 } else if lead == 0xF4 { hi = 0x8F }
+        } else { return nil }
+        guard i + n <= b.endIndex, b[i + 1] >= lo, b[i + 1] <= hi else { return nil }
+        var j = i + 2
+        while j < i + n {
+            if b[j] < 0x80 || b[j] > 0xBF { return nil }
+            j += 1
+        }
+        return n
     }
 
     private static func asciiLetterKey(_ byte: UInt8) -> LetterKey {

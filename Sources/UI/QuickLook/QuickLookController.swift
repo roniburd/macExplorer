@@ -6,7 +6,10 @@ import MacxFS
 
 /// The shared Quick Look panel as QuickLookController sees it (tests use an in-memory fake).
 @MainActor protocol QuickLookPanelControlling: AnyObject {
+    /// The shared panel is on screen (any window or tab may have opened it): Space and Esc close it.
     var isVisible: Bool { get }
+    /// On screen with this window's bridge as its data source: only then are selection changes worth items.
+    var isControlling: Bool { get }
     func show()
     func hide()
     func reloadData()
@@ -22,6 +25,11 @@ final class SystemQuickLookPanel: QuickLookPanelControlling {
     init(bridge: QuickLookPanelBridge?) { self.bridge = bridge }
 
     var isVisible: Bool { QLPreviewPanel.sharedPreviewPanelExists() && QLPreviewPanel.shared().isVisible }
+
+    var isControlling: Bool {
+        guard isVisible, let bridge else { return false }
+        return QLPreviewPanel.shared().dataSource === bridge
+    }
 
     func show() {
         let panel = QLPreviewPanel.shared()!
@@ -45,7 +53,7 @@ final class SystemQuickLookPanel: QuickLookPanelControlling {
 /// Space → Quick Look over the selection, in display order (spec §11). One per window; the window controller rebinds
 /// it on every navigation, and selection or listing changes reload the panel while it is visible.
 ///
-/// Items are lazy: while the panel is hidden a selection or listing change only drops the built items, so a
+/// Items are lazy: while the panel is hidden (or controlled by another window or tab) a selection or listing change only drops the built items, so a
 /// ⌘A in a huge folder builds no URLs until Quick Look opens (or the panel asks for them).
 @MainActor
 final class QuickLookController {
@@ -92,10 +100,11 @@ final class QuickLookController {
         return folder?.selectedURLs ?? []
     }
 
-    /// Hidden: forget the built items (no URLs are built). Visible: rebuild and reload when they changed.
+    /// Hidden, or shown by another window or tab: forget the built items (no URLs are built). Controlled by this
+    /// window: rebuild and reload when they changed.
     private func selectionChanged() {
         let p = panel()
-        guard p.isVisible else { builtItems = nil; return }
+        guard p.isControlling else { builtItems = nil; return }
         let previous = builtItems
         let next = buildItems()
         builtItems = next
