@@ -47,7 +47,10 @@ jobs:
       - name: Bundle
         run: |
           scripts/bundle.sh release
-          codesign --verify --strict .build/MacExplorer.app
+          codesign --verify --deep --strict .build/MacExplorer.app
+          test -d .build/MacExplorer.app/Contents/Frameworks/Sparkle.framework
+          test -n "$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' .build/MacExplorer.app/Contents/Info.plist)"
+          scripts/release/test-release-scripts.sh
 
   scenarios:
     runs-on: macos-26

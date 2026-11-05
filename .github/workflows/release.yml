@@ -1,0 +1,276 @@
+# Tag → signed release, appcast, Homebrew cask (distribution spec §5).
+# Tags v<semver> publish a release; v<semver>-beta.<n> publish a pre-release on the Sparkle "beta" channel.
+# workflow_dispatch is a dry run by default: build, sign, package and render everything, publish nothing,
+# and upload the zip, dmg, appcast and cask as workflow artifacts.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build and render everything, publish nothing
+        type: boolean
+        default: true
+      version:
+        description: Version for a dispatched run (e.g. 0.2.0-beta.1); a non-dry dispatch needs tag v<version> to exist
+        default: 0.0.0-beta.0
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  XCODE_VERSION: "27.2"
+  RELEASE_SIGNING: adhoc          # from the spike (spec §7): adhoc | self-signed
+  SPARKLE_BIN: .build/artifacts/sparkle/Sparkle/bin
+
+jobs:
+  release:
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Select Xcode
+        run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
+
+      - name: Version
+        id: v
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          # Only a tag push is a real release by default; a dispatch (even from a tag ref) follows its dry_run input.
+          if [ "$EVENT_NAME" = "push" ]; then
+            case "$GITHUB_REF_NAME" in v*) ;; *) echo "::error::not a release tag: $GITHUB_REF_NAME"; exit 1 ;; esac
+            version="${GITHUB_REF_NAME#v}"; dry=false
+          else
+            version="$INPUT_VERSION"; dry="$INPUT_DRY_RUN"
+            [ "$dry" = "false" ] || dry=true
+          fi
+          if printf '%s\n' "$version" | grep -Eqx '[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+'; then
+            channel=beta; token=macexplorer@beta; prerelease=true
+          elif printf '%s\n' "$version" | grep -Eqx '[0-9]+\.[0-9]+\.[0-9]+'; then
+            channel=release; token=macexplorer; prerelease=false
+          else
+            echo "::error::bad version $version (want X.Y.Z or X.Y.Z-beta.N)"; exit 1
+          fi
+          if [ "$dry" = "false" ] && ! git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            echo "::error::tag v$version does not exist; push the tag to publish"; exit 1
+          fi
+          {
+            echo "version=$version"; echo "build=$(git rev-list --count HEAD)"; echo "channel=$channel"
+            echo "token=$token"; echo "prerelease=$prerelease"; echo "dry=$dry"
+          } >> "$GITHUB_OUTPUT"
+          echo "Release $version (channel $channel, dry run: $dry)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Test
+        run: swift test --parallel
+
+      - name: Signing identity
+        id: sign
+        env:
+          DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+          SELF_SIGNED_P12: ${{ secrets.SELF_SIGNED_P12 }}
+          SELF_SIGNED_P12_PASSWORD: ${{ secrets.SELF_SIGNED_P12_PASSWORD }}
+          SELF_SIGNED_IDENTITY: ${{ secrets.SELF_SIGNED_IDENTITY }}
+        run: |
+          keychain="$RUNNER_TEMP/release.keychain-db"
+          import_p12() {
+            security create-keychain -p ci "$keychain"
+            security set-keychain-settings -lut 3600 "$keychain"
+            security unlock-keychain -p ci "$keychain"
+            printf '%s' "$1" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+            security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$2" -T /usr/bin/codesign
+            rm -f "$RUNNER_TEMP/cert.p12"
+            security set-key-partition-list -S apple-tool:,apple: -s -k ci "$keychain" >/dev/null
+            # shellcheck disable=SC2046 # word-splitting the existing search list is intended
+            security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          }
+          if [ -n "$DEVELOPER_ID_P12" ]; then
+            import_p12 "$DEVELOPER_ID_P12" "$DEVELOPER_ID_P12_PASSWORD"
+            identity="$(security find-identity -v -p codesigning "$keychain" | sed -nE 's/.*"(Developer ID Application: [^"]+)".*/\1/p' | head -1)"
+            [ -n "$identity" ] || { echo "::error::DEVELOPER_ID_P12 holds no Developer ID Application identity"; exit 1; }
+            echo "identity=$identity" >> "$GITHUB_OUTPUT"; echo "notarize=true" >> "$GITHUB_OUTPUT"
+          elif [ "$RELEASE_SIGNING" = "self-signed" ]; then
+            [ -n "$SELF_SIGNED_P12" ] || { echo "::error::RELEASE_SIGNING=self-signed but SELF_SIGNED_P12 is not set"; exit 1; }
+            import_p12 "$SELF_SIGNED_P12" "$SELF_SIGNED_P12_PASSWORD"
+            echo "identity=${SELF_SIGNED_IDENTITY:-MacExplorer Self-Signed}" >> "$GITHUB_OUTPUT"; echo "notarize=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "identity=-" >> "$GITHUB_OUTPUT"; echo "notarize=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check Sparkle public key
+        env:
+          DRY: ${{ steps.v.outputs.dry }}
+        run: |
+          key="$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' Resources/Info.plist)"
+          if [ "$key" = "REPLACE_WITH_SPARKLE_PUBLIC_KEY" ] && [ "$DRY" != "true" ]; then
+            echo "::error::Set SUPublicEDKey in Resources/Info.plist before publishing (README › Releasing)"; exit 1
+          fi
+
+      - name: Bundle
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+          BUILD: ${{ steps.v.outputs.build }}
+          IDENTITY: ${{ steps.sign.outputs.identity }}
+        run: |
+          scripts/bundle.sh release --universal --version "$VERSION" --build "$BUILD" \
+            --sign "$IDENTITY" --output "$PWD/dist/MacExplorer.app"
+          codesign --verify --deep --strict dist/MacExplorer.app
+          archs="$(lipo -archs dist/MacExplorer.app/Contents/MacOS/macExplorer)"
+          case " $archs " in *" x86_64 "*) ;; *) echo "::error::no x86_64 slice ($archs)"; exit 1 ;; esac
+          case " $archs " in *" arm64 "*) ;; *) echo "::error::no arm64 slice ($archs)"; exit 1 ;; esac
+
+      - name: Notarize
+        if: steps.sign.outputs.notarize == 'true'
+        env:
+          NOTARY_API_KEY: ${{ secrets.NOTARY_API_KEY }}
+          NOTARY_API_KEY_ID: ${{ secrets.NOTARY_API_KEY_ID }}
+          NOTARY_API_ISSUER: ${{ secrets.NOTARY_API_ISSUER }}
+        run: |
+          printf '%s' "$NOTARY_API_KEY" | base64 --decode > "$RUNNER_TEMP/notary.p8"
+          trap 'rm -f "$RUNNER_TEMP/notary.p8"' EXIT
+          ditto -c -k --keepParent dist/MacExplorer.app "$RUNNER_TEMP/notarize.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" --key "$RUNNER_TEMP/notary.p8" \
+            --key-id "$NOTARY_API_KEY_ID" --issuer "$NOTARY_API_ISSUER" --wait
+          xcrun stapler staple dist/MacExplorer.app
+
+      - name: Package
+        id: pkg
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+          IDENTITY: ${{ steps.sign.outputs.identity }}
+        run: |
+          zip="dist/MacExplorer-$VERSION.zip"; dmg="dist/MacExplorer-$VERSION.dmg"
+          ditto -c -k --keepParent dist/MacExplorer.app "$zip"
+          mkdir -p dist/dmg && cp -R dist/MacExplorer.app dist/dmg/ && ln -s /Applications dist/dmg/Applications
+          # hdiutil on hosted runners occasionally fails with "Resource busy"; retry a few times.
+          for attempt in 1 2 3; do
+            hdiutil create -volname "MacExplorer $VERSION" -srcfolder dist/dmg -ov -format UDZO "$dmg" && break
+            [ "$attempt" -lt 3 ] || exit 1
+            sleep 10
+          done
+          [ "$IDENTITY" = "-" ] || codesign --force --sign "$IDENTITY" "$dmg"
+          { echo "zip=$zip"; echo "dmg=$dmg"; echo "length=$(stat -f%z "$zip")"; echo "sha=$(shasum -a 256 "$zip" | cut -d' ' -f1)"; } >> "$GITHUB_OUTPUT"
+
+      - name: Sign update (EdDSA)
+        id: ed
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+          DRY: ${{ steps.v.outputs.dry }}
+          ZIP: ${{ steps.pkg.outputs.zip }}
+        run: |
+          if [ -z "$SPARKLE_ED_PRIVATE_KEY" ]; then
+            [ "$DRY" = "true" ] || { echo "::error::SPARKLE_ED_PRIVATE_KEY missing"; exit 1; }
+            echo "signature=DRY-RUN" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # Sparkle 2.10.1: --ed-key-file - reads the key from stdin; -p prints only the signature.
+          sig="$(printf '%s\n' "$SPARKLE_ED_PRIVATE_KEY" | "$SPARKLE_BIN/sign_update" --ed-key-file - -p "$ZIP")"
+          [ -n "$sig" ] || { echo "::error::sign_update printed no signature"; exit 1; }
+          echo "signature=$sig" >> "$GITHUB_OUTPUT"
+
+      - name: Render appcast and cask
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+          BUILD: ${{ steps.v.outputs.build }}
+          CHANNEL: ${{ steps.v.outputs.channel }}
+          TOKEN: ${{ steps.v.outputs.token }}
+          DRY: ${{ steps.v.outputs.dry }}
+          LENGTH: ${{ steps.pkg.outputs.length }}
+          SHA: ${{ steps.pkg.outputs.sha }}
+          SIGNATURE: ${{ steps.ed.outputs.signature }}
+        run: |
+          tag="v$VERSION"
+          base="https://github.com/${GITHUB_REPOSITORY}/releases/download/$tag"
+          if ! git fetch origin gh-pages:gh-pages; then
+            [ "$DRY" = "true" ] || { echo "::error::no gh-pages branch; create it and enable Pages (README › Releasing)"; exit 1; }
+            echo "::notice::no gh-pages branch; rendering a fresh appcast"
+          fi
+          mkdir -p dist/pages
+          git show gh-pages:appcast.xml > dist/pages/appcast.xml 2>/dev/null || rm -f dist/pages/appcast.xml
+          channel_args=(); [ "$CHANNEL" = "beta" ] && channel_args=(--channel beta)
+          python3 -I scripts/release/appcast.py --appcast dist/pages/appcast.xml --version "$VERSION" \
+            --build "$BUILD" --url "$base/MacExplorer-$VERSION.zip" --length "$LENGTH" \
+            --ed-signature "$SIGNATURE" --min-os 26.0 \
+            --notes-url "https://github.com/${GITHUB_REPOSITORY}/releases/tag/$tag" "${channel_args[@]}"
+          scripts/release/render-cask.sh --token "$TOKEN" --version "$VERSION" \
+            --sha256 "$SHA" --url "$base/MacExplorer-$VERSION.zip" > "dist/$TOKEN.rb"
+          { echo '### Cask'; echo '```ruby'; cat "dist/$TOKEN.rb"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload dry-run artifacts
+        if: steps.v.outputs.dry == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dry-run
+          path: |
+            dist/*.zip
+            dist/*.dmg
+            dist/pages/appcast.xml
+            dist/*.rb
+
+      - name: GitHub Release
+        if: steps.v.outputs.dry != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.v.outputs.version }}
+          PRERELEASE: ${{ steps.v.outputs.prerelease }}
+          ZIP: ${{ steps.pkg.outputs.zip }}
+          DMG: ${{ steps.pkg.outputs.dmg }}
+        run: |
+          tag="v$VERSION"
+          # actions/checkout can leave an annotated tag as a lightweight ref; refetch it to read its annotation.
+          git fetch --force origin "refs/tags/$tag:refs/tags/$tag"
+          # Release notes come from the tag annotation (spec §5 step 4), falling back to generated notes.
+          if [ "$(git cat-file -t "refs/tags/$tag")" = "tag" ]; then flags=(--verify-tag --notes-from-tag)
+          else flags=(--verify-tag --generate-notes); fi
+          [ "$PRERELEASE" = "true" ] && flags+=(--prerelease)
+          gh release create "$tag" "$ZIP" "$DMG" --title "MacExplorer $VERSION" "${flags[@]}"
+
+      - name: Publish appcast
+        if: steps.v.outputs.dry != 'true'
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git worktree add "$RUNNER_TEMP/pages" gh-pages
+          cp dist/pages/appcast.xml "$RUNNER_TEMP/pages/appcast.xml"
+          git -C "$RUNNER_TEMP/pages" add appcast.xml
+          git -C "$RUNNER_TEMP/pages" commit -m "appcast: $VERSION"
+          git -C "$RUNNER_TEMP/pages" push origin gh-pages
+
+      - name: Update Homebrew tap
+        if: steps.v.outputs.dry != 'true'
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ steps.v.outputs.version }}
+          TOKEN: ${{ steps.v.outputs.token }}
+        run: |
+          [ -n "$HOMEBREW_TAP_TOKEN" ] || { echo "::warning::HOMEBREW_TAP_TOKEN not set; skipping tap"; exit 0; }
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/roniburd/homebrew-macexplorer.git" "$RUNNER_TEMP/tap"
+          mkdir -p "$RUNNER_TEMP/tap/Casks"
+          cp "dist/$TOKEN.rb" "$RUNNER_TEMP/tap/Casks/"
+          cd "$RUNNER_TEMP/tap"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks
+          if git diff --cached --quiet; then echo "::notice::tap already has $TOKEN $VERSION"; exit 0; fi
+          git commit -m "$TOKEN $VERSION"
+          git push
+
+      - name: Clean up keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/release.keychain-db" 2>/dev/null || true
