@@ -54,6 +54,20 @@ Non-gated Phase 2 targets, reported by `macx-bench` and signposts: thumbnails vi
 
 **Phase 1 names this plan builds on:** `Sandbox` method names in test code (`Sandbox()`, `.root`, `.write(_:bytes:)`, `.mkdir(_:)`, `.url(_:)`, `.symlink(_:to:)`, `.hardLink(_:to:)`, `.destroy()`) follow P1-02. If P1-02 chose different names for the same operations, use P1-02's names. The semantics are identical, and the guard rule is the same. The same applies to the Phase 1 main-menu titles used in scenario `menu` steps (P1-29). Check `MainMenuBuilder` and use its exact titles.
 
+**P2-00 baseline result (2026-11-05): use the real Phase 1 names in place of the plan's names.** Every later task MUST translate the plan's test code like this:
+
+| Plan writes | Real Phase 1 API (`Sources/MacxFixtures`) |
+|---|---|
+| `Sandbox()` | `try Sandbox()` (throws; `init(prefix: String = "macx-tests")`, also `init(adopting:)`) |
+| `.root`, `.url(_:)`, `.destroy()` | same names |
+| `.write(_ rel, bytes: n)` | `.createFile(_ rel, contents: Data(count: n))` (`contents` defaults to `"x"`; returns the URL, discardable) |
+| `.mkdir(_ rel)` | `.createDirectory(_ rel)` |
+| `.symlink(_ rel, to: target)` | `.createSymlink(_ rel, target: target)` |
+| `.hardLink(_ rel, to: existing)` | `.createHardLink(_ rel, to: existing)` |
+| `DiskImage.create(in:sizeMB:format:)` | `DiskImage.create(in:format:sizeMB:volumeName:readOnly:populate:)`. `format` comes before `sizeMB`. |
+
+The sandbox also has `createSparseFile`, `createAlias`, `overwrite`, `append`, `setFlags`, `setMode`, `setXattr`, `setHiddenExtension`, `setDates`, `rename` and `remove`. Use them before you add new fixture helpers. Main-menu titles live in `Sources/UI/Menus/MainMenuTitles.swift`, and the top-level menus are MacExplorer, File, Edit, View, Go, Window and Help. Every Phase 1 title the plan uses matches: "Copy as Path", "View › Sort By › Size", "as Details", "as Icons". `Settings.schemaVersionKey` already exists with the value `"schemaVersion"`.
+
 ## Review Focus
 
 These are the five inputs that the spec implies but no feature test would naturally exercise, ordered by how likely each is to hurt a user first. Each line names the owning task, which MUST include the listed test.
