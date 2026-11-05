@@ -23,4 +23,5 @@ enum AXID {
     static let propertiesWindow = "macx.properties"
     static let settingsWindow = "macx.settings"          // additive, P1-30
     static let onboardingSheet = "macx.onboarding"       // additive, P1-30
+    static let updateBadge = "macx.updateBadge"
 }

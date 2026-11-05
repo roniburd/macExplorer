@@ -894,6 +894,28 @@
         }
       }
     },
+    "Checking for updates…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checking for updates…"
+          }
+        }
+      }
+    },
+    "Checking…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checking…"
+          }
+        }
+      }
+    },
     "Choose" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1143,6 +1165,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Copying %@ to %@"
+          }
+        }
+      }
+    },
+    "Couldn't check for updates. You're offline." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't check for updates. You're offline."
+          }
+        }
+      }
+    },
+    "Couldn't check for updates: %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't check for updates: %@"
           }
         }
       }
@@ -1451,6 +1495,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Don't Eject"
+          }
+        }
+      }
+    },
+    "Downloading MacExplorer %@…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Downloading MacExplorer %@…"
+          }
+        }
+      }
+    },
+    "Downloading Update…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Downloading Update…"
           }
         }
       }
@@ -2082,6 +2148,17 @@
         }
       }
     },
+    "Later" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Later"
+          }
+        }
+      }
+    },
     "Loading…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2144,6 +2221,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "MacExplorer"
+          }
+        }
+      }
+    },
+    "MacExplorer %@ is ready" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MacExplorer %@ is ready"
           }
         }
       }
@@ -2364,6 +2452,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Move Item Here"
+          }
+        }
+      }
+    },
+    "Move MacExplorer to the Applications folder to get updates." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move MacExplorer to the Applications folder to get updates."
           }
         }
       }
@@ -3138,6 +3237,28 @@
         }
       }
     },
+    "Restart Now" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restart Now"
+          }
+        }
+      }
+    },
+    "Restart to Update" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restart to Update"
+          }
+        }
+      }
+    },
     "Restored the original name of 1 item." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3787,6 +3908,17 @@
         }
       }
     },
+    "This update couldn't be verified and wasn't installed." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This update couldn't be verified and wasn't installed."
+          }
+        }
+      }
+    },
     "Today %@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3893,6 +4025,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Up"
+          }
+        }
+      }
+    },
+    "Up to Date" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Up to Date"
+          }
+        }
+      }
+    },
+    "Update" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Update"
+          }
+        }
+      }
+    },
+    "Update Problem" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Update Problem"
           }
         }
       }
@@ -4036,6 +4201,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Welcome to MacExplorer"
+          }
+        }
+      }
+    },
+    "What's New" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What's New"
           }
         }
       }
@@ -4245,6 +4421,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "You don't have permission to view '%@'"
+          }
+        }
+      }
+    },
+    "You're up to date (%@)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You're up to date (%@)"
           }
         }
       }

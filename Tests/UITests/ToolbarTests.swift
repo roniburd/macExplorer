@@ -13,7 +13,7 @@ final class ToolbarTests: XCTestCase {
         XCTAssertTrue(toolbar.delegate === controller.toolbarController)
         let ids = toolbar.items.map(\.itemIdentifier)
         for id in [ToolbarController.navigationID, ToolbarController.addressID, ToolbarController.searchID,
-                   ToolbarController.viewSwitcherID] {
+                   ToolbarController.viewSwitcherID, ToolbarController.updateID] {
             XCTAssertTrue(ids.contains(id), "\(id.rawValue) in \(ids.map(\.rawValue))")
         }
         let nav = try XCTUnwrap(toolbar.items.first { $0.itemIdentifier == ToolbarController.navigationID } as? NSToolbarItemGroup)
