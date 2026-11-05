@@ -9,6 +9,7 @@ public final class Settings {
     public static let schemaVersion: Int = 1
     public static let schemaVersionKey = "schemaVersion"
     public static let recentLocationsLimit = 20
+    public static let lastReportedCrashesLimit = 20
     /// Phase 1 column defaults (display order). Kept in sync with `DetailsColumns.defaults`.
     public static let defaultColumns: [ColumnSetting] = [
         ColumnSetting(id: .name, width: 280, visible: true),
@@ -48,6 +49,11 @@ public final class Settings {
     /// Always true (locked on, spec §7).
     public var confirmBeforeDelete: Bool { true }
     public var showFullPathInTitle: Bool { didSet { save(showFullPathInTitle, Key.showFullPathInTitle) } }
+    public var updateChannel: UpdateChannel { didSet { save(updateChannel, Key.updateChannel) } }
+    public var checkForUpdatesAutomatically: Bool { didSet { save(checkForUpdatesAutomatically, Key.checkForUpdatesAutomatically) } }
+    public var offerToReportCrashes: Bool { didSet { save(offerToReportCrashes, Key.offerToReportCrashes) } }
+    /// `.ips` file names already offered (newest first, ≤ 20), so one crash prompts once.
+    public private(set) var lastReportedCrashes: [String] { didSet { save(lastReportedCrashes, Key.lastReportedCrashes) } }
     public var onboardingCompleted: Bool { didSet { save(onboardingCompleted, Key.onboardingCompleted) } }
     public var lastLocation: URL? { didSet { save(lastLocation, Key.lastLocation) } }
     /// ≤ 20, most recent first. Settable (§3.9; e.g. "clear recents" assigns []); longer lists are clamped.
@@ -89,6 +95,10 @@ public final class Settings {
         recents = Array((Self.load([String].self, Key.recentLocations, from: storage) ?? []).prefix(Self.recentLocationsLimit))
         let records = Self.load([TCCRecord].self, Key.tccOutcomes, from: storage) ?? []
         tccOutcomes = Dictionary(records.map { ($0.location, $0.outcome) }, uniquingKeysWith: { _, last in last })
+        updateChannel = Self.load(UpdateChannel.self, Key.updateChannel, from: storage) ?? .release
+        checkForUpdatesAutomatically = Self.load(Bool.self, Key.checkForUpdatesAutomatically, from: storage) ?? true
+        offerToReportCrashes = Self.load(Bool.self, Key.offerToReportCrashes, from: storage) ?? true
+        lastReportedCrashes = Array((Self.load([String].self, Key.lastReportedCrashes, from: storage) ?? []).prefix(Self.lastReportedCrashesLimit))
         if (stored ?? 0) < Self.schemaVersion {
             storage.set(try? JSONEncoder().encode(Self.schemaVersion), forKey: Self.schemaVersionKey)
         }
@@ -99,6 +109,10 @@ public final class Settings {
         var list = recentLocations.filter { $0 != path }
         list.insert(path, at: 0)
         recentLocations = list
+    }
+
+    public func markCrashReported(_ fileName: String) {
+        lastReportedCrashes = Array(([fileName] + lastReportedCrashes.filter { $0 != fileName }).prefix(Self.lastReportedCrashesLimit))
     }
 
     public func tccOutcome(for location: ProtectedLocation) -> TCCOutcome? { tccOutcomes[location] }
@@ -123,6 +137,8 @@ public final class Settings {
         static let onboardingCompleted = "onboardingCompleted", lastLocation = "lastLocation"
         static let recentLocations = "recentLocations", tccOutcomes = "tccOutcomes"
         static let showCloudStorageInSidebar = "showCloudStorageInSidebar"
+        static let updateChannel = "updateChannel", checkForUpdatesAutomatically = "checkForUpdatesAutomatically"
+        static let offerToReportCrashes = "offerToReportCrashes", lastReportedCrashes = "lastReportedCrashes"
     }
 
     private struct TCCRecord: Codable {
