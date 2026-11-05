@@ -1110,6 +1110,12 @@ public struct CrashExcerpt: Sendable, Equatable {
 }
 ```
 
+> **Deviations (implementation):**
+> - `CrashExcerpt.parse` redacts the decoded JSON values instead of running `redact` over the raw text first: real `.ips` files write "/" as `\/`, so a raw-text pass before decoding removed nothing. Covered by `testExcerptRedactsHomeInsideEscapedJSONFields`.
+> - `CrashExcerpt.redact` is escape-aware: it also replaces the JSON-escaped home (`\/Users\/x`) with `~` when followed by `\/`, `"` or the end, and the plain home when followed by `/`, `"` or the end, so `/Users/testerX` and `\/Users\/testerX` stay untouched. **Task 11 note:** the clipboard copy (`CrashExcerpt.redact(text, home: home)` on the raw `.ips` text) relies on this; do not replace it with a plain string substitution. Covered by `testRedactHandlesJSONEscapedHomeInRawIPSText`.
+> - `CrashReportLocator` reads only the first `maxHeaderBytes` (64 KB) of each candidate through `FileHandle` to parse the header line, instead of `Data(contentsOf:)` on the whole file (Review Focus 3: multi-MB reports must not be loaded just to be rejected).
+> - `CrashReportLocator.newest(after:excluding:)` filters out already-reported file names before reading any file, so reported reports cost no I/O.
+
 - [ ] **Step 5: Run tests** — `swift test --filter CoreTests.CrashReportTests 2>&1 | tail -5` → pass. If `testOlderThanLaunchIsIgnored` fails, recompute `crashTime` with `CrashReportLocator.parseTimestamp("2026-11-04 10:11:12.00 -0800")` in the test instead of the literal.
 
 - [ ] **Step 6: Commit**

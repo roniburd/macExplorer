@@ -35,22 +35,31 @@ public struct CrashExcerpt: Sendable, Equatable {
         return lines.joined(separator: "\n")
     }
 
+    /// Replaces the home path with `~` in free text and in raw `.ips` JSON, where "/" is written as "\/"
+    /// (so `/Users/x` appears as `\/Users\/x`); use it for the full report text that goes to the clipboard.
+    /// A match is replaced only at a path boundary, never inside a longer name (`/Users/testerX`).
     public static func redact(_ text: String, home: String) -> String {
         let h = home.hasSuffix("/") ? String(home.dropLast()) : home
         guard !h.isEmpty else { return text }
-        // Replace "<home>" only when followed by "/" or the end, never inside a longer name (/Users/testerX).
+        let escaped = h.replacingOccurrences(of: "/", with: "\\/")
+        let plain = replace(h, in: text) { $0.isEmpty || $0.hasPrefix("/") || $0.hasPrefix("\"") }
+        guard escaped != h else { return plain }
+        return replace(escaped, in: plain) { $0.isEmpty || $0.hasPrefix("\\/") || $0.hasPrefix("\"") }
+    }
+
+    private static func replace(_ needle: String, in text: String, atBoundary: (Substring) -> Bool) -> String {
         var out = "", rest = Substring(text)
-        while let r = rest.range(of: h) {
+        while let r = rest.range(of: needle) {
             let after = rest[r.upperBound...]
             out += rest[..<r.lowerBound]
-            if after.isEmpty || after.hasPrefix("/") { out += "~" } else { out += h }
+            out += atBoundary(after) ? "~" : needle
             rest = after
         }
         return out + rest
     }
 
-    /// Parses an `.ips` (header JSON line, newline, body JSON). Redaction is applied to the decoded values, because
-    /// `.ips` files escape "/" as "\/" and a raw-text replacement would miss them.
+    /// Parses an `.ips` (header JSON line, newline, body JSON). Redaction is applied to the decoded values, so any
+    /// JSON escaping of "/" in the file (`\/`, `\u002F`) cannot hide the home path from it.
     public static func parse(_ text: String, home: String) -> CrashExcerpt? {
         guard let newline = text.firstIndex(of: "\n"),
               let header = json(text[..<newline]),

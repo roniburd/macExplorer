@@ -87,6 +87,22 @@ final class CrashReportTests: XCTestCase {
                        "~/a and ~/b /Users/testerX")
     }
 
+    /// The full `.ips` text goes to the clipboard (Task 11), and `.ips` files write "/" as "\/".
+    func testRedactHandlesJSONEscapedHomeInRawIPSText() {
+        let raw = IPSFixture.make(home: "/Users/tester")
+        XCTAssertTrue(raw.contains(#"\/Users\/tester\/Applications"#), "fixture should escape slashes like real .ips files")
+        let redacted = CrashExcerpt.redact(raw, home: "/Users/tester")
+        XCTAssertFalse(redacted.contains("/Users/tester"))
+        XCTAssertFalse(redacted.contains(#"\/Users\/tester"#))
+        XCTAssertTrue(redacted.contains(#""procPath":"~\/Applications\/MacExplorer.app"#))
+        XCTAssertEqual(CrashExcerpt.redact(#"{"a":"\/Users\/testerX\/y","b":"\/Users\/tester","c":"/Users/tester"}"#,
+                                           home: "/Users/tester/"),
+                       #"{"a":"\/Users\/testerX\/y","b":"~","c":"~"}"#)
+        XCTAssertEqual(CrashExcerpt.redact(#"\/Users\/tester"#, home: "/Users/tester"), "~")
+        XCTAssertEqual(CrashExcerpt.redact("/Users/testerX \\/Users\\/testerX", home: "/Users/tester"),
+                       "/Users/testerX \\/Users\\/testerX")
+    }
+
     func testParseNeverTrapsOnTruncations() {
         let full = IPSFixture.make()
         for cut in stride(from: 0, to: full.count, by: 97) {
