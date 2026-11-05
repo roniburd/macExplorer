@@ -29,7 +29,9 @@ assert enc.get("{http://www.andymatuschak.org/xml-namespaces/sparkle}edSignature
 assert enc.get("length") == "123" and enc.get("type") == "application/octet-stream"
 assert beta.find("sparkle:minimumSystemVersion", ns).text == "26.0"
 PY
-python3 -I "$here/appcast.py" --appcast "$ac" --version x 2>/dev/null && fail "missing args accepted"
+# Bad arguments must exit 64 (EX_USAGE); the Release workflow relies on it.
+expect_64() { local rc=0; "$@" >/dev/null 2>&1 || rc=$?; [ "$rc" -eq 64 ] || fail "$1 bad args: exit $rc, want 64"; }
+expect_64 python3 -I "$here/appcast.py" --appcast "$ac" --version x
 
 cask="$("$here/render-cask.sh" --token macexplorer@beta --version 0.2.0-beta.1 --sha256 abc123 --url https://example.invalid/a.zip)"
 grep -q 'cask "macexplorer@beta" do' <<<"$cask" || fail "cask token"
@@ -38,5 +40,7 @@ grep -q 'sha256 "abc123"' <<<"$cask" || fail "cask sha"
 grep -q 'auto_updates true' <<<"$cask" || fail "auto_updates"
 grep -q 'conflicts_with cask: "macexplorer"' <<<"$cask" || fail "conflicts"
 grep -q 'app "MacExplorer.app"' <<<"$cask" || fail "app stanza"
-"$here/render-cask.sh" --token other --version 1 --sha256 a --url u >/dev/null 2>&1 && fail "bad token accepted"
+expect_64 "$here/render-cask.sh" --token other --version 1 --sha256 a --url u
+expect_64 "$here/render-cask.sh" --token macexplorer --version 1 --sha256 a
+expect_64 "$here/render-cask.sh" --bogus
 echo "release scripts: OK"
