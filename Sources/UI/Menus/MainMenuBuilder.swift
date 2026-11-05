@@ -142,7 +142,12 @@ import Core
     }
 
     private static func helpItems() -> [NSMenuItem] {
-        [standard("MacExplorer Help", #selector(NSApplication.showHelp(_:)), "?")]
+        [
+            standard("MacExplorer Help", #selector(NSApplication.showHelp(_:)), "?"),
+            .separator(),
+            standard("Report a Bug…", FeedbackActions.reportBugAction),
+            standard("Request a Feature…", FeedbackActions.requestFeatureAction),
+        ]
     }
 
     // MARK: items

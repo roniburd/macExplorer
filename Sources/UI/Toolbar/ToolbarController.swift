@@ -3,7 +3,7 @@ import Core
 import MacxFS
 
 /// The browser window's NSToolbar delegate (§5.2): ◀ ▶ ↑ group, address bar (flexible), filter field, Details/Icons
-/// switcher, and the update badge (hidden unless an update needs attention). Keeps them in sync with the session
+/// switcher, the Send Feedback menu, and the update badge (hidden unless an update needs attention). Keeps them in sync with the session
 /// (folder, history, view mode) and the volume list.
 @MainActor
 final class ToolbarController: NSObject, NSToolbarDelegate {
@@ -11,6 +11,7 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
     static let addressID = NSToolbarItem.Identifier("macx.toolbar.address")
     static let searchID = NSToolbarItem.Identifier("macx.toolbar.search")
     static let viewSwitcherID = NSToolbarItem.Identifier("macx.toolbar.viewSwitcher")
+    static let feedbackID = NSToolbarItem.Identifier("macx.toolbar.feedback")
     static let updateID = NSToolbarItem.Identifier("macx.toolbar.update")
 
     let navigation: NavigationButtons
@@ -19,6 +20,7 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
     let viewSwitcher: NSToolbarItemGroup
     let searchItem: NSSearchToolbarItem
     let addressItem: NSToolbarItem
+    let feedbackItem: NSMenuToolbarItem
     let updateItem: UpdateBadgeItem
 
     private let context: UIContext
@@ -34,6 +36,7 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
         search = SearchFieldController(session: session)
         searchItem = NSSearchToolbarItem(itemIdentifier: Self.searchID)
         addressItem = NSToolbarItem(itemIdentifier: Self.addressID)
+        feedbackItem = NSMenuToolbarItem(itemIdentifier: Self.feedbackID)
         updateItem = UpdateBadgeItem(model: context.updates)
         let modes = ViewMode.allCases
         viewSwitcher = NSToolbarItemGroup(
@@ -47,6 +50,11 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
         addressItem.view = addressBar
         addressItem.label = L10n.string("Address")
         addressItem.visibilityPriority = .high
+        feedbackItem.menu = FeedbackActions.menu()
+        feedbackItem.image = NSImage(systemSymbolName: "bubble.left", accessibilityDescription: L10n.string("Send Feedback"))
+        feedbackItem.label = L10n.string("Send Feedback")
+        feedbackItem.toolTip = L10n.string("Send Feedback")
+        feedbackItem.showsIndicator = false
         viewSwitcher.target = self
         viewSwitcher.action = #selector(viewSwitcherChanged(_:))
         viewSwitcher.label = L10n.string("View")
@@ -83,7 +91,7 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
     // MARK: NSToolbarDelegate
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [Self.navigationID, Self.addressID, Self.searchID, Self.viewSwitcherID, Self.updateID]
+        [Self.navigationID, Self.addressID, Self.searchID, Self.viewSwitcherID, Self.feedbackID, Self.updateID]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -115,6 +123,7 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
         case Self.addressID: addressItem
         case Self.searchID: searchItem
         case Self.viewSwitcherID: viewSwitcher
+        case Self.feedbackID: feedbackItem
         case Self.updateID: updateItem
         default: nil
         }
@@ -128,6 +137,7 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
         case addressID: spec = (L10n.string("Address"), "link")
         case searchID: spec = (L10n.string("Filter"), "magnifyingglass")
         case viewSwitcherID: spec = (L10n.string("View"), "list.bullet")
+        case feedbackID: spec = (L10n.string("Send Feedback"), "bubble.left")
         case updateID: spec = (L10n.string("Update"), "arrow.down.circle")
         default: return nil
         }

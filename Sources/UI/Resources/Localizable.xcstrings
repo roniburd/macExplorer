@@ -3303,6 +3303,28 @@
         }
       }
     },
+    "Report a Bug…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Report a Bug…"
+          }
+        }
+      }
+    },
+    "Request a Feature…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Request a Feature…"
+          }
+        }
+      }
+    },
     "Restart Now" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3453,6 +3475,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Selection"
+          }
+        }
+      }
+    },
+    "Send Feedback" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Send Feedback"
           }
         }
       }

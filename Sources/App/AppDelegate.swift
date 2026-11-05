@@ -89,6 +89,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         context.updates.checkNow()
     }
 
+    /// Help › Report a Bug… and the toolbar's Send Feedback menu: the prefilled GitHub bug form.
+    @objc func macx_reportBug(_ sender: Any?) { if let context { FeedbackActions.open(.bug, context: context) } }
+
+    /// Help › Request a Feature… and the toolbar's Send Feedback menu: the GitHub feature form.
+    @objc func macx_requestFeature(_ sender: Any?) { if let context { FeedbackActions.open(.feature, context: context) } }
+
     @objc func validateMenuItem(_ item: NSMenuItem) -> Bool {
         if item.action == NSSelectorFromString("macx_checkForUpdates:") { return context?.updates.isAvailable ?? false }
         return true
