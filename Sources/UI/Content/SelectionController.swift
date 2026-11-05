@@ -41,10 +41,12 @@ enum NavKey: Equatable, Sendable {
 
 /// Pure mapping from input to SelectionCommand (§5.5). Both lists use it; Icons passes a spatial navigator.
 enum SelectionController {
-    static func click(row: Int?, clickCount: Int, modifiers: ClickModifiers, selectedRows: IndexSet) -> ClickResolution {
+    /// `hidden`: model rows the user cannot see (collapsed groups); a ⇧-click range leaves them out.
+    static func click(row: Int?, clickCount: Int, modifiers: ClickModifiers, selectedRows: IndexSet,
+                      hidden: IndexSet = []) -> ClickResolution {
         if clickCount >= 2 { return row == nil ? .nothing : .open(newWindow: modifiers.contains(.command)) }
         guard let row else { return modifiers.isEmpty ? .select(.none) : .nothing }
-        if modifiers.contains(.shift) { return .select(.extend(to: row)) }
+        if modifiers.contains(.shift) { return .select(.extend(to: row, excluding: hidden)) }
         if modifiers.contains(.command) { return .select(.toggle(row)) }
         let only = SelectionCommand.set(IndexSet(integer: row), cursor: row)
         return selectedRows.contains(row) && selectedRows.count > 1 ? .selectOnMouseUp(only) : .select(only)
@@ -109,7 +111,7 @@ enum SelectionController {
     static func targetRow(of command: SelectionCommand) -> Int? {
         switch command {
         case .set(_, let cursor): cursor
-        case .extend(let row): row
+        case .extend(let row, _): row
         case .toggle(let row): row
         default: nil
         }
@@ -123,12 +125,13 @@ final class ListMouseHandler {
     private(set) var mouseDownWindowPoint: NSPoint?
     private(set) var mouseDownRow: Int?
 
-    func mouseDown(row: Int?, event: NSEvent, folder: FolderModel, from view: NSView) {
+    /// `hidden`: model rows in collapsed groups (grouped Details), left out of ⇧-click ranges.
+    func mouseDown(row: Int?, event: NSEvent, folder: FolderModel, from view: NSView, hidden: IndexSet = []) {
         mouseDownWindowPoint = event.locationInWindow
         mouseDownRow = row
         pendingMouseUp = nil
         switch SelectionController.click(row: row, clickCount: event.clickCount, modifiers: ClickModifiers(event.modifierFlags),
-                                         selectedRows: folder.selection.rows) {
+                                         selectedRows: folder.selection.rows, hidden: hidden) {
         case .select(let command): folder.select(command)
         case .selectOnMouseUp(let command): pendingMouseUp = command
         case .open(let newWindow):
@@ -162,7 +165,7 @@ enum ListKeys {
             let command: SelectionCommand?
             if let mapping, mapping.isGrouped {
                 command = SelectionController.groupedTarget(key, cursorRow: cursor, mapping: mapping, pageSize: pageSize)
-                    .map { extend ? .extend(to: $0) : .set(IndexSet(integer: $0), cursor: $0) }
+                    .map { extend ? .extend(to: $0, excluding: mapping.hiddenModelRows) : .set(IndexSet(integer: $0), cursor: $0) }
             } else {
                 command = SelectionController.arrow(key, extend: extend, cursorRow: cursor, rowCount: folder.rowCount,
                                                     pageSize: pageSize, navigate: navigate)

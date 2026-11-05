@@ -102,7 +102,7 @@ final class GroupedDetailsTests: XCTestCase {
                        "no heightOfRow delegate: the table keeps its fixed-height layout")
         for row in 0..<7 {   // hit-testing agrees with the row frames AppKit lays out around group rows
             let rect = details.tableView.rect(ofRow: row)
-            XCTAssertEqual(details.tableView.hitRow(at: NSPoint(x: rect.midX, y: rect.midY)), row)
+            XCTAssertEqual(details.tableView.hitRow(at: NSPoint(x: rect.midX, y: rect.midY), floatingHeader: false), row)
         }
         let header = try XCTUnwrap(details.tableView.view(atColumn: 0, row: 2, makeIfNecessary: true) as? GroupHeaderView)
         XCTAssertEqual(header.titleField.stringValue, "Tiny (0 – 16 KB)")
@@ -245,6 +245,70 @@ final class GroupedDetailsTests: XCTestCase {
         commands.perform(.viewAsDetails, target: target, sender: nil)
         commands.perform(.groupByNone, target: target, sender: nil)
         try await h.waitUntil("ungrouped") { content.details.tableView.numberOfRows == 2 }
+    }
+
+    // MARK: review findings (P2-09..P2-11)
+
+    func testShiftExtendSkipsCollapsedGroups() async throws {
+        let h = try await ContentTestHarness.make(self)
+        let (_, session, details) = try await grouped(h)
+        let model = session.folder
+        let table = details.tableView
+        details.toggleGroup(1)                               // collapse Tiny (a.txt, b.txt)
+        details.clickTableRow(1, modifiers: [])              // sub
+        XCTAssertTrue(details.handleKeyDown(try key(.downArrow, flags: .shift, window: table.window)))
+        XCTAssertEqual(names(model), ["sub", "big.bin"], "⇧↓ across a collapsed group selects only the visible rows")
+        details.clickTableRow(1, modifiers: [])
+        details.clickTableRow(4, modifiers: .shift)          // big.bin
+        XCTAssertEqual(names(model), ["sub", "big.bin"], "⇧-click across a collapsed group selects only the visible rows")
+        details.clickTableRow(1, modifiers: [])
+        let rect = table.rect(ofRow: 4)
+        let point = table.convert(NSPoint(x: rect.midX, y: rect.midY), to: nil)
+        let down = try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseDown, location: point, modifierFlags: .shift, timestamp: 0,
+                                                    windowNumber: table.window?.windowNumber ?? 0, context: nil, eventNumber: 0,
+                                                    clickCount: 1, pressure: 1))
+        table.mouseDown(with: down)
+        XCTAssertEqual(names(model), ["sub", "big.bin"], "a ⇧-mouse-down also skips the collapsed group")
+        details.expandAllGroups()
+        details.clickTableRow(1, modifiers: [])
+        details.clickTableRow(6, modifiers: .shift)
+        XCTAssertEqual(model.selection.count, 4, "expanded groups are included")
+    }
+
+    func testVisibleRowsLeaveOutCollapsedMiddleGroups() async throws {
+        let h = try await ContentTestHarness.make(self)
+        let (_, _, details) = try await grouped(h)
+        XCTAssertEqual(Array(details.visibleRows()), [0, 1, 2, 3])
+        details.toggleGroup(1)                               // collapse Tiny between Folders and Large
+        XCTAssertEqual(Array(details.visibleRows()), [0, 3], "the collapsed group's hidden rows are not visible rows")
+    }
+
+    func testClickOnTheFloatingHeaderTogglesItsGroup() async throws {
+        let h = try await ContentTestHarness.make(self)
+        try requireGUISession()
+        try h.dir("sub")
+        for i in 0..<80 { try h.file(String(format: "f%02d.txt", i), bytes: 10) }
+        let (content, session, window) = try await h.makeContent()
+        let details = content.details
+        let table = details.tableView
+        window.makeFirstResponder(table)
+        session.updateViewState { $0.groupBy = .size }
+        try await h.waitUntil("grouped rows") { table.numberOfRows == 83 }   // Folders (1), Tiny (80)
+        details.scrollRowToTop(40)
+        table.layoutSubtreeIfNeeded()
+        let clip = details.scrollView.contentView
+        let top = clip.bounds.minY + clip.contentInsets.top
+        XCTAssertGreaterThan(top, table.rect(ofRow: 2).maxY, "the Tiny header has scrolled off and floats")
+        XCTAssertEqual(table.hitRow(at: NSPoint(x: 10, y: top + 2)), 2, "the floating Tiny header is under the point")
+        let point = table.convert(NSPoint(x: 10, y: top + 2), to: nil)
+        let down = try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseDown, location: point, modifierFlags: [], timestamp: 0,
+                                                    windowNumber: window.windowNumber, context: nil, eventNumber: 0,
+                                                    clickCount: 1, pressure: 1))
+        table.mouseDown(with: down)
+        XCTAssertEqual(table.numberOfRows, 3, "the click collapsed the Tiny group")
+        XCTAssertTrue(session.folder.selection.isEmpty, "a click on the floating header never selects the item under it")
+        let below = table.rect(ofRow: 1)
+        XCTAssertEqual(table.hitRow(at: NSPoint(x: 10, y: below.midY)), 1, "unscrolled rows still hit by frame")
     }
 
     private func key(_ special: NSEvent.SpecialKey, flags: NSEvent.ModifierFlags = [], window: NSWindow?) throws -> NSEvent {

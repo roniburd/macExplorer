@@ -18,7 +18,8 @@ public struct Selection: Sendable, Equatable {
 public enum SelectionCommand: Sendable, Equatable {
     case set(IndexSet, cursor: Int?)                // plain click / arrows
     case toggle(Int)                                // ⌘-click
-    case extend(to: Int)                            // ⇧-click / ⇧-arrow from anchor
+    /// ⇧-click / ⇧-arrow from the anchor. `excluding`: rows the user cannot see (collapsed groups, P2-10), left out.
+    case extend(to: Int, excluding: IndexSet = [])
     case add(IndexSet)                              // additive rubber band
     case all, none, invert
     case names([String])                            // select by name (after paste/new/address "file")
@@ -63,10 +64,10 @@ extension Selection {
             setRows(r, in: space)
             cursor = space.identity(row)
             anchor = cursor
-        case .extend(let row):
+        case .extend(let row, let hidden):
             guard row >= 0, row < space.count else { return }
             let a = anchor.flatMap(space.row) ?? row
-            setRows(IndexSet(integersIn: min(a, row)...max(a, row)), in: space)
+            setRows(IndexSet(integersIn: min(a, row)...max(a, row)).subtracting(hidden), in: space)
             cursor = space.identity(row)
             if anchor.flatMap(space.row) == nil { anchor = cursor }
         case .add(let rows):

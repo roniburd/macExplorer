@@ -12,7 +12,7 @@ import Core
     func beginInlineRename(row: Int)
     func scrollToRow(_ row: Int)
     func topVisibleRow() -> Int?                          // scroll anchor
-    func visibleRows() -> Range<Int>                      // Tier 1 icon requests
+    func visibleRows() -> IndexSet                        // model rows on screen (Tier 1 icon requests)
 }
 
 /// Lists that take keyboard focus (Tab cycle, view switches keep focus on the list).

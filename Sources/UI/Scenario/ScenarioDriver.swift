@@ -424,7 +424,9 @@ final class ScenarioDriver {
         let row = try await row(named: name, in: controller)
         let command: SelectionCommand =
             modifiers.contains("cmd") ? .toggle(row)
-            : modifiers.contains("shift") ? .extend(to: row)
+            : modifiers.contains("shift")
+                ? .extend(to: row, excluding: (contentController(in: controller)?.activeList as? DetailsViewController)?
+                    .mapping.hiddenModelRows ?? [])
             : .set(IndexSet(integer: row), cursor: row)
         controller.session.folder.select(command)
         focusList(in: controller)

@@ -76,6 +76,17 @@ final class SelectionTests: XCTestCase {
         XCTAssertEqual(s.rows, IndexSet(0...2), "extending past the anchor flips the range")
     }
 
+    /// Grouped Details: ⇧-extending across a collapsed group leaves its hidden rows out (P2-10 review).
+    func testExtendExcludingLeavesHiddenRowsOut() {
+        var s = applied([.set(IndexSet([2]), cursor: 2)])
+        s.apply(.extend(to: 7, excluding: IndexSet(3..<7)), in: Space(10).space)
+        XCTAssertEqual(s.rows, IndexSet([2, 7]))
+        XCTAssertEqual(s.anchor, id(2), "extend keeps the anchor")
+        XCTAssertEqual(s.cursor, id(7))
+        s.apply(.extend(to: 0, excluding: IndexSet(3..<7)), in: Space(10).space)
+        XCTAssertEqual(s.rows, IndexSet(0...2))
+    }
+
     func testExtendWithoutAnchorStartsAtTarget() {
         let s = applied([.extend(to: 3)])
         XCTAssertEqual(s.rows, IndexSet([3]))

@@ -79,16 +79,38 @@ final class FileTableView: NSTableView, @MainActor NSServicesMenuRequestor, NSSp
     /// frames AppKit lays out around floating group rows (it is off by the floating header near the top, and
     /// macOS 26's full-width style adds space above each later group row), so this searches the row frames instead;
     /// the space above a group row belongs to it. Ungrouped lists keep `row(at:)`.
-    func hitRow(at point: NSPoint) -> Int {
-        guard owner?.mapping.isGrouped == true else { return row(at: point) }
+    /// The current group's header floats over the top of the visible area: a point inside it is the header (a click
+    /// toggles it, a right-click gets the header menu, nothing is dragged), not the item row drawn underneath.
+    /// `floatingHeader: false` looks through the floating header to the row laid out under it (scroll anchor).
+    func hitRow(at point: NSPoint, floatingHeader: Bool = true) -> Int {
+        guard let mapping = owner?.mapping, mapping.isGrouped else { return row(at: point) }
         let count = numberOfRows
         guard count > 0, point.y >= 0, point.y < rect(ofRow: count - 1).maxY else { return -1 }
-        var lo = 0, hi = count - 1
-        while lo < hi {                       // first row whose maxY is below point.y
+        if floatingHeader, let header = floatingHeaderRow(containing: point, mapping: mapping) { return header }
+        return frameRow(atY: point.y)
+    }
+
+    /// First row whose frame's maxY is below `y` (rows are laid out top to bottom).
+    private func frameRow(atY y: CGFloat) -> Int {
+        var lo = 0, hi = numberOfRows - 1
+        while lo < hi {
             let mid = (lo + hi) / 2
-            if rect(ofRow: mid).maxY <= point.y { lo = mid + 1 } else { hi = mid }
+            if rect(ofRow: mid).maxY <= y { lo = mid + 1 } else { hi = mid }
         }
         return lo
+    }
+
+    /// The header row floating over the top of the visible area when `point` lies inside it; nil otherwise. The
+    /// floating header is the current group's (the group of the row under the top edge), and AppKit draws it with
+    /// a row view marked `isFloating` in the scroll view's floating container, so its frame there is what is on
+    /// screen (also while the next header pushes it up).
+    private func floatingHeaderRow(containing point: NSPoint, mapping: RowMapping) -> Int? {
+        guard floatsGroupRows else { return nil }
+        var top = visibleRect.minY
+        if let clip = enclosingScrollView?.contentView { top = max(top, clip.bounds.minY + clip.contentInsets.top) }
+        guard let group = mapping.group(atTableRow: frameRow(atY: top)), let header = mapping.headerTableRow(ofGroup: group),
+              let rowView = rowView(atRow: header, makeIfNecessary: false), rowView.isFloating else { return nil }
+        return rowView.convert(rowView.bounds, to: self).contains(point) ? header : nil
     }
 
     /// ⌘A goes to the content controller's selectAll: (model selection), not NSTableView's built-in one.
@@ -304,17 +326,17 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     /// The first item row at or below the top table row, as a model row.
     func topVisibleRow() -> Int? {
         let clip = scrollView.contentView
-        let row = tableView.hitRow(at: NSPoint(x: 1, y: max(0, clip.bounds.minY + clip.contentInsets.top + 1)))
+        let row = tableView.hitRow(at: NSPoint(x: 1, y: max(0, clip.bounds.minY + clip.contentInsets.top + 1)), floatingHeader: false)
         guard row >= 0 else { return nil }
         if let model = mapping.modelRow(forTableRow: row) { return model }
         return mapping.nearestVisibleModelRow(toTableRow: row, direction: 1)
     }
 
-    /// Model rows from the first to the last visible item (headers excluded).
-    func visibleRows() -> Range<Int> {
-        let items = visibleTableRows().compactMap { mapping.modelRow(forTableRow: $0) }
-        guard let first = items.first, let last = items.last else { return 0..<0 }
-        return first..<(last + 1)
+    /// Model rows of the item rows in the visible rect (headers and collapsed groups' rows excluded). Grouped, a
+    /// collapsed group between two visible ones splits the set, so it is never a single first...last range.
+    func visibleRows() -> IndexSet {
+        let mapping = self.mapping
+        return IndexSet(visibleTableRows().compactMap { mapping.modelRow(forTableRow: $0) })
     }
 
     /// Table rows in the visible rect.
@@ -379,7 +401,9 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
             if event.clickCount == 1 { toggleGroup(group) }
             return
         }
-        mouse.mouseDown(row: mapping.modelRow(forTableRow: row), event: event, folder: folder, from: tableView)
+        let mapping = self.mapping
+        mouse.mouseDown(row: mapping.modelRow(forTableRow: row), event: event, folder: folder, from: tableView,
+                        hidden: mapping.hiddenModelRows)
         reloadSelectionDrawing()
     }
 
@@ -478,9 +502,10 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     /// group, an item row goes to the selection as its model row.
     func clickTableRow(_ row: Int, modifiers: ClickModifiers) {
         guard let folder else { return }
+        let mapping = self.mapping
         if let group = mapping.groupIndex(forTableRow: row) { toggleGroup(group); return }
         switch SelectionController.click(row: mapping.modelRow(forTableRow: row), clickCount: 1, modifiers: modifiers,
-                                         selectedRows: folder.selection.rows) {
+                                         selectedRows: folder.selection.rows, hidden: mapping.hiddenModelRows) {
         case .select(let command), .selectOnMouseUp(let command): folder.select(command)
         case .open, .nothing: break
         }

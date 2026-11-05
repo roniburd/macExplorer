@@ -408,7 +408,7 @@ extension FolderModel {
     public func setFolderSizes(_ sizes: [RowID: FolderSize])
     // P2-15
     public func extendedAttributes(atRow row: Int) -> ExtendedAttributes?
-    public func requestExtendedAttributes(rows: Range<Int>, _ wanted: ExtendedAttributeSet)
+    public func requestExtendedAttributes(rows: IndexSet, _ wanted: ExtendedAttributeSet)   // visible model rows (not contiguous when grouped)
 }
 // Folder/Selection.swift (P2-14): SelectionSummary gains
 //   public var folderBytes: Int64?   // sizes on: sum of selected folders (0 if none selected), nil if any unknown; sizes off: nil
@@ -449,7 +449,7 @@ public enum FolderSizeScanner {
     public func attach(to model: FolderModel) -> FolderSizeSession
 }
 @MainActor public final class FolderSizeSession {
-    public func setVisibleRows(_ rows: Range<Int>)   // visible folders scan first
+    public func setVisibleRows(_ rows: IndexSet)     // visible folders scan first; on-screen model rows (not contiguous when grouped)
     public func stop()                               // cancels scans, stops the subtree watcher
     public var pendingCount: Int { get }
     public var inFlightCount: Int { get }
@@ -3228,7 +3228,7 @@ UI rules:
 - Header rows are not selectable. A click on a header (or its disclosure button) toggles collapse. ← collapses the group that contains the cursor row; → expands it. Collapse state is per window and folder, keyed by `GroupKey`, and resets on navigation. Keys that disappear after a regroup are dropped.
 - ↑/↓/⇧-arrows, click, ⇧-click and type-select work in model rows over visible items only. They skip headers and collapsed groups through `adjacentVisibleModelRow`. ⌘A selects every item, including collapsed ones, because the selection lives in the model.
 - Inline rename, `scrollToRow` and new-item rename expand the group that contains the row first. `topVisibleRow()` returns the first item row at or below the top table row.
-- Every Phase 1 conversion between table rows and model rows goes through `mapping`. That covers `clickedRow`, `selectedRowIndexes` sync, drag-source rows, drop-on-row, the context-menu row, Tier 1 icon `visibleRows()`, middle-click (P2-06) and `reloadData(forRowIndexes:)`.
+- Every Phase 1 conversion between table rows and model rows goes through `mapping`. That covers `clickedRow`, `selectedRowIndexes` sync, drag-source rows, drop-on-row, the context-menu row, Tier 1 icon `visibleRows()` (an `IndexSet` of on-screen model rows; collapsed groups are left out), middle-click (P2-06) and `reloadData(forRowIndexes:)`.
 - Header context menu: "Collapse All Groups", "Expand All Groups", then the Phase 1 empty-space menu.
 - Header accessibility: the disclosure button's label is "Collapse <title>" or "Expand <title>". The row's value is "<title>, <n> items, collapsed|expanded". The row's AXID is `groupHeader(title)`.
 
@@ -4117,7 +4117,7 @@ final class FolderSizeServiceTests: XCTestCase {
         }
         defer { token.cancel() }
         let session = service.attach(to: model)
-        session.setVisibleRows(25..<30)
+        session.setVisibleRows(IndexSet(integersIn: 25..<30))
         await session.waitUntilIdle()
         XCTAssertEqual(Set(order.dropFirst().prefix(5)), Set((25..<30).map { String(format: "d%02d", $0) }),
                        "after the scan already in flight, visible folders come first")
@@ -4293,7 +4293,7 @@ public final class FolderSizeService {
 ```
 `FolderSizeSession` holds:
 - `unowned let service`, `weak var model`, the model observer token and the subtree watcher;
-- `queue: [RowID]` with `queued: Set<RowID>`, `inFlight: [RowID: Task<Void, Never>]`, `visible: Range<Int>` and `idleWaiters: [CheckedContinuation<Void, Never>]`;
+- `queue: [RowID]` with `queued: Set<RowID>`, `inFlight: [RowID: Task<Void, Never>]`, `visible: IndexSet` and `idleWaiters: [CheckedContinuation<Void, Never>]`;
 - `private(set) var scansStarted = 0` and `stopped`.
 
 Its behaviour:
@@ -4505,7 +4505,7 @@ extension Sorter {
 - **`DetailsViewController`:**
   - the size cell for folder rows uses `FolderSizeText.text(folder.folderSize(atRow:), enabled: folder.folderSizesEnabled)`;
   - `.folderSizes(ids)` reloads the Size column for those rows (mapped through `RowMapping`);
-  - on scroll (`NSView.boundsDidChangeNotification` of the clip view, coalesced to the next run-loop turn) it calls `session.sizeSession?.setVisibleRows(visible model rows)`.
+  - on scroll (`NSView.boundsDidChangeNotification` of the clip view, coalesced to the next run-loop turn) it calls `session.sizeSession?.setVisibleRows(visibleRows())` (an `IndexSet` of on-screen model rows: a collapsed group between two visible ones is left out, never bridged by a first...last range).
 - **`StatusBarView`:** uses `SelectionSizeText.text(summary, sizesEnabled:)`:
 ```swift
 enum SelectionSizeText {
@@ -4665,7 +4665,7 @@ final class ExtendedAttributesTests: XCTestCase {
         try sandbox.write("a.txt", bytes: 1); try sandbox.write("b.txt", bytes: 1)
         let env = CoreEnvironment.sandboxed(root: sandbox.root); _ = await env.start()
         let model = try await loadedModel(sandbox.root, env: env)
-        model.requestExtendedAttributes(rows: 0..<model.rowCount, .tags)
+        model.requestExtendedAttributes(rows: IndexSet(integersIn: 0..<model.rowCount), .tags)
         let row = model.row(named: "a.txt")!
         var end = Date().addingTimeInterval(3)
         while model.extendedAttributes(atRow: row) == nil && Date() < end { try await Task.sleep(for: .milliseconds(20)) }
@@ -4873,10 +4873,10 @@ public enum ExtendedAttributeReader {
 }
 ```
 
-The model integration is `FolderModel+Attributes.swift`. Stored properties go on `FolderModel`: `attributeTable: [RowID: ExtendedAttributes]`, `lastAttributeRequest: (rows: Range<Int>, wanted: ExtendedAttributeSet)?`, and one in-flight attribute `Task` with a pending-request slot that keeps only the latest request.
+The model integration is `FolderModel+Attributes.swift`. Stored properties go on `FolderModel`: `attributeTable: [RowID: ExtendedAttributes]`, `lastAttributeRequest: (rows: IndexSet, wanted: ExtendedAttributeSet)?`, and one in-flight attribute `Task` with a pending-request slot that keeps only the latest request.
 - `extendedAttributes(atRow:)` returns `attributeTable[identity(atRow:)]`.
 - `requestExtendedAttributes(rows:_:)`:
-  1. Clamps `rows` to `0..<rowCount` and records it as `lastAttributeRequest`.
+  1. Drops rows outside `0..<rowCount` and records the rest as `lastAttributeRequest`.
   2. Collects names whose entry lacks any wanted bit. Returns if there are none.
   3. Runs `context.lanes.perform(on: volume?.id ?? .unknown, .read) { _ in ExtendedAttributeReader.read(...) }`.
   4. On main: merges each result into the identity of the row with that name (`row(named:)`), skips names that no longer exist, and emits `.extendedAttributes(ids)`.
@@ -4926,7 +4926,7 @@ Rules:
   | Comments | single line, newlines shown as spaces |
 
   Cells of rows whose attributes are not loaded yet are empty, never a spinner. Configuring them makes no I/O calls (budget: cell configure < 0.5 ms).
-- **Loading:** whenever an extended column is visible, the controller calls `requestExtendedAttributes(rows: visibleModelRows, union of visible columns' sets)` on bind, on scroll (coalesced to the next run-loop turn) and on column changes. `.extendedAttributes(ids)` reloads those rows' extended columns only.
+- **Loading:** whenever an extended column is visible, the controller calls `requestExtendedAttributes(rows: visibleRows(), union of visible columns' sets)` on bind, on scroll (coalesced to the next run-loop turn) and on column changes. `.extendedAttributes(ids)` reloads those rows' extended columns only.
 - **Sorting** by an extended column (header click, saved in the per-folder state):
   1. `FolderModel.setQuery` emits `.query` at once, so the header indicator updates.
   2. If any row lacks the needed attribute, it awaits `loadAllExtendedAttributes`.
@@ -4976,7 +4976,7 @@ final class ExtendedColumnsTests: XCTestCase {
         let model = try await loadedModel(sandbox.root, env: env)
         let row = model.row(named: "a.txt")!
         XCTAssertEqual(ExtendedColumns.text(.tags, row: row, in: model, dateStyle: .absolute), "", "not loaded yet: empty, no I/O")
-        model.requestExtendedAttributes(rows: 0..<model.rowCount, .all)
+        model.requestExtendedAttributes(rows: IndexSet(integersIn: 0..<model.rowCount), .all)
         let end = Date().addingTimeInterval(3)
         while model.extendedAttributes(atRow: row) == nil && Date() < end { try await Task.sleep(for: .milliseconds(20)) }
         XCTAssertEqual(ExtendedColumns.text(.tags, row: row, in: model, dateStyle: .absolute), "Work, Home")
@@ -5884,7 +5884,7 @@ final class ColumnsViewController: NSViewController, FileListView {
     func beginInlineRename(row: Int) { active?.beginInlineRename(row: row) }
     func scrollToRow(_ row: Int) { active?.scrollToRow(row) }
     func topVisibleRow() -> Int? { active?.topVisibleRow() }
-    func visibleRows() -> Range<Int> { active?.visibleRows() ?? 0..<0 }
+    func visibleRows() -> IndexSet { active?.visibleRows() ?? IndexSet() }
 }
 ```
 `handleColumnKey` returns false for Return when the selection is not the open child folder, which lets Phase 1 open files. `BrowserColumnController` mirrors `DetailsViewController`'s single-column paths: data source, `NameCellView` replaced by `ColumnCellView`, `SelectionController` with `.identity` mapping, `TypeSelect`, `InlineRenameController`, drag/drop, right-drag, context menu and empty state. Its `mouseDown` calls `owner.chain?.activate(index)` first. Its table's `keyDown` order is: `KeyRouter.handle` (alternates), then `owner.handleColumnKey`, then the Phase 1 selection keys.

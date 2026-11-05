@@ -44,16 +44,29 @@ final class SystemQuickLookPanel: QuickLookPanelControlling {
 
 /// Space → Quick Look over the selection, in display order (spec §11). One per window; the window controller rebinds
 /// it on every navigation, and selection or listing changes reload the panel while it is visible.
+///
+/// Items are lazy: while the panel is hidden a selection or listing change only drops the built items, so a
+/// ⌘A in a huge folder builds no URLs until Quick Look opens (or the panel asks for them).
 @MainActor
 final class QuickLookController {
     private let panel: @MainActor () -> any QuickLookPanelControlling
     private weak var folder: FolderModel?
     private var token: ObserverToken?
-    private(set) var items: [URL] = []
+    private var builtItems: [URL]?
+    /// How many times `items` was built from the selection (tests: a hidden panel builds none).
+    private(set) var itemBuilds = 0
 
     init(panel: @escaping @MainActor () -> any QuickLookPanelControlling) { self.panel = panel }
 
     var isVisible: Bool { panel().isVisible }
+
+    /// The selection's URLs in display order, built on first use after a change.
+    var items: [URL] {
+        if let builtItems { return builtItems }
+        let built = buildItems()
+        builtItems = built
+        return built
+    }
 
     func bind(_ folder: FolderModel?) {
         token?.cancel()
@@ -61,11 +74,11 @@ final class QuickLookController {
         self.folder = folder
         token = folder?.observe { [weak self] event in
             switch event {
-            case .selection, .changes: self?.refresh()
+            case .selection, .changes: self?.selectionChanged()
             default: break
             }
         }
-        refresh()
+        selectionChanged()
     }
 
     /// Reloads the visible panel (tab switches: the panel's new controller supplies its own items).
@@ -74,18 +87,26 @@ final class QuickLookController {
         if p.isVisible { p.reloadData() }
     }
 
-    private func refresh() {
-        let next = folder?.selectedURLs ?? []
-        guard next != items else { return }
-        items = next
-        reloadIfVisible()
+    private func buildItems() -> [URL] {
+        itemBuilds += 1
+        return folder?.selectedURLs ?? []
+    }
+
+    /// Hidden: forget the built items (no URLs are built). Visible: rebuild and reload when they changed.
+    private func selectionChanged() {
+        let p = panel()
+        guard p.isVisible else { builtItems = nil; return }
+        let previous = builtItems
+        let next = buildItems()
+        builtItems = next
+        if next != previous { p.reloadData() }
     }
 
     /// Space: closes a visible panel; otherwise opens it over the selection (nothing selected: nothing happens).
     func toggle() {
         let p = panel()
         if p.isVisible { p.hide(); return }
-        items = folder?.selectedURLs ?? []
+        builtItems = buildItems()
         guard !items.isEmpty else { return }
         p.show()
     }

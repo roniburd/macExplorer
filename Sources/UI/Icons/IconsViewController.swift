@@ -296,7 +296,7 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
         return range.isEmpty ? nil : range.lowerBound
     }
 
-    func visibleRows() -> Range<Int> { layout.indexes(in: collectionView.visibleRect) }
+    func visibleRows() -> IndexSet { IndexSet(integersIn: layout.indexes(in: collectionView.visibleRect)) }
 
     // MARK: scroll anchor (§4.3)
 

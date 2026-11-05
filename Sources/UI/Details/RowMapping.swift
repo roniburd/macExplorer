@@ -55,6 +55,30 @@ enum RowMapping: Equatable, Sendable {
         return group
     }
 
+    /// Model rows of collapsed groups (empty when ungrouped). ⇧-extends leave them out: a range the user drags or
+    /// arrows across never picks up items they cannot see (only ⌘A does).
+    var hiddenModelRows: IndexSet {
+        guard case .grouped(let g) = self else { return [] }
+        var out = IndexSet()
+        for run in g.runs where g.collapsed.contains(run.key) { out.insert(integersIn: run.rows) }
+        return out
+    }
+
+    /// The group table row `row` belongs to (its header, or the group of its item); nil out of range or ungrouped.
+    func group(atTableRow row: Int) -> Int? {
+        guard case .grouped(let g) = self, row >= 0, row < g.tableRowCount else { return nil }
+        switch g.row(row) {
+        case .header(let group): return group
+        case .item(let m): return g.group(containingModelRow: m)
+        }
+    }
+
+    /// Table row of group `index`'s header; nil out of range or ungrouped.
+    func headerTableRow(ofGroup index: Int) -> Int? {
+        guard case .grouped(let g) = self, g.runs.indices.contains(index) else { return nil }
+        return g.tableRow(forGroup: index)
+    }
+
     /// Next visible item `delta` steps away (±1), skipping headers and collapsed groups; nil at either end.
     /// A model row inside a collapsed group starts from its group's header.
     func adjacentVisibleModelRow(from modelRow: Int, by delta: Int) -> Int? {

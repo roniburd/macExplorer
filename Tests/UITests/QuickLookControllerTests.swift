@@ -79,6 +79,29 @@ final class QuickLookControllerTests: XCTestCase {
         XCTAssertEqual(controller.items.map(\.lastPathComponent), ["c.txt"])
     }
 
+    /// Review (P2-11): a hidden panel builds no URLs, however large the selection or however often it changes.
+    func testHiddenPanelBuildsNoItemsOnSelectionChanges() async throws {
+        for i in 0..<300 { try h.file(String(format: "n%03d.txt", i)) }
+        let big = try await h.openFolder()
+        controller.bind(big)
+        big.select(.all)
+        big.select(.invert)
+        big.select(.all)
+        big.setQuery(big.query)
+        XCTAssertEqual(controller.itemBuilds, 0, "nothing is built while the panel is hidden")
+        controller.toggle()
+        XCTAssertEqual(controller.itemBuilds, 1)
+        XCTAssertEqual(controller.items.count, 303)
+        XCTAssertEqual(controller.itemBuilds, 1, "reads reuse the built items")
+        big.select(.names(["a.txt"]))
+        XCTAssertEqual(controller.items.map(\.lastPathComponent), ["a.txt"], "a visible panel follows the selection")
+        XCTAssertEqual(panel.reloads, 1)
+        controller.toggle()
+        let builds = controller.itemBuilds
+        big.select(.all)
+        XCTAssertEqual(controller.itemBuilds, builds, "hidden again: no builds")
+    }
+
     func testRebindToAnotherFolderReloadsVisiblePanel() async throws {
         try h.file("sub/z.txt")
         let other = try await h.openFolder("sub")
