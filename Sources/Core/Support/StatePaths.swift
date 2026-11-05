@@ -12,6 +12,16 @@ public struct StatePaths: Sendable, Equatable {
     /// `root/settings.json` (`FileSettingsStorage`, sandbox mode only).
     public var settingsFile: URL { root.appending(path: "settings.json", directoryHint: .notDirectory) }
 
+    /// `root/session.marker`: present while the app runs; left behind by a crash (spec §4.2).
+    public var sessionMarker: URL { root.appending(path: "session.marker", directoryHint: .notDirectory) }
+
+    /// Where macOS writes our crash reports. Sandbox runs look in `root/DiagnosticReports` so scenarios can plant fixtures.
+    public func diagnosticReports(sandboxed: Bool) -> URL {
+        if sandboxed { return root.appending(path: "DiagnosticReports", directoryHint: .isDirectory) }
+        return FileManager.default.homeDirectoryForCurrentUser
+            .appending(path: "Library/Logs/DiagnosticReports", directoryHint: .isDirectory)
+    }
+
     public init(root: URL) {
         self.root = root
     }
