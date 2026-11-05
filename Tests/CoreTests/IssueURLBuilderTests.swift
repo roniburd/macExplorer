@@ -64,6 +64,34 @@ final class IssueURLBuilderTests: XCTestCase {
         XCTAssertGreaterThan(log.count, 1000, "uses most of the budget")
     }
 
+    func testOversizedTitleIsCappedWithAndWithoutExcerpt() {
+        let title = String(repeating: "Ü💥&", count: 4000)  // ~10 KB, non-ASCII, ~3x when encoded
+        for excerpt in [nil, "short", String(repeating: "frame 📁\n", count: 5000)] {
+            for kind in IssueKind.allCases {
+                let url = IssueURLBuilder.url(kind: kind, environment: env, title: title, crashExcerpt: excerpt)
+                XCTAssertLessThanOrEqual(url.absoluteString.count, IssueURLBuilder.maxLength)
+                let q = query(url)
+                let t = q["title"] ?? ""
+                XCTAssertTrue(t.hasSuffix(IssueURLBuilder.fieldMarker))
+                XCTAssertTrue(title.hasPrefix(String(t.dropLast(IssueURLBuilder.fieldMarker.count))))
+                if kind == .bug, let excerpt {
+                    let log = q["crash-log"] ?? ""
+                    XCTAssertTrue(log == excerpt || log.hasSuffix(IssueURLBuilder.truncationMarker))
+                }
+            }
+        }
+    }
+
+    func testOversizedEnvironmentFieldsAreCapped() {
+        let junk = String(repeating: "é&=", count: 3000)
+        let bad = EnvironmentSummary(appVersion: junk, build: junk, channel: junk, macOS: junk,
+                                     hardwareModel: junk, architecture: junk)
+        let url = IssueURLBuilder.url(kind: .bug, environment: bad, title: junk,
+                                      crashExcerpt: String(repeating: "x", count: 9000))
+        XCTAssertLessThanOrEqual(url.absoluteString.count, IssueURLBuilder.maxLength)
+        XCTAssertTrue((query(url)["crash-log"] ?? "").hasSuffix(IssueURLBuilder.truncationMarker))
+    }
+
     func testShortExcerptIsNotTruncated() {
         let q = query(IssueURLBuilder.url(kind: .bug, environment: env, crashExcerpt: "short"))
         XCTAssertEqual(q["crash-log"], "short")

@@ -586,9 +586,10 @@ public struct EnvironmentSummary: Sendable, Equatable {
     static func sysctlString(_ name: String) -> String? {
         var size = 0
         guard sysctlbyname(name, nil, &size, nil, 0) == 0, size > 0 else { return nil }
-        var buffer = [CChar](repeating: 0, count: size)
+        var buffer = [UInt8](repeating: 0, count: size)
         guard sysctlbyname(name, &buffer, &size, nil, 0) == 0 else { return nil }
-        return String(cString: buffer)
+        let bytes = buffer.prefix(min(size, buffer.count)).prefix { $0 != 0 }
+        return bytes.isEmpty ? nil : String(decoding: bytes, as: UTF8.self)
     }
 }
 ```
@@ -664,6 +665,10 @@ public enum IssueURLBuilder {
 ```
 
 - [ ] **Step 5: Run tests**
+
+> **Deviations (implementation):**
+> - `sysctlString` reads into `[UInt8]` and decodes with `String(decoding:as:)` (returning nil for an empty value) instead of `[CChar]` + `String(cString:)`: `String(cString:)` on an array is deprecated in the Swift 6.2 SDK, and warnings are errors.
+> - `IssueURLBuilder` also caps the head, not just the crash excerpt: the title is truncated to 600 encoded characters and each environment value to 300 (whole Characters + `…`), and the crash-log pair is dropped if the remaining budget cannot hold the truncation marker. The title embeds fields parsed from on-disk `.ips` files (Review Focus 3), so without this a garbage report could push the URL past the 7,500-character Global Constraint. Covered by `testOversizedTitleIsCappedWithAndWithoutExcerpt` and `testOversizedEnvironmentFieldsAreCapped`.
 
 Run: `swift test --filter CoreTests.IssueURLBuilderTests 2>&1 | tail -5` → all pass.
 
