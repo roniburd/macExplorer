@@ -218,6 +218,13 @@ extension ColumnChainTests {
         let third = BrowserSession(environment: env, initialURL: sandbox.root)
         defer { third.close() }
         XCTAssertEqual(third.viewState.sort, sort)
+        XCTAssertNotEqual(third.viewMode, .columns, "a later sort change does not rewrite the parent's mode")
+        XCTAssertEqual(session.viewMode, .columns, "the window itself stays in Columns")
+        session.updateViewState { $0.iconSize = $0.iconSize == .large ? .small : .large }
+        let fourth = BrowserSession(environment: env, initialURL: sandbox.root)
+        defer { fourth.close() }
+        XCTAssertNotEqual(fourth.viewMode, .columns, "nor does any further change")
+        XCTAssertEqual(fourth.viewState.sort, sort)
     }
 
     // Review fix (P2-18): the search filter follows the active column and clears on the column it leaves.
@@ -253,5 +260,34 @@ extension ColumnChainTests {
         chain.models[1].relocate(to: sandbox.root, reason: .movedOrDeleted(name: "A"))
         XCTAssertEqual(chain.models.count, 1)
         XCTAssertEqual(chain.activeIndex, 0)
+    }
+
+    // Review fix (P2-18): the root column's relocate reaches the session even while a deeper column is active
+    // (the root's model relocates only once, so it would otherwise be lost).
+    func testRootColumnRelocateWhileADeeperColumnIsActiveNavigatesTheSession() async {
+        let session = BrowserSession(environment: env, initialURL: sandbox.root)
+        defer { session.close() }
+        session.updateViewState { $0.mode = .columns }
+        var banners: [String?] = []
+        let token = session.observe { if case .banner(let text) = $0 { banners.append(text) } }
+        defer { token.cancel() }
+        let chain = session.columnChain!
+        let end = Date().addingTimeInterval(3)
+        while chain.models.first?.state != .complete && Date() < end { try? await Task.sleep(for: .milliseconds(20)) }
+        chain.models[0].select(.names(["A"]))
+        while (chain.models.count < 2 || chain.models[1].state != .complete) && Date() < end {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        chain.models[1].select(.names(["B"]))
+        while chain.models.count < 3 && Date() < end { try? await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertTrue(chain.moveRight())
+        XCTAssertTrue(chain.moveRight())
+        XCTAssertEqual(session.folder.directory.lastPathComponent, "B")
+        let root = chain.models[0]
+        root.relocate(to: sandbox.url("A"), reason: .volumeGone)
+        XCTAssertEqual(session.history.current.standardizedFileURL, sandbox.url("A").standardizedFileURL)
+        XCTAssertEqual(session.folder.directory.lastPathComponent, "A", "the session navigated")
+        XCTAssertFalse(session.folder === root)
+        XCTAssertEqual(banners.last ?? nil, L10n.string("The volume was disconnected"))
     }
 }

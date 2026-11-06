@@ -21,6 +21,10 @@ final class ColumnChain {
     /// → or pressing → right after a folder was selected). Dropped on any selection in it and when it closes.
     private weak var pendingFirstRow: FolderModel?
     var onChange: (() -> Void)?
+    /// The root column's folder was moved or deleted (or its volume went away) while a deeper column is active. The
+    /// session observes only the active column and the root relocates once, so the chain forwards it (review fix).
+    /// While the root is active the session sees its `.relocate` itself.
+    var onRootRelocate: ((URL, RelocationReason) -> Void)?
 
     init(root: URL, makeModel: @escaping ModelFactory) {
         self.makeModel = makeModel
@@ -137,8 +141,8 @@ final class ColumnChain {
             case .state:
                 if m === self.models.first { self.applyPendingRootSelection() }
                 if m === self.pendingFirstRow { self.applyPendingFirstRow(m) }
-            case .relocate:
-                self.columnRelocated(m)
+            case .relocate(let url, let reason):
+                self.columnRelocated(m, to: url, reason: reason)
             case .beginRename, .query, .groups, .folderSizes, .extendedAttributes:
                 break
             }
@@ -149,9 +153,13 @@ final class ColumnChain {
     /// A non-root column's folder was moved or deleted: it and every deeper column close. Column k's own
     /// `.changes` (the rename seen from the parent) reopens the folder under its new name. When that column was
     /// active, column k becomes active and the session (observing after the chain) ignores the closed model's
-    /// `.relocate`. The root column has no parent column to fall back to: it is left as it is here.
-    private func columnRelocated(_ m: FolderModel) {
-        guard let index = models.firstIndex(where: { $0 === m }), index > 0 else { return }
+    /// `.relocate`. The root column has no parent column to fall back to: the window relocates (`onRootRelocate`).
+    private func columnRelocated(_ m: FolderModel, to url: URL, reason: RelocationReason) {
+        guard let index = models.firstIndex(where: { $0 === m }) else { return }
+        guard index > 0 else {
+            if m !== activeModel { onRootRelocate?(url, reason) }
+            return
+        }
         if m === pendingFirstRow { pendingFirstRow = nil }
         truncate(after: index - 1)
         onChange?()

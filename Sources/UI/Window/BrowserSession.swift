@@ -48,8 +48,9 @@ final class BrowserSession {
     /// The session itself is rerooting the chain (navigation): its own bookkeeping runs, not `chainRerooted`.
     private var rerootingChain = false
     /// The column root came from the chain's own reroot (⌘↑ at the root) and its stored mode is not Columns: the
-    /// window shows it in Columns from memory only. Nothing is saved until the user changes the view state (review
-    /// fix: ⌘↑ must not rewrite the parent's own mode). Cleared on navigation and when leaving Columns.
+    /// window shows it in Columns from memory only. The user's later changes (sort, icon size…) are saved with the
+    /// stored mode, never Columns (review fix: ⌘↑ must not rewrite the parent's own mode). Cleared on navigation and
+    /// when leaving Columns (the user picks another mode).
     private var columnsShownWithoutRecord = false
 
     init(environment: CoreEnvironment, initialURL: URL) {
@@ -148,8 +149,7 @@ final class BrowserSession {
             leaveColumns(with: next)
             return
         }
-        viewStates.save(next, for: locator)
-        columnsShownWithoutRecord = false               // the user's change saved Columns with it
+        viewStates.save(record(next, for: locator), for: locator)
         apply(next)
     }
 
@@ -240,7 +240,7 @@ final class BrowserSession {
                   refined != start else { return }
             self.locator = refined
             if self.editedSinceNavigation {
-                viewStates.save(self.viewState, for: refined)
+                viewStates.save(self.record(self.viewState, for: refined), for: refined)
                 return
             }
             let stored = viewStates.state(for: refined)
@@ -259,6 +259,14 @@ final class BrowserSession {
         var shown = state
         shown.mode = .columns
         return shown
+    }
+
+    /// `state` as it is saved for `locator`: while Columns is shown without a record, with the stored mode.
+    private func record(_ state: FolderViewState, for locator: FolderViewLocator) -> FolderViewState {
+        guard columnsShownWithoutRecord, columnChain != nil, state.mode == .columns else { return state }
+        var record = state
+        record.mode = viewStates.state(for: locator).mode
+        return record
     }
 
     private func apply(_ state: FolderViewState) {
@@ -306,6 +314,7 @@ final class BrowserSession {
             columnChain = chain
             chainRoot = chain.models.first
             chain.onChange = { [weak self] in self?.columnChainChanged() }
+            chain.onRootRelocate = { [weak self] url, reason in self?.relocate(to: url, reason: reason) }
             viewMode = mode
             observers.send(.viewModeChanged(mode))
             columnChainChanged()            // the adopted folder may already have opened column 1
@@ -313,6 +322,7 @@ final class BrowserSession {
         }
         if viewMode == .columns, let chain = columnChain {
             chain.onChange = nil
+            chain.onRootRelocate = nil
             folder = chain.detachActive()
             columnChain = nil
             chainRoot = nil
@@ -411,6 +421,7 @@ final class BrowserSession {
     private func closeFolderOrChain() {
         if let chain = columnChain {
             chain.onChange = nil
+            chain.onRootRelocate = nil
             chain.close()
             columnChain = nil
             chainRoot = nil
@@ -435,11 +446,7 @@ final class BrowserSession {
     private func handle(_ event: FolderEvent) {
         switch event {
         case .relocate(let url, let reason):
-            navigate(to: url)
-            switch reason {
-            case .movedOrDeleted(let name): showBanner(String(format: L10n.string("'%@' was moved or deleted"), name))
-            case .volumeGone: showBanner(L10n.string("The volume was disconnected"))
-            }
+            relocate(to: url, reason: reason)
         case .state(.error(.notFound)), .state(.error(.volumeGone)):
             applyPendingSelection()
             folder.relocateIfGone()
@@ -449,6 +456,15 @@ final class BrowserSession {
             pendingSelection = nil          // the user (or a file operation) chose a selection meanwhile
         case .beginRename, .query, .groups, .folderSizes, .extendedAttributes:
             break
+        }
+    }
+
+    /// The shown folder (or the column root, via the chain) is gone: navigate to `url` and say why.
+    private func relocate(to url: URL, reason: RelocationReason) {
+        navigate(to: url)
+        switch reason {
+        case .movedOrDeleted(let name): showBanner(String(format: L10n.string("'%@' was moved or deleted"), name))
+        case .volumeGone: showBanner(L10n.string("The volume was disconnected"))
         }
     }
 
