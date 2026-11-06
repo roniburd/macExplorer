@@ -12,6 +12,9 @@ public struct StatePaths: Sendable, Equatable {
     /// `root/settings.json` (`FileSettingsStorage`, sandbox mode only).
     public var settingsFile: URL { root.appending(path: "settings.json", directoryHint: .notDirectory) }
 
+    /// `root/folder-views.json`: per-folder view choices (FolderViewStore, design 2026-11-05 §2).
+    public var folderViewsFile: URL { root.appending(path: "folder-views.json", directoryHint: .notDirectory) }
+
     /// `root/session.marker`: present while the app runs; left behind by a crash (spec §4.2).
     public var sessionMarker: URL { root.appending(path: "session.marker", directoryHint: .notDirectory) }
 

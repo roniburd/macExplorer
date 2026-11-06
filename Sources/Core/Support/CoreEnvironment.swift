@@ -10,6 +10,8 @@ public final class CoreEnvironment {
     public let readers: DirectoryReaders
     public let volumes: Volumes
     public let settings: Settings
+    /// Per-folder view choices (design 2026-11-05 §2).
+    public let folderViews: FolderViewStore
     public let changeBus: ChangeBus
     public let clipboard: Clipboard
     public let launchServices: LaunchServicesCache
@@ -67,6 +69,7 @@ public final class CoreEnvironment {
         let readers = DirectoryReaders(lanes: lanes, mountTable: volumes.mountTableStore, types: .shared)
         self.readers = readers
         self.settings = Settings(storage: settingsStorage, home: home)
+        self.folderViews = FolderViewStore(fileURL: statePaths.folderViewsFile)
         let bus = ChangeBus()
         self.changeBus = bus
         self.clipboard = Clipboard(backend: pasteboard)

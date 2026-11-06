@@ -1,0 +1,165 @@
+import Foundation
+import MacxFS
+
+/// Per-folder view settings (design 2026-11-05 §2). Every field is optional: nil = not set at this level.
+public struct FolderViewSettings: Codable, Equatable, Sendable {
+    public var viewMode: ViewMode?
+    public var iconSize: IconSize?
+    public var density: Density?
+    public var sort: MacxFS.SortDescriptor?
+    public var columns: [ColumnSetting]?
+
+    public init(viewMode: ViewMode? = nil, iconSize: IconSize? = nil, density: Density? = nil,
+                sort: MacxFS.SortDescriptor? = nil, columns: [ColumnSetting]? = nil) {
+        self.viewMode = viewMode
+        self.iconSize = iconSize
+        self.density = density
+        self.sort = sort
+        self.columns = columns
+    }
+
+    public var isEmpty: Bool { self == FolderViewSettings() }
+
+    /// Fields set here win; the rest come from `fallback`.
+    public func over(_ fallback: FolderViewSettings) -> FolderViewSettings {
+        FolderViewSettings(viewMode: viewMode ?? fallback.viewMode, iconSize: iconSize ?? fallback.iconSize,
+                           density: density ?? fallback.density, sort: sort ?? fallback.sort, columns: columns ?? fallback.columns)
+    }
+}
+
+/// The view a folder is shown with: every field resolved.
+public struct ResolvedFolderView: Equatable, Sendable {
+    public var viewMode: ViewMode
+    public var iconSize: IconSize
+    public var density: Density
+    public var sort: MacxFS.SortDescriptor
+    public var columns: [ColumnSetting]
+
+    public init(viewMode: ViewMode, iconSize: IconSize, density: Density, sort: MacxFS.SortDescriptor, columns: [ColumnSetting]) {
+        self.viewMode = viewMode
+        self.iconSize = iconSize
+        self.density = density
+        self.sort = sort
+        self.columns = columns
+    }
+}
+
+public enum FolderViewResolver {
+    /// Folders whose built-in default is Large Icons (Finder's own Applications folders open as icons).
+    public static func builtIn(for directory: URL, home: URL = FileManager.default.homeDirectoryForCurrentUser) -> FolderViewSettings {
+        let path = FolderViewStore.key(directory)
+        let homeApps = FolderViewStore.key(home.appending(path: "Applications", directoryHint: .isDirectory))
+        let apps = ["/Applications", "/System/Applications", homeApps]
+        guard apps.contains(path) || apps.contains(where: { path == $0 + "/Utilities" }) else { return FolderViewSettings() }
+        return FolderViewSettings(viewMode: .icons, iconSize: .large)
+    }
+
+    /// Field by field: MacExplorer's entry, then Finder's `.DS_Store`, then the built-in rule, then the global defaults.
+    public static func resolve(stored: FolderViewSettings?, finder: FolderViewSettings?, builtIn: FolderViewSettings,
+                               defaults: ResolvedFolderView) -> ResolvedFolderView {
+        let merged = (stored ?? FolderViewSettings()).over((finder ?? FolderViewSettings()).over(builtIn))
+        return ResolvedFolderView(viewMode: merged.viewMode ?? defaults.viewMode, iconSize: merged.iconSize ?? defaults.iconSize,
+                                  density: merged.density ?? defaults.density, sort: merged.sort ?? defaults.sort,
+                                  columns: merged.columns ?? defaults.columns)
+    }
+}
+
+/// Finder's view of a folder from `.DS_Store` (design 2026-11-05 §3). Read-only; never creates or writes files.
+public enum FinderFolderView {
+    /// The folder's own record ("." in folder/.DS_Store), else its record in the parent's `.DS_Store`.
+    /// Blocking file reads: call off main.
+    public static func read(folder: URL, globalColumns: [ColumnSetting]) -> FolderViewSettings? {
+        let own = records(in: folder)?["."]
+        let parent = folder.path(percentEncoded: false) == "/" ? nil
+            : records(in: folder.deletingLastPathComponent())?[folder.lastPathComponent]
+        let mapped = [own, parent].compactMap { $0.map { map($0, globalColumns: globalColumns) } }.filter { !$0.isEmpty }
+        return mapped.first
+    }
+
+    static func records(in directory: URL) -> [String: [String: DSValue]]? {
+        let url = directory.appending(path: ".DS_Store", directoryHint: .notDirectory)
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: DSStore.maxFileSize + 1), data.count <= DSStore.maxFileSize else { return nil }
+        return DSStore.parse(data)
+    }
+
+    /// Finder's codes → our settings. Unknown or unmapped values are left unset.
+    public static func map(_ record: [String: DSValue], globalColumns: [ColumnSetting]) -> FolderViewSettings {
+        var out = FolderViewSettings()
+        if case .type(let style)? = record["vstl"] {
+            switch style {
+            case "icnv": out.viewMode = .icons
+            case "Nlsv": out.viewMode = .details
+            default: break
+            }
+        }
+        if case .blob(let data)? = record["icvp"], let icons = plist(data), let size = number(icons["iconSize"]) {
+            out.iconSize = size <= 48 ? .small : size <= 96 ? .medium : .large
+        }
+        let list = [record["lsvp"], record["lsvP"]].compactMap { value -> [String: Any]? in
+            if case .blob(let data)? = value { return plist(data) }
+            return nil
+        }.first
+        if let list {
+            let columns = finderColumns(list["columns"])
+            if let sortColumn = list["sortColumn"] as? String, let field = sortField(sortColumn) {
+                let ascending = (columns[sortColumn]?["ascending"] as? Bool) ?? true
+                out.sort = MacxFS.SortDescriptor(field: field, ascending: ascending)
+            }
+            if !columns.isEmpty { out.columns = mapColumns(columns, globalColumns: globalColumns) }
+        }
+        return out
+    }
+
+    static let columnIDs: [String: ColumnID] = ["name": .name, "dateModified": .dateModified, "dateCreated": .dateCreated,
+                                                "size": .size, "kind": .kind]
+
+    static func sortField(_ finderColumn: String) -> SortField? { columnIDs[finderColumn]?.sortField }
+
+    /// Column name → attributes, from the dictionary form or the legacy array form (`identifier` key).
+    static func finderColumns(_ value: Any?) -> [String: [String: Any]] {
+        if let dict = value as? [String: [String: Any]] { return dict }
+        if let array = value as? [[String: Any]] {
+            var out: [String: [String: Any]] = [:]
+            for column in array { if let id = column["identifier"] as? String { out[id] = column } }
+            return out
+        }
+        return [:]
+    }
+
+    /// Visibility and width of the columns Finder knows; order by Finder's `index`; "name" stays visible; the
+    /// Extension column (Finder has none) keeps its global setting and relative place.
+    static func mapColumns(_ finder: [String: [String: Any]], globalColumns: [ColumnSetting]) -> [ColumnSetting]? {
+        var byID: [ColumnID: (visible: Bool?, width: Double?, index: Int?)] = [:]
+        for (name, attributes) in finder {
+            guard let id = columnIDs[name] else { continue }
+            byID[id] = (attributes["visible"] as? Bool, number(attributes["width"]), (attributes["index"] as? NSNumber)?.intValue)
+        }
+        guard !byID.isEmpty else { return nil }
+        var columns = globalColumns.map { column -> ColumnSetting in
+            guard let finder = byID[column.id] else { return column }
+            var c = column
+            if let visible = finder.visible { c.visible = column.id == .name ? true : visible }
+            if let width = finder.width, width >= 40, width <= 2_000 { c.width = width }
+            return c
+        }
+        // Stable reorder of the Finder-indexed columns among the slots they occupy.
+        let slots = columns.indices.filter { byID[columns[$0].id]?.index != nil }
+        let reordered = slots.map { columns[$0] }.enumerated()
+            .sorted { (byID[$0.element.id]?.index ?? 0, $0.offset) < (byID[$1.element.id]?.index ?? 0, $1.offset) }
+            .map(\.element)
+        for (slot, column) in zip(slots, reordered) { columns[slot] = column }
+        return columns
+    }
+
+    static func plist(_ data: Data) -> [String: Any]? {
+        (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String: Any]
+    }
+
+    static func number(_ value: Any?) -> Double? {
+        if let n = value as? NSNumber { return n.doubleValue }
+        if let s = value as? String { return Double(s) }
+        return nil
+    }
+}
