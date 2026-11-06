@@ -2,7 +2,7 @@ import AppKit
 import Core
 
 /// §5.6 key routing 1–3: while a field editor (address bar, inline rename, search) is first responder, the primaries
-/// in `KeyBindings.collidesWithTextEditing` (by default ⌘↑, ⌘↓, ⌘⌫, ⌥⌘⌫, ⌘[, ⌘], F2, ⌘D) belong to the text. Disabling their menu
+/// in `KeyBindings.collidesWithTextEditing` (by default ⌘↑, ⌘↓, ⌘⌫, ⌥⌘⌫, ⌘[, ⌘], F2, ⌘D; see `KeyMap.textEditingChords`) belong to the text. Disabling their menu
 /// items (MenuValidation) is not enough: AppKit swallows the key equivalent of a disabled item, so the field editor
 /// never sees ⌘↑ or ⌘⌫ (verified in the P1-41 colliding-keys scenario). MacxApplication.sendEvent therefore hands
 /// those keys to the field editor before the menu is consulted.

@@ -108,6 +108,24 @@ final class KeyBindingsTests: XCTestCase {
         XCTAssertTrue(b.collidesWithTextEditing.contains(.newFolder))
     }
 
+    /// Word/line movement and Cocoa emacs keys belong to a text field being edited: a primary rebound onto one is
+    /// disabled there (and its key goes to the field editor) instead of hijacking the cursor movement.
+    func testTextSystemChordsCollideWhenRebound() {
+        let texts = ["opt+left", "opt+right", "shift+opt+left", "opt+up", "shift+opt+down", "cmd+left", "shift+cmd+right",
+                     "shift+cmd+up", "ctrl+left", "opt+delete", "opt+fn+delete", "ctrl+delete", "cmd+fn+delete",
+                     "ctrl+a", "ctrl+e", "ctrl+k", "ctrl+t", "shift+ctrl+f"]
+        for text in texts {
+            XCTAssertTrue(KeyMap.textEditingChords.contains(chord(text)), text)
+            var o = KeyBindingOverrides.empty
+            o.setPrimary(chord(text), for: .newFolder)
+            XCTAssertEqual(KeyBindings(overrides: o).primary(.newFolder), chord(text), "still allowed as a primary: \(text)")
+            XCTAssertTrue(KeyBindings(overrides: o).collidesWithTextEditing.contains(.newFolder), text)
+        }
+        for text in ["opt+cmd+b", "ctrl+cmd+k", "F6", "ctrl+opt+left"] {
+            XCTAssertFalse(KeyMap.textEditingChords.contains(chord(text)), text)
+        }
+    }
+
     func testUses() {
         let b = KeyBindings.defaults
         XCTAssertEqual(b.uses(of: .key(chord("cmd+["))), [.init(command: .back, slot: .primary)])

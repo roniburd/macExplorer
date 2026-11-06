@@ -98,7 +98,7 @@ public struct KeyBindings: Sendable, Equatable {
 }
 ```
 
-`KeyMap.collidesWithTextEditing: Set<Command>` is replaced by `KeyMap.textEditingChords: Set<KeyChord>`, the chords text fields own: ⌘↑, ⌘↓, ⌘⌫, ⌥⌘⌫, ⌘[, ⌘], F2, ⌘D. These are today's colliding primaries, written as chords. Collision is a property of the chord, so a command rebound onto ⌘D collides, and Duplicate moved off ⌘D stops colliding.
+`KeyMap.collidesWithTextEditing: Set<Command>` is replaced by `KeyMap.textEditingChords: Set<KeyChord>`, the chords text fields own: today's colliding primaries (⌘↑, ⌘↓, ⌘⌫, ⌥⌘⌫, ⌘[, ⌘], F2, ⌘D) plus the Cocoa text system's movement and deletion keys (⌥/⌘/⌃ + arrows with or without ⇧, ⌥⌫, ⌥Del, ⌃⌫, ⌘Del, emacs-style ⌃ letters), so a primary rebound onto ⌥← still moves by word while renaming. Collision is a property of the chord, so a command rebound onto ⌘D collides, and Duplicate moved off ⌘D stops colliding.
 
 ### 3.4 Validation rules (`KeyBindings.validate`)
 

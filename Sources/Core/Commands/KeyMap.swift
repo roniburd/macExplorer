@@ -88,13 +88,31 @@ public enum KeyMap {
         }
     }
 
-    /// Chords a text field uses for editing (⌘↑, ⌘↓, ⌘⌫, ⌥⌘⌫, ⌘[, ⌘], F2, ⌘D). A command whose primary is one of
-    /// these is disabled while a field editor is active, so the key reaches the text (`KeyBindings.collidesWithTextEditing`).
-    public static let textEditingChords: Set<KeyChord> = [
-        KeyChord(.up, .command), KeyChord(.down, .command), KeyChord(.backspace, .command),
-        KeyChord(.backspace, [.option, .command]), KeyChord(.character("["), .command), KeyChord(.character("]"), .command),
-        KeyChord(.function(2)), KeyChord(.character("d"), .command),
-    ]
+    /// Chords a text field uses for editing. A command whose primary is one of these is disabled while a field editor
+    /// is active, so the key reaches the text (`KeyBindings.collidesWithTextEditing`). Two parts:
+    /// - the default primaries that collide (⌘↑, ⌘↓, ⌘⌫, ⌥⌘⌫, ⌘[, ⌘], F2, ⌘D);
+    /// - the Cocoa text system's movement and deletion keys a user might rebind onto: ⌥/⌘/⌃ + arrows (with or without
+    ///   ⇧), ⌥⌫, ⌥Del, ⌃⌫, ⌘Del, and the emacs-style ⌃ letters (with or without ⇧). None is a default primary.
+    public static let textEditingChords: Set<KeyChord> = {
+        var chords: Set<KeyChord> = [
+            KeyChord(.up, .command), KeyChord(.down, .command), KeyChord(.backspace, .command),
+            KeyChord(.backspace, [.option, .command]), KeyChord(.character("["), .command), KeyChord(.character("]"), .command),
+            KeyChord(.function(2)), KeyChord(.character("d"), .command),
+            KeyChord(.backspace, .option), KeyChord(.forwardDelete, .option), KeyChord(.backspace, .control),
+            KeyChord(.forwardDelete, .command),
+        ]
+        for modifier: KeyModifiers in [.option, .command, .control] {
+            for key: Key in [.left, .right, .up, .down] {
+                chords.insert(KeyChord(key, modifier))
+                chords.insert(KeyChord(key, modifier.union(.shift)))
+            }
+        }
+        for letter in ["a", "b", "d", "e", "f", "h", "k", "l", "n", "o", "p", "t", "v", "y"] {
+            chords.insert(KeyChord(.character(letter), .control))
+            chords.insert(KeyChord(.character(letter), [.control, .shift]))
+        }
+        return chords
+    }()
 
     private static func cmd(_ c: String) -> KeyChord { KeyChord(.character(c), .command) }
     private static func ctrl(_ c: String) -> KeyChord { KeyChord(.character(c), .control) }
