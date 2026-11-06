@@ -237,3 +237,16 @@ All tests use in-memory `SettingsStorage`. No test touches files it didn't creat
 New: `Core/Commands/MouseButton.swift`, `Trigger.swift`, `KeyBindingOverrides.swift`, `KeyBindings.swift`; `UI/Menus/MouseRouter.swift`; `UI/Settings/ShortcutsSettingsView.swift`, `ShortcutRecorder.swift`; `UI/Support/KeyChord+Display.swift`; tests and scenarios listed above.
 
 Changed: `KeyMap.swift` (`defaultMouse`, `textEditingChords`), `KeyChord.swift` (Codable), `KeyDispatcher.swift`, `CommandAvailability.swift`, `Settings.swift`, `KeyRouter.swift`, `FieldEditorKeyRouting.swift`, `MenuValidation.swift`, `MainMenuBuilder.swift`, `MacxApplication.swift`, `AppDelegate.swift`, `SettingsChoices.swift`, `SettingsView.swift`, the three content/sidebar controllers, and main spec §5.6/§7 cross-references.
+
+## 9. Plan-time adjustments
+
+Made while writing the implementation plan (`docs/superpowers/plans/2026-11-05-key-bindings.md`), after reading the code. They change no behavior the owner approved.
+
+- **Primary override type.** `Entry.primary` is `PrimaryOverride?` (`.unbound` / `.chord(KeyChord)`) instead of `KeyChord??`. Same meaning, easier to read.
+- **Edits live on `KeyBindingOverrides`.** `setPrimary`, `removeAlternate`, `removeMouse`, `reassign` and `reset` are mutating methods on the overrides value. The UI mutates `settings.keyBindingOverrides` directly, which persists through its `didSet`. `Settings` gets no extra methods. "Add alternate" and "add mouse button" are `reassign` calls.
+- **One active table in the UI.** Instead of passing `settings.keyBindings` into every controller, `KeyBindingsController` (owned by `UIContext`) keeps `ActiveKeyBindings.current` and the menu bar's key equivalents in step with Settings. `KeyRouter`, `FieldEditorKeyRouting`, `MenuValidation`, `MouseRouter` and the other `CommandAvailability` callers read it. The three content/sidebar controllers don't change.
+- **Mouse commands go to the content pane.** `MouseRouter` sends the command from the window's content pane (same responder walk as alternate keys), not from the view under the pointer. A mouse binding acts as if the file list had focus, wherever the pointer is. Availability is checked by the existing command handler (`canPerform`), so an unavailable command is consumed silently.
+- **Rejections.** `BindingRejection` is `.reserved`, `.typesTextAsPrimary` and `.wrongSlot` (mouse in a key slot or the reverse). `.unsupported` is dropped: `KeyChord(parsing:)` already refuses chords the menu can't show. The reserved message is a single "Reserved by macOS or MacExplorer."
+- **`Trigger` is not `Codable`.** Only `KeyChord` and `MouseButton` are stored. `MouseButton.displayName` lives in UI (localized), and Core has the canonical text form `"mouse4"`.
+- **`rebind-back` scenario → UI tests.** Rebinding is covered by `KeyBindingsRoutingTests` and `MouseRouterTests.testReboundButtonFollowsActiveBindings`. Only `mouse-back-forward.json` is a scenario.
+- **Fixed rows.** `cancelOperation` is titled "Cancel" (its existing `MainMenuTitles` entry).
