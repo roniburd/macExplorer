@@ -57,7 +57,11 @@ public struct KeyBindings: Sendable, Equatable {
             case .chord(let chord)?: Self.validate(.key(chord), as: .primary) == nil ? chord : KeyMap.primary(command)
             }
             primaries[command] = primary
-            let alternates = entry?.alternates ?? KeyMap.alternates(command)
+            // Stored alternates go through the same check as stored primaries, so hand-edited or stale data can't
+            // take Tab, ⇧Tab, Esc or a menu chord away from its owner. (Stored mouse lists need no filtering: they
+            // can only hold mouse buttons, and every mouse button is valid in the mouse slot.)
+            let alternates = entry?.alternates.map { $0.filter { Self.validate(.key($0), as: .alternate) == nil } }
+                ?? KeyMap.alternates(command)
             alternateLists[command] = alternates
             let mouse = entry?.mouse ?? KeyMap.defaultMouse(command)
             mouseLists[command] = mouse

@@ -57,6 +57,19 @@ final class KeyBindingsTests: XCTestCase {
         XCTAssertEqual(KeyBindings.fixedCommands, [.cycleFocusForward, .cycleFocusBackward, .cancelOperation])
     }
 
+    func testStoredAlternatesCannotClaimReservedChords() {
+        var o = KeyBindingOverrides.empty
+        o.commands[.open] = .init(alternates: [chord("tab"), chord("f6")])
+        o.commands[.back] = .init(alternates: [chord("esc"), chord("cmd+q")])
+        let b = KeyBindings(overrides: o)
+        XCTAssertEqual(b.alternateCommand(for: chord("tab")), .cycleFocusForward)
+        XCTAssertEqual(b.alternateCommand(for: chord("esc")), .cancelOperation)
+        XCTAssertNil(b.alternateCommand(for: chord("cmd+q")))
+        XCTAssertEqual(b.alternates(.open), [chord("f6")], "valid stored alternates are kept")
+        XCTAssertEqual(b.alternates(.back), [])
+        XCTAssertEqual(b.uses(of: .key(chord("tab"))), [.init(command: .cycleFocusForward, slot: .alternate)])
+    }
+
     func testDuplicateStoredTriggersFirstCommandWins() {
         var o = KeyBindingOverrides.empty
         o.commands[.open] = .init(mouse: [mouse6])
