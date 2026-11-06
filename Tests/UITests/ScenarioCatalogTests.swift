@@ -13,7 +13,7 @@ final class ScenarioCatalogTests: XCTestCase {
 
     func testEveryScenarioFileDecodesValidatesAndIsNamedAfterItsFile() throws {
         let urls = try files()
-        XCTAssertEqual(urls.count, 28)
+        XCTAssertEqual(urls.count, 29)
         for url in urls {
             let file = try ScenarioFile.load(Data(contentsOf: url))
             XCTAssertEqual(file.name, url.deletingPathExtension().lastPathComponent)

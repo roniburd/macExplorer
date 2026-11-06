@@ -1,0 +1,10 @@
+{"name": "mouse-back-forward",
+ "fixture": {"files": ["A/B/c.txt"], "dirs": ["A", "A/B"]},
+ "steps": [
+  {"doubleClick": "A"}, {"waitFor": {"folder": "A", "rows": ["B"]}},
+  {"doubleClick": "B"}, {"waitFor": {"folder": "A/B", "rows": ["c.txt"]}},
+  {"mouse": "mouse4"}, {"waitFor": {"folder": "A", "rows": ["B"]}},
+  {"mouse": "mouse4"}, {"waitFor": {"folder": ""}},
+  {"mouse": "mouse5"}, {"waitFor": {"folder": "A"}},
+  {"mouse": "mouse5"}, {"waitFor": {"folder": "A/B", "rows": ["c.txt"]}}
+ ]}

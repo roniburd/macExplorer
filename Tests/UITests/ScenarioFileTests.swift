@@ -72,4 +72,13 @@ final class ScenarioFileTests: XCTestCase {
         }
         XCTAssertNoThrow(try load(#"{"name":"x","fixture":{"files":[],"dirs":[]},"steps":[{"type":"../../top.txt"}]}"#))
     }
+
+    func testMouseStepValidates() throws {
+        let ok = #"{"name": "m", "fixture": {"files": [], "dirs": []}, "steps": [{"mouse": "mouse4"}]}"#
+        XCTAssertEqual(try ScenarioFile.load(Data(ok.utf8)).steps.first?.actions, ["mouse"])
+        let bad = #"{"name": "m", "fixture": {"files": [], "dirs": []}, "steps": [{"mouse": "mouse2"}]}"#
+        XCTAssertThrowsError(try ScenarioFile.load(Data(bad.utf8))) { error in
+            XCTAssertEqual(error as? ScenarioFile.ValidationError, .badMouse(step: 0, "mouse2"))
+        }
+    }
 }
