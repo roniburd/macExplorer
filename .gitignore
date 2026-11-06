@@ -7,3 +7,4 @@ bench-*.json
 .DS_Store
 brainstorm
 .claude/worktrees/
+docs/design/icon-concepts/.neighbours/

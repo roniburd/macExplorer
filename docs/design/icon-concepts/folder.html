@@ -284,12 +284,12 @@ const PR = { pA: '#38bdf8', pB: '#1e3a8a', c1: '#6ec0f5', c2: '#3d93d9', acc: '#
 // Folder box centred on the plate at scale s (s = 1 is the current 664 x 600 glass folder). dy nudges it down optically.
 const box = (s, dy = 6) => { const w = 664 * s, h = 600 * s; return [512 - w / 2, 512 - h / 2 + dy, w, h]; };
 // The current glass folder (back + front + inner glass sheet), with no tree inside.
-const glassAt = (g, t, s, sh = true) => { const [x, y, w, h] = box(s);
+const glassAt = (g, t, s, sh = true, dy = 6) => { const [x, y, w, h] = box(s, dy);
   return glassFolder(g, t, x, y, w, h, { tint: t.acc, shadow: sh }) +
     `<path d="${folderFront(x + 6 * s, y, w - 12 * s, h - 6 * s, 50 * s)}" fill="${g.lin([[0, t.ink, .55], [1, t.ink, .3]])}"/>`; };
 // Opaque Finder-style folder.
 const solidAt = (g, t, s, sh = true) => { const [x, y, w, h] = box(s); return solidFolder(g, t, x, y, w, h, { shadow: sh, r: 56 * s }); };
-const halo = (g, t) => `<circle cx="512" cy="520" r="330" fill="${g.rad([[0, '#ffffff', .6], [.55, '#ffffff', .22], [1, '#ffffff', 0]])}"/>`;
+const halo = (g, t, cy = 520) => `<circle cx="512" cy="${cy}" r="330" fill="${g.rad([[0, '#ffffff', .6], [.55, '#ffffff', .22], [1, '#ffffff', 0]])}"/>`;
 const ring = (t) => `<circle cx="512" cy="520" r="318" fill="none" stroke="#ffffff" stroke-opacity=".28" stroke-width="10"/>`;
 
 window.exportPNG = async (code, px, small) => {
@@ -306,8 +306,9 @@ add('F1', 'Glass folder — 85%', 'Same folder, shrunk ~15%. Noticeably more blu
   (g, t) => glassAt(g, t, .85), (g, t) => glassAt(g, t, .95, false));
 add('F2', 'Glass folder — 72%', 'Shrunk ~28%: generous margin, closest to Apple’s own glyph-on-plate proportions.', PR,
   (g, t) => glassAt(g, t, .72), (g, t) => glassAt(g, t, .9, false));
-add('F3', 'Glass folder — 72% + halo', 'F2 with a soft light pool behind the folder, so the extra space feels lit rather than empty.', PR,
-  (g, t) => halo(g, t) + glassAt(g, t, .72), (g, t) => glassAt(g, t, .9, false));
+// F3 is lifted 30 units (option U2 in folder-nudge.html) so the folder box, not the whole outline with its tab, reads as centred.
+add('F3', 'Glass folder — 72% + halo, lifted', 'F2 with a soft light pool behind the folder, so the extra space feels lit rather than empty. Lifted 30 units so the box reads as centred.', PR,
+  (g, t) => halo(g, t, 490) + glassAt(g, t, .72, true, -24), (g, t) => glassAt(g, t, .9, false, -32));
 add('F4', 'Solid white folder — 75%', 'Opaque white/ice-blue folder, no glass: highest contrast, most legible at 16 px.', { ...PR, c1: '#ffffff', c2: '#a9d4f5' },
   (g, t) => solidAt(g, t, .75), (g, t) => solidAt(g, t, .92, false));
 add('F5', 'Glass folder — 66% + ring', 'A slightly smaller folder inside a thin glass ring: a quiet “explorer / lens” hint that uses the margin.', PR,
