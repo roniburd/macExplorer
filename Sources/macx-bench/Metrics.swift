@@ -229,6 +229,25 @@ final class MetricSuite {
                     return self.elapsedMs(since: start)
                 }))
             }
+            // P2-16 review fix: Tags / Comments once loaded, every value distinct. Times what the worker does per
+            // re-sort: map the by-identity values main hands over to storage indices, then the one sort.
+            for field in [SortField.tags, .comments] where wants("resort.\(field.rawValue)") {
+                var byID: [RowID: [UInt8]] = [:]
+                byID.reserveCapacity(store.count)
+                for i in 0..<UInt32(store.count) {
+                    byID[store.identity(i)] = SortKeys.nameKey("\(field.rawValue) value \((Int(i) &* 7_919) % store.count)", isFolder: false)
+                }
+                let column = ExtraColumnValues.strings(byID)
+                let query = ViewQuery(sort: SortDescriptor(field: field, ascending: true))
+                out.append(result("resort.\(field.rawValue)", try await samples {
+                    let start = self.clock.now
+                    let extras = SortExtras.make(sizes: [:], column: column, in: store)
+                    let p = Sorter.permutation(store, nameKeys: keys, searchKeys: nil, query: query, kindRanks: ranks,
+                                               extensionKeys: extensionKeys, extras: extras)
+                    withExtendedLifetime(p) {}
+                    return self.elapsedMs(since: start)
+                }))
+            }
             if wants("filter") {
                 out.append(result("filter", try await samples {
                     let start = self.clock.now

@@ -140,7 +140,7 @@ actor FolderWorker {
         let b = building!
         building = nil
         keys = b.keys
-        let (order, runs) = partition(b.store, sorted: withExtras(b.order, b.store, query, values), by: group.groupBy,
+        let (order, runs) = partition(b.store, sorted: withExtras(b.order, b.store, b.keys, query, values), by: group.groupBy,
                                       buckets: group.buckets)
         return (order, newTag(), runs, group.revision)
     }
@@ -153,7 +153,7 @@ actor FolderWorker {
         if building!.query != query { setLoadingQuery(query) } else { mergeRuns() }
         var b = building!
         building = nil
-        let (order, runs) = partition(b.store, sorted: withExtras(b.order, b.store, query, values), by: group.groupBy,
+        let (order, runs) = partition(b.store, sorted: withExtras(b.order, b.store, b.keys, query, values), by: group.groupBy,
                                       buckets: group.buckets)
         b.store.setOrder(order)
         keys = b.keys
@@ -283,17 +283,20 @@ actor FolderWorker {
         return tag
     }
 
-    private func permutation(_ store: EntryStore, _ keys: Keys, _ query: ViewQuery, _ values: SortValues = .none) -> [UInt32] {
+    private func permutation(_ store: EntryStore, _ keys: Keys, _ query: ViewQuery, _ values: SortValues = .none,
+                             _ mapped: SortExtras? = nil) -> [UInt32] {
         Sorter.permutation(store, nameKeys: keys.name, searchKeys: query.filter.isEmpty ? nil : keys.search, query: query,
                            kindRanks: types.kindRanks().ranks, extensionKeys: keys.ext,
-                           extras: values.isEmpty ? .none : values.extras(for: query, in: store))
+                           extras: mapped ?? (values.isEmpty ? .none : values.extras(for: query, in: store)))
     }
 
-    /// An order built by the loading merge, reordered for the size sort's folder sizes (P2-14) or an extended
-    /// column's values (P2-16).
-    private func withExtras(_ order: [UInt32], _ store: EntryStore, _ query: ViewQuery, _ values: SortValues) -> [UInt32] {
+    /// An order built by the loading merge, reordered for the size sort's folder sizes (P2-14), or re-sorted with
+    /// an extended column's values as the primary key (P2-16: one Phase 1 sort, not a second pass).
+    private func withExtras(_ order: [UInt32], _ store: EntryStore, _ keys: Keys, _ query: ViewQuery,
+                            _ values: SortValues) -> [UInt32] {
         let extras = values.isEmpty ? SortExtras.none : values.extras(for: query, in: store)
         guard !extras.isEmpty else { return order }
+        if query.sort.field.isExtended, extras.column != nil { return permutation(store, keys, query, values, extras) }
         var reordered = order
         Sorter.applyExtras(&reordered, store: store, query: query, extras: extras)
         return reordered

@@ -9,11 +9,47 @@ import MacxFS
 /// them to its own store's indices, so every sort path (re-sort, patch, re-read, finished load) uses them.
 extension FolderModel {
     /// Folder sizes and the extended column's values, by identity, for the worker (empty unless the sort needs them).
+    /// O(1) for an extended field once its column is built: the cached dictionaries are shared copy-on-write.
     func sortValues() -> SortValues {
         let field = query.sort.field
         if field == .size { return SortValues(sizes: sortSizes()) }
-        guard field.isExtended, !attributeTable.isEmpty else { return .none }
-        return SortValues(column: Self.columnValues(attributeTable, field: field))
+        guard field.isExtended else { return .none }
+        ensureSortColumn(field)
+        switch field {
+        case .dateLastOpened, .permissions: return sortIntegers.isEmpty ? .none : SortValues(column: .integers(sortIntegers))
+        default: return sortKeys.isEmpty ? .none : SortValues(column: .strings(sortKeys))
+        }
+    }
+
+    /// Builds the sort column for `field` from `attributeTable` if it is not the one kept (once per sort change;
+    /// `startExtendedSort` builds it before loading, while the table holds visible rows at most).
+    func ensureSortColumn(_ field: SortField) {
+        guard sortColumnField != field else { return }
+        dropSortColumn()
+        sortColumnField = field
+        sortColumnBuilds += 1
+        switch Self.columnValues(attributeTable, field: field) {
+        case .integers(let values)?: sortIntegers = values
+        case .strings(let keys)?: sortKeys = keys
+        case nil: break
+        }
+    }
+
+    /// Keeps the sort column current for one identity whose attributes changed (nil: it left the table).
+    func updateSortColumn(_ id: RowID, _ attributes: ExtendedAttributes?) {
+        guard let field = sortColumnField else { return }
+        switch field {
+        case .dateLastOpened, .permissions:
+            sortIntegers[id] = attributes.flatMap { Self.integerValue($0, field: field) }
+        default:
+            sortKeys[id] = attributes.flatMap { Self.stringValue($0, field: field) }.map { SortKeys.nameKey($0, isFolder: false) }
+        }
+    }
+
+    func dropSortColumn() {
+        sortColumnField = nil
+        sortIntegers = [:]
+        sortKeys = [:]
     }
 
     /// Per the P2-16 rules: integers for Last Opened (ns) and Permissions (`mode & 0o7777`); `SortKeys.nameKey`
@@ -53,10 +89,12 @@ extension FolderModel {
 
     nonisolated static func stringValue(_ a: ExtendedAttributes, field: SortField) -> String? {
         switch field {
-        case .tags: return a.loaded.contains(.tags) ? a.tags.first : nil
+        case .tags:
+            guard a.loaded.contains(.tags), let tag = a.tags.first, !tag.isEmpty else { return nil }
+            return tag
         case .owner:
-            guard a.loaded.contains(.owner) else { return nil }
-            return a.ownerName ?? a.ownerID.map(String.init)
+            guard a.loaded.contains(.owner), let owner = a.ownerName ?? a.ownerID.map(String.init), !owner.isEmpty else { return nil }
+            return owner
         case .comments:
             guard a.loaded.contains(.comments), let comment = a.comment, !comment.isEmpty else { return nil }
             return comment
@@ -83,6 +121,7 @@ extension FolderModel {
         columnResortTask = nil
         let wanted = query
         guard wanted.sort.field.isExtended, state == .complete, !closed else { return }
+        ensureSortColumn(wanted.sort.field)             // kept current by the reads below
         extendedSortTask = Task { @MainActor [weak self] in
             await self?.loadAllExtendedAttributes(ExtendedAttributeSet(sortField: wanted.sort.field))
             guard let self, !Task.isCancelled else { return }
@@ -106,6 +145,21 @@ extension FolderModel {
         extendedSortTask = nil
         columnResortTask?.cancel()
         columnResortTask = nil
+        cancelSortReads()
+    }
+
+    /// The sort left an extended field (review fix, §4.4 memory): the per-row values loaded for it go, except the
+    /// rows the view last asked for (they are on screen); the sort column is dropped.
+    func trimAttributesAfterExtendedSort() {
+        dropSortColumn()
+        guard !attributeTable.isEmpty else { return }
+        var keep = Set<RowID>()
+        if let request = lastAttributeRequest {
+            let count = rowCount
+            for row in request.rows where row < count { keep.insert(identity(atRow: row)) }
+        }
+        attributeTable = attributeTable.filter { keep.contains($0.key) }
+        if !staleAttributes.isEmpty { staleAttributes = staleAttributes.filter { keep.contains($0.key) } }
     }
 
     private func scheduleColumnResort() {

@@ -33,12 +33,18 @@ extension FolderModel {
     /// starts.
     func loadAllExtendedAttributes(_ wanted: ExtendedAttributeSet) async {
         guard !closed, !wanted.isEmpty else { return }
-        let epoch = self.epoch
         var missing: [(name: String, id: RowID)] = []
         for row in 0..<rowCount {
             let id = identity(atRow: row)
             if needsAttributes(id, wanted) { missing.append((name(atRow: row), id)) }
         }
+        await readAttributes(missing, wanted)
+    }
+
+    /// Reads `wanted` for `missing` in chunks of `attributeChunk` on `.scan` lanes and stores each chunk. Returns
+    /// early when the calling task is cancelled, the model closes or a fresh load starts.
+    private func readAttributes(_ missing: [(name: String, id: RowID)], _ wanted: ExtendedAttributeSet) async {
+        let epoch = self.epoch
         let directory = self.directory, owners = context.ownerNames, volume = openedVolume ?? .unknown
         let lanes = context.lanes
         var start = 0
@@ -59,9 +65,42 @@ extension FolderModel {
 
     nonisolated static var attributeChunk: Int { 2_000 }
 
+    /// While sorted by an extended field (review fix): reads that field for `ids` lacking it or gone stale, off
+    /// screen too, so new rows (patches) and retagged items (watcher invalidations) do not keep a stale position
+    /// when no view asked for them. Coalesced per main-actor turn; `storeAttributes` then schedules the re-sort.
+    func readForSort<S: Sequence>(_ ids: S) where S.Element == RowID {
+        guard query.sort.field.isExtended, !closed else { return }
+        pendingSortReads.formUnion(ids)
+        guard sortReadTask == nil, !pendingSortReads.isEmpty else { return }
+        sortReadTask = Task { @MainActor [weak self] in
+            await Task.yield()
+            while let self, !Task.isCancelled, !self.closed, !self.pendingSortReads.isEmpty {
+                let field = self.query.sort.field
+                guard field.isExtended else { break }
+                let wanted = ExtendedAttributeSet(sortField: field), ids = self.pendingSortReads, store = self.store
+                self.pendingSortReads = []
+                var missing: [(name: String, id: RowID)] = []
+                for id in ids {
+                    guard let index = store.firstIndex(of: id), self.needsAttributes(id, wanted) else { continue }
+                    missing.append((store.name(index), id))
+                }
+                await self.readAttributes(missing, wanted)
+            }
+            guard let self, !Task.isCancelled else { return }
+            self.sortReadTask = nil
+            self.pendingSortReads = []
+        }
+    }
+
+    func cancelSortReads() {
+        sortReadTask?.cancel()
+        sortReadTask = nil
+        pendingSortReads = []
+    }
+
     // MARK: Reads
 
-    private func needsAttributes(_ id: RowID, _ wanted: ExtendedAttributeSet) -> Bool {
+    func needsAttributes(_ id: RowID, _ wanted: ExtendedAttributeSet) -> Bool {
         guard let entry = attributeTable[id] else { return true }
         return staleAttributes[id] != nil || !entry.loaded.isSuperset(of: wanted)
     }
@@ -114,6 +153,7 @@ extension FolderModel {
             attributeTable[id] = new
             if new != old {
                 changed.insert(id)
+                updateSortColumn(id, new)
                 if tracksSort { before[id] = old; after[id] = new }
             }
         }
@@ -152,12 +192,14 @@ extension FolderModel {
     private func invalidateExtendedAttributes(_ ids: [RowID]) {
         guard !ids.isEmpty else { return }
         attributeSerial += 1
-        var any = false
+        var marked: [RowID] = []
         for id in ids where attributeTable[id] != nil {
             staleAttributes[id] = attributeSerial
-            any = true
+            marked.append(id)
         }
-        if any { scheduleAttributeRefresh() }
+        guard !marked.isEmpty else { return }
+        scheduleAttributeRefresh()
+        if query.sort.field.isExtended { readForSort(marked) }
     }
 
     /// After every store replacement or mutation: entries of items that left the store are dropped, and the last
@@ -165,8 +207,13 @@ extension FolderModel {
     func storeChangedForAttributes() {
         if !attributeTable.isEmpty {
             let store = self.store
-            attributeTable = attributeTable.filter { store.firstIndex(of: $0.key) != nil }
-            if !staleAttributes.isEmpty { staleAttributes = staleAttributes.filter { attributeTable[$0.key] != nil } }
+            let gone = attributeTable.keys.filter { store.firstIndex(of: $0) == nil }
+            for id in gone {
+                attributeTable[id] = nil
+                staleAttributes[id] = nil
+                sortIntegers[id] = nil
+                sortKeys[id] = nil
+            }
         }
         if lastAttributeRequest != nil { scheduleAttributeRefresh() }
     }
@@ -178,6 +225,8 @@ extension FolderModel {
         pendingAttributeRequest = nil
         attributeTable = [:]
         staleAttributes = [:]
+        cancelSortReads()
+        dropSortColumn()
     }
 
     func cancelExtendedAttributes() {

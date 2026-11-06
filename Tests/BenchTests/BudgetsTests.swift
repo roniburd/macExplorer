@@ -26,6 +26,15 @@ final class BudgetsTests: XCTestCase {
         }
     }
 
+    /// Review fix (P2-16): extended columns with distinct values are held to the same re-sort budget.
+    func testExtendedResortMetricsHaveA30msBudgetAt100k() {
+        for name in ["resort.tags", "resort.comments"] {
+            let budget = Budgets.table.first { $0.metric == name }
+            XCTAssertEqual(budget?.limit, 30, name)
+            XCTAssertEqual(budget?.sizes, [100_000], name)
+        }
+    }
+
     func testMemoryBudgetUsesMegabytes() {
         let checks = Budgets.evaluate([MetricResult(name: "memory.steady", size: 100_000, unit: "MB", samples: [25])])
         XCTAssertEqual(checks.first?.passed, false)

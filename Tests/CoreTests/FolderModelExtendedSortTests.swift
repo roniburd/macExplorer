@@ -79,4 +79,79 @@ final class FolderModelExtendedSortTests: XCTestCase {
         try await wait { self.names(model) == ["b.txt", "a.txt"] }
         XCTAssertEqual(names(model), ["b.txt", "a.txt"])
     }
+
+    /// Review fix: sorted by Tags with no visible-row request (Tags column hidden), a new tagged file and a retag of
+    /// an existing item are read for the sort, and the order updates (no stale "missing" positions).
+    func testNewAndRetaggedItemsResortWithoutVisibleRequest() async throws {
+        let sandbox = try Sandbox(); defer { sandbox.destroy() }
+        for n in ["a.txt", "b.txt"] { try sandbox.createFile(n) }
+        try sandbox.setFinderTags(["beta"], on: "a.txt"); try sandbox.setFinderTags(["delta"], on: "b.txt")
+        let env = CoreEnvironment.sandboxed(root: sandbox.root); _ = await env.start()
+        var ctx = env.folderContext(); ctx.resortCoalescing = .zero
+        let model = FolderModel(directory: sandbox.root, context: ctx, query: ViewQuery())
+        model.start()
+        addTeardownBlock { @MainActor in model.close() }
+        try await wait { model.state == .complete }
+        model.setQuery(ViewQuery(sort: SortDescriptor(field: .tags, ascending: true)))
+        try await wait { model.extendedSortTask == nil && model.attributeTable.count == 2 }
+        XCTAssertEqual(names(model), ["a.txt", "b.txt"])
+        XCTAssertNil(model.lastAttributeRequest, "no view asked for attributes")
+
+        try sandbox.createFile("c.txt")
+        try sandbox.setFinderTags(["alpha"], on: "c.txt")
+        model.handleWatch(.items(["c.txt"]))
+        try await wait { self.names(model) == ["c.txt", "a.txt", "b.txt"] }
+        XCTAssertEqual(names(model), ["c.txt", "a.txt", "b.txt"], "a new tagged file sorts by its tag, not as missing")
+
+        try sandbox.setFinderTags(["zulu"], on: "a.txt")
+        model.handleWatch(.items(["a.txt"]))
+        try await wait { self.names(model) == ["c.txt", "b.txt", "a.txt"] }
+        XCTAssertEqual(names(model), ["c.txt", "b.txt", "a.txt"], "an off-screen retag re-sorts")
+    }
+
+    /// Review fix: leaving an extended sort drops the per-row values loaded for it (memory, §4.4), keeping only the
+    /// rows the view last asked for.
+    func testLeavingExtendedSortTrimsAttributesToRequestedRows() async throws {
+        let sandbox = try Sandbox(); defer { sandbox.destroy() }
+        for n in ["a", "b", "c", "d"] { try sandbox.createFile(n) }
+        let env = CoreEnvironment.sandboxed(root: sandbox.root); _ = await env.start()
+        let model = try await loadedModel(sandbox.root, env: env)
+        addTeardownBlock { @MainActor in model.close() }
+        model.requestExtendedAttributes(rows: IndexSet(integer: 0), .permissions)
+        try await wait { model.extendedAttributes(atRow: 0) != nil }
+        model.setQuery(ViewQuery(sort: SortDescriptor(field: .permissions, ascending: true)))
+        try await wait { model.extendedSortTask == nil && model.attributeTable.count == 4 }
+        XCTAssertEqual(model.attributeTable.count, 4)
+        model.setQuery(ViewQuery(sort: SortDescriptor(field: .name, ascending: true)))
+        XCTAssertEqual(model.attributeTable.count, 1, "only the requested row keeps its attributes")
+        XCTAssertNotNil(model.attributeTable[model.identity(atRow: 0)])
+        XCTAssertTrue(model.sortValues().isEmpty)
+    }
+
+    /// Review fix: the sort values main hands the worker are kept up to date per changed identity, not rebuilt from
+    /// the whole attribute table on every re-sort or patch.
+    func testSortValuesAreMaintainedIncrementally() async throws {
+        let sandbox = try Sandbox(); defer { sandbox.destroy() }
+        for n in ["a.txt", "b.txt"] { try sandbox.createFile(n) }
+        try sandbox.setFinderComment("one", on: "a.txt")
+        let env = CoreEnvironment.sandboxed(root: sandbox.root); _ = await env.start()
+        var ctx = env.folderContext(); ctx.resortCoalescing = .zero
+        let model = FolderModel(directory: sandbox.root, context: ctx, query: ViewQuery())
+        model.start()
+        addTeardownBlock { @MainActor in model.close() }
+        try await wait { model.state == .complete }
+        model.setQuery(ViewQuery(sort: SortDescriptor(field: .comments, ascending: true)))
+        try await wait { model.extendedSortTask == nil && model.attributeTable.count == 2 }
+        let builds = model.sortColumnBuilds
+        try sandbox.setFinderComment("two", on: "b.txt")
+        model.handleWatch(.items(["b.txt"]))
+        try await wait { self.names(model) == ["a.txt", "b.txt"] && model.attributeTable[model.identity(atRow: 1)]?.comment == "two" }
+        try sandbox.setFinderComment("zzz", on: "a.txt")
+        model.handleWatch(.items(["a.txt"]))
+        try await wait { self.names(model) == ["b.txt", "a.txt"] }
+        XCTAssertEqual(names(model), ["b.txt", "a.txt"])
+        XCTAssertEqual(model.sortColumnBuilds, builds, "no full rebuild of the sort column after changes")
+        guard case .strings(let keys)? = model.sortValues().column else { return XCTFail("no string column") }
+        XCTAssertEqual(keys.count, 2)
+    }
 }

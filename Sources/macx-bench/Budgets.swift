@@ -45,6 +45,10 @@ enum Budgets {
         t += SortField.entryFields.map {
             Budget(metric: "resort.\($0.rawValue)", sizes: [100_000], limit: 30, unit: "ms", spec: "§4.4 re-sort 100k by any column < 30 ms")
         }
+        // P2-16 review fix: extended string columns, every value distinct, loaded (identity map + sort).
+        t += ["resort.tags", "resort.comments"].map {
+            Budget(metric: $0, sizes: [100_000], limit: 30, unit: "ms", spec: "§4.4 re-sort 100k by any column < 30 ms")
+        }
         return t
     }()
 

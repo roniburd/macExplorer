@@ -11,6 +11,7 @@ final class BenchSmokeTests: XCTestCase {
                                      "diff", "memory.steady", "pasteboard", "fsevent.incremental", "fsevent.full",
                                      "folderViews.load", "folderViews.flush", "folderViews.save"]
         for field in SortField.entryFields { expected.insert("resort.\(field.rawValue)") }
+        expected.formUnion(["resort.tags", "resort.comments"])     // P2-16 review fix: extended columns, distinct values
         XCTAssertEqual(Set(report.metrics.map(\.name)), expected)
         XCTAssertTrue(report.metrics.allSatisfy { $0.samples.count == 1 })
         XCTAssertTrue(report.metrics.allSatisfy { $0.size == ($0.name.hasPrefix("folderViews.") ? FolderViewStore.capacity : 300) })

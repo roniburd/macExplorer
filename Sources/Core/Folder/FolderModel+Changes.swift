@@ -84,6 +84,11 @@ extension FolderModel {
         guard !closed, epoch == self.epoch else { return }
         guard store.version == old.version else { enqueuePatchApply(result, names: names, renames: renames, epoch: epoch); return }
         applyPatch(patched, carrying: carrying)
+        if query.sort.field.isExtended {
+            // Sorted by an extended field: new and replaced rows need its value even when off screen (review fix).
+            let store = self.store
+            readForSort((0..<result.batch.count).map { store.identity(of: result.batch.entries[$0], named: result.batch.name(at: $0)) })
+        }
         satisfyPending()
     }
 

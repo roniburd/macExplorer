@@ -177,6 +177,16 @@ public final class FolderModel {
     /// re-sort, and the coalesced re-sort after values change while sorted by one.
     var extendedSortTask: Task<Void, Never>?
     var columnResortTask: Task<Void, Never>?
+    /// The extended sort field's values by identity, kept current per changed identity (review fix: `sortValues()`
+    /// hands them over without walking `attributeTable`). Built for `sortColumnField`; nil when not sorted by one.
+    var sortColumnField: SortField?
+    var sortIntegers: [RowID: Int64] = [:]
+    var sortKeys: [RowID: [UInt8]] = [:]
+    /// Full builds of the sort column so far (tests).
+    var sortColumnBuilds = 0
+    /// Sort-only reads (FolderModel+Attributes): identities whose sort value must be (re-)read, and the read task.
+    var pendingSortReads: Set<RowID> = []
+    var sortReadTask: Task<Void, Never>?
     /// Full selection walks so far (tests).
     private(set) var selectionSummaryPasses = 0
 
@@ -297,9 +307,11 @@ public final class FolderModel {
     /// every row (rows keep their order until then; FolderModel+ExtendedSort).
     public func setQuery(_ query: ViewQuery) {
         guard query != self.query else { return }
+        let leavesExtended = self.query.sort.field.isExtended && !query.sort.field.isExtended
         self.query = query
         emit(.query(query))
         cancelExtendedSort()
+        if leavesExtended { trimAttributesAfterExtendedSort() }
         switch state {
         case .loading, .partial, .unresponsive, .waitingForPermission:
             let worker = self.worker

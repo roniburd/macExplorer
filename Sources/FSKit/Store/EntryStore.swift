@@ -159,6 +159,9 @@ public struct EntryStore: Sendable {
         version &+= 1
     }
 
+    /// The identity `entry` named `name` has (or would have) in this store, without looking it up.
+    public func identity(of entry: Entry, named name: String) -> RowID { identity(of: entry, name: name) }
+
     // MARK: Private
 
     private func identity(of entry: Entry, name: @autoclosure () -> String) -> RowID {

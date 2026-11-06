@@ -19,11 +19,14 @@ public enum Sorter {
 
     /// Like `permutation`, restricted to storage indices in `range` (the loading path sorts each new batch
     /// with this, then `merge`s it, passing incrementally built extensionKeys). Addition to the §3.5 contract.
+    /// `column` (P2-16): an extended field's values by storage index, the primary key when sorting by that field.
     public static func sortedRun(_ store: EntryStore, range: Range<Int>, nameKeys: SortKeyColumn, searchKeys: SortKeyColumn?,
-                                 query: ViewQuery, kindRanks: [UInt16], extensionKeys: SortKeyColumn? = nil) -> [UInt32] {
+                                 query: ViewQuery, kindRanks: [UInt16], extensionKeys: SortKeyColumn? = nil,
+                                 column: ExtraSortValues? = nil) -> [UInt32] {
         precondition(nameKeys.count >= range.upperBound, "Sorter: nameKeys must cover every storage index")
         let filter = query.filter.isEmpty ? nil : SortKeys.searchFold(query.filter)
-        let ordering = Ordering(store: store, nameKeys: nameKeys, query: query, kindRanks: kindRanks, extensionKeys: extensionKeys)
+        let ordering = Ordering(store: store, nameKeys: nameKeys, query: query, kindRanks: kindRanks, extensionKeys: extensionKeys,
+                                column: column)
         @Sendable func sortedItems(_ part: Range<Int>) -> [Item] {
             var items: [Item] = []
             items.reserveCapacity(part.count)
@@ -90,7 +93,8 @@ public enum Sorter {
     }
 }
 
-/// Sort item: group (folders 0 / files 1) | primary integer key | first 16 name-key bytes | storage index.
+/// Sort item: group (folders 0 / files 2; +1 for a missing extended-column value, so it sorts last in both
+/// directions) | primary integer key | first 16 name-key bytes | storage index.
 /// 16 bytes cover the digit-run encoding of typical numbered names ("IMG_0042.jpg"), so most ties resolve
 /// with integer compares instead of a memcmp into the key arena.
 struct Item: Sendable {
@@ -107,15 +111,35 @@ struct Ordering: Sendable {
     let field: SortField
     let ascending: Bool
     let kindRanks: [UInt16]
-    /// fileExtension sort: folded extension key per storage index (empty column for other fields).
+    /// fileExtension sort: folded extension key per storage index; an extended field's string column (P2-16);
+    /// empty for other fields. Keys longer than the 8-byte primary prefix fall back to a full compare.
     private let extensionKeys: SortKeyColumn
+    /// Extended field with integer values (P2-16), by storage index; empty otherwise.
+    private let integerColumn: [Int64?]
+    /// The primary key comes from `integerColumn` / the string column in `extensionKeys`.
+    private let columnKind: ColumnKind
 
-    init(store: EntryStore, nameKeys: SortKeyColumn, query: ViewQuery, kindRanks: [UInt16], extensionKeys: SortKeyColumn?) {
+    enum ColumnKind { case none, integers, strings }
+
+    init(store: EntryStore, nameKeys: SortKeyColumn, query: ViewQuery, kindRanks: [UInt16], extensionKeys: SortKeyColumn?,
+         column: ExtraSortValues? = nil) {
         self.store = store
         self.nameKeys = nameKeys
         self.field = query.sort.field
         self.ascending = query.sort.ascending
         self.kindRanks = kindRanks
+        if query.sort.field.isExtended, let column {
+            switch column {
+            case .integers(let values):
+                self.integerColumn = values; self.extensionKeys = SortKeyColumn(); self.columnKind = .integers
+            case .strings(var keys):
+                while keys.count < store.count { keys.append([]) }   // the full-key compare indexes every row
+                self.integerColumn = []; self.extensionKeys = keys; self.columnKind = .strings
+            }
+            return
+        }
+        self.integerColumn = []
+        self.columnKind = .none
         guard query.sort.field == .fileExtension else { self.extensionKeys = SortKeyColumn(); return }
         // Without a caller-maintained column every call folds the whole store: fine for one-off sorts,
         // too slow per loading batch (pass SortKeys.extensionKeys built incrementally there).
@@ -137,18 +161,26 @@ struct Ordering: Sendable {
     func item(_ index: UInt32) -> Item {
         let e = store.entry(index)
         let folder = e.isFolderForSorting
-        let primary: UInt64
-        switch field {
-        case .name: primary = 0
-        case .fileExtension: primary = extensionKeys.withKey(Int(index), Ordering.prefix)
-        case .dateModified: primary = UInt64(bitPattern: e.mtime) ^ (1 << 63)
-        case .dateCreated: primary = UInt64(bitPattern: e.ctime) ^ (1 << 63)
-        case .size: primary = folder ? 0 : UInt64(bitPattern: e.size) ^ (1 << 63)
-        case .kind: primary = Int(e.typeIndex) < kindRanks.count ? UInt64(kindRanks[Int(e.typeIndex)]) : UInt64(UInt16.max)
-        default: primary = 0   // extended fields: name order here, then Sorter.applyExtras (P2-16); .path sorts like .name
+        var group: UInt8 = folder ? 0 : 2
+        var primary: UInt64 = 0
+        switch columnKind {
+        case .integers:
+            if Int(index) < integerColumn.count, let value = integerColumn[Int(index)] { primary = UInt64(bitPattern: value) ^ (1 << 63) } else { group += 1 }
+        case .strings:
+            if Int(index) < extensionKeys.count, extensionKeys.length(Int(index)) > 0 { primary = extensionKeys.withKey(Int(index), Ordering.prefix) } else { group += 1 }
+        case .none:
+            switch field {
+            case .name: primary = 0
+            case .fileExtension: primary = extensionKeys.withKey(Int(index), Ordering.prefix)
+            case .dateModified: primary = UInt64(bitPattern: e.mtime) ^ (1 << 63)
+            case .dateCreated: primary = UInt64(bitPattern: e.ctime) ^ (1 << 63)
+            case .size: primary = folder ? 0 : UInt64(bitPattern: e.size) ^ (1 << 63)
+            case .kind: primary = Int(e.typeIndex) < kindRanks.count ? UInt64(kindRanks[Int(e.typeIndex)]) : UInt64(UInt16.max)
+            default: primary = 0   // extended fields without values: name order; .path sorts like .name
+            }
         }
         let (prefix, prefix2) = nameKeys.withKey(Int(index)) { (Ordering.prefix($0, from: 0), Ordering.prefix($0, from: 8)) }
-        return Item(group: folder ? 0 : 1, primary: primary, prefix: prefix, prefix2: prefix2, index: index)
+        return Item(group: group, primary: primary, prefix: prefix, prefix2: prefix2, index: index)
     }
 
     /// Calls `body` with a strict-weak-order `less` (total: the storage index breaks remaining ties).
@@ -158,7 +190,7 @@ struct Ordering: Sendable {
     func withLess<R>(_ body: ((Item, Item) -> Bool) -> R) -> R {
         nameKeys.withStorage { bytes, starts, lengths in
             extensionKeys.withStorage { extBytes, extStarts, extLengths in
-                let ascending = self.ascending, byExtension = field == .fileExtension
+                let ascending = self.ascending, byExtension = field == .fileExtension || columnKind == .strings
                 func ordered(_ a: Item, _ b: Item) -> Bool {
                     if a.primary != b.primary { return a.primary < b.primary }
                     if byExtension, max(extLengths[Int(a.index)], extLengths[Int(b.index)]) > 8 {   // equal 8-byte prefixes
@@ -214,7 +246,7 @@ struct Ordering: Sendable {
             extensionKeys.withStorage { extBytes, extStarts, extLengths in
                 // Literal closures (one per direction) so the comparison inlines into the sort; `withLess`'s
                 // closure-of-closure costs two indirect calls per comparison on 100k-row re-sorts (§4.4).
-                let byExtension = field == .fileExtension
+                let byExtension = field == .fileExtension || columnKind == .strings
                 @inline(__always) func ordered(_ a: Item, _ b: Item) -> Bool {
                     if a.primary != b.primary { return a.primary < b.primary }
                     if byExtension, max(extLengths[Int(a.index)], extLengths[Int(b.index)]) > 8 {

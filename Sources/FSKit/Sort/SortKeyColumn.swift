@@ -6,6 +6,8 @@ public struct SortKeyColumn: Sendable {
 
     public init() {}
     public var count: Int { starts.count }
+    /// Byte length of key `index`.
+    public func length(_ index: Int) -> Int { Int(lengths[index]) }
 
     public mutating func append(_ key: UnsafeRawBufferPointer) {
         starts.append(UInt32(bytes.count))
@@ -14,6 +16,12 @@ public struct SortKeyColumn: Sendable {
     }
 
     mutating func append(_ key: [UInt8]) { key.withUnsafeBytes { append($0) } }
+
+    mutating func reserve(keys: Int, bytes byteCount: Int) {
+        starts.reserveCapacity(keys)
+        lengths.reserveCapacity(keys)
+        bytes.reserveCapacity(byteCount)
+    }
 
     public mutating func append(contentsOf other: SortKeyColumn) {
         let base = UInt32(bytes.count)

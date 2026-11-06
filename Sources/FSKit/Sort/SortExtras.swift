@@ -1,9 +1,26 @@
 import Foundation
 
-/// Values for an extended sort column (P2-16), by storage index; nil sorts last in both directions.
+/// Values for an extended sort column (P2-16), by storage index; missing values sort last in both directions.
+/// Both forms are contiguous columns the Phase 1 `Ordering` sorts on directly (one sort, §4.4 re-sort budget).
 public enum ExtraSortValues: Sendable {
     case integers([Int64?])
-    case strings([[UInt8]?])                      // SortKeys.nameKey(isFolder: false) bytes
+    /// One `SortKeys.nameKey(isFolder: false)` key per storage index in one arena; an empty key is a missing value.
+    case strings(SortKeyColumn)
+
+    /// `.strings` from one optional key per storage index (nil or empty = missing).
+    public static func stringKeys(_ keys: [[UInt8]?]) -> ExtraSortValues {
+        var column = SortKeyColumn()
+        column.reserve(keys: keys.count, bytes: keys.reduce(0) { $0 + ($1?.count ?? 0) })
+        for key in keys { column.append(key ?? []) }
+        return .strings(column)
+    }
+
+    var count: Int {
+        switch self {
+        case .integers(let values): values.count
+        case .strings(let keys): keys.count
+        }
+    }
 }
 
 /// An extended column's values keyed by identity: what main hands the folder worker, which maps them to the
@@ -43,37 +60,40 @@ public struct SortExtras: Sendable {
     /// `sizes` and `column` (by identity) mapped to storage indices of `store`; identities not in it are left out.
     public static func make(sizes: [RowID: Int64], column: ExtraColumnValues?, in store: EntryStore) -> SortExtras {
         var extras = folderSizes(sizes, in: store)
+        // One hash lookup per value (the store's identity index), never an identity built per storage index (on
+        // name-identity volumes that normalizes every name).
         switch column {
         case .integers(let byID)?:
-            extras.column = .integers((0..<UInt32(store.count)).map { byID[store.identity($0)] })
+            var values = [Int64?](repeating: nil, count: store.count)
+            for (id, value) in byID { if let index = store.firstIndex(of: id) { values[Int(index)] = value } }
+            extras.column = .integers(values)
         case .strings(let byID)?:
-            extras.column = .strings((0..<UInt32(store.count)).map { byID[store.identity($0)] })
+            var keys = [[UInt8]?](repeating: nil, count: store.count)
+            for (id, key) in byID { if let index = store.firstIndex(of: id) { keys[Int(index)] = key } }
+            extras.column = .stringKeys(keys)
         case nil: break
         }
         return extras
     }
 }
 
-/// Byte-wise order of `SortKeys.nameKey` bytes.
-struct ByteKey: Comparable {
-    let bytes: [UInt8]
-    static func < (a: ByteKey, b: ByteKey) -> Bool { a.bytes.lexicographicallyPrecedes(b.bytes) }
-}
-
 extension Sorter {
     /// Phase 1 permutation plus: the size sort orders the folders group by `extras.folderSizes` (unknown sizes last
-    /// in both directions, name order breaking ties), and sized packages among the files by theirs. Folders stay first. Extended fields (P2-16) order
-    /// each of the two groups by `extras.column`, missing values last in both directions.
+    /// in both directions, name order breaking ties), and sized packages among the files by theirs. Folders stay
+    /// first. Extended fields (P2-16) order each of the two groups by `extras.column`, missing values last in both
+    /// directions, name order breaking ties: the column is the primary key of the one Phase 1 sort.
     public static func permutation(_ store: EntryStore, nameKeys: SortKeyColumn, searchKeys: SortKeyColumn?,
                                    query: ViewQuery, kindRanks: [UInt16], extensionKeys: SortKeyColumn? = nil,
                                    extras: SortExtras) -> [UInt32] {
-        var order = permutation(store, nameKeys: nameKeys, searchKeys: searchKeys, query: query, kindRanks: kindRanks,
-                                extensionKeys: extensionKeys)
+        let column = query.sort.field.isExtended ? extras.column : nil
+        var order = sortedRun(store, range: 0..<store.count, nameKeys: nameKeys, searchKeys: searchKeys, query: query,
+                              kindRanks: kindRanks, extensionKeys: extensionKeys, column: column)
         applyExtras(&order, store: store, query: query, extras: extras)
         return order
     }
 
-    /// Reorders an already sorted permutation for `extras` (the worker's patch and re-read paths sort first).
+    /// Reorders an already sorted permutation for the size sort's `extras.folderSizes` (the worker's loading paths
+    /// sort first). Extended columns are not handled here: they sort with `permutation(…, extras:)`.
     public static func applyExtras(_ order: inout [UInt32], store: EntryStore, query: ViewQuery, extras: SortExtras) {
         if query.sort.field == .size, !extras.folderSizes.isEmpty {
             let folderCount = order.prefix { store.entry($0).isFolderForSorting }.count
@@ -84,20 +104,6 @@ extension Sorter {
                 reorder(&order, range: folderCount..<order.count, ascending: query.sort.ascending) { idx in
                     let entry = store.entry(idx)
                     return entry.kind == .package ? extras.folderSizes[idx] : entry.size
-                }
-            }
-        }
-        if query.sort.field.isExtended, let column = extras.column {
-            // Folders stay first; each group is ordered by the column, missing values last, name order breaking ties.
-            let folderCount = order.prefix { store.entry($0).isFolderForSorting }.count
-            for range in [0..<folderCount, folderCount..<order.count] {
-                switch column {
-                case .integers(let values):
-                    reorder(&order, range: range, ascending: query.sort.ascending) { i in Int(i) < values.count ? values[Int(i)] : nil }
-                case .strings(let keys):
-                    reorder(&order, range: range, ascending: query.sort.ascending) { i in
-                        Int(i) < keys.count ? keys[Int(i)].map(ByteKey.init) : nil
-                    }
                 }
             }
         }
