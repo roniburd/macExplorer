@@ -34,7 +34,7 @@ defaults:
 
 env:
   XCODE_VERSION: "27.2"
-  RELEASE_SIGNING: adhoc          # from the spike (spec §7): adhoc | self-signed
+  RELEASE_SIGNING: self-signed    # adhoc | self-signed. Self-signed keeps the code identity stable so macOS privacy grants (Desktop, Documents, Full Disk Access) survive updates; ad-hoc identity is the per-build cdhash.
   SPARKLE_BIN: .build/artifacts/sparkle/Sparkle/bin
 
 jobs:
