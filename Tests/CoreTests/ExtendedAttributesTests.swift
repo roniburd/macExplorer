@@ -119,7 +119,11 @@ final class ExtendedAttributesTests: XCTestCase {
         XCTAssertEqual(model.extendedAttributes(atRow: b)?.tags, ["Work"])
         XCTAssertEqual(emitted, [model.identity(atRow: b)])
         XCTAssertNil(model.extendedAttributes(atRow: model.row(named: "a.txt")!))
-        await model.loadAllExtendedAttributes(.permissions)
+        model.requestExtendedAttributes(rows: IndexSet(integersIn: 0..<model.rowCount), .permissions)
+        let all = Date().addingTimeInterval(5)
+        while (0..<model.rowCount).contains(where: { model.extendedAttributes(atRow: $0)?.mode == nil }) && Date() < all {
+            try await Task.sleep(for: .milliseconds(20))
+        }
         for row in 0..<model.rowCount {
             XCTAssertNotNil(model.extendedAttributes(atRow: row)?.mode, model.name(atRow: row))
         }

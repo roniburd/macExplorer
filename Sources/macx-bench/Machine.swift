@@ -2,6 +2,13 @@ import Darwin
 import Foundation
 
 enum Machine {
+    /// Bytes allocated and not freed, over every malloc zone.
+    static func heapBytesInUse() -> Int64 {
+        var stats = malloc_statistics_t()
+        malloc_zone_statistics(nil, &stats)
+        return Int64(stats.size_in_use)
+    }
+
     /// phys_footprint of this process in bytes (-1 on failure).
     static func footprintBytes() -> Int64 {
         var info = task_vm_info_data_t()

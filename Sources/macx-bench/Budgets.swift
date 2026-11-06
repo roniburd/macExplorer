@@ -49,6 +49,12 @@ enum Budgets {
         t += ["resort.tags", "resort.comments"].map {
             Budget(metric: $0, sizes: [100_000], limit: 30, unit: "ms", spec: "§4.4 re-sort 100k by any column < 30 ms")
         }
+        // P2-16 review fix (§4.4 memory): what an extended sort of a loaded 100k folder adds (heap bytes in use),
+        // small enough to keep the folder inside the 20 MB steady budget.
+        t += ["memory.extendedSort.tags", "memory.extendedSort.owner"].map {
+            Budget(metric: $0, sizes: [100_000], limit: 8, unit: "MB",
+                   spec: "§4.4 memory, 100k-entry folder < 20 MB steady: sorting by an extended column adds < 8 MB")
+        }
         return t
     }()
 

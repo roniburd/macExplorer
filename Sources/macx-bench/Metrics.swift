@@ -329,6 +329,23 @@ final class MetricSuite {
             }))
         }
 
+        // P2-16 review fix (§4.4 memory): what sorting a loaded 100k folder by an extended column adds to the model,
+        // as heap bytes in use (the footprint reuses freed pages, so its delta is not a measure of what is held).
+        for field in [SortField.tags, .owner] where wants("memory.extendedSort.\(field.rawValue)") {
+            out.append(result("memory.extendedSort.\(field.rawValue)", unit: "MB", try await samples {
+                try await self.withLoadedModel { watch in
+                    let before = Machine.heapBytesInUse()
+                    let resets = watch.changeEvents
+                    watch.model.setQuery(ViewQuery(sort: SortDescriptor(field: field, ascending: true)))
+                    try await self.waitUntil("sorted by \(field.rawValue)", timeout: .seconds(60)) {
+                        watch.changeEvents > resets && !watch.model.extendedSortLoading
+                    }
+                    let after = Machine.heapBytesInUse()
+                    return Double(after - before) / 1_048_576
+                }
+            }))
+        }
+
         if wants("fsevent.incremental") {
             let values = try await withLoadedModel { watch in
                 try await samples {

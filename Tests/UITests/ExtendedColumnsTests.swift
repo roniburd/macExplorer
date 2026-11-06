@@ -64,7 +64,9 @@ final class ExtendedColumnsTests: XCTestCase {
         let model = try await loadedModel(sandbox.root, env: env)
         defer { model.close() }
         let row = try XCTUnwrap(model.row(named: "a.txt"))
-        await model.loadAllExtendedAttributes(.lastOpened)
+        model.requestExtendedAttributes(rows: IndexSet(integer: row), .lastOpened)
+        let end = Date().addingTimeInterval(5)
+        while model.extendedAttributes(atRow: row) == nil && Date() < end { try await Task.sleep(for: .milliseconds(20)) }
         XCTAssertEqual(ExtendedColumns.text(.dateLastOpened, row: row, in: model, dateStyle: .absolute),
                        Formatters.date(date, style: .absolute))
     }

@@ -93,7 +93,7 @@ final class FolderModelExtendedSortTests: XCTestCase {
         addTeardownBlock { @MainActor in model.close() }
         try await wait { model.state == .complete }
         model.setQuery(ViewQuery(sort: SortDescriptor(field: .tags, ascending: true)))
-        try await wait { model.extendedSortTask == nil && model.attributeTable.count == 2 }
+        try await wait { model.extendedSortTask == nil && model.sortColumn?.count == 2 }
         XCTAssertEqual(names(model), ["a.txt", "b.txt"])
         XCTAssertNil(model.lastAttributeRequest, "no view asked for attributes")
 
@@ -120,8 +120,8 @@ final class FolderModelExtendedSortTests: XCTestCase {
         model.requestExtendedAttributes(rows: IndexSet(integer: 0), .permissions)
         try await wait { model.extendedAttributes(atRow: 0) != nil }
         model.setQuery(ViewQuery(sort: SortDescriptor(field: .permissions, ascending: true)))
-        try await wait { model.extendedSortTask == nil && model.attributeTable.count == 4 }
-        XCTAssertEqual(model.attributeTable.count, 4)
+        try await wait { model.extendedSortTask == nil && model.sortColumn?.count == 4 }
+        XCTAssertEqual(model.sortColumn?.count, 4)
         model.setQuery(ViewQuery(sort: SortDescriptor(field: .name, ascending: true)))
         XCTAssertEqual(model.attributeTable.count, 1, "only the requested row keeps its attributes")
         XCTAssertNotNil(model.attributeTable[model.identity(atRow: 0)])
@@ -141,17 +141,106 @@ final class FolderModelExtendedSortTests: XCTestCase {
         addTeardownBlock { @MainActor in model.close() }
         try await wait { model.state == .complete }
         model.setQuery(ViewQuery(sort: SortDescriptor(field: .comments, ascending: true)))
-        try await wait { model.extendedSortTask == nil && model.attributeTable.count == 2 }
+        try await wait { model.extendedSortTask == nil && model.sortColumn?.count == 2 }
         let builds = model.sortColumnBuilds
         try sandbox.setFinderComment("two", on: "b.txt")
         model.handleWatch(.items(["b.txt"]))
-        try await wait { self.names(model) == ["a.txt", "b.txt"] && model.attributeTable[model.identity(atRow: 1)]?.comment == "two" }
+        let two = SortKeys.nameKey("two", isFolder: false)
+        try await wait { self.names(model) == ["a.txt", "b.txt"] && model.sortColumn?.key(model.identity(atRow: 1)) == two }
         try sandbox.setFinderComment("zzz", on: "a.txt")
         model.handleWatch(.items(["a.txt"]))
         try await wait { self.names(model) == ["b.txt", "a.txt"] }
         XCTAssertEqual(names(model), ["b.txt", "a.txt"])
         XCTAssertEqual(model.sortColumnBuilds, builds, "no full rebuild of the sort column after changes")
-        guard case .strings(let keys)? = model.sortValues().column else { return XCTFail("no string column") }
-        XCTAssertEqual(keys.count, 2)
+        XCTAssertEqual(model.sortValues().column?.kind, .strings)
+        XCTAssertEqual(model.sortValues().column?.count, 2)
+    }
+
+    private func sortedModel(_ sandbox: Sandbox, _ field: SortField, rows: Int) async throws -> FolderModel {
+        let env = CoreEnvironment.sandboxed(root: sandbox.root); _ = await env.start()
+        var ctx = env.folderContext(); ctx.resortCoalescing = .zero
+        ctx.makeWatcher = { _, _, _ in NoopWatcher() }        // the tests deliver watcher events themselves
+        let model = FolderModel(directory: sandbox.root, context: ctx, query: ViewQuery())
+        model.start()
+        addTeardownBlock { @MainActor in model.close() }
+        try await wait { model.state == .complete && model.rowCount == rows }
+        model.setQuery(ViewQuery(sort: SortDescriptor(field: field, ascending: true)))
+        try await wait { model.extendedSortTask == nil && model.sortColumn?.count == rows }
+        return model
+    }
+
+    /// Review fix (§4.4 memory): sorting by an extended column keeps one compact value per row in the sort column
+    /// and no full `ExtendedAttributes` for rows no view asked for.
+    func testSortLoadFillsOnlyTheCompactColumn() async throws {
+        let sandbox = try Sandbox(); defer { sandbox.destroy() }
+        for n in ["a.txt", "b.txt", "c.txt"] { try sandbox.createFile(n) }
+        try sandbox.setFinderTags(["beta"], on: "a.txt")
+        let model = try await sortedModel(sandbox, .tags, rows: 3)
+        XCTAssertEqual(model.sortColumn?.count, 3)
+        XCTAssertTrue(model.attributeTable.isEmpty, "no view asked for attributes")
+        XCTAssertEqual(model.sortColumn?.key(model.identity(atRow: 0)), SortKeys.nameKey("beta", isFolder: false))
+        XCTAssertNil(model.sortColumn?.key(model.identity(atRow: 1)), "no tag: loaded without a value")
+        XCTAssertEqual(names(model), ["a.txt", "b.txt", "c.txt"])
+    }
+
+    /// Review fix: flipping the direction of a loaded extended sort reads nothing again, and F5 re-reads each
+    /// row's sort value once (not once for the invalidation and again for the load that follows the re-read).
+    func testToggleReadsNothingAndRefreshReadsEachRowOnce() async throws {
+        let sandbox = try Sandbox(); defer { sandbox.destroy() }
+        for n in ["a.txt", "b.txt", "c.txt"] { try sandbox.createFile(n) }
+        try sandbox.setFinderComment("zulu", on: "a.txt")
+        let model = try await sortedModel(sandbox, .comments, rows: 3)
+        let reads = model.sortValueReads
+        XCTAssertEqual(reads, 3)
+        model.setQuery(ViewQuery(sort: SortDescriptor(field: .comments, ascending: false)))
+        try await wait { model.extendedSortTask == nil }
+        XCTAssertEqual(model.sortValueReads, reads, "the toggle reads nothing")
+        model.refresh()
+        try await wait { !model.rereadInFlight && model.extendedSortTask == nil && model.sortValueReads > reads }
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(model.sortValueReads, reads + 3, "F5 re-reads each row once")
+        XCTAssertEqual(model.sortColumn?.key(model.identity(atRow: model.row(named: "a.txt")!)),
+                       SortKeys.nameKey("zulu", isFolder: false))
+        XCTAssertFalse(model.sortColumnRefreshPending)
+    }
+
+    /// Review fix: a row the watcher invalidates keeps its sort position while a visible-row read that does not
+    /// cover the sort field (Comments column hidden, Tags shown) lands first.
+    func testNarrowVisibleReadKeepsTheSortValue() async throws {
+        let sandbox = try Sandbox(); defer { sandbox.destroy() }
+        for n in ["a.txt", "b.txt", "c.txt"] { try sandbox.createFile(n) }
+        try sandbox.setFinderComment("alpha", on: "c.txt")
+        let model = try await sortedModel(sandbox, .comments, rows: 3)
+        XCTAssertEqual(names(model), ["c.txt", "a.txt", "b.txt"])
+        var orders: [[String]] = []
+        let token = model.observe { if case .changes = $0 { orders.append(self.names(model)) } }
+        defer { token.cancel() }
+        model.requestExtendedAttributes(rows: IndexSet(integersIn: 0..<3), .tags)
+        try await wait { model.extendedAttributes(atRow: 0) != nil }
+        for _ in 0..<5 {
+            model.handleWatch(.items(["c.txt"]))
+            try await wait { model.staleSortValues.isEmpty && model.staleAttributes.isEmpty }
+        }
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertNotNil(model.sortColumn?.key(model.identity(atRow: 0)))
+        XCTAssertTrue(orders.allSatisfy { $0 == ["c.txt", "a.txt", "b.txt"] }, "\(orders)")
+        XCTAssertEqual(names(model), ["c.txt", "a.txt", "b.txt"])
+    }
+
+    /// Review fix: entries of a deleted item leave the sort column and the attribute table with the patch that
+    /// removes its row.
+    func testDeletedItemLeavesTheColumn() async throws {
+        let sandbox = try Sandbox(); defer { sandbox.destroy() }
+        for n in ["a.txt", "b.txt", "c.txt"] { try sandbox.createFile(n) }
+        let model = try await sortedModel(sandbox, .owner, rows: 3)
+        model.requestExtendedAttributes(rows: IndexSet(integersIn: 0..<3), .permissions)
+        try await wait { model.attributeTable.count == 3 }
+        let gone = model.identity(atRow: model.row(named: "c.txt")!)
+        try sandbox.remove("c.txt")
+        model.handleWatch(.items(["c.txt"]))
+        try await wait { model.rowCount == 2 }
+        XCTAssertEqual(model.sortColumn?.count, 2)
+        XCTAssertEqual(model.sortColumn?.contains(gone), false)
+        XCTAssertNil(model.attributeTable[gone])
     }
 }

@@ -133,4 +133,55 @@ final class SortExtrasTests: XCTestCase {
         }
         XCTAssertEqual(order, reference)
     }
+
+    /// Review fix (§4.4 memory): the compact by-identity column records loaded-without-value, reports whether the
+    /// sort value changed, interns repeated keys, and survives arena compaction after many replacements.
+    func testCompactColumnValuesTrackLoadedValuesAndChanges() {
+        var ints = ExtraColumnValues(kind: .integers)
+        XCTAssertFalse(ints.contains(.object(1)))
+        XCTAssertFalse(ints.set(.object(1), integer: nil), "loaded without a value: still sorts last")
+        XCTAssertTrue(ints.contains(.object(1)))
+        XCTAssertNil(ints.integer(.object(1)))
+        XCTAssertTrue(ints.set(.object(1), integer: 5))
+        XCTAssertFalse(ints.set(.object(1), integer: 5))
+        XCTAssertTrue(ints.set(.name("n"), integer: 0))
+        XCTAssertEqual(ints.integer(.name("n")), 0)
+        XCTAssertEqual(ints.count, 2)
+        ints.remove(.object(1))
+        XCTAssertFalse(ints.contains(.object(1)))
+
+        var keys = ExtraColumnValues(kind: .strings)
+        XCTAssertTrue(keys.set(.object(1), key: [1, 2]))
+        XCTAssertFalse(keys.set(.object(1), key: [1, 2]))
+        XCTAssertFalse(keys.set(.object(2), key: []), "empty key = no value")
+        XCTAssertTrue(keys.contains(.object(2)))
+        XCTAssertNil(keys.key(.object(2)))
+        XCTAssertTrue(keys.set(.object(1), key: nil))
+        for round in 0..<3_000 { keys.set(.object(3), key: [UInt8(round % 200), UInt8(round / 200)]) }   // forces compaction
+        XCTAssertEqual(keys.key(.object(3)), [UInt8(2_999 % 200), UInt8(2_999 / 200)])
+        XCTAssertNil(keys.key(.object(1)))
+        XCTAssertEqual(keys.count, 3)
+        for i in 0..<1_000 { keys.set(.object(UInt64(100 + i)), key: [7, 7]) }                   // one interned slot
+        XCTAssertEqual(keys.key(.object(500)), [7, 7])
+    }
+
+    /// The compact column maps to the worker store's storage indices for both identity kinds.
+    func testCompactColumnMapsBothIdentityKinds() {
+        var s = EntryStore(identityMode: .objectID)
+        var b = Batch(generation: .initial)
+        for (i, name) in ["a", "b", "c"].enumerated() {
+            let e = Entry(rowID: i == 2 ? 0 : UInt64(i + 1), fileID: UInt64(i + 1), size: 0, allocSize: 0, mtime: 0, ctime: 0,
+                          nameOffset: 0, nameLen: 0, kind: .file, flags: [], typeIndex: TypeRegistry.dataIndex)
+            Array(name.utf8).withUnsafeBufferPointer { b.append(e, nameBytes: $0) }
+        }
+        s.append(b)
+        XCTAssertEqual(s.identity(2), .name("c"), "no file ID: name identity")
+        var column = ExtraColumnValues(kind: .strings)
+        column.set(s.identity(0), key: [9])
+        column.set(s.identity(1), key: nil)
+        column.set(s.identity(2), key: [3])
+        column.set(.object(99), key: [1])                                                     // not in the store
+        guard case .strings(let k)? = SortExtras.make(sizes: [:], column: column, in: s).column else { return XCTFail("no column") }
+        XCTAssertEqual((0..<k.count).map { i in k.withKey(i) { Array($0) } }, [[9], [], [3]])
+    }
 }

@@ -177,11 +177,18 @@ public final class FolderModel {
     /// re-sort, and the coalesced re-sort after values change while sorted by one.
     var extendedSortTask: Task<Void, Never>?
     var columnResortTask: Task<Void, Never>?
-    /// The extended sort field's values by identity, kept current per changed identity (review fix: `sortValues()`
-    /// hands them over without walking `attributeTable`). Built for `sortColumnField`; nil when not sorted by one.
+    /// The extended sort field's values by identity (compact: one 8-byte value per row, string keys interned; review
+    /// fix, §4.4 memory), kept current per changed identity and handed to the worker without a walk. Built for
+    /// `sortColumnField`; nil when not sorted by one. `attributeTable` holds only the rows views asked for.
     var sortColumnField: SortField?
-    var sortIntegers: [RowID: Int64] = [:]
-    var sortKeys: [RowID: [UInt8]] = [:]
+    var sortColumn: ExtraColumnValues?
+    /// Column entries the watcher or a patch invalidated, with the `attributeSerial` of that invalidation; they keep
+    /// their value (and position) until a read that began after it lands.
+    var staleSortValues: [RowID: Int] = [:]
+    /// A full invalidation (F5, full rescan) happened: the next `startExtendedSort` re-reads every row once.
+    var sortColumnRefreshPending = false
+    /// Names read for the sort column so far (tests).
+    var sortValueReads = 0
     /// Full builds of the sort column so far (tests).
     var sortColumnBuilds = 0
     /// Sort-only reads (FolderModel+Attributes): identities whose sort value must be (re-)read, and the read task.
@@ -619,6 +626,7 @@ public final class FolderModel {
     /// `carrying` maps old identities to the names they now have (renames on name-identity volumes).
     func applyPatch(_ result: FolderWorker.PatchResult, carrying: [(RowID, String)] = []) {
         let before = selection
+        let old = store
         store = result.store
         keysTag = result.tag
         for replacement in result.diff.replacements { substitute(replacement.old, with: replacement.new) }
@@ -627,6 +635,7 @@ public final class FolderModel {
             if let index = carried[name] { substitute(old, with: store.identity(index)) }
         }
         reconcileSelection(emitting: false)
+        pruneAttributes(old: old, diff: result.diff)
         invalidateReloadedAttributes(result.diff.changes)
         publishPatch(result.diff.changes, runs: result.runs)
         if selection != before { emit(.selection(selection)) }

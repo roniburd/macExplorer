@@ -35,6 +35,18 @@ final class BudgetsTests: XCTestCase {
         }
     }
 
+    /// Review fix (P2-16, §4.4 memory): sorting a 100k folder by Tags or Owner has a memory budget.
+    func testExtendedSortMemoryHasAn8MBBudgetAt100k() {
+        for name in ["memory.extendedSort.tags", "memory.extendedSort.owner"] {
+            let budget = Budgets.table.first { $0.metric == name }
+            XCTAssertEqual(budget?.limit, 8, name)
+            XCTAssertEqual(budget?.unit, "MB", name)
+            XCTAssertEqual(budget?.sizes, [100_000], name)
+        }
+        let checks = Budgets.evaluate([MetricResult(name: "memory.extendedSort.owner", size: 100_000, unit: "MB", samples: [42])])
+        XCTAssertEqual(checks.first?.passed, false)
+    }
+
     func testMemoryBudgetUsesMegabytes() {
         let checks = Budgets.evaluate([MetricResult(name: "memory.steady", size: 100_000, unit: "MB", samples: [25])])
         XCTAssertEqual(checks.first?.passed, false)
