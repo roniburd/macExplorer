@@ -23,6 +23,8 @@ public final class FolderViewStore {
     private let saveDelay: Duration
     private var folders: [String: Entry] = [:]
     private var saveTask: Task<Void, Never>?
+    /// Finder's `.DS_Store` view per folder, read once per launch (empty = Finder recorded nothing). Not persisted.
+    private var finderViews: [String: FolderViewSettings] = [:]
 
     /// `fileURL` nil = in memory only (tests, sandbox scenarios).
     public init(fileURL: URL?, limit: Int = FolderViewStore.defaultLimit, saveDelay: Duration = .seconds(1),
@@ -68,6 +70,14 @@ public final class FolderViewStore {
     public func remove(_ folder: URL) {
         guard folders.removeValue(forKey: Self.key(folder)) != nil else { return }
         scheduleSave()
+    }
+
+    /// Finder's view of `folder` if it was read this launch (empty settings = read, nothing found).
+    public func finderView(for folder: URL) -> FolderViewSettings? { finderViews[Self.key(folder)] }
+
+    public func setFinderView(_ view: FolderViewSettings, for folder: URL) {
+        if finderViews.count >= limit { finderViews.removeAll(keepingCapacity: true) }
+        finderViews[Self.key(folder)] = view
     }
 
     /// Writes pending changes now (app termination).

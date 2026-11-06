@@ -78,7 +78,7 @@ final class FileCommandController: CommandHandler {
             performWindowCommand(effective, target: target)
         case .viewAsDetails, .viewAsIcons, .iconSizeSmall, .iconSizeMedium, .iconSizeLarge, .densityCompact, .densityRegular,
              .densityComfortable, .toggleHidden, .toggleCommandBar, .sortByName, .sortByDateModified, .sortBySize, .sortByKind,
-             .sortByDateCreated, .sortAscending, .sortDescending:
+             .sortByDateCreated, .sortAscending, .sortDescending, .useViewAsDefault, .resetFolderView:
             performViewCommand(effective)
         case .eject: eject(target)
         case .removeFromFavorites: removeFavorite(target)

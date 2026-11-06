@@ -113,6 +113,7 @@ import Core
                 item(.sortByName), item(.sortByDateModified), item(.sortBySize), item(.sortByKind), item(.sortByDateCreated),
                 .separator(), item(.sortAscending), item(.sortDescending),
             ]),
+            item(.useViewAsDefault), item(.resetFolderView),
             .separator(),
             item(.toggleHidden), item(.toggleCommandBar),
             standard("Show Sidebar", #selector(NSSplitViewController.toggleSidebar(_:)), "s", [.command, .control]),

@@ -166,7 +166,7 @@ final class ToolbarTests: XCTestCase {
         XCTAssertEqual(switcher.selectedIndex, ViewMode.allCases.firstIndex(of: controller.session.viewMode))
         controller.toolbarController.selectViewMode(at: 1)
         XCTAssertEqual(controller.session.viewMode, .icons)
-        XCTAssertEqual(h.environment.settings.viewMode, .icons)
+        XCTAssertEqual(h.environment.settings.viewMode, .details, "per folder: the global default is untouched")
         controller.session.viewMode = .details
         XCTAssertEqual(switcher.selectedIndex, 0)
         XCTAssertTrue(switcher.subitems.allSatisfy { !$0.label.isEmpty })

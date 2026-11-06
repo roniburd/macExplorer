@@ -17,14 +17,28 @@ extension FolderModel {
 
     /// Whether the item at `index` may have a localized name worth looking up.
     nonisolated static func isLocalizationCandidate(_ store: EntryStore, _ index: UInt32, subfolders: Bool) -> Bool {
+        // Byte suffix checks: this runs over every row after each patch, so no String per row.
         switch store.entry(index).kind {
         case .package:
-            return store.name(index).lowercased().hasSuffix(".app")
+            return store.withNameBytes(index) { hasSuffix($0, appSuffix, caseInsensitive: true) }
         case .directory:
-            return subfolders || store.name(index).hasSuffix(".localized")
+            return subfolders || store.withNameBytes(index) { hasSuffix($0, localizedSuffix, caseInsensitive: false) }
         default:
             return false
         }
+    }
+
+    private nonisolated static let appSuffix: [UInt8] = Array(".app".utf8)
+    private nonisolated static let localizedSuffix: [UInt8] = Array(".localized".utf8)
+
+    private nonisolated static func hasSuffix(_ name: UnsafeBufferPointer<UInt8>, _ suffix: [UInt8], caseInsensitive: Bool) -> Bool {
+        guard name.count > suffix.count else { return false }
+        let start = name.count - suffix.count
+        for (i, byte) in suffix.enumerated() {
+            let b = name[start + i]
+            if b != byte && !(caseInsensitive && b | 0x20 == byte) { return false }
+        }
+        return true
     }
 
     /// The stem to show for `name` given Finder's localized name, or "" when it adds nothing.

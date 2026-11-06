@@ -51,6 +51,8 @@ extension CommandHandlingViewController {
     @objc func macx_densityComfortable(_ sender: Any?) { run(.densityComfortable, sender: sender) }
     @objc func macx_toggleHidden(_ sender: Any?) { run(.toggleHidden, sender: sender) }
     @objc func macx_toggleCommandBar(_ sender: Any?) { run(.toggleCommandBar, sender: sender) }
+    @objc func macx_useViewAsDefault(_ sender: Any?) { run(.useViewAsDefault, sender: sender) }
+    @objc func macx_resetFolderView(_ sender: Any?) { run(.resetFolderView, sender: sender) }
     @objc func macx_sortByName(_ sender: Any?) { run(.sortByName, sender: sender) }
     @objc func macx_sortByDateModified(_ sender: Any?) { run(.sortByDateModified, sender: sender) }
     @objc func macx_sortBySize(_ sender: Any?) { run(.sortBySize, sender: sender) }

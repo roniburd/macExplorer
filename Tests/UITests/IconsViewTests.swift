@@ -104,7 +104,7 @@ final class IconsViewTests: XCTestCase {
         return (icons, folder)
     }
 
-    func testBindShowsItemsAndIconSizeFollowsSettings() async throws {
+    func testBindShowsItemsAndIconSizeFollowsTheFolderView() async throws {
         let h = try await ContentTestHarness.make(self)
         h.environment.settings.iconSize = .medium
         let (icons, _) = try await makeIcons(h, files: 9)
@@ -112,7 +112,7 @@ final class IconsViewTests: XCTestCase {
         XCTAssertEqual(icons.layout.itemCount, 9)
         XCTAssertEqual(icons.collectionView.accessibilityIdentifier(), AXID.iconsGrid)
         XCTAssertFalse(icons.collectionView.isSelectable, "selection is model-owned (§5.5)")
-        h.environment.settings.iconSize = .large
+        icons.viewState.change { $0.iconSize = .large }
         try await h.waitUntil("large icons") { icons.layout.iconSize == .large }
     }
 

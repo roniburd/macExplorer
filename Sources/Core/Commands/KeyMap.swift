@@ -36,7 +36,7 @@ public enum KeyMap {
              .cycleFocusForward, .cycleFocusBackward, .showOperations,
              .viewAsDetails, .viewAsIcons, .iconSizeSmall, .iconSizeMedium, .iconSizeLarge,
              .densityCompact, .densityRegular, .densityComfortable, .toggleCommandBar,
-             .sortByName, .sortByDateModified, .sortBySize, .sortByKind, .sortByDateCreated, .sortAscending, .sortDescending,
+             .sortByName, .sortByDateModified, .sortBySize, .sortByKind, .sortByDateCreated, .sortAscending, .sortDescending, .useViewAsDefault, .resetFolderView,
              .removeFromFavorites, .cancelOperation:
             nil
         }
@@ -72,7 +72,7 @@ public enum KeyMap {
              .newWindow, .closeWindow, .showOperations,
              .viewAsDetails, .viewAsIcons, .iconSizeSmall, .iconSizeMedium, .iconSizeLarge,
              .densityCompact, .densityRegular, .densityComfortable, .toggleHidden, .toggleCommandBar,
-             .sortByName, .sortByDateModified, .sortBySize, .sortByKind, .sortByDateCreated, .sortAscending, .sortDescending,
+             .sortByName, .sortByDateModified, .sortBySize, .sortByKind, .sortByDateCreated, .sortAscending, .sortDescending, .useViewAsDefault, .resetFolderView,
              .eject, .removeFromFavorites:
             []
         }

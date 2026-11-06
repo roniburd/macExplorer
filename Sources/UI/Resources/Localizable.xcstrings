@@ -3380,6 +3380,17 @@
         }
       }
     },
+    "Reset View for This Folder" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reset View for This Folder"
+          }
+        }
+      }
+    },
     "Restart Now" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4278,6 +4289,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Use Terminal"
+          }
+        }
+      }
+    },
+    "Use as Default for All Folders" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use as Default for All Folders"
           }
         }
       }

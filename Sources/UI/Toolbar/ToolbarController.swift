@@ -84,7 +84,6 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
         let modes = ViewMode.allCases
         guard modes.indices.contains(index) else { return }
         session.viewMode = modes[index]
-        context.environment.settings.viewMode = modes[index]
         syncViewMode()
     }
 

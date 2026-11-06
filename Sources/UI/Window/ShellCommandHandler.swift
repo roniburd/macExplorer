@@ -113,6 +113,5 @@ final class ShellCommandHandler: CommandHandler {
 
     private func setViewMode(_ mode: ViewMode) {
         window?.session.viewMode = mode
-        context.environment.settings.viewMode = mode
     }
 }

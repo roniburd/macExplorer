@@ -101,6 +101,7 @@ public final class AppLifecycle {
     /// private pasteboard of a sandboxed run.
     public func willTerminate() {
         flushSettings()
+        context.environment.folderViews.flush()
         dockBadge?.stop()
         dockBadge = nil
         if let name = context.options.pasteboardName { NSPasteboard(name: NSPasteboard.Name(name)).releaseGlobally() }

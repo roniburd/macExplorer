@@ -11,9 +11,23 @@ final class BrowserSession {
     private let environment: CoreEnvironment
     private(set) var folder: FolderModel
     private(set) var history: NavigationHistory
+    /// The current folder's view (design 2026-11-05 §2): lists observe it; user changes persist per folder.
+    let view: FolderViewState
     var viewMode: ViewMode {
-        didSet { if viewMode != oldValue { observers.send(.viewModeChanged(viewMode)) } }
+        get { view.resolved.viewMode }
+        set {
+            guard newValue != view.resolved.viewMode else { return }
+            view.change { $0.viewMode = newValue }
+            observers.send(.viewModeChanged(newValue))
+        }
     }
+    /// Finder's `.DS_Store` view of the current folder, read off main after opening it.
+    private var finderTask: Task<Void, Never>?
+    /// The user changed the view since the folder opened: late Finder data no longer applies.
+    private var userChangedView = false
+    private var defaultsLoop: ObservationLoop?
+    /// Finder data later than this after opening is cached for next time but not applied (no surprise switches).
+    static let finderApplyDeadline: Duration = .seconds(1)
 
     private let observers = Observers<SessionEvent>()
     private var folderToken: ObserverToken?
@@ -26,10 +40,16 @@ final class BrowserSession {
 
     init(environment: CoreEnvironment, initialURL: URL) {
         self.environment = environment
-        self.folder = environment.makeFolderModel(initialURL)
+        let resolved = Self.resolve(initialURL, environment: environment)
+        self.view = FolderViewState(resolved)
+        self.folder = environment.makeFolderModel(initialURL, query: Self.query(environment, sort: resolved.sort))
         self.history = NavigationHistory(current: initialURL)
-        self.viewMode = environment.settings.viewMode
+        view.persist = { [weak self] delta in self?.persist(delta) }
         attach(folder)
+        readFinderView(initialURL)
+        // Folders follow global default changes (Settings window, Use as Default) for fields they don't set.
+        defaultsLoop = ObservationLoop({ [weak self] in _ = self?.environment.settings.defaultFolderView },
+                                       onChange: { [weak self] in self?.reresolve() })
         // Every window follows Settings.showHidden (⇧⌘. or the Settings window in any window, QA round 1).
         settingsLoop = ObservationLoop({ [weak self] in
             _ = self?.environment.settings.showHidden
@@ -99,6 +119,10 @@ final class BrowserSession {
         closed = true
         settingsLoop?.cancel()
         settingsLoop = nil
+        defaultsLoop?.cancel()
+        defaultsLoop = nil
+        finderTask?.cancel()
+        finderTask = nil
         folderToken = nil
         folder.close()
     }
@@ -114,11 +138,85 @@ final class BrowserSession {
     private func open(_ url: URL, selecting name: String?) {
         folderToken = nil
         folder.close()
-        let model = environment.makeFolderModel(url)
+        finderTask?.cancel()
+        userChangedView = false
+        let oldMode = view.resolved.viewMode
+        let resolved = Self.resolve(url, environment: environment)
+        view.replace(resolved)
+        let model = environment.makeFolderModel(url, query: Self.query(environment, sort: resolved.sort))
         folder = model
         pendingSelection = name
         attach(model)
         observers.send(.folderChanged(model))
+        if resolved.viewMode != oldMode { observers.send(.viewModeChanged(resolved.viewMode)) }
+        readFinderView(url)
+    }
+
+    // MARK: per-folder view (design 2026-11-05 §2)
+
+    /// "Use as Default for All Folders": the current view becomes the global default.
+    func useViewAsDefault() {
+        environment.settings.defaultFolderView = view.resolved
+    }
+
+    /// "Reset View for This Folder": forget MacExplorer's choices here (Finder → built-in → defaults apply again).
+    func resetFolderView() {
+        environment.folderViews.remove(folder.directory)
+        userChangedView = false
+        reresolve()
+    }
+
+    static func resolve(_ url: URL, environment: CoreEnvironment) -> ResolvedFolderView {
+        let store = environment.folderViews
+        return FolderViewResolver.resolve(stored: store.settings(for: url), finder: store.finderView(for: url),
+                                          builtIn: FolderViewResolver.builtIn(for: url), defaults: environment.settings.defaultFolderView)
+    }
+
+    private static func query(_ environment: CoreEnvironment, sort: MacxFS.SortDescriptor) -> ViewQuery {
+        var query = environment.settings.viewQuery()
+        query.sort = sort
+        return query
+    }
+
+    private func persist(_ delta: FolderViewSettings) {
+        userChangedView = true
+        environment.folderViews.update(folder.directory) { $0 = delta.over($0) }
+        if let sort = delta.sort, folder.query.sort != sort {
+            var query = folder.query
+            query.sort = sort
+            folder.setQuery(query)
+        }
+    }
+
+    /// Re-resolves the current folder and applies what changed (view mode, sort).
+    private func reresolve() {
+        guard !closed else { return }
+        let old = view.resolved
+        let resolved = Self.resolve(folder.directory, environment: environment)
+        view.replace(resolved)
+        if resolved.viewMode != old.viewMode { observers.send(.viewModeChanged(resolved.viewMode)) }
+        if folder.query.sort != resolved.sort {
+            var query = folder.query
+            query.sort = resolved.sort
+            folder.setQuery(query)
+        }
+    }
+
+    private func readFinderView(_ url: URL) {
+        let store = environment.folderViews
+        guard store.finderView(for: url) == nil, environment.volumes.volume(for: url)?.isLocal ?? false else { return }
+        let columns = environment.settings.columns
+        let started = ContinuousClock.now
+        finderTask = Task { [weak self] in
+            let found = await Task.detached(priority: .userInitiated) {
+                FinderFolderView.read(folder: url, globalColumns: columns)
+            }.value
+            guard let self, !Task.isCancelled, !self.closed else { return }
+            store.setFinderView(found ?? FolderViewSettings(), for: url)
+            guard self.folder.directory == url, !self.userChangedView, let found, !found.isEmpty,
+                  ContinuousClock.now - started < Self.finderApplyDeadline else { return }
+            self.reresolve()
+        }
     }
 
     private func attach(_ model: FolderModel) {

@@ -75,6 +75,8 @@ enum ContextMenuTitles {
         case .sortByDateCreated: L10n.string("Date Created")
         case .sortAscending: L10n.string("Ascending")
         case .sortDescending: L10n.string("Descending")
+        case .useViewAsDefault: L10n.string("Use as Default for All Folders")
+        case .resetFolderView: L10n.string("Reset View for This Folder")
         default: command.rawValue
         }
     }
@@ -85,7 +87,13 @@ enum ContextMenuTitles {
 final class ContextMenuBuilder {
     private let context: UIContext
 
-    init(context: UIContext) { self.context = context }
+    /// The window's per-folder view (check marks); nil = the global defaults.
+    private let viewState: FolderViewState?
+
+    init(context: UIContext, viewState: FolderViewState? = nil) {
+        self.context = context
+        self.viewState = viewState
+    }
 
     /// Right-click on an unselected row selects just it; inside the selection keeps it; nil = empty space.
     static func contextRows(clickedRow: Int?, selectedRows: IndexSet) -> (select: SelectionCommand?, rows: IndexSet?) {
@@ -134,7 +142,8 @@ final class ContextMenuBuilder {
         menu.addItem(newSubmenu(folder: folder, handler: handler))
         menu.addItem(submenu(L10n.string("View"), id: "view", [.viewAsDetails, .viewAsIcons, .iconSizeSmall, .iconSizeMedium,
                                                               .iconSizeLarge, .densityCompact, .densityRegular, .densityComfortable,
-                                                              .toggleHidden, .toggleCommandBar], target, handler, folder))
+                                                              .toggleHidden, .toggleCommandBar, .useViewAsDefault, .resetFolderView],
+                             target, handler, folder))
         menu.addItem(submenu(L10n.string("Sort By"), id: "sortBy", [.sortByName, .sortByDateModified, .sortBySize, .sortByKind,
                                                                    .sortByDateCreated, .sortAscending, .sortDescending], target, handler, folder))
         add(.refresh, target, handler, to: menu)
@@ -174,16 +183,17 @@ final class ContextMenuBuilder {
 
     private func state(_ command: Command, folder: FolderModel) -> NSControl.StateValue {
         let settings = context.environment.settings
+        let view = viewState?.resolved ?? settings.defaultFolderView
         let sort = folder.query.sort
         let on: Bool = switch command {
-        case .viewAsDetails: settings.viewMode == .details
-        case .viewAsIcons: settings.viewMode == .icons
-        case .iconSizeSmall: settings.iconSize == .small
-        case .iconSizeMedium: settings.iconSize == .medium
-        case .iconSizeLarge: settings.iconSize == .large
-        case .densityCompact: settings.density == .compact
-        case .densityRegular: settings.density == .regular
-        case .densityComfortable: settings.density == .comfortable
+        case .viewAsDetails: view.viewMode == .details
+        case .viewAsIcons: view.viewMode == .icons
+        case .iconSizeSmall: view.iconSize == .small
+        case .iconSizeMedium: view.iconSize == .medium
+        case .iconSizeLarge: view.iconSize == .large
+        case .densityCompact: view.density == .compact
+        case .densityRegular: view.density == .regular
+        case .densityComfortable: view.density == .comfortable
         case .toggleHidden: folder.query.showHidden
         case .toggleCommandBar: settings.commandBarVisible
         case .sortByName: sort.field == .name

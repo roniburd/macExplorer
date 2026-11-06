@@ -180,17 +180,20 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
     var rightDownEvent: NSEvent?
     var focusView: NSView { collectionView }
     private var settings: Settings { context.environment.settings }
+    /// The window's per-folder view (design 2026-11-05 §2): icon size comes from here.
+    let viewState: FolderViewState
     private var points: Double { layout.iconSize.points }
 
-    init(context: UIContext) {
+    init(context: UIContext, viewState: FolderViewState? = nil) {
         self.context = context
+        self.viewState = viewState ?? FolderViewState(context.environment.settings.defaultFolderView)
         super.init(nibName: nil, bundle: nil)
     }
 
     required init?(coder: NSCoder) { fatalError("IconsViewController is created in code") }
 
     override func loadView() {
-        layout.iconSize = settings.iconSize
+        layout.iconSize = viewState.resolved.iconSize
         collectionView.collectionViewLayout = layout
         collectionView.dataSource = self
         collectionView.delegate = self
@@ -210,7 +213,7 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
                                                name: NSView.boundsDidChangeNotification, object: scrollView.contentView)
         view = scrollView
         settingsLoop = ObservationLoop { [weak self] in
-            _ = self?.settings.iconSize
+            _ = self?.viewState.resolved.iconSize
         } onChange: { [weak self] in
             self?.applyIconSize()
         }
@@ -357,9 +360,9 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
     }
 
     private func applyIconSize() {
-        guard layout.iconSize != settings.iconSize else { return }
+        guard layout.iconSize != viewState.resolved.iconSize else { return }
         let anchor = folder?.scrollAnchor
-        layout.iconSize = settings.iconSize
+        layout.iconSize = viewState.resolved.iconSize
         collectionView.reloadData()
         restoreScroll(anchor: anchor)
     }

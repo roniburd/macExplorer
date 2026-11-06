@@ -59,6 +59,8 @@ import Core
         case .sortByDateCreated: L10n.string("Date Created")
         case .sortAscending: L10n.string("Ascending")
         case .sortDescending: L10n.string("Descending")
+        case .useViewAsDefault: L10n.string("Use as Default for All Folders")
+        case .resetFolderView: L10n.string("Reset View for This Folder")
         case .eject: L10n.string("Eject")
         case .removeFromFavorites: L10n.string("Remove from Favorites")
         case .cancelOperation: L10n.string("Cancel")

@@ -95,6 +95,7 @@ final class SidebarViewController: CommandHandlingViewController {
         .viewAsDetails, .viewAsIcons, .iconSizeSmall, .iconSizeMedium, .iconSizeLarge,
         .densityCompact, .densityRegular, .densityComfortable, .toggleHidden, .toggleCommandBar,
         .sortByName, .sortByDateModified, .sortBySize, .sortByKind, .sortByDateCreated, .sortAscending, .sortDescending,
+        .useViewAsDefault, .resetFolderView,
     ]
 
     // MARK: view

@@ -18,7 +18,7 @@ final class ContentViewController: CommandHandlingViewController {
     private(set) var operationsCapsule: OperationsCapsule?
     let emptyState = EmptyStateView()
     let banner = BannerView()
-    private lazy var menuBuilder = ContextMenuBuilder(context: context)
+    private lazy var menuBuilder = ContextMenuBuilder(context: context, viewState: session.view)
     /// Drops onto the lists (P1-36); its origin is this window.
     private(set) lazy var dropTarget = DropTarget(context: context, originView: view)
     private lazy var externalOpener: any ExternalURLOpening = ExternalOpeners.opener(for: context.options)
@@ -35,7 +35,7 @@ final class ContentViewController: CommandHandlingViewController {
     init(context: UIContext, session: BrowserSession) {
         self.context = context
         self.session = session
-        self.details = DetailsViewController(context: context)
+        self.details = DetailsViewController(context: context, viewState: session.view)
         self.activeList = details
         super.init(nibName: nil, bundle: nil)
         if context.icons.volumeLookup == nil {
@@ -262,7 +262,7 @@ final class ContentViewController: CommandHandlingViewController {
 
     private func iconsController() -> IconsViewController {
         if let icons { return icons }
-        let created = IconsViewController(context: context)
+        let created = IconsViewController(context: context, viewState: session.view)
         addChild(created)
         created.contextMenuProvider = { [weak self] row in self?.contextMenu(forRow: row) }
         created.dropTarget = dropTarget

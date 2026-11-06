@@ -27,12 +27,14 @@ extension FileCommandController {
         switch command {
         case .viewAsDetails: setViewMode(.details)
         case .viewAsIcons: setViewMode(.icons)
-        case .iconSizeSmall: settings.iconSize = .small; setViewMode(.icons)
-        case .iconSizeMedium: settings.iconSize = .medium; setViewMode(.icons)
-        case .iconSizeLarge: settings.iconSize = .large; setViewMode(.icons)
-        case .densityCompact: settings.density = .compact
-        case .densityRegular: settings.density = .regular
-        case .densityComfortable: settings.density = .comfortable
+        case .iconSizeSmall: setIconSize(.small)
+        case .iconSizeMedium: setIconSize(.medium)
+        case .iconSizeLarge: setIconSize(.large)
+        case .densityCompact: session.view.change { $0.density = .compact }
+        case .densityRegular: session.view.change { $0.density = .regular }
+        case .densityComfortable: session.view.change { $0.density = .comfortable }
+        case .useViewAsDefault: session.useViewAsDefault()
+        case .resetFolderView: session.resetFolderView()
         case .toggleHidden:
             // Flip what this window shows; every session (this one included) follows the setting.
             let show = !session.folder.query.showHidden
@@ -52,10 +54,15 @@ extension FileCommandController {
         }
     }
 
+    /// Per folder (design 2026-11-05 §2): changes the current folder's view only.
     private func setViewMode(_ mode: ViewMode) {
         session?.viewMode = mode
-        environment.settings.viewMode = mode
         contentController()?.setViewMode(mode)
+    }
+
+    private func setIconSize(_ size: IconSize) {
+        session?.view.change { $0.iconSize = size }
+        setViewMode(.icons)
     }
 
     private func setSort(field: SortField? = nil, ascending: Bool? = nil) {
@@ -65,6 +72,6 @@ extension FileCommandController {
         let keepDirection = newField == query.sort.field
         query.sort = SortDescriptor(field: newField, ascending: ascending ?? (keepDirection ? query.sort.ascending : true))
         folder.setQuery(query)
-        environment.settings.sort = query.sort
+        session?.view.change { $0.sort = query.sort }
     }
 }

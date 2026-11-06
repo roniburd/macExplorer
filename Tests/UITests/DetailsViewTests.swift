@@ -112,9 +112,9 @@ final class DetailsViewTests: XCTestCase {
         let h = try await ContentTestHarness.make(self)
         try h.file("a.txt")
         let (details, _) = try await makeDetails(h)
-        h.environment.settings.density = .compact
+        details.viewState.change { $0.density = .compact }
         try await h.waitUntil("compact rows") { details.tableView.rowHeight == 20 }
-        h.environment.settings.density = .comfortable
+        details.viewState.change { $0.density = .comfortable }
         try await h.waitUntil("comfortable rows") { details.tableView.rowHeight == 30 }
     }
 
@@ -127,17 +127,20 @@ final class DetailsViewTests: XCTestCase {
         try await h.waitUntil("ascending by size") { (0..<3).map(folder.name(atRow:)) == ["small.txt", "mid.txt", "big.txt"] }
         details.tableView(details.tableView, didClick: sizeColumn)
         try await h.waitUntil("descending by size") { (0..<3).map(folder.name(atRow:)) == ["big.txt", "mid.txt", "small.txt"] }
-        XCTAssertEqual(h.environment.settings.sort, MacxFS.SortDescriptor(field: .size, ascending: false))
+        // Per folder (design 2026-11-05 §2): the window's view records it; the global default is untouched.
+        XCTAssertEqual(details.viewState.resolved.sort, MacxFS.SortDescriptor(field: .size, ascending: false))
+        XCTAssertEqual(h.environment.settings.sort, .default)
         XCTAssertNotNil(details.tableView.indicatorImage(in: sizeColumn))
     }
 
-    func testHidingColumnPersistsToSettings() async throws {
+    func testHidingColumnPersistsToTheFolderView() async throws {
         let h = try await ContentTestHarness.make(self)
         try h.file("a.txt")
         let (details, _) = try await makeDetails(h)
         let item = try XCTUnwrap(details.tableView.headerView?.menu?.items.first { $0.representedObject as? String == ColumnID.kind.rawValue })
         details.toggleColumn(item)
-        XCTAssertEqual(h.environment.settings.columns.first { $0.id == .kind }?.visible, false)
+        XCTAssertEqual(details.viewState.resolved.columns.first { $0.id == .kind }?.visible, false)
+        XCTAssertEqual(h.environment.settings.columns.first { $0.id == .kind }?.visible, true)
         XCTAssertEqual(details.tableView.tableColumns.first { DetailsColumns.columnID($0.identifier) == .kind }?.isHidden, true)
     }
 
@@ -147,7 +150,7 @@ final class DetailsViewTests: XCTestCase {
         let (details, _) = try await makeDetails(h)
         let moved = DetailsColumns.columnID(details.tableView.tableColumns[1].identifier)
         details.tableView.moveColumn(1, toColumn: 3)
-        XCTAssertEqual(h.environment.settings.columns.map(\.id)[3], moved)
+        XCTAssertEqual(details.viewState.resolved.columns.map(\.id)[3], moved)
     }
 
     func testLocalChangeInsertsRowThroughContentController() async throws {

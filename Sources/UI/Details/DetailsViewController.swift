@@ -94,6 +94,7 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     let scrollView = NSScrollView()
     private(set) var folder: FolderModel?
     private var settingsLoop: ObservationLoop?
+    private var viewLoop: ObservationLoop?
     private var isRebuildingColumns = false
     private var isSyncingSelection = false
     private var isRestoringScroll = false
@@ -112,11 +113,15 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     var rightDownEvent: NSEvent?
 
     var focusView: NSView { tableView }
-    var iconPoints: Double { settings.density == .comfortable ? 20 : 16 }
+    var iconPoints: Double { folderView.density == .comfortable ? 20 : 16 }
     private var settings: Settings { context.environment.settings }
+    /// The window's per-folder view (design 2026-11-05 §2): density, columns and sort come from here.
+    let viewState: FolderViewState
+    private var folderView: ResolvedFolderView { viewState.resolved }
 
-    init(context: UIContext) {
+    init(context: UIContext, viewState: FolderViewState? = nil) {
         self.context = context
+        self.viewState = viewState ?? FolderViewState(context.environment.settings.defaultFolderView)
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -157,11 +162,23 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
         applyDensity()
         settingsLoop = ObservationLoop { [weak self] in
             guard let self else { return }
-            _ = self.settings.density
+            _ = self.viewState.resolved.density
             _ = self.settings.dateStyle
         } onChange: { [weak self] in
             self?.applyDensity()
             self?.reloadVisibleRows()
+        }
+        // Navigation and resets replace the folder's view: columns and the sort indicator follow. Our own column
+        // writes match the table already, so they never rebuild it mid-drag.
+        viewLoop = ObservationLoop { [weak self] in
+            _ = self?.viewState.resolved.columns
+            _ = self?.viewState.resolved.sort
+        } onChange: { [weak self] in
+            guard let self else { return }
+            if DetailsColumns.settings(fromTableColumns: self.tableView.tableColumns) != DetailsColumns.normalized(self.folderView.columns) {
+                self.rebuildColumns()
+            }
+            self.updateSortIndicator(self.folder?.query.sort ?? self.folderView.sort)
         }
     }
 
@@ -300,7 +317,7 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
         isRebuildingColumns = true
         defer { isRebuildingColumns = false }
         for column in tableView.tableColumns { tableView.removeTableColumn(column) }
-        for setting in DetailsColumns.normalized(settings.columns) {
+        for setting in DetailsColumns.normalized(folderView.columns) {
             let column = NSTableColumn(identifier: DetailsColumns.identifier(setting.id))
             column.title = DetailsColumns.title(setting.id)
             column.minWidth = DetailsColumns.minWidth(setting.id)
@@ -310,20 +327,23 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
             column.headerCell.alignment = setting.id == .size ? .right : .left
             tableView.addTableColumn(column)
         }
-        tableView.headerView?.menu = DetailsColumns.headerMenu(columns: settings.columns, target: self,
+        tableView.headerView?.menu = DetailsColumns.headerMenu(columns: folderView.columns, target: self,
                                                                action: #selector(toggleColumn(_:)))
-        updateSortIndicator(folder?.query.sort ?? settings.sort)
+        updateSortIndicator(folder?.query.sort ?? folderView.sort)
     }
 
     @objc func toggleColumn(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String, let id = ColumnID(rawValue: raw) else { return }
-        settings.columns = DetailsColumns.toggling(DetailsColumns.settings(fromTableColumns: tableView.tableColumns), id)
+        let columns = DetailsColumns.toggling(DetailsColumns.settings(fromTableColumns: tableView.tableColumns), id)
+        viewState.change { $0.columns = columns }
         rebuildColumns()
     }
 
     @objc private func columnsChanged(_ note: Notification) {
         guard !isRebuildingColumns else { return }
-        settings.columns = DetailsColumns.settings(fromTableColumns: tableView.tableColumns)
+        let columns = DetailsColumns.settings(fromTableColumns: tableView.tableColumns)
+        guard columns != folderView.columns else { return }
+        viewState.change { $0.columns = columns }
     }
 
     private func updateSortIndicator(_ sort: MacxFS.SortDescriptor) {
@@ -341,7 +361,7 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
         var query = folder.query
         query.sort = next
         folder.setQuery(query)
-        settings.sort = next
+        viewState.change { $0.sort = next }
         updateSortIndicator(next)
     }
 
@@ -420,7 +440,7 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     }
 
     private func applyDensity() {
-        tableView.rowHeight = settings.density.rowHeight
+        tableView.rowHeight = folderView.density.rowHeight
     }
 
     func reloadVisibleRows() {
