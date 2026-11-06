@@ -11,6 +11,11 @@ import Core
     /// own pane even while the app is inactive and has no key window), else nil-targeted to the app.
     static func handle(_ event: NSEvent, focus: FocusContext, returnKey: ReturnKeyBehavior, from view: NSView) -> Bool {
         guard let command = command(for: event, focus: focus, returnKey: returnKey) else { return false }
+        return send(command, from: view)
+    }
+
+    /// Sends `command`'s action to the first responder up the chain from `view` that implements it, else nil-targeted.
+    @discardableResult static func send(_ command: Command, from view: NSView) -> Bool {
         let action = Selector(command.selectorName)
         if let responder = responder(for: action, from: view) {
             return NSApp.sendAction(action, to: responder, from: view)
@@ -18,10 +23,10 @@ import Core
         return NSApp.sendAction(action, to: nil, from: view)
     }
 
-    /// The command a keyDown maps to (nil: not an alternate here).
+    /// The command a keyDown maps to with the active bindings (nil: not an alternate here).
     static func command(for event: NSEvent, focus: FocusContext, returnKey: ReturnKeyBehavior) -> Command? {
         guard event.type == .keyDown, let chord = KeyEventTranslator.chord(for: event) else { return nil }
-        return KeyDispatcher(returnKey: returnKey).command(for: chord, in: focus)
+        return KeyDispatcher(returnKey: returnKey, bindings: ActiveKeyBindings.current).command(for: chord, in: focus)
     }
 
     private static func responder(for action: Selector, from view: NSView) -> NSResponder? {

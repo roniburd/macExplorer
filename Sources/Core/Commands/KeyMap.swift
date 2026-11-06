@@ -1,7 +1,8 @@
 import Foundation
 
-/// The §5.6 key table. Each command has at most one primary (its menu key equivalent, rebindable in System Settings)
-/// and any number of alternates, which only the content views and sidebar handle (through `KeyDispatcher`).
+/// The §5.6 built-in key table (defaults; the user's changes live in Settings › Shortcuts, see KeyBindings).
+/// Each command has at most one primary (its menu key equivalent) and any number of alternates, which only the
+/// content views and sidebar handle (through `KeyDispatcher`).
 public enum KeyMap {
     /// Menu key equivalent (§5.6).
     public static func primary(_ command: Command) -> KeyChord? {
@@ -93,12 +94,6 @@ public enum KeyMap {
         KeyChord(.up, .command), KeyChord(.down, .command), KeyChord(.backspace, .command),
         KeyChord(.backspace, [.option, .command]), KeyChord(.character("["), .command), KeyChord(.character("]"), .command),
         KeyChord(.function(2)), KeyChord(.character("d"), .command),
-    ]
-
-    /// Commands whose primary is also a text-editing key: open(⌘↓), up(⌘↑), moveToTrash(⌘⌫),
-    /// deletePermanently(⌥⌘⌫), back(⌘[), forward(⌘]), rename(F2), duplicate(⌘D).
-    public static let collidesWithTextEditing: Set<Command> = [
-        .open, .up, .moveToTrash, .deletePermanently, .back, .forward, .rename, .duplicate,
     ]
 
     private static func cmd(_ c: String) -> KeyChord { KeyChord(.character(c), .command) }

@@ -36,7 +36,8 @@ final class FileCommandController: CommandHandler {
         guard let effective = CommandAvailability.effectiveCommand(command, focus: focus),
               !Self.pendingCommands.contains(effective), let session else { return false }
         let state = CommandStateBuilder.state(for: target, session: session, environment: environment)
-        return CommandAvailability.isEnabled(effective, focus: focus, state: state)
+        return CommandAvailability.isEnabled(effective, focus: focus, state: state,
+                                             collidesWithTextEditing: ActiveKeyBindings.current.collidesWithTextEditing)
     }
 
     func perform(_ command: Command, target: CommandTarget, sender: Any?) {

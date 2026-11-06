@@ -20,6 +20,8 @@ public final class UIContext {
     var ejectPrompts: any EjectPrompting = AlertEjectPrompts()
     /// The open Settings window (P1-30), if any; SettingsWindowController.show reuses it.
     var settingsWindow: SettingsWindowController?
+    /// Keeps the active key table and the menu bar in step with Settings › Shortcuts.
+    private var keyBindings: KeyBindingsController?
     /// P1-38: interaction router, Operations panel and job list (§6.2, §6.7).
     private(set) lazy var operationsUI = OperationsUI(context: self)
 
@@ -32,6 +34,7 @@ public final class UIContext {
         self.interaction = BasicAlertInteraction()
         _ = windows
         installInteraction(operationsUI.router)   // P1-38: InteractionRouter replaces BasicAlertInteraction
+        keyBindings = KeyBindingsController(settings: environment.settings)
     }
 
     /// Window › Operations; the app delegate calls it when no browser window is open.

@@ -129,7 +129,7 @@ final class CommandAvailabilityTests: XCTestCase {
 
     func testFieldEditorDisablesCollidingCommands() {
         let s = CommandState(selectionCount: 1, singleFolderSelected: true, canGoBack: true, canGoForward: true, canGoUp: true)
-        for c in KeyMap.collidesWithTextEditing {
+        for c in KeyBindings.defaults.collidesWithTextEditing {
             XCTAssertFalse(enabled(c, .fieldEditor, s), "\(c)")
             XCTAssertTrue(enabled(c, .content, s), "\(c)")
         }

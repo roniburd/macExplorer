@@ -187,4 +187,25 @@ final class KeyBindingsTests: XCTestCase {
         XCTAssertNil(o.commands[.back])
         XCTAssertNotNil(o.commands[.forward])
     }
+
+    func testDispatcherUsesCustomAlternates() {
+        var o = KeyBindingOverrides.empty
+        o.reassign(.key(chord("ctrl+b")), to: .back, as: .alternate)
+        o.removeAlternate(chord("delete"), from: .back)
+        let d = KeyDispatcher(returnKey: .rename, bindings: KeyBindings(overrides: o))
+        XCTAssertEqual(d.command(for: chord("ctrl+b"), in: .content), .back)
+        XCTAssertNil(d.command(for: chord("delete"), in: .content))
+        XCTAssertEqual(d.command(for: chord("return"), in: .content), .rename, "Return → Rename still applies")
+        XCTAssertNil(d.command(for: chord("ctrl+b"), in: .fieldEditor))
+    }
+
+    func testFieldEditorDisablesWhateverNowCollides() {
+        var o = KeyBindingOverrides.empty
+        o.setPrimary(chord("opt+cmd+d"), for: .duplicate)
+        o.setPrimary(chord("cmd+d"), for: .newFolder)
+        let collides = KeyBindings(overrides: o).collidesWithTextEditing
+        let s = CommandState(selectionCount: 1)
+        XCTAssertTrue(CommandAvailability.isEnabled(.duplicate, focus: .fieldEditor, state: s, collidesWithTextEditing: collides))
+        XCTAssertFalse(CommandAvailability.isEnabled(.newFolder, focus: .fieldEditor, state: s, collidesWithTextEditing: collides))
+    }
 }

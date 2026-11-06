@@ -9,19 +9,14 @@ public enum FocusContext: Sendable, Hashable {
 /// Maps alternate keys (§5.6) to commands for the content views' and sidebar's `keyDown`.
 public struct KeyDispatcher: Sendable {
     private let returnKey: ReturnKeyBehavior
-    private static let table: [KeyChord: Command] = {
-        var table: [KeyChord: Command] = [:]
-        for command in Command.allCases {
-            for chord in KeyMap.alternates(command) { table[chord] = command }
-        }
-        return table
-    }()
+    private let bindings: KeyBindings
 
-    public init(returnKey: ReturnKeyBehavior) {
+    public init(returnKey: ReturnKeyBehavior, bindings: KeyBindings = .defaults) {
         self.returnKey = returnKey
+        self.bindings = bindings
     }
 
-    /// Alternates only (Return/⌥Return, Del/⇧Del, ⌃X/⌃C/⌃V/⌃Z/⌃A, ⌘Y, ⌫, ⌥←/⌥→/⌥↑, ⌥D, F4, F3, F5, ⌘⇧R,
+    /// The current alternates only (defaults: Return/⌥Return, Del/⇧Del, ⌃X/⌃C/⌃V/⌃Z/⌃A, ⌘Y, ⌫, ⌥←/⌥→/⌥↑, ⌥D, F4, F3, F5, ⌘⇧R,
     /// Tab/⇧Tab, Esc). Always nil for .fieldEditor and .addressBar.
     /// Return opens (navigates) in every sidebar section; in the content view it follows Settings › Return key.
     /// Sidebar remaps (Favorites: Del → removeFromFavorites) go through `CommandAvailability.effectiveCommand`.
@@ -32,7 +27,7 @@ public struct KeyDispatcher: Sendable {
         case .content, .sidebarFavorites, .sidebarLocations, .sidebarFolders, .sidebarVolumeRoot:
             break
         }
-        guard var command = Self.table[chord] else { return nil }
+        guard var command = bindings.alternateCommand(for: chord) else { return nil }
         if command == .open, chord == KeyChord(.returnKey), focus == .content, returnKey == .rename {
             command = .rename
         }

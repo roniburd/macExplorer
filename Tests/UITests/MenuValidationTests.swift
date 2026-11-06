@@ -28,7 +28,7 @@ final class MenuValidationTests: XCTestCase {
         XCTAssertTrue(MenuValidation.isFieldEditorActive(in: window))
         var state = CommandState(selectionCount: 1, canGoBack: true)
         state.canGoUp = true
-        for command in KeyMap.collidesWithTextEditing {
+        for command in KeyBindings.defaults.collidesWithTextEditing {
             XCTAssertFalse(MenuValidation.isEnabled(command, window: window, state: state, focus: .content), "\(command)")
             XCTAssertTrue(MenuValidation.blockedByFieldEditor(command, window: window))
         }
