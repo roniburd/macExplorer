@@ -96,4 +96,78 @@ final class ShortcutsModelTests: XCTestCase {
         XCTAssertNil(R.outcome(for: MouseEvents.otherDown(5), acceptsMouse: false, backspaceClears: true))
         XCTAssertNil(R.outcome(for: MouseEvents.otherDown(2), acceptsMouse: true, backspaceClears: false))
     }
+
+    private func click(_ type: NSEvent.EventType) -> NSEvent {
+        NSEvent.mouseEvent(with: type, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+                           eventNumber: 0, clickCount: 1, pressure: 1)!
+    }
+
+    /// Spec §5: clicking elsewhere cancels without swallowing the click; events for another window cancel too.
+    func testRecorderDecisions() {
+        typealias R = ShortcutRecorder
+        for type in [NSEvent.EventType.leftMouseDown, .rightMouseDown] {
+            XCTAssertEqual(R.decision(for: click(type), acceptsMouse: true, backspaceClears: true, inRecordingWindow: true),
+                           .cancelAndPass)
+        }
+        let a = KeyEvents.key(0, "a")
+        XCTAssertEqual(R.decision(for: a, acceptsMouse: true, backspaceClears: false, inRecordingWindow: false), .cancelAndPass)
+        XCTAssertEqual(R.decision(for: MouseEvents.otherDown(5), acceptsMouse: true, backspaceClears: false,
+                                  inRecordingWindow: false), .cancelAndPass)
+        XCTAssertEqual(R.decision(for: a, acceptsMouse: true, backspaceClears: false, inRecordingWindow: true),
+                       .finish(.trigger(.key(KeyChord(.character("a"))))))
+        XCTAssertNil(R.decision(for: MouseEvents.otherDown(2), acceptsMouse: true, backspaceClears: false,
+                                inRecordingWindow: true))
+    }
+
+    func testRecorderClickCancelsAndPassesTheClickThrough() {
+        let recorder = ShortcutRecorder()
+        var outcomes: [ShortcutRecorder.Outcome] = []
+        recorder.start(in: nil, acceptsMouse: true, backspaceClears: false) { outcomes.append($0) }
+        let event = click(.leftMouseDown)
+        XCTAssertTrue(recorder.handle(event) === event, "the click is not swallowed")
+        XCTAssertEqual(outcomes, [.cancel])
+        XCTAssertFalse(recorder.isRecording)
+        // Recording has ended: the next key is not captured.
+        let key = KeyEvents.key(0, "a")
+        XCTAssertTrue(recorder.handle(key) === key)
+        XCTAssertEqual(outcomes, [.cancel])
+    }
+
+    func testRecorderCapturesKeyAndSwallowsIt() {
+        let recorder = ShortcutRecorder()
+        var outcomes: [ShortcutRecorder.Outcome] = []
+        recorder.start(in: nil, acceptsMouse: true, backspaceClears: false) { outcomes.append($0) }
+        XCTAssertNil(recorder.handle(KeyEvents.key(0, "a")))
+        XCTAssertEqual(outcomes, [.trigger(.key(KeyChord(.character("a"))))])
+        XCTAssertFalse(recorder.isRecording)
+    }
+
+    func testRecorderCancelsForOtherWindowAndOnResignKey() throws {
+        try ShellHarness.requireWindowServer()
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 100), styleMask: [.titled],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let recorder = ShortcutRecorder()
+        var outcomes: [ShortcutRecorder.Outcome] = []
+
+        recorder.start(in: window, acceptsMouse: true, backspaceClears: false) { outcomes.append($0) }
+        let elsewhere = KeyEvents.key(0, "a")      // windowNumber 0: not the Settings window
+        XCTAssertTrue(recorder.handle(elsewhere) === elsewhere, "another window's key is not swallowed")
+        XCTAssertEqual(outcomes, [.cancel])
+
+        recorder.start(in: window, acceptsMouse: true, backspaceClears: false) { outcomes.append($0) }
+        XCTAssertNil(recorder.handle(KeyEvents.key(0, "a", window: window)))
+        XCTAssertEqual(outcomes, [.cancel, .trigger(.key(KeyChord(.character("a"))))])
+
+        recorder.start(in: window, acceptsMouse: true, backspaceClears: false) { outcomes.append($0) }
+        NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: window)
+        XCTAssertEqual(outcomes.last, .cancel)
+        XCTAssertFalse(recorder.isRecording)
+
+        recorder.start(in: window, acceptsMouse: true, backspaceClears: false) { outcomes.append($0) }
+        recorder.stop()
+        NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: window)
+        XCTAssertEqual(outcomes.count, 3, "stop() removes the observers and never calls done")
+    }
 }

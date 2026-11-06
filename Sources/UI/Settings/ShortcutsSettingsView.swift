@@ -52,6 +52,7 @@ struct ShortcutsSettingsView: View {
         }
         .padding()
         .onDisappear { recorder.stop(); recording = nil }
+        .onChange(of: query) { recorder.stop(); recording = nil }
         .confirmationDialog(L10n.string("Restore all shortcuts to their defaults?"), isPresented: $confirmReset) {
             Button(L10n.string("Restore All Defaults"), role: .destructive) { model.resetAll(); notice = nil }
             Button(L10n.string("Cancel"), role: .cancel) {}
@@ -136,7 +137,7 @@ struct ShortcutsSettingsView: View {
     private func begin(_ command: Command, _ slot: KeyBindings.Slot) {
         notice = nil
         recording = Recording(command: command, slot: slot)
-        recorder.start(acceptsMouse: slot == .alternate, backspaceClears: slot == .primary) { outcome in
+        recorder.start(in: NSApp.keyWindow, acceptsMouse: slot == .alternate, backspaceClears: slot == .primary) { outcome in
             recording = nil
             switch outcome {
             case .cancel: break
