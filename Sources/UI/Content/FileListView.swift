@@ -13,6 +13,12 @@ import Core
     func scrollToRow(_ row: Int)
     func topVisibleRow() -> Int?                          // scroll anchor
     func visibleRows() -> IndexSet                        // model rows on screen (Tier 1 icon requests)
+    /// Model rows the list hides (grouped Details' collapsed groups): ⌘A and Invert Selection leave them out.
+    var hiddenModelRows: IndexSet { get }
+}
+
+extension FileListView {
+    var hiddenModelRows: IndexSet { [] }
 }
 
 /// Lists that take keyboard focus (Tab cycle, view switches keep focus on the list).

@@ -644,6 +644,7 @@ final class ScenarioDriver {
             s.activeColumn = chain.active
         }
         s.thumbnails = hooks.thumbnailNames?()
+        s.iconsVisible = hooks.iconsVisibleNames?()
         s.pasteboardText = context.environment.clipboard.backend.readString() ?? ""
     }
 

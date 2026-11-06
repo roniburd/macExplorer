@@ -326,8 +326,13 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
         controller.begin(row: row)
     }
 
+    /// A pending layout pass (a selection change relayouts the window: status bar, command bar) can leave the
+    /// document view at a stale height; `scrollToVisible` then clamps to it and the grid never moves (QA round 2).
     func scrollToRow(_ row: Int) {
         guard row >= 0, row < layout.itemCount else { return }
+        collectionView.layoutSubtreeIfNeeded()
+        let height = layout.collectionViewContentSize.height
+        if collectionView.frame.height < height { collectionView.setFrameSize(NSSize(width: collectionView.frame.width, height: height)) }
         collectionView.scrollToVisible(layout.frame(forItem: row).insetBy(dx: 0, dy: -layout.metrics.spacing.height))
     }
 
@@ -377,7 +382,7 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
 
     func handleKeyDown(_ event: NSEvent) -> Bool {
         if KeyRouter.handle(event, focus: .content, returnKey: settings.returnKey, from: collectionView,
-                            typeSelectActive: typeSelect.isCollecting) {
+                            typeSelectActive: typeSelect.isCollecting(in: folder)) {
             typeSelect.reset()
             return true
         }
@@ -525,6 +530,12 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
                   let row = collectionView.indexPath(for: item)?.item, row < folder.rowCount else { return nil }
             return (row, folder.name(atRow: row))
         }.sorted { $0.0 < $1.0 }.map(\.1)
+    }
+
+    /// Scenario hook `iconsVisibleNames`: the items in the visible rect, in grid order (geometry only).
+    func visibleNames() -> [String] {
+        guard let folder else { return [] }
+        return visibleRows().filter { $0 < folder.rowCount }.map { folder.name(atRow: $0) }
     }
 
     // MARK: data source

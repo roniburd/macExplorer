@@ -111,13 +111,14 @@ final class GroupedDetailsTests: XCTestCase {
         XCTAssertEqual(details.tableView.selectedRowIndexes, IndexSet(integer: 4), "highlight is in table rows")
         details.toggleGroup(1)                               // collapse Tiny
         XCTAssertEqual(details.tableView.numberOfRows, 5)
-        XCTAssertEqual(names(model), ["b.txt"], "selection survives collapse")
-        XCTAssertEqual(details.tableView.selectedRowIndexes, IndexSet(), "a collapsed item has no highlight")
+        XCTAssertEqual(names(model), [], "a collapsed item leaves the selection (QA round 2)")
+        XCTAssertEqual(details.tableView.selectedRowIndexes, IndexSet())
         XCTAssertEqual(details.groupHeaderTitles(), ["Folders (1)", "Tiny (0 – 16 KB) (2)", "Large (128 MB – 1 GB) (1)"])
         XCTAssertEqual(details.visibleRowNames(), ["sub", "big.bin"])
         details.clickTableRow(2, modifiers: [])              // a click on the Tiny header expands it again
         XCTAssertEqual(details.tableView.numberOfRows, 7)
-        XCTAssertEqual(names(model), ["b.txt"], "a header click never changes the selection")
+        XCTAssertEqual(names(model), [], "an expanding header click never selects")
+        details.clickTableRow(4, modifiers: [])
         XCTAssertEqual(details.tableView.selectedRowIndexes, IndexSet(integer: 4))
         details.collapseAllGroups()
         XCTAssertEqual(details.tableView.numberOfRows, 3)
@@ -165,7 +166,8 @@ final class GroupedDetailsTests: XCTestCase {
         XCTAssertEqual(details.tableView.numberOfRows, 7, "→ expands the cursor's group")
         details.toggleGroup(1)
         model.select(.all)
-        XCTAssertEqual(model.selection.count, 4, "⌘A selects collapsed items too: the selection lives in the model")
+        XCTAssertEqual(model.selection.count, 4)
+        XCTAssertEqual(details.tableView.numberOfRows, 7, "a model-level select of collapsed items expands their group")
     }
 
     func testTypeSelectFindsVisibleItemsOnly() async throws {
@@ -309,6 +311,84 @@ final class GroupedDetailsTests: XCTestCase {
         XCTAssertTrue(session.folder.selection.isEmpty, "a click on the floating header never selects the item under it")
         let below = table.rect(ofRow: 1)
         XCTAssertEqual(table.hitRow(at: NSPoint(x: 10, y: below.midY)), 1, "unscrolled rows still hit by frame")
+    }
+
+    // MARK: QA round 2: nothing hidden by a collapse stays selected
+
+    /// a1 a2 b1 b2 c1.txt grouped by name: [A] a1 a2 [B] b1 b2 [C] c1 (table rows 0…7), in a real browser window.
+    private func byName(_ h: ContentTestHarness) async throws -> (BrowserWindowController, ContentViewController, DetailsViewController) {
+        try requireGUISession()
+        for name in ["a1.txt", "a2.txt", "b1.txt", "b2.txt", "c1.txt"] { try h.file(name) }
+        let controller = try await h.openBrowserWindow()
+        let content = try h.content(of: controller)
+        let details = content.details
+        controller.session.updateViewState { $0.groupBy = .nameFirstLetter }
+        try await h.waitUntil("grouped by name") { details.tableView.numberOfRows == 8 }
+        return (controller, content, details)
+    }
+
+    func testCollapsingAGroupDeselectsItsItems() async throws {
+        let h = try await ContentTestHarness.make(self)
+        let (controller, _, details) = try await byName(h)
+        let model = controller.session.folder
+        details.clickTableRow(2, modifiers: [])              // a2
+        details.clickTableRow(5, modifiers: .shift)          // … b2
+        XCTAssertEqual(names(model), ["a2.txt", "b1.txt", "b2.txt"])
+        details.clickTableRow(3, modifiers: [])              // the B header: collapse
+        XCTAssertEqual(details.visibleRowNames(), ["a1.txt", "a2.txt", "c1.txt"])
+        XCTAssertEqual(names(model), ["a2.txt"], "the collapsed items left the selection")
+        XCTAssertTrue(details.handleKeyDown(try key(.downArrow, window: details.tableView.window)))
+        XCTAssertEqual(names(model), ["c1.txt"], "↓ moves on from the collapsed group's header")
+
+        details.expandAllGroups()
+        details.clickTableRow(5, modifiers: [])              // b2
+        XCTAssertTrue(details.handleKeyDown(try key(.leftArrow, window: details.tableView.window)))
+        XCTAssertEqual(details.visibleRowNames(), ["a1.txt", "a2.txt", "c1.txt"])
+        XCTAssertTrue(model.selection.isEmpty, "← collapsed b2's group: b2 is no longer selected")
+        XCTAssertTrue(details.handleKeyDown(try key(.rightArrow, window: details.tableView.window)))
+        XCTAssertEqual(details.visibleRowNames().count, 5, "→ still expands the group the cursor is in")
+
+        details.clickTableRow(1, modifiers: [])
+        details.clickTableRow(7, modifiers: .shift)          // everything
+        details.collapseAllGroups()
+        XCTAssertTrue(model.selection.isEmpty)
+    }
+
+    func testSelectAllAndInvertSelectionSkipCollapsedGroups() async throws {
+        let h = try await ContentTestHarness.make(self)
+        let (controller, content, details) = try await byName(h)
+        let model = controller.session.folder
+        let handler = try XCTUnwrap(content.handler)
+        details.toggleGroup(1)                               // collapse B
+        handler.perform(.selectAll, target: .contentSelection(model), sender: nil)
+        XCTAssertEqual(names(model), ["a1.txt", "a2.txt", "c1.txt"], "⌘A selects the visible items only")
+        details.clickTableRow(1, modifiers: [])              // a1
+        details.clickTableRow(5, modifiers: .shift)          // … c1 (rows after the collapse: [A] a1 a2 [B] [C] c1)
+        XCTAssertEqual(names(model), ["a1.txt", "a2.txt", "c1.txt"])
+        details.clickTableRow(2, modifiers: .command)        // drop a2
+        handler.perform(.invertSelection, target: .contentSelection(model), sender: nil)
+        XCTAssertEqual(names(model), ["a2.txt"], "Invert Selection works over the visible items only")
+        details.expandAllGroups()
+        handler.perform(.selectAll, target: .contentSelection(model), sender: nil)
+        XCTAssertEqual(model.selection.count, 5)
+    }
+
+    func testAnItemSelectedInsideACollapsedGroupExpandsIt() async throws {
+        let h = try await ContentTestHarness.make(self)
+        let (controller, _, details) = try await byName(h)
+        let model = controller.session.folder
+        try h.file("z.txt")
+        try await h.waitUntil("z.txt listed") { details.visibleRowNames().contains("z.txt") }
+        details.toggleGroup(1)                               // collapse B
+        model.select(.names(["z.txt"]))
+        XCTAssertEqual(names(model), ["z.txt"])
+        // The test's own sandbox file, renamed as F2 would: it moves into the collapsed B group.
+        XCTAssertEqual(rename(h.url("z.txt").path(percentEncoded: false), h.url("b3.txt").path(percentEncoded: false)), 0)
+        model.applyLocalChange(LocalChange(directory: h.url(""), renamed: [LocalChange.Rename(from: "z.txt", to: "b3.txt")]))
+        try await h.waitUntil("b3.txt listed") { details.groupHeaderTitles().contains { $0.hasSuffix("(3)") } }
+        XCTAssertEqual(names(model), ["b3.txt"])
+        XCTAssertTrue(details.visibleRowNames().contains("b3.txt"), "the selected item's group expanded")
+        XCTAssertFalse(details.isCollapsed(group: 1))
     }
 
     private func key(_ special: NSEvent.SpecialKey, flags: NSEvent.ModifierFlags = [], window: NSWindow?) throws -> NSEvent {

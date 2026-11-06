@@ -55,6 +55,60 @@ final class TypeSelectTests: XCTestCase {
         XCTAssertEqual(folder.selection.rows, IndexSet(integer: 2))
     }
 
+    /// QA round 2: a click (or ⌘A) after typing ends the type-select: the next Space is Quick Look's, not part of
+    /// the name, and never jumps the selection back to the match.
+    func testSelectionChangedElsewhereEndsTypeSelect() async throws {
+        let h = try await ContentTestHarness.make(self)
+        for name in ["my file.txt", "abc.txt", "zed.txt"] { try h.file(name) }
+        let folder = try await h.openFolder()   // abc.txt, my file.txt, zed.txt
+        let details = DetailsViewController(context: h.context)
+        try h.host(details)
+        details.bind(folder)
+        details.typeSelect.handle("m", folder: folder, list: details)
+        details.typeSelect.handle("y", folder: folder, list: details)
+        XCTAssertEqual(folder.selectedURLs.map(\.lastPathComponent), ["my file.txt"])
+        XCTAssertTrue(details.typeSelect.isCollecting(in: folder))
+        details.clickTableRow(0, modifiers: [])
+        XCTAssertEqual(folder.selectedURLs.map(\.lastPathComponent), ["abc.txt"])
+        XCTAssertFalse(details.typeSelect.isCollecting(in: folder), "a click ends type-select")
+        _ = details.handleKeyDown(try Self.space(details.view.window))
+        XCTAssertEqual(folder.selectedURLs.map(\.lastPathComponent), ["abc.txt"], "Space did not jump back to the match")
+
+        details.typeSelect.handle("z", folder: folder, list: details)
+        XCTAssertTrue(details.typeSelect.isCollecting(in: folder))
+        folder.select(.all)
+        XCTAssertFalse(details.typeSelect.isCollecting(in: folder), "Select All ends type-select")
+        _ = details.handleKeyDown(try Self.space(details.view.window))
+        XCTAssertEqual(folder.selection.count, 3)
+
+        // Typing after the click starts a new name instead of continuing the old buffer.
+        details.typeSelect.handle("m", folder: folder, list: details)
+        details.clickTableRow(2, modifiers: [])
+        details.typeSelect.handle("a", folder: folder, list: details)
+        XCTAssertEqual(folder.selectedURLs.map(\.lastPathComponent), ["abc.txt"])
+    }
+
+    func testIconsClickEndsTypeSelect() async throws {
+        let h = try await ContentTestHarness.make(self)
+        for name in ["my file.txt", "abc.txt", "zed.txt"] { try h.file(name) }
+        let folder = try await h.openFolder()
+        let icons = IconsViewController(context: h.context)
+        try h.host(icons)
+        icons.bind(folder)
+        icons.typeSelect.handle("my", folder: folder, list: icons)
+        XCTAssertEqual(folder.selection.rows, IndexSet(integer: 1))
+        folder.select(.set(IndexSet(integer: 0), cursor: 0))   // what a click on abc.txt does
+        XCTAssertFalse(icons.typeSelect.isCollecting(in: folder))
+        _ = icons.handleKeyDown(try Self.space(icons.view.window))
+        XCTAssertEqual(folder.selection.rows, IndexSet(integer: 0))
+    }
+
+    static func space(_ window: NSWindow?) throws -> NSEvent {
+        try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+                                       windowNumber: window?.windowNumber ?? 0, context: nil, characters: " ",
+                                       charactersIgnoringModifiers: " ", isARepeat: false, keyCode: 49))
+    }
+
     func testLargeFolderSearchRunsOffMainAndApplies() async throws {
         let h = try await ContentTestHarness.make(self)
         for i in 0..<2_500 { try h.file(String(format: "a%04d", i)) }

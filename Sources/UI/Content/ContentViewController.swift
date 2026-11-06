@@ -252,6 +252,10 @@ final class ContentViewController: CommandHandlingViewController {
             guard let self, let icons = self.icons, self.activeList === icons else { return [] }
             return icons.thumbnailNames()
         }
+        controller.scenarioHooks.iconsVisibleNames = { [weak self] in
+            guard let self, let icons = self.icons, self.activeList === icons else { return [] }
+            return icons.visibleNames()
+        }
         controller.scenarioHooks.rightClickTarget = { [weak self] target in
             guard target.hasPrefix("header:"), let details = self?.details,
                   ColumnID(rawValue: String(target.dropFirst("header:".count))) != nil else { return nil }

@@ -35,6 +35,7 @@ struct ProbeSnapshot: Equatable {
     var columnsChain: [String]?              // ScenarioHooks.columnsChain
     var activeColumn: Int?                   // ScenarioHooks.columnsChain
     var thumbnails: [String]?                // ScenarioHooks.thumbnailNames
+    var iconsVisible: [String]?              // ScenarioHooks.iconsVisibleNames
     var pasteboardText: String?              // clipboard backend readString() (P2-04), "" = no text
 }
 
@@ -86,6 +87,7 @@ extension ScenarioFile.Expectation {
         e.quickLookItems = quickLookItems?.map(sub)
         e.cells = cells.map { $0.mapValues { $0.mapValues(sub) } }
         e.thumbnailsContain = thumbnailsContain?.map(sub)
+        e.iconsVisibleContain = iconsVisibleContain?.map(sub)
         e.pasteboardText = pasteboardText.map(sub)
         return e
     }
@@ -187,6 +189,7 @@ extension ExpectationMatcher {
         hooked("columnsChain", e.columnsChain, s.columnsChain, hook: "columnsChain")
         hooked("activeColumn", e.activeColumn, s.activeColumn, hook: "columnsChain")
         subset("thumbnailsContain", e.thumbnailsContain, s.thumbnails, hook: "thumbnailNames")
+        subset("iconsVisibleContain", e.iconsVisibleContain, s.iconsVisible, hook: "iconsVisibleNames")
         if let want = e.pasteboardText, want != s.pasteboardText {
             m.append("pasteboardText: expected '\(want)', got \(s.pasteboardText.map { "'\($0)'" } ?? "no snapshot")")
         }

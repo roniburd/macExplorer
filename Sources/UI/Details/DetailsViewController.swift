@@ -182,6 +182,8 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     private weak var collapsedFolder: FolderModel?
     /// Table row ⇄ model row. Every conversion between the two in Details goes through this.
     var mapping: RowMapping { groupedRows.map(RowMapping.grouped) ?? .identity(count: folder?.rowCount ?? 0) }
+    /// Model rows of collapsed groups (FileListView): ⌘A and Invert Selection leave them out (QA round 2).
+    var hiddenModelRows: IndexSet { mapping.hiddenModelRows }
     lazy var dragSource = DragSourceController(icons: context.icons)
     var rightDrag = RightDragTracker()
     var rightDownEvent: NSEvent?
@@ -296,6 +298,7 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     /// Mirrors the model's selection into the table highlight (S5-C4) and redraws cut state when it changed.
     func reloadSelectionDrawing() {
         guard let folder else { return }
+        if revealSelectedHiddenRows(folder) { return }   // regroupTable redraws
         isSyncingSelection = true
         tableView.selectRowIndexes(mapping.tableRows(forModelRows: folder.selection.rows).filteredIndexSet { $0 < tableView.numberOfRows },
                                    byExtendingSelection: false)
@@ -478,7 +481,7 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
 
     func handleKeyDown(_ event: NSEvent) -> Bool {
         if KeyRouter.handle(event, focus: .content, returnKey: settings.returnKey, from: tableView,
-                            typeSelectActive: typeSelect.isCollecting) {
+                            typeSelectActive: typeSelect.isCollecting(in: folder)) {
             typeSelect.reset()
             return true
         }
@@ -571,8 +574,32 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
         guard let runs = groupedRows?.runs else { return }
         groupedRows = GroupedRows(runs: runs, collapsed: collapsed)
         tableView.reloadData()
+        deselectHiddenRows()
         renameController?.relayout()
         reloadSelectionDrawing()
+    }
+
+    /// QA round 2: an item hidden by a collapse never stays selected, so no command acts on items the user cannot
+    /// see. A collapse (header click, ←, Collapse All) drops them from the selection; the cursor stays put, so a
+    /// cursor inside the collapsed group navigates from its header and → expands it again.
+    private func deselectHiddenRows() {
+        guard let folder else { return }
+        let hidden = mapping.hiddenModelRows, rows = folder.selection.rows
+        guard !rows.isDisjoint(with: hidden) else { return }
+        folder.select(.set(rows.subtracting(hidden), cursor: folder.selection.cursor.flatMap { folder.row(of: $0) }))
+    }
+
+    /// An item selected while its group is collapsed (renamed or moved into it, a pasted or new item, a select by
+    /// name) expands that group instead. True when it regrouped the table, which redraws the selection.
+    private func revealSelectedHiddenRows(_ folder: FolderModel) -> Bool {
+        guard let groupedRows else { return false }
+        let selectedHidden = folder.selection.rows.intersection(mapping.hiddenModelRows)
+        guard !selectedHidden.isEmpty else { return false }
+        for row in selectedHidden {
+            if let group = groupedRows.group(containingModelRow: row) { collapsed.remove(groupedRows.runs[group].key) }
+        }
+        regroupTable()
+        return true
     }
 
     private func headerView(_ group: Int) -> NSView {

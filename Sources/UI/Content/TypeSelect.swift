@@ -42,6 +42,8 @@ final class TypeSelect {
     private let search: Search
     private var generation = 0
     private var searchTask: Task<Void, Never>?
+    private weak var ownedFolder: FolderModel?
+    private var ownedSelection: Set<RowID> = []
 
     init(timeout: Duration = .seconds(1), now: @escaping () -> ContinuousClock.Instant = { ContinuousClock.now },
          search: @escaping Search = TypeSelect.searchOffMain) {
@@ -58,6 +60,8 @@ final class TypeSelect {
     func reset() {
         buffer = ""
         lastKey = nil
+        ownedFolder = nil
+        ownedSelection = []
     }
 
     /// The buffer is non-empty and the last keystroke is within the timeout: a Space now continues the name being
@@ -65,6 +69,23 @@ final class TypeSelect {
     var isCollecting: Bool {
         guard !buffer.isEmpty, let lastKey else { return false }
         return now() - lastKey <= timeout
+    }
+
+    /// `isCollecting` for `folder`, and its selection is still the one type-select left (QA round 2): a click, ⌘A, a
+    /// menu command or any other selection change ends the name being typed, so the next Space is Quick Look's.
+    func isCollecting(in folder: FolderModel?) -> Bool {
+        guard isCollecting, let folder else { return false }
+        return ownsSelection(of: folder)
+    }
+
+    private func ownsSelection(of folder: FolderModel) -> Bool {
+        folder === ownedFolder && folder.selection.ids == ownedSelection
+    }
+
+    /// Type-select's view of the selection: what it was at the last keystroke, or what the last match set.
+    private func takeSelection(of folder: FolderModel) {
+        ownedFolder = folder
+        ownedSelection = folder.selection.ids
     }
 
     func append(_ characters: String) -> TypeSelectQuery {
@@ -86,6 +107,8 @@ final class TypeSelect {
     }
 
     func handle(_ characters: String, folder: FolderModel, list: FileListView, mapping: RowMapping? = nil) {
+        if !buffer.isEmpty, !ownsSelection(of: folder) { reset() }   // the selection moved since: a new name
+        takeSelection(of: folder)
         let query = append(characters)
         generation += 1
         run(query, token: generation, folder: folder, list: list, mapping: mapping, attempt: 1)
@@ -117,9 +140,11 @@ final class TypeSelect {
         }
     }
 
+    /// A selection the user changed while an off-main search ran (a click) is kept: the late match is dropped.
     private func apply(_ row: Int?, folder: FolderModel, list: FileListView) {
-        guard let row else { return }
+        guard let row, ownsSelection(of: folder) else { return }
         folder.select(.set(IndexSet(integer: row), cursor: row))
+        takeSelection(of: folder)
         list.scrollToRow(row)
     }
 }

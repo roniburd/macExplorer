@@ -131,6 +131,46 @@ final class IconsViewTests: XCTestCase {
         XCTAssertEqual(folder.selection.rows, IndexSet([columns, columns + 1]), "⌘-arrows never change the selection")
     }
 
+    /// QA round 2: arrows past the last visible row scroll the grid so the cursor item stays on screen (the
+    /// visible items, and so the thumbnails requested, follow it), also while a layout pass is still pending (the
+    /// document view then still has its old height and `scrollToVisible` alone clamped to it).
+    func testArrowKeysScrollTheCursorItemIntoView() async throws {
+        let h = try await ContentTestHarness.make(self)
+        h.environment.settings.iconSize = .medium
+        let (icons, folder) = try await makeIcons(h, files: 90)
+        let columns = icons.layout.columns
+        let visible = icons.visibleRows()
+        XCTAssertFalse(visible.isEmpty)
+        let target = (visible.last! / columns + 2) * columns
+        XCTAssertLessThan(target, 90)
+        folder.select(.set(IndexSet(integer: 0), cursor: 0))
+        for _ in 0..<(target / columns) {
+            XCTAssertTrue(icons.handleKeyDown(try key(.downArrow, window: icons.view.window)))
+        }
+        XCTAssertEqual(folder.selection.rows, IndexSet(integer: target))
+        XCTAssertTrue(icons.visibleRows().contains(target), "visible \(icons.visibleRows()) after arrowing to \(target)")
+        XCTAssertFalse(icons.visibleRows().contains(0))
+    }
+
+    /// The same through ContentViewController with run-loop turns (layout passes, selection events) between keys.
+    func testArrowKeysScrollInContentController() async throws {
+        let h = try await ContentTestHarness.make(self)
+        h.environment.settings.iconSize = .medium
+        for i in 0..<300 { try h.file(String(format: "p%03d.txt", i)) }
+        let (content, session, window) = try await h.makeContent(size: NSSize(width: 700, height: 500))
+        content.setViewMode(.icons)
+        let icons = try XCTUnwrap(content.icons)
+        try await Task.sleep(for: .milliseconds(100))
+        let columns = icons.layout.columns
+        session.folder.select(.set(IndexSet(integer: 0), cursor: 0))
+        for _ in 0..<6 {
+            icons.collectionView.keyDown(with: try key(.downArrow, window: window))
+            try await Task.sleep(for: .milliseconds(30))
+        }
+        XCTAssertEqual(session.folder.selection.rows, IndexSet(integer: 6 * columns))
+        XCTAssertTrue(icons.visibleRows().contains(6 * columns), "visible \(icons.visibleRows())")
+    }
+
     func testSwitchingViewModeKeepsSelection() async throws {
         let h = try await ContentTestHarness.make(self)
         for name in ["a.txt", "b.txt", "c.txt"] { try h.file(name) }

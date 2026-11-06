@@ -22,6 +22,9 @@ public enum SelectionCommand: Sendable, Equatable {
     case extend(to: Int, excluding: IndexSet = [])
     case add(IndexSet)                              // additive rubber band
     case all, none, invert
+    /// ⌘A / Invert Selection over the rows the user can see (QA round 2): `excluding` (collapsed groups) is left out.
+    case allVisible(excluding: IndexSet)
+    case invertVisible(excluding: IndexSet)
     case names([String])                            // select by name (after paste/new/address "file")
 }
 
@@ -84,6 +87,10 @@ extension Selection {
             cursor = nil
         case .invert:
             setRows(IndexSet(integersIn: 0..<space.count).subtracting(rows), in: space)
+        case .allVisible(let hidden):
+            setRows(IndexSet(integersIn: 0..<space.count).subtracting(hidden), in: space)
+        case .invertVisible(let hidden):
+            setRows(IndexSet(integersIn: 0..<space.count).subtracting(hidden).subtracting(rows), in: space)
         case .names(let names):
             let r = space.rowsNamed(names)
             setRows(r, in: space)

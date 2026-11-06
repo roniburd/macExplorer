@@ -176,7 +176,7 @@ enum ListKeys {
             }
             return true
         }
-        if TypeSelect.accepts(event, collecting: typeSelect.isCollecting) {
+        if TypeSelect.accepts(event, collecting: typeSelect.isCollecting(in: folder)) {
             typeSelect.handle(event.characters ?? "", folder: folder, list: list, mapping: mapping)
             return true
         }

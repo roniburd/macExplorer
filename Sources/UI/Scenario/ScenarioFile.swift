@@ -107,6 +107,7 @@ struct ScenarioFile: Codable {
         var columnsChain: [String]?           // Columns view folders relative to --root, exact
         var activeColumn: Int?
         var thumbnailsContain: [String]?      // subset
+        var iconsVisibleContain: [String]?    // Icons items in the visible rect (geometry, no thumbnails needed), subset
         var pasteboardText: String?
     }
     var name: String

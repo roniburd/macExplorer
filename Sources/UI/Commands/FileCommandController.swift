@@ -61,9 +61,9 @@ final class FileCommandController: CommandHandler {
         case .copy: environment.clipboard.copy(subjectURLs(target))
         case .paste: paste(target, moveItemHere: false)
         case .moveItemHere: paste(target, moveItemHere: true)
-        case .selectAll: select(.all, target)
+        case .selectAll: select(.allVisible(excluding: hiddenModelRows(target)), target)
         case .selectNone: select(.none, target)
-        case .invertSelection: select(.invert, target)
+        case .invertSelection: select(.invertVisible(excluding: hiddenModelRows(target)), target)
         case .undo: UndoTarget.manager(window: window?.window, fallback: environment.undo.undoManager).undo()
         case .redo: UndoTarget.manager(window: window?.window, fallback: environment.undo.undoManager).redo()
         case .rename: rename(target)
@@ -191,6 +191,13 @@ final class FileCommandController: CommandHandler {
 
     func run(_ kind: JobKind) async -> JobOutcome {
         await environment.operations.perform(JobRequest(kind, origin: window?.origin))
+    }
+
+    /// Rows the content list shows for `target`'s folder but hides (collapsed groups, QA round 2).
+    private func hiddenModelRows(_ target: CommandTarget) -> IndexSet {
+        guard case .contentSelection(let folder) = target, let list = contentController()?.activeList,
+              list.folder === folder else { return [] }
+        return list.hiddenModelRows
     }
 
     private func select(_ command: SelectionCommand, _ target: CommandTarget) {

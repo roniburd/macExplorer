@@ -107,6 +107,18 @@ final class SelectionTests: XCTestCase {
         XCTAssertEqual(applied([.all], Space(0)).rows, [])
     }
 
+    /// QA round 2: grouped Details' ⌘A and Invert Selection work over the visible items only.
+    func testAllAndInvertLeaveOutExcludedRows() {
+        let hidden = IndexSet(3...5)
+        XCTAssertEqual(applied([.allVisible(excluding: hidden)]).rows, IndexSet(0..<10).subtracting(hidden))
+        let inverted = applied([.set(IndexSet([0, 9]), cursor: 0), .invertVisible(excluding: hidden)])
+        XCTAssertEqual(inverted.rows, IndexSet([1, 2, 6, 7, 8]))
+        XCTAssertEqual(inverted.cursor, id(0), "the cursor stays where it was, like .invert")
+        let hiddenSelected = applied([.set(IndexSet([0, 4]), cursor: 0), .invertVisible(excluding: hidden)])
+        XCTAssertFalse(hiddenSelected.rows.contains(4), "an excluded row never ends up selected")
+        XCTAssertEqual(applied([.allVisible(excluding: [])]).rows, IndexSet(0..<10))
+    }
+
     func testNamesSelectsPresentNames() {
         let s = applied([.names(["r7", "r2", "missing"])])
         XCTAssertEqual(s.rows, IndexSet([2, 7]))

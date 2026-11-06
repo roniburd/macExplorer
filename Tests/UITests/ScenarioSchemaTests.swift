@@ -135,12 +135,14 @@ final class ScenarioSchemaTests: XCTestCase {
         s.columnsChain = ["", "A"]
         s.activeColumn = 1
         s.thumbnails = ["p.png", "q.png"]
+        s.iconsVisible = ["p.png", "q.png", "r.png"]
         s.pasteboardText = "/tmp/a.txt"
         var e = ScenarioFile.Expectation()
         e.tabs = ["", "A"]; e.activeTab = 1; e.sort = "size.desc"; e.iconSize = "large"; e.groupBy = "kind"
         e.groups = ["Folders (1)", "Images (2)"]; e.visibleRows = ["A", "p.png"]; e.visibleColumnsContain = ["tags"]
         e.quickLookVisible = true; e.quickLookItems = ["p.png"]; e.cells = ["a.txt": ["tags": "Work"]]
         e.columnsChain = ["", "A"]; e.activeColumn = 1; e.thumbnailsContain = ["q.png"]; e.pasteboardText = "/tmp/a.txt"
+        e.iconsVisibleContain = ["r.png"]
         XCTAssertEqual(ExpectationMatcher.mismatches(e, s), [])
 
         e.groups = ["Folders (1)"]                // exact, not subset
@@ -148,8 +150,9 @@ final class ScenarioSchemaTests: XCTestCase {
         e.cells = ["a.txt": ["tags": "Home"], "b.txt": ["tags": ""]]
         e.tabs = ["A"]
         e.sort = "size.asc"
+        e.iconsVisibleContain = ["s.png"]         // subset: missing
         let m = ExpectationMatcher.mismatches(e, s)
-        XCTAssertEqual(m.count, 6, m.joined(separator: "\n"))
+        XCTAssertEqual(m.count, 7, m.joined(separator: "\n"))
         XCTAssertTrue(m.contains { $0.contains("b.txt") && $0.contains("tags") })
     }
 
@@ -157,10 +160,11 @@ final class ScenarioSchemaTests: XCTestCase {
         var e = ScenarioFile.Expectation()
         e.groups = []; e.visibleRows = []; e.visibleColumnsContain = []; e.quickLookVisible = false; e.quickLookItems = []
         e.cells = ["a": ["tags": ""]]; e.columnsChain = []; e.activeColumn = 0; e.thumbnailsContain = []
-        e.pasteboardText = ""
+        e.pasteboardText = ""; e.iconsVisibleContain = []
         let m = ExpectationMatcher.mismatches(e, ProbeSnapshot())
-        XCTAssertEqual(m.count, 10, m.joined(separator: "\n"))
-        for hook in ["groupHeaderTitles", "visibleRowNames", "visibleColumnIDs", "quickLookState", "cellText", "columnsChain", "thumbnailNames"] {
+        XCTAssertEqual(m.count, 11, m.joined(separator: "\n"))
+        for hook in ["groupHeaderTitles", "visibleRowNames", "visibleColumnIDs", "quickLookState", "cellText", "columnsChain", "thumbnailNames",
+                     "iconsVisibleNames"] {
             XCTAssertTrue(m.contains { $0.contains(hook) }, "no message names \(hook): \(m)")
         }
         XCTAssertTrue(m.contains { $0.contains("pasteboardText") && $0.contains("no snapshot") })

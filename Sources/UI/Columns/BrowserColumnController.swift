@@ -357,7 +357,7 @@ final class BrowserColumnController: NSViewController, FileListView, FocusableLi
         guard bound else { return false }
         owner?.activate(self)
         if KeyRouter.handle(event, focus: .content, returnKey: settings.returnKey, from: tableView,
-                            typeSelectActive: typeSelect.isCollecting) {
+                            typeSelectActive: typeSelect.isCollecting(in: model)) {
             typeSelect.reset()
             return true
         }
