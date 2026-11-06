@@ -17,6 +17,7 @@ import Core
         case .newTextFile: L10n.string("Text File")
         case .newEmptyFile: L10n.string("Empty File")
         case .viewAsDetails: L10n.string("Details")
+        case .viewAsColumns: L10n.string("Columns")
         case .iconSizeSmall: L10n.string("Small Icons")
         case .iconSizeMedium: L10n.string("Medium Icons")
         case .iconSizeLarge: L10n.string("Large Icons")

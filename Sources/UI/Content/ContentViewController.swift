@@ -10,6 +10,8 @@ final class ContentViewController: CommandHandlingViewController {
     let session: BrowserSession
     let details: DetailsViewController
     private(set) var icons: IconsViewController?
+    /// The Columns view (P2-19), created on first use.
+    private(set) var columns: ColumnsViewController?
     let commandBar = CommandBarView()
     let statusBar = StatusBarView()
     let stack = NSStackView()
@@ -153,7 +155,11 @@ final class ContentViewController: CommandHandlingViewController {
             if session.sizeSession != nil { details.reportVisibleRows() }
         case .historyChanged: updateCommandBar()
         case .banner(let text): showBanner(text)
-        case .columnsChanged: break       // the Columns view (P2-19) rebuilds its columns; `.folderChanged` rebinds
+        case .columnsChanged:             // `.folderChanged` (sent first) rebinds the status bar to the active column
+            if let columns, activeList === columns {
+                if columns.chain !== session.columnChain { columns.bindChain(session.columnChain) } else { columns.rebuild() }
+                refreshCutNames()
+            }
         }
     }
 
@@ -172,7 +178,9 @@ final class ContentViewController: CommandHandlingViewController {
 
     func handle(_ event: FolderEvent) {
         switch event {
-        case .changes(let changes): activeList.apply(changes); updateStatus(); updateEmptyState()
+        case .changes(let changes):
+            if !isShowingColumns { activeList.apply(changes) }   // each column applies its own model's changes
+            updateStatus(); updateEmptyState()
         case .selection: activeList.reloadSelectionDrawing(); updateStatus(); updateCommandBar()
         case .state: updateStatus(); updateEmptyState()
         case .beginRename(let row): activeList.beginInlineRename(row: row)
@@ -192,8 +200,12 @@ final class ContentViewController: CommandHandlingViewController {
 
     // MARK: empty state, banner, scenario hooks (P1-33)
 
+    /// The Columns view is the active list: every column observes its own model and shows its own empty state.
+    var isShowingColumns: Bool { columns.map { activeList === $0 } ?? false }
+
     func updateEmptyState() {
         let folder = session.folder
+        if isShowingColumns { emptyState.show(nil); return }
         emptyState.show(EmptyStateContent.make(state: folder.state, folderName: folder.directory.lastPathComponent,
                                                visibleCount: folder.rowCount, filter: folder.query.filter))
     }
@@ -202,11 +214,12 @@ final class ContentViewController: CommandHandlingViewController {
         if let text { banner.show(text) } else { banner.hide() }
     }
 
-    func performEmptyStateAction(_ action: EmptyStateAction) {
+    func performEmptyStateAction(_ action: EmptyStateAction, in model: FolderModel? = nil) {
+        let folder = model ?? session.folder
         switch action {
-        case .retry: session.folder.retry()
+        case .retry: folder.retry()
         case .openPrivacySettings: externalOpener.open(SystemSettingsLinks.privacyAllFiles)
-        case .properties: handler?.perform(.properties, target: .currentFolder(session.folder), sender: emptyState)
+        case .properties: handler?.perform(.properties, target: .currentFolder(folder), sender: emptyState)
         }
     }
 
@@ -217,10 +230,19 @@ final class ContentViewController: CommandHandlingViewController {
 
     func installScenarioHooks() {
         guard let controller = view.window?.windowController as? BrowserWindowController else { return }
-        controller.scenarioHooks.emptyStateText = { [weak self] in self?.emptyState.currentText }
+        controller.scenarioHooks.emptyStateText = { [weak self] in
+            guard let self else { return nil }
+            if self.isShowingColumns { return self.columns?.active?.emptyState.currentText }
+            return self.emptyState.currentText
+        }
         controller.scenarioHooks.bannerText = { [weak self] in self?.banner.currentText }
         controller.scenarioHooks.renameText = { [weak self] in
-            (self?.activeList as? InlineRenameHost)?.renameController?.currentText
+            if let columns = self?.columns, self?.activeList === columns { return columns.active?.renameController?.currentText }
+            return (self?.activeList as? InlineRenameHost)?.renameController?.currentText
+        }
+        controller.scenarioHooks.columnsChain = { [weak self] in
+            guard let self, let columns = self.columns, self.activeList === columns else { return ([], 0) }
+            return columns.chainSnapshot()
         }
         controller.scenarioHooks.visibleRowNames = { [weak self] in self?.details.visibleRowNames() ?? [] }
         controller.scenarioHooks.groupHeaderTitles = { [weak self] in self?.details.groupHeaderTitles() ?? [] }
@@ -270,8 +292,8 @@ final class ContentViewController: CommandHandlingViewController {
     /// A middle-click on a content row: a folder (or a link to one) opens in a background tab; files, packages and
     /// ⌘-click (a selection toggle here) do nothing. The selection is not touched.
     @discardableResult
-    func newTabGesture(_ gesture: NewTabGesture, row: Int) -> Bool {
-        let folder = session.folder
+    func newTabGesture(_ gesture: NewTabGesture, row: Int, in model: FolderModel? = nil) -> Bool {
+        let folder = model ?? session.folder
         guard MiddleClickRouter.shouldOpenTab(gesture, in: .content),
               MiddleClickRouter.folderTarget(row: row, in: folder) != nil,
               let commands = handler as? FileCommandController else { return false }
@@ -292,9 +314,11 @@ final class ContentViewController: CommandHandlingViewController {
     }
 
     func refreshCutNames() {
-        let folder = session.folder
-        folder.cutNames = context.environment.clipboard.cutNames(in: folder.directory)
-        activeList.reloadSelectionDrawing()
+        let clipboard = context.environment.clipboard
+        for folder in session.columnChain?.models ?? [session.folder] {    // Columns: every column dims its cut rows
+            folder.cutNames = clipboard.cutNames(in: folder.directory)
+        }
+        if let columns, activeList === columns { columns.reloadAllSelectionDrawing() } else { activeList.reloadSelectionDrawing() }
         updateCommandBar()
     }
 
@@ -315,15 +339,29 @@ final class ContentViewController: CommandHandlingViewController {
         switch mode {
         case .details: list = details
         case .icons: list = iconsController()
-        case .columns: list = details   // P2-19: the Columns view; until then Columns falls back to Details
+        case .columns: list = columnsController()
         }
         guard list !== activeList || mountedListView !== list.view else { return }
         if list !== activeList {
             activeList.bind(nil)
             activeList = list
         }
+        if let columns = list as? ColumnsViewController { columns.bindChain(session.columnChain) }   // before mount: focus
         mount(list)
         list.bind(session.folder)
+        updateEmptyState()
+    }
+
+    private func columnsController() -> ColumnsViewController {
+        if let columns { return columns }
+        let created = ColumnsViewController(context: context)
+        addChild(created)
+        created.contextMenuProvider = { [weak self] row in self?.contextMenu(forRow: row) }
+        created.dropTarget = dropTarget
+        created.onNewTabGesture = { [weak self] gesture, row, model in self?.newTabGesture(gesture, row: row, in: model) }
+        created.onEmptyStateAction = { [weak self] action, model in self?.performEmptyStateAction(action, in: model) }
+        columns = created
+        return created
     }
 
     private func iconsController() -> IconsViewController {

@@ -29,7 +29,7 @@ final class CommandBarView: NSView {
                                    [.sortByName, .sortByDateModified, .sortBySize, .sortByKind, .sortByDateCreated, nil,
                                     .sortAscending, .sortDescending])
         viewButton = Self.pullDown(id: Self.viewMenuID, title: L10n.string("View"), symbol: "rectangle.grid.1x2",
-                                   [.viewAsDetails, .viewAsIcons, nil, .iconSizeSmall, .iconSizeMedium, .iconSizeLarge, nil,
+                                   [.viewAsDetails, .viewAsIcons, .viewAsColumns, nil, .iconSizeSmall, .iconSizeMedium, .iconSizeLarge, nil,
                                     .densityCompact, .densityRegular, .densityComfortable, nil,
                                     .toggleHidden, .toggleCommandBar])
         moreButton = Self.pullDown(id: Self.moreMenuID, title: nil, symbol: "ellipsis",

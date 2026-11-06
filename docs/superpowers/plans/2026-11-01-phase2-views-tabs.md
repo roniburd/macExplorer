@@ -5974,6 +5974,23 @@ git add Sources/UI Tests/UITests/ColumnsViewTests.swift Tests/Scenarios/p2-colum
 git commit -m "feat: Columns (Miller) view built on per-column NSTableViews"
 ```
 
+**P2-19 deviations (as built):**
+- `BrowserColumnController.init(context:model:index:owner:)` takes its `ColumnsViewController` owner (the plan's sketch
+  already passes it). Its table is a `ColumnTableView` (the Details `FileTableView` is typed to its Details owner).
+- Return / ⌘↓ / double-click reach `FileCommandController.open`, which calls the new
+  `ColumnChain.enterSelectedFolder(of:)` (activates the open child column) before the Phase 1 open; ⌘↑ and the toolbar
+  ↑ reach `BrowserSession.goUp()`, which is `chain.up()` in Columns. `handleColumnKey` handles the same chords for
+  direct calls.
+- `ColumnChain.moveRight()` into a column that is still listing selects its first row once it is listed (the
+  scenario's `up` then `right` raced the listing otherwise).
+- Leaving Columns from a deeper active column records that folder in history, so `cmd+[` returns to the column root
+  (the scenario's last step; P2-18 recorded nothing).
+- Spring-loading over a folder row selects it in its column (opens it as the next column) instead of navigating.
+- Each column shows its own `EmptyStateView`; the content-level one stays hidden in Columns. Cut dimming is applied
+  to every column's model. The scenario driver focuses `AXID.column(activeIndex)` in Columns.
+- `p2-columns.json` starts with a `waitFor` on the root listing before `cmd+3`.
+- Widths: `ColumnWidth` (pure: `fit(names:font:)`, `clamp`, 120…600, first 2,000 rows) and `ColumnResizeHandle`.
+
 ---
 
 ### Task P2-20: Benchmarks, layering, docs and Phase 2 verification

@@ -17,6 +17,9 @@ final class ColumnChain {
     /// A name to select in the root column once it is listed (`reroot(_:selecting:)`, `up()`). Dropped when the
     /// listing completes without it and on any other selection change.
     private var pendingRootSelection: String?
+    /// A column entered with `moveRight()` before it was listed: its first row is selected once it is (P2-19: holding
+    /// → or pressing → right after a folder was selected). Dropped on any selection in it and when it closes.
+    private weak var pendingFirstRow: FolderModel?
     var onChange: (() -> Void)?
 
     init(root: URL, makeModel: @escaping ModelFactory) {
@@ -49,6 +52,7 @@ final class ColumnChain {
         guard !models.isEmpty else { return }
         let clamped = max(0, min(index, models.count - 1))
         guard clamped != activeIndex else { return }
+        pendingFirstRow = nil
         activeIndex = clamped
         onChange?()
     }
@@ -58,14 +62,28 @@ final class ColumnChain {
         guard activeIndex + 1 < models.count else { return false }
         activeIndex += 1
         let m = models[activeIndex]
-        if m.selection.isEmpty, m.rowCount > 0 { m.select(.set(IndexSet(integer: 0), cursor: 0)) }
+        if m.selection.isEmpty {
+            if m.rowCount > 0 { m.select(.set(IndexSet(integer: 0), cursor: 0)) } else { pendingFirstRow = m }
+        }
         onChange?()
         return true
+    }
+
+    /// Open (Return, ⌘↓, double-click) in column k on the single selected folder that column k+1 already shows:
+    /// activates that column (as `moveRight()` from k). false when the selection is anything else, so the Phase 1
+    /// open runs (files, packages, links).
+    @discardableResult func enterSelectedFolder(of model: FolderModel) -> Bool {
+        guard let index = models.firstIndex(where: { $0 === model }), index + 1 < models.count,
+              model.selection.count == 1, let url = model.selectedURLs.first,
+              url.standardizedFileURL == models[index + 1].directory.standardizedFileURL else { return false }
+        activeIndex = index
+        return moveRight()
     }
 
     /// Activates column k−1; its selection stays as it is.
     @discardableResult func moveLeft() -> Bool {
         guard activeIndex > 0 else { return false }
+        pendingFirstRow = nil
         activeIndex -= 1
         onChange?()
         return true
@@ -108,9 +126,11 @@ final class ColumnChain {
             switch event {
             case .selection:
                 if m === self.models.first { self.pendingRootSelection = nil }
+                if m === self.pendingFirstRow { self.pendingFirstRow = nil }
                 self.selectionDidChange(in: m)
             case .changes, .state:
                 if m === self.models.first { self.applyPendingRootSelection() }
+                if m === self.pendingFirstRow { self.applyPendingFirstRow(m) }
             case .beginRename, .relocate, .query, .groups, .folderSizes, .extendedAttributes:
                 break
             }
@@ -129,6 +149,19 @@ final class ColumnChain {
         }
         pendingRootSelection = nil
         root.select(.names([name]))
+    }
+
+    private func applyPendingFirstRow(_ m: FolderModel) {
+        guard m.selection.isEmpty else { pendingFirstRow = nil; return }
+        if m.rowCount > 0 {
+            pendingFirstRow = nil
+            m.select(.set(IndexSet(integer: 0), cursor: 0))
+            return
+        }
+        switch m.state {
+        case .complete, .error: pendingFirstRow = nil
+        case .loading, .partial, .unresponsive, .waitingForPermission: break
+        }
     }
 
     private func selectionDidChange(in model: FolderModel) {

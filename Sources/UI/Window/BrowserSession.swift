@@ -112,8 +112,10 @@ final class BrowserSession {
         observers.send(.historyChanged)
     }
 
-    /// Opens the parent and selects the folder we came from (Explorer). Nothing above "/".
+    /// Opens the parent and selects the folder we came from (Explorer). Nothing above "/". In Columns (P2-19) it is
+    /// the chain's up: the parent column, or at the column root a new root for the parent (recorded in history).
     func goUp() {
+        if let chain = columnChain { chain.up(); return }
         let path = folder.directory.standardizedFileURL.path(percentEncoded: false)
         guard path != "/", !path.isEmpty else { return }
         let child = folder.directory.lastPathComponent
@@ -278,8 +280,8 @@ final class BrowserSession {
     }
 
     /// The only writer of `viewMode`. Entering Columns adopts the current model as column 0 (nothing is re-read);
-    /// leaving Columns is `leaveColumns`, which retargets the view state first. Until P2-19 `.columns` is shown as
-    /// Details by ContentViewController.
+    /// leaving Columns is `leaveColumns`, which retargets the view state first. ContentViewController shows the
+    /// chain in its ColumnsViewController (P2-19).
     private func setDisplayedMode(_ mode: ViewMode) {
         guard mode != viewMode else { return }
         if mode == .columns, columnChain == nil {
@@ -321,9 +323,14 @@ final class BrowserSession {
             next = state
             next.mode = requested.mode
         }
+        let retargeted = chain.activeModel !== chain.models.first
         setDisplayedMode(next.mode)         // detaches the active model; the chain closes the others
         viewStates.save(next, for: locator)
         apply(next)
+        if retargeted {                     // the window now shows a deeper folder: Back returns to the column root
+            history.visit(folder.directory)
+            observers.send(.historyChanged)
+        }
         refineLocator()
     }
 

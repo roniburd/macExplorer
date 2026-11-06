@@ -242,7 +242,9 @@ final class ScenarioDriver {
 
     private func listView(in controller: BrowserWindowController) -> NSView? {
         guard let root = controller.window?.contentView else { return nil }
-        let ids: Set<String> = [AXID.detailsTable, AXID.iconsGrid]
+        // Columns (P2-19): the active column's table.
+        let ids: Set<String> = controller.session.columnChain.map { [AXID.column($0.activeIndex)] }
+            ?? [AXID.detailsTable, AXID.iconsGrid]
         var stack: [NSView] = [root]
         while let view = stack.popLast() {
             let id = view.accessibilityIdentifier()

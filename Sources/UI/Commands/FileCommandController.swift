@@ -13,9 +13,7 @@ final class FileCommandController: CommandHandler {
     var beginSidebarRename: ((URL) -> Void)?
     /// Commands whose UI arrives in a later Phase 2 task (disabled, never performed). The NSWindow tab commands are
     /// here too: NSWindow and BrowserWindowController handle them, so they never reach a pane's handler.
-    static let pendingCommands: Set<Command> = Command.windowTabCommands.union([
-        .viewAsColumns,
-    ])
+    static let pendingCommands: Set<Command> = Command.windowTabCommands
 
     var environment: CoreEnvironment { context.environment }
     var session: BrowserSession? { window?.session }
@@ -84,7 +82,7 @@ final class FileCommandController: CommandHandler {
         case .back, .forward, .up, .refresh, .focusAddressBar, .focusSearch, .cycleFocusForward, .cycleFocusBackward,
              .newWindow, .closeWindow, .showOperations:
             performWindowCommand(effective, target: target)
-        case .viewAsDetails, .viewAsIcons, .iconSizeSmall, .iconSizeMedium, .iconSizeLarge, .densityCompact, .densityRegular,
+        case .viewAsDetails, .viewAsIcons, .viewAsColumns, .iconSizeSmall, .iconSizeMedium, .iconSizeLarge, .densityCompact, .densityRegular,
              .densityComfortable, .toggleHidden, .toggleCommandBar, .sortByName, .sortByDateModified, .sortBySize, .sortByKind,
              .sortByDateCreated, .sortAscending, .sortDescending:
             performViewCommand(effective)
@@ -98,8 +96,7 @@ final class FileCommandController: CommandHandler {
             // Esc closes Quick Look first (Finder parity); otherwise it clears a pending cut.
             if window?.quickLook.hideIfVisible() != true { environment.clipboard.clearCut() }
         case .quickLook: window?.quickLook.toggle()
-        case .newTab, .nextTab, .previousTab, .showTabBar, .showAllTabs, .moveTabToNewWindow, .mergeAllWindows,
-             .viewAsColumns:
+        case .newTab, .nextTab, .previousTab, .showTabBar, .showAllTabs, .moveTabToNewWindow, .mergeAllWindows:
             break   // pendingCommands: canPerform is false, so perform beeps above
         }
     }

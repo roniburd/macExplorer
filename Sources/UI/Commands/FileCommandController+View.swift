@@ -27,6 +27,7 @@ extension FileCommandController {
         switch command {
         case .viewAsDetails: setViewMode(.details)
         case .viewAsIcons: setViewMode(.icons)
+        case .viewAsColumns: setViewMode(.columns)
         case .iconSizeSmall: setIconSize(.small)
         case .iconSizeMedium: setIconSize(.medium)
         case .iconSizeLarge: setIconSize(.large)

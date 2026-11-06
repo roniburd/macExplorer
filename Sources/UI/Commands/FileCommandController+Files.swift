@@ -8,6 +8,8 @@ extension FileCommandController {
     func open(_ target: CommandTarget, newWindow: Bool) {
         switch target {
         case .contentSelection(let folder):
+            // Columns (P2-19): open on the single selected folder whose column is already open moves into it.
+            if !newWindow, session?.columnChain?.enterSelectedFolder(of: folder) == true { return }
             let items = folder.selection.rows.filter { $0 < folder.rowCount }.map { row in
                 let entry = folder.entry(atRow: row)
                 return OpenItem(url: folder.url(atRow: row), kind: entry.kind, isApplication: environment.types.isApplication(entry.typeIndex))

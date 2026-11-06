@@ -82,10 +82,10 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
         }
     }
 
-    /// The view modes the toolbar switcher offers, in segment order. P2-19 adds the Columns segment.
-    static let switcherModes: [ViewMode] = [.details, .icons]
+    /// The view modes the toolbar switcher offers, in segment order.
+    static let switcherModes: [ViewMode] = [.details, .icons, .columns]
 
-    /// The Details/Icons switcher (segment `index` of `switcherModes`).
+    /// The Details/Icons/Columns switcher (segment `index` of `switcherModes`).
     func selectViewMode(at index: Int) {
         let modes = Self.switcherModes
         guard modes.indices.contains(index) else { return }
