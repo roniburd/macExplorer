@@ -71,4 +71,22 @@ final class MouseRouterTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(100))
         XCTAssertEqual(controller.session.folder.directory, before)
     }
+
+    func testIgnoredWhileTheWindowHasASheet() async throws {
+        let h = try await ShellHarness.make(self)
+        try h.dir("A/B")
+        let controller = try await h.openWindow("A")
+        controller.navigate(to: h.url("A/B"))
+        try await h.waitUntil("in B") { controller.session.folder.directory.lastPathComponent == "B" }
+        let window = try XCTUnwrap(controller.window)
+        let sheet = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 100), styleMask: [.titled],
+                             backing: .buffered, defer: false)
+        sheet.isReleasedWhenClosed = false
+        window.beginSheet(sheet, completionHandler: nil)
+        defer { window.endSheet(sheet); sheet.orderOut(nil) }
+        try await h.waitUntil("sheet attached") { window.attachedSheet === sheet }
+        XCTAssertFalse(MouseRouter.handle(MouseEvents.otherDown(3), in: window))
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(controller.session.folder.directory.lastPathComponent, "B")
+    }
 }
