@@ -296,7 +296,7 @@ git commit -m "feat(core): mouse buttons, triggers and the key-binding overrides
 - Produces:
   - `KeyMap.defaultMouse(_ command: Command) -> [MouseButton]`, `KeyMap.textEditingChords: Set<KeyChord>`.
   - `KeyBindings` (`Sendable`, `Equatable` by overrides): `static let defaults`, `static let fixedCommands: Set<Command>`, `static let reservedChords: Set<KeyChord>`, `init(overrides:)`, `overrides`, `primary(_:) -> KeyChord?`, `alternates(_:) -> [KeyChord]`, `mouse(_:) -> [MouseButton]`, `alternateCommand(for: KeyChord) -> Command?`, `command(for: MouseButton) -> Command?`, `uses(of: Trigger) -> [Use]`, `collidesWithTextEditing: Set<Command>`, `static func validate(_: Trigger, as: Slot) -> BindingRejection?`.
-  - `KeyBindings.Slot` (`.primary`, `.alternate`, `.mouse`), `KeyBindings.Use` (`command`, `slot`), `BindingRejection` (`.reserved`, `.typesTextAsPrimary`, `.wrongSlot`).
+  - `KeyBindings.Slot` (`.primary`, `.alternate`, `.mouse`), `KeyBindings.Use` (`command`, `slot`), `BindingRejection` (`.reserved`, `.editsTextAsPrimary`, `.wrongSlot`).
   - `KeyBindingOverrides` mutating edits: `setPrimary(_: KeyChord?, for:)`, `removeAlternate(_:from:)`, `removeMouse(_:from:)`, `reassign(_: Trigger, to: Command, as: KeyBindings.Slot)`, `reset(_: Command)`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -370,9 +370,9 @@ final class KeyBindingsTests: XCTestCase {
             XCTAssertEqual(KeyBindings.validate(.key(chord(text)), as: .alternate), .reserved, text)
             XCTAssertEqual(KeyBindings.validate(.key(chord(text)), as: .primary), .reserved, text)
         }
-        XCTAssertEqual(KeyBindings.validate(.key(chord("x")), as: .primary), .typesTextAsPrimary)
-        XCTAssertEqual(KeyBindings.validate(.key(chord("shift+x")), as: .primary), .typesTextAsPrimary)
-        XCTAssertEqual(KeyBindings.validate(.key(chord("space")), as: .primary), .typesTextAsPrimary)
+        XCTAssertEqual(KeyBindings.validate(.key(chord("x")), as: .primary), .editsTextAsPrimary)
+        XCTAssertEqual(KeyBindings.validate(.key(chord("shift+x")), as: .primary), .editsTextAsPrimary)
+        XCTAssertEqual(KeyBindings.validate(.key(chord("space")), as: .primary), .editsTextAsPrimary)
         XCTAssertNil(KeyBindings.validate(.key(chord("x")), as: .alternate))
         XCTAssertNil(KeyBindings.validate(.key(chord("F6")), as: .primary))
         XCTAssertNil(KeyBindings.validate(.key(chord("opt+cmd+b")), as: .primary))
@@ -507,8 +507,10 @@ import Foundation
 public enum BindingRejection: Sendable, Equatable {
     /// ⌘Q, ⌘H, ⌥⌘H, ⌘M, ⌘, and ⌘` belong to the app and window menus; Tab, ⇧Tab and Esc to focus and cancel.
     case reserved
-    /// A plain character or space (no ⌘, ⌃ or ⌥) as a menu shortcut would fire while typing a name.
-    case typesTextAsPrimary
+    /// A primary with no ⌘, ⌃ or ⌥ that isn't a function key (a character, space, Return, Enter, ⌫, Del or an arrow,
+    /// with or without ⇧). Menu key equivalents are matched before the field editor sees the key, so it would fire
+    /// while typing or editing a name or path instead of reaching the text.
+    case editsTextAsPrimary
     /// A mouse button in a key slot, or a key in the mouse slot.
     case wrongSlot
 }
@@ -603,13 +605,9 @@ public struct KeyBindings: Sendable, Equatable {
         case (.mouse, _), (.key, .mouse): return .wrongSlot
         case (.key(let chord), _):
             if reservedChords.contains(chord) { return .reserved }
-            if slot == .primary, chord.modifiers.isDisjoint(with: [.command, .control, .option]) {
-                switch chord.key {
-                case .character, .space: return .typesTextAsPrimary
-                default: break
-                }
-            }
-            return nil
+            guard slot == .primary, chord.modifiers.isDisjoint(with: [.command, .control, .option]) else { return nil }
+            if case .function = chord.key { return nil }
+            return .editsTextAsPrimary
         }
     }
 }
@@ -1453,7 +1451,7 @@ final class ShortcutsModelTests: XCTestCase {
         XCTAssertEqual(s.keyBindings.primary(.back), chord("opt+cmd+b"))
         XCTAssertTrue(m.isModified(.back))
         XCTAssertEqual(m.apply(.key(chord("cmd+q")), to: .back, as: .primary, reassigning: false), .rejected(.reserved))
-        XCTAssertEqual(m.apply(.key(chord("x")), to: .back, as: .primary, reassigning: false), .rejected(.typesTextAsPrimary))
+        XCTAssertEqual(m.apply(.key(chord("x")), to: .back, as: .primary, reassigning: false), .rejected(.editsTextAsPrimary))
         XCTAssertEqual(m.apply(.key(chord("cmd+d")), to: .newFolder, as: .primary, reassigning: false),
                        .conflict([.init(command: .duplicate, slot: .primary)]))
         XCTAssertEqual(s.keyBindings.primary(.duplicate), chord("cmd+d"), "a conflict saves nothing")
@@ -1485,7 +1483,7 @@ final class ShortcutsModelTests: XCTestCase {
     func testMessages() {
         let m = ShortcutsModel(settings: settings())
         XCTAssertEqual(ShortcutsModel.message(.reserved), "Reserved by macOS or MacExplorer.")
-        XCTAssertEqual(ShortcutsModel.message(.typesTextAsPrimary), "Menu shortcuts need ⌘, ⌃ or ⌥.")
+        XCTAssertEqual(ShortcutsModel.message(.editsTextAsPrimary), "Menu shortcuts need ⌘, ⌃ or ⌥, or an F key.")
         XCTAssertEqual(m.conflictMessage(.key(chord("cmd+d")), [.init(command: .duplicate, slot: .primary)]),
                        "⌘D is used by Duplicate.")
     }
@@ -1651,7 +1649,7 @@ enum ShortcutApply: Equatable {
     static func message(_ rejection: BindingRejection) -> String {
         switch rejection {
         case .reserved: L10n.string("Reserved by macOS or MacExplorer.")
-        case .typesTextAsPrimary: L10n.string("Menu shortcuts need ⌘, ⌃ or ⌥.")
+        case .editsTextAsPrimary: L10n.string("Menu shortcuts need ⌘, ⌃ or ⌥, or an F key.")
         case .wrongSlot: L10n.string("Mouse buttons can only be added as extras.")
         }
     }

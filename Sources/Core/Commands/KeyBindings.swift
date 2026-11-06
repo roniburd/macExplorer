@@ -3,8 +3,10 @@ import Foundation
 public enum BindingRejection: Sendable, Equatable {
     /// ⌘Q, ⌘H, ⌥⌘H, ⌘M, ⌘, and ⌘` belong to the app and window menus; Tab, ⇧Tab and Esc to focus and cancel.
     case reserved
-    /// A plain character or space (no ⌘, ⌃ or ⌥) as a menu shortcut would fire while typing a name.
-    case typesTextAsPrimary
+    /// A primary with no ⌘, ⌃ or ⌥ that isn't a function key (a character, space, Return, Enter, ⌫, Del or an arrow,
+    /// with or without ⇧). Menu key equivalents are matched before the field editor sees the key, so it would fire
+    /// while typing or editing a name or path instead of reaching the text.
+    case editsTextAsPrimary
     /// A mouse button in a key slot, or a key in the mouse slot.
     case wrongSlot
 }
@@ -99,13 +101,9 @@ public struct KeyBindings: Sendable, Equatable {
         case (.mouse, _), (.key, .mouse): return .wrongSlot
         case (.key(let chord), _):
             if reservedChords.contains(chord) { return .reserved }
-            if slot == .primary, chord.modifiers.isDisjoint(with: [.command, .control, .option]) {
-                switch chord.key {
-                case .character, .space: return .typesTextAsPrimary
-                default: break
-                }
-            }
-            return nil
+            guard slot == .primary, chord.modifiers.isDisjoint(with: [.command, .control, .option]) else { return nil }
+            if case .function = chord.key { return nil }
+            return .editsTextAsPrimary
         }
     }
 }

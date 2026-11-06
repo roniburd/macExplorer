@@ -105,13 +105,13 @@ public struct KeyBindings: Sendable, Equatable {
 ```swift
 public enum BindingRejection: Sendable, Equatable {
     case reserved            // ⌘Q, ⌘H, ⌥⌘H, ⌘M, ⌘, (Settings), ⌘` (cycle windows); Tab, ⇧Tab; Esc
-    case typesTextAsPrimary  // a bare character or space with no ⌘/⌃/⌥, used as a primary
+    case editsTextAsPrimary  // a primary with no ⌘/⌃/⌥ that isn't a function key (character, space, ↩, ⌤, ⌫, Del, arrows; ⇧ or not)
     case unsupported         // a chord MainMenuBuilder.keyEquivalent can't express, used as a primary
 }
 public static func validate(_ trigger: Trigger, as slot: Slot) -> BindingRejection?
 ```
 
-Tab and ⇧Tab stay bound to `cycleFocusForward` / `cycleFocusBackward`, and Esc to `cancelOperation`. Those rows are shown in Settings but can't be edited. A bare character is allowed as an alternate, because alternates never fire in text fields.
+Tab and ⇧Tab stay bound to `cycleFocusForward` / `cycleFocusBackward`, and Esc to `cancelOperation`. Those rows are shown in Settings but can't be edited. A primary with no ⌘, ⌃ or ⌥ must be a function key (F1…F20, ⇧ allowed). A primary becomes a menu key equivalent, and AppKit matches those before the field editor gets the key, so a bare Return, Enter, ⌫, Del or arrow (with or without ⇧) would fire while editing a name or path; none of them are in `textEditingChords`, so collision handling wouldn't catch them. A stored primary that fails this falls back to the default. Any of these keys, and a bare character, is allowed as an alternate, because alternates never fire in text fields.
 
 ### 3.5 Settings
 
@@ -246,7 +246,7 @@ Made while writing the implementation plan (`docs/superpowers/plans/2026-11-05-k
 - **Edits live on `KeyBindingOverrides`.** `setPrimary`, `removeAlternate`, `removeMouse`, `reassign` and `reset` are mutating methods on the overrides value. The UI mutates `settings.keyBindingOverrides` directly, which persists through its `didSet`. `Settings` gets no extra methods. "Add alternate" and "add mouse button" are `reassign` calls.
 - **One active table in the UI.** Instead of passing `settings.keyBindings` into every controller, `KeyBindingsController` (owned by `UIContext`) keeps `ActiveKeyBindings.current` and the menu bar's key equivalents in step with Settings. `KeyRouter`, `FieldEditorKeyRouting`, `MenuValidation`, `MouseRouter` and the other `CommandAvailability` callers read it. The three content/sidebar controllers don't change.
 - **Mouse commands go to the content pane.** `MouseRouter` sends the command from the window's content pane (same responder walk as alternate keys), not from the view under the pointer. A mouse binding acts as if the file list had focus, wherever the pointer is. Availability is checked by the existing command handler (`canPerform`), so an unavailable command is consumed silently.
-- **Rejections.** `BindingRejection` is `.reserved`, `.typesTextAsPrimary` and `.wrongSlot` (mouse in a key slot or the reverse). `.unsupported` is dropped: `KeyChord(parsing:)` already refuses chords the menu can't show. The reserved message is a single "Reserved by macOS or MacExplorer."
+- **Rejections.** `BindingRejection` is `.reserved`, `.editsTextAsPrimary` and `.wrongSlot` (mouse in a key slot or the reverse). `.editsTextAsPrimary` (renamed from `.typesTextAsPrimary`) rejects every primary with no ⌘/⌃/⌥ except function keys, not just characters and space: bare ↩, ⌤, ⌫, Del and arrows (and their ⇧ forms) would otherwise act as menu key equivalents ahead of the field editor (review of Task 2). This changes behavior: such chords are now refused as primaries and only allowed as alternates. `.unsupported` is dropped: `KeyChord(parsing:)` already refuses chords the menu can't show. The reserved message is a single "Reserved by macOS or MacExplorer."
 - **`Trigger` is not `Codable`.** Only `KeyChord` and `MouseButton` are stored. `MouseButton.displayName` lives in UI (localized), and Core has the canonical text form `"mouse4"`.
 - **`rebind-back` scenario → UI tests.** Rebinding is covered by `KeyBindingsRoutingTests` and `MouseRouterTests.testReboundButtonFollowsActiveBindings`. Only `mouse-back-forward.json` is a scenario.
 - **Fixed rows.** `cancelOperation` is titled "Cancel" (its existing `MainMenuTitles` entry).

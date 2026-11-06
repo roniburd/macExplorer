@@ -41,9 +41,13 @@ final class KeyBindingsTests: XCTestCase {
         var o = KeyBindingOverrides.empty
         o.commands[.back] = .init(primary: .chord(chord("cmd+q")))
         o.commands[.forward] = .init(primary: .chord(chord("x")))
+        o.commands[.moveToTrash] = .init(primary: .chord(chord("fn+delete")))
+        o.commands[.open] = .init(primary: .chord(chord("return")))
         let b = KeyBindings(overrides: o)
         XCTAssertEqual(b.primary(.back), KeyMap.primary(.back))
         XCTAssertEqual(b.primary(.forward), KeyMap.primary(.forward))
+        XCTAssertEqual(b.primary(.moveToTrash), KeyMap.primary(.moveToTrash))
+        XCTAssertEqual(b.primary(.open), KeyMap.primary(.open))
     }
 
     func testFixedCommandsIgnoreOverrides() {
@@ -65,11 +69,15 @@ final class KeyBindingsTests: XCTestCase {
             XCTAssertEqual(KeyBindings.validate(.key(chord(text)), as: .alternate), .reserved, text)
             XCTAssertEqual(KeyBindings.validate(.key(chord(text)), as: .primary), .reserved, text)
         }
-        XCTAssertEqual(KeyBindings.validate(.key(chord("x")), as: .primary), .typesTextAsPrimary)
-        XCTAssertEqual(KeyBindings.validate(.key(chord("shift+x")), as: .primary), .typesTextAsPrimary)
-        XCTAssertEqual(KeyBindings.validate(.key(chord("space")), as: .primary), .typesTextAsPrimary)
-        XCTAssertNil(KeyBindings.validate(.key(chord("x")), as: .alternate))
+        for text in ["x", "shift+x", "space", "return", "enter", "delete", "shift+delete", "fn+delete",
+                     "shift+fn+delete", "down", "up", "shift+left", "shift+right"] {
+            XCTAssertEqual(KeyBindings.validate(.key(chord(text)), as: .primary), .editsTextAsPrimary, text)
+            XCTAssertNil(KeyBindings.validate(.key(chord(text)), as: .alternate), text)
+        }
         XCTAssertNil(KeyBindings.validate(.key(chord("F6")), as: .primary))
+        XCTAssertNil(KeyBindings.validate(.key(chord("shift+F6")), as: .primary))
+        XCTAssertNil(KeyBindings.validate(.key(chord("ctrl+return")), as: .primary))
+        XCTAssertNil(KeyBindings.validate(.key(chord("opt+down")), as: .primary))
         XCTAssertNil(KeyBindings.validate(.key(chord("opt+cmd+b")), as: .primary))
         XCTAssertNil(KeyBindings.validate(.mouse(mouse6), as: .mouse))
         XCTAssertEqual(KeyBindings.validate(.mouse(mouse6), as: .primary), .wrongSlot)
@@ -150,6 +158,8 @@ final class KeyBindingsTests: XCTestCase {
         var o = KeyBindingOverrides.empty
         o.reassign(.key(chord("cmd+q")), to: .back, as: .primary)
         o.reassign(.key(chord("x")), to: .back, as: .primary)
+        o.reassign(.key(chord("fn+delete")), to: .moveToTrash, as: .primary)
+        o.setPrimary(chord("down"), for: .open)
         o.reassign(.mouse(mouse6), to: .back, as: .alternate)
         o.reassign(.key(chord("ctrl+e")), to: .cancelOperation, as: .alternate)
         o.setPrimary(chord("opt+cmd+e"), for: .cycleFocusForward)
