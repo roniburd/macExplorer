@@ -553,6 +553,17 @@
         }
       }
     },
+    "Add a key or mouse button" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add a key or mouse button"
+          }
+        }
+      }
+    },
     "Address" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1803,6 +1814,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Filter This Folder"
+          }
+        }
+      }
+    },
+    "Fixed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fixed"
           }
         }
       }
@@ -3237,6 +3259,17 @@
         }
       }
     },
+    "Reassign" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reassign"
+          }
+        }
+      }
+    },
     "Redo" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3468,6 +3501,39 @@
         }
       }
     },
+    "Restore All Defaults" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore All Defaults"
+          }
+        }
+      }
+    },
+    "Restore all shortcuts to their defaults?" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore all shortcuts to their defaults?"
+          }
+        }
+      }
+    },
+    "Restore default" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore default"
+          }
+        }
+      }
+    },
     "Restored the original name of 1 item." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3567,6 +3633,17 @@
         }
       }
     },
+    "Search commands…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search commands…"
+          }
+        }
+      }
+    },
     "Select All" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3640,6 +3717,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Share…"
+          }
+        }
+      }
+    },
+    "Shortcuts" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shortcuts"
+          }
+        }
+      }
+    },
+    "Shortcuts set in System Settings › Keyboard › App Shortcuts take precedence over menu shortcuts." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shortcuts set in System Settings › Keyboard › App Shortcuts take precedence over menu shortcuts."
           }
         }
       }
@@ -4223,6 +4322,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Type identifier"
+          }
+        }
+      }
+    },
+    "Type shortcut…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type shortcut…"
           }
         }
       }

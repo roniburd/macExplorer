@@ -22,6 +22,8 @@ enum AXID {
     static func conflictButton(_ a: ConflictAction) -> String { "macx.conflict.\(a.rawValue)" }
     static let propertiesWindow = "macx.properties"
     static let settingsWindow = "macx.settings"          // additive, P1-30
+    static let shortcutsList = "macx.settings.shortcuts.list"            // additive: Settings › Shortcuts
+    static let shortcutsRestoreDefaults = "macx.settings.shortcuts.restore"
     static let onboardingSheet = "macx.onboarding"       // additive, P1-30
     static let updateBadge = "macx.updateBadge"
     static let feedbackMenu = "macx.feedback"
