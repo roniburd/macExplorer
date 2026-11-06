@@ -78,6 +78,17 @@
         }
       }
     },
+    "%@ is used by %@." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is used by %@."
+          }
+        }
+      }
+    },
     "%@ items" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2423,6 +2434,17 @@
         }
       }
     },
+    "Menu shortcuts need ⌘, ⌃ or ⌥, or an F key." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Menu shortcuts need ⌘, ⌃ or ⌥, or an F key."
+          }
+        }
+      }
+    },
     "Merge" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2496,6 +2518,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mount point"
+          }
+        }
+      }
+    },
+    "Mouse %d" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mouse %d"
+          }
+        }
+      }
+    },
+    "Mouse buttons can only be added as extras." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mouse buttons can only be added as extras."
           }
         }
       }
@@ -3380,6 +3424,17 @@
         }
       }
     },
+    "Reserved by macOS or MacExplorer." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reserved by macOS or MacExplorer."
+          }
+        }
+      }
+    },
     "Reset View for This Folder" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3816,6 +3871,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sort By"
+          }
+        }
+      }
+    },
+    "Space" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Space"
           }
         }
       }
