@@ -78,6 +78,23 @@ public enum KeyMap {
         }
     }
 
+    /// Default mouse buttons (AppKit buttonNumber): the "back" side button (3) and the "forward" one (4), as in browsers.
+    public static func defaultMouse(_ command: Command) -> [MouseButton] {
+        switch command {
+        case .back: [MouseButton(number: 3)!]
+        case .forward: [MouseButton(number: 4)!]
+        default: []
+        }
+    }
+
+    /// Chords a text field uses for editing (⌘↑, ⌘↓, ⌘⌫, ⌥⌘⌫, ⌘[, ⌘], F2, ⌘D). A command whose primary is one of
+    /// these is disabled while a field editor is active, so the key reaches the text (`KeyBindings.collidesWithTextEditing`).
+    public static let textEditingChords: Set<KeyChord> = [
+        KeyChord(.up, .command), KeyChord(.down, .command), KeyChord(.backspace, .command),
+        KeyChord(.backspace, [.option, .command]), KeyChord(.character("["), .command), KeyChord(.character("]"), .command),
+        KeyChord(.function(2)), KeyChord(.character("d"), .command),
+    ]
+
     /// Commands whose primary is also a text-editing key: open(⌘↓), up(⌘↑), moveToTrash(⌘⌫),
     /// deletePermanently(⌥⌘⌫), back(⌘[), forward(⌘]), rename(F2), duplicate(⌘D).
     public static let collidesWithTextEditing: Set<Command> = [

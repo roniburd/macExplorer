@@ -1,0 +1,167 @@
+import XCTest
+@testable import Core
+
+final class KeyBindingsTests: XCTestCase {
+    private func chord(_ text: String) -> KeyChord { KeyChord(parsing: text)! }
+    private let mouse4 = MouseButton(number: 3)!
+    private let mouse5 = MouseButton(number: 4)!
+    private let mouse6 = MouseButton(number: 5)!
+
+    func testDefaultsMatchKeyMap() {
+        let b = KeyBindings.defaults
+        for c in Command.allCases {
+            XCTAssertEqual(b.primary(c), KeyMap.primary(c), "\(c)")
+            XCTAssertEqual(b.alternates(c), KeyMap.alternates(c), "\(c)")
+            XCTAssertEqual(b.mouse(c), KeyMap.defaultMouse(c), "\(c)")
+        }
+        XCTAssertEqual(b.command(for: mouse4), .back)
+        XCTAssertEqual(b.command(for: mouse5), .forward)
+        XCTAssertNil(b.command(for: mouse6))
+        XCTAssertEqual(b.alternateCommand(for: chord("delete")), .back)
+        XCTAssertNil(b.alternateCommand(for: chord("cmd+[")), "primaries are not alternates")
+    }
+
+    func testEachOverrideSlotAppliesAlone() {
+        var o = KeyBindingOverrides.empty
+        o.commands[.back] = .init(primary: .chord(chord("opt+cmd+b")))
+        o.commands[.forward] = .init(alternates: [])
+        o.commands[.up] = .init(mouse: [mouse6])
+        o.commands[.duplicate] = .init(primary: .unbound)
+        let b = KeyBindings(overrides: o)
+        XCTAssertEqual(b.primary(.back), chord("opt+cmd+b"))
+        XCTAssertEqual(b.alternates(.back), KeyMap.alternates(.back))
+        XCTAssertEqual(b.mouse(.back), [mouse4])
+        XCTAssertEqual(b.alternates(.forward), [])
+        XCTAssertNil(b.alternateCommand(for: chord("opt+right")))
+        XCTAssertEqual(b.command(for: mouse6), .up)
+        XCTAssertNil(b.primary(.duplicate))
+    }
+
+    func testInvalidStoredPrimaryFallsBackToDefault() {
+        var o = KeyBindingOverrides.empty
+        o.commands[.back] = .init(primary: .chord(chord("cmd+q")))
+        o.commands[.forward] = .init(primary: .chord(chord("x")))
+        let b = KeyBindings(overrides: o)
+        XCTAssertEqual(b.primary(.back), KeyMap.primary(.back))
+        XCTAssertEqual(b.primary(.forward), KeyMap.primary(.forward))
+    }
+
+    func testFixedCommandsIgnoreOverrides() {
+        var o = KeyBindingOverrides.empty
+        o.commands[.cancelOperation] = .init(alternates: [])
+        XCTAssertEqual(KeyBindings(overrides: o).alternateCommand(for: chord("esc")), .cancelOperation)
+        XCTAssertEqual(KeyBindings.fixedCommands, [.cycleFocusForward, .cycleFocusBackward, .cancelOperation])
+    }
+
+    func testDuplicateStoredTriggersFirstCommandWins() {
+        var o = KeyBindingOverrides.empty
+        o.commands[.open] = .init(mouse: [mouse6])
+        o.commands[.up] = .init(mouse: [mouse6])
+        XCTAssertEqual(KeyBindings(overrides: o).command(for: mouse6), .open, "Command.allCases order")
+    }
+
+    func testValidate() {
+        for text in ["cmd+q", "cmd+h", "opt+cmd+h", "cmd+m", "cmd+,", "cmd+`", "tab", "shift+tab", "esc"] {
+            XCTAssertEqual(KeyBindings.validate(.key(chord(text)), as: .alternate), .reserved, text)
+            XCTAssertEqual(KeyBindings.validate(.key(chord(text)), as: .primary), .reserved, text)
+        }
+        XCTAssertEqual(KeyBindings.validate(.key(chord("x")), as: .primary), .typesTextAsPrimary)
+        XCTAssertEqual(KeyBindings.validate(.key(chord("shift+x")), as: .primary), .typesTextAsPrimary)
+        XCTAssertEqual(KeyBindings.validate(.key(chord("space")), as: .primary), .typesTextAsPrimary)
+        XCTAssertNil(KeyBindings.validate(.key(chord("x")), as: .alternate))
+        XCTAssertNil(KeyBindings.validate(.key(chord("F6")), as: .primary))
+        XCTAssertNil(KeyBindings.validate(.key(chord("opt+cmd+b")), as: .primary))
+        XCTAssertNil(KeyBindings.validate(.mouse(mouse6), as: .mouse))
+        XCTAssertEqual(KeyBindings.validate(.mouse(mouse6), as: .primary), .wrongSlot)
+        XCTAssertEqual(KeyBindings.validate(.key(chord("cmd+k")), as: .mouse), .wrongSlot)
+    }
+
+    func testCollisionFollowsTheChord() {
+        XCTAssertEqual(KeyBindings.defaults.collidesWithTextEditing,
+                       [.open, .up, .moveToTrash, .deletePermanently, .back, .forward, .rename, .duplicate])
+        var o = KeyBindingOverrides.empty
+        o.setPrimary(chord("opt+cmd+d"), for: .duplicate)
+        o.setPrimary(chord("cmd+d"), for: .newFolder)
+        let b = KeyBindings(overrides: o)
+        XCTAssertFalse(b.collidesWithTextEditing.contains(.duplicate))
+        XCTAssertTrue(b.collidesWithTextEditing.contains(.newFolder))
+    }
+
+    func testUses() {
+        let b = KeyBindings.defaults
+        XCTAssertEqual(b.uses(of: .key(chord("cmd+["))), [.init(command: .back, slot: .primary)])
+        XCTAssertEqual(b.uses(of: .key(chord("delete"))), [.init(command: .back, slot: .alternate)])
+        XCTAssertEqual(b.uses(of: .mouse(mouse5)), [.init(command: .forward, slot: .mouse)])
+        XCTAssertEqual(b.uses(of: .key(chord("opt+cmd+k"))), [])
+    }
+
+    // MARK: editing
+
+    func testEditsBackToDefaultsLeaveNoEntry() {
+        var o = KeyBindingOverrides.empty
+        o.setPrimary(chord("opt+cmd+b"), for: .back)
+        XCTAssertNotNil(o.commands[.back])
+        o.setPrimary(chord("cmd+["), for: .back)
+        XCTAssertNil(o.commands[.back])
+        o.removeMouse(mouse4, from: .back)
+        XCTAssertEqual(o.commands[.back], .init(mouse: []))
+        o.reassign(.mouse(mouse4), to: .back, as: .mouse)
+        XCTAssertEqual(o, .empty)
+    }
+
+    func testClearPrimaryStoresUnbound() {
+        var o = KeyBindingOverrides.empty
+        o.setPrimary(nil, for: .duplicate)
+        XCTAssertEqual(o.commands[.duplicate], .init(primary: .unbound))
+        XCTAssertNil(KeyBindings(overrides: o).primary(.duplicate))
+    }
+
+    func testReassignMovesTheTriggerFromEveryOtherUser() {
+        var o = KeyBindingOverrides.empty
+        o.reassign(.key(chord("cmd+d")), to: .newFolder, as: .primary)
+        let b = KeyBindings(overrides: o)
+        XCTAssertEqual(b.primary(.newFolder), chord("cmd+d"))
+        XCTAssertNil(b.primary(.duplicate))
+        o.reassign(.mouse(mouse4), to: .up, as: .mouse)
+        let b2 = KeyBindings(overrides: o)
+        XCTAssertEqual(b2.mouse(.up), [mouse4])
+        XCTAssertEqual(b2.mouse(.back), [])
+        XCTAssertEqual(b2.command(for: mouse4), .up)
+    }
+
+    func testReassignRemovesTheTriggerFromTheSameCommandsOtherSlot() {
+        var o = KeyBindingOverrides.empty
+        o.reassign(.key(chord("opt+left")), to: .back, as: .primary)
+        let b = KeyBindings(overrides: o)
+        XCTAssertEqual(b.primary(.back), chord("opt+left"))
+        XCTAssertFalse(b.alternates(.back).contains(chord("opt+left")))
+    }
+
+    func testReassignAddsAlternatesWithoutDuplicates() {
+        var o = KeyBindingOverrides.empty
+        o.reassign(.key(chord("ctrl+b")), to: .back, as: .alternate)
+        o.reassign(.key(chord("ctrl+b")), to: .back, as: .alternate)
+        XCTAssertEqual(KeyBindings(overrides: o).alternates(.back), KeyMap.alternates(.back) + [chord("ctrl+b")])
+        o.removeAlternate(chord("ctrl+b"), from: .back)
+        XCTAssertEqual(o, .empty)
+    }
+
+    func testInvalidEditsAndFixedCommandsAreIgnored() {
+        var o = KeyBindingOverrides.empty
+        o.reassign(.key(chord("cmd+q")), to: .back, as: .primary)
+        o.reassign(.key(chord("x")), to: .back, as: .primary)
+        o.reassign(.mouse(mouse6), to: .back, as: .alternate)
+        o.reassign(.key(chord("ctrl+e")), to: .cancelOperation, as: .alternate)
+        o.setPrimary(chord("opt+cmd+e"), for: .cycleFocusForward)
+        XCTAssertEqual(o, .empty)
+    }
+
+    func testReset() {
+        var o = KeyBindingOverrides.empty
+        o.setPrimary(nil, for: .back)
+        o.setPrimary(nil, for: .forward)
+        o.reset(.back)
+        XCTAssertNil(o.commands[.back])
+        XCTAssertNotNil(o.commands[.forward])
+    }
+}
