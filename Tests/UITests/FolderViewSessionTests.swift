@@ -101,6 +101,37 @@ final class FolderViewSessionTests: XCTestCase {
         XCTAssertNotNil(session.columnChain)
     }
 
+    /// Post-merge review: "Apply to All Folders…" means every folder, so Finder's `.DS_Store` views recorded before
+    /// it no longer apply ("Use as Default for All Folders" keeps them).
+    func testApplyToAllOverridesFinderViewsButUseAsDefaultKeepsThem() async throws {
+        let h = try await ShellHarness.make(self)
+        try h.dir("a"); try h.dir("b"); try h.dir("c")
+        let env = h.environment
+        env.folderViews.setFinderView(FolderViewSettings(viewMode: .icons, iconSize: .small), for: h.url("a"))
+        env.folderViews.setFinderView(FolderViewSettings(viewMode: .columns), for: h.url("b"))
+        let session = try await makeSession(h, "c")
+        session.updateViewState { $0.groupBy = .kind }
+        session.useViewAsDefault()
+        try await go(session, h, "a")
+        XCTAssertEqual(session.viewMode, .icons, "Use as Default keeps Finder's view")
+        XCTAssertEqual(session.viewState.iconSize, .small)
+        XCTAssertNil(env.settings.finderViewsIgnoredBefore)
+
+        let before = Date()
+        FolderViewCoordinator(store: env.folderViews, settings: env.settings, lanes: env.lanes, volumes: env.volumes)
+            .applyToAll(env.settings.defaultFolderViewState())
+        session.reloadViewState()
+        XCTAssertEqual(session.viewMode, .details, "Apply to All overrides Finder's view")
+        XCTAssertEqual(session.viewState.iconSize, .medium)
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(env.settings.finderViewsIgnoredBefore), before)
+        XCTAssertNil(env.folderViews.finderView(for: h.url("b")), "the launch cache is dropped")
+        try await go(session, h, "b")
+        XCTAssertEqual(session.viewMode, .details)
+        XCTAssertNil(session.columnChain)
+        try await go(session, h, "a")
+        XCTAssertEqual(session.viewMode, .details)
+    }
+
     func testAppBundlesShowWithoutTheirExtension() async throws {
         let h = try await ShellHarness.make(self)
         try h.file("Apps/Tool.app/Contents/Info.plist")

@@ -20,7 +20,7 @@ final class FolderViewStoreTests: XCTestCase {
         FolderViewLocator(url: URL(filePath: path, directoryHint: .isDirectory), volume: v, fileID: id)
     }
     func makeStore(_ storage: InMemorySettingsStorage = InMemorySettingsStorage(), delay: Duration = .seconds(60),
-                   capacity: Int = FolderViewStore.capacity, legacyJSON: () -> Data? = { nil },
+                   capacity: Int = FolderViewStore.capacity, legacyJSON: (@Sendable () -> Data?)? = nil,
                    now: @escaping @MainActor () -> Date = { Date() }) -> FolderViewStore {
         FolderViewStore(storage: storage, legacyJSON: legacyJSON, now: now, flushDelay: delay, capacity: capacity)
     }
@@ -374,16 +374,17 @@ final class FolderViewStoreTests: XCTestCase {
 
     /// Users of the path-keyed JSON store (`folder-views.json`) keep their views: imported once as path records
     /// (the identity probe later moves each to its object key), written in the new format; the file is untouched.
-    func testImportsLegacyJSONOnceAsPathRecords() throws {
+    func testImportsLegacyJSONOnceAsPathRecords() async throws {
         let json = Data("""
         {"folders":{"/Users/u/Photos":{"lastUsed":100,"settings":{"iconSize":"large","viewMode":"icons"}},
                     "/Users/u/Docs":{"lastUsed":200,"settings":{"sort":{"ascending":false,"field":"size"}}},
                     "/Users/u/Empty":{"lastUsed":300,"settings":{}}},"version":1}
         """.utf8)
         let storage = InMemorySettingsStorage()
-        var reads = 0
-        let store = makeStore(storage, delay: .zero, legacyJSON: { reads += 1; return json })
-        XCTAssertEqual(reads, 1)
+        let reads = LegacyReads(json)
+        let store = makeStore(storage, delay: .zero, legacyJSON: { reads.read() })
+        await store.legacyImportFinished()
+        XCTAssertEqual(reads.count, 1)
         XCTAssertEqual(store.count, 2, "empty entries are dropped")
         let v = volume(id: "uuid:ABC", idStable: true)
         XCTAssertEqual(store.settings(for: loc("/Users/u/Photos", v, nil)), FolderViewSettings(viewMode: .icons, iconSize: .large))
@@ -391,13 +392,92 @@ final class FolderViewStoreTests: XCTestCase {
         store.adopt(loc("/Users/u/Photos", v, 42))
         XCTAssertEqual(store.settings(for: loc("/Users/u/Pictures", v, 42))?.viewMode, .icons, "now keyed by identity")
         store.flush()
-        let again = makeStore(storage, legacyJSON: { reads += 1; return json })
-        XCTAssertEqual(reads, 1, "imported once: the new store exists now")
+        let again = makeStore(storage, legacyJSON: { reads.read() })
+        await again.legacyImportFinished()
+        XCTAssertEqual(reads.count, 1, "imported once: the new store exists now")
         XCTAssertEqual(again.count, 2)
+        XCTAssertEqual(again.settings(for: loc("/users/u/DOCS", v, nil))?.sort, MacxFS.SortDescriptor(field: .size, ascending: false),
+                       "case-insensitive volume: matched in any case")
     }
 
-    func testCorruptLegacyJSONIsIgnored() {
+    /// Post-merge review: main's paths keep their case, so a case-sensitive volume finds (and adopts) them, and two
+    /// entries that differ only in case stay two records.
+    func testLegacyJSONPathsKeepTheirCaseOnCaseSensitiveVolumes() async throws {
+        let json = Data("""
+        {"folders":{"/Users/u/Photos":{"lastUsed":100,"settings":{"viewMode":"icons"}},
+                    "/Users/u/photos":{"lastUsed":200,"settings":{"iconSize":"small"}}},"version":1}
+        """.utf8)
+        let store = makeStore(legacyJSON: { json })
+        await store.legacyImportFinished()
+        XCTAssertEqual(store.count, 2)
+        let cs = volume(id: "uuid:CS", idStable: true, caseSensitive: true)
+        XCTAssertEqual(store.settings(for: loc("/Users/u/Photos", cs, nil)), FolderViewSettings(viewMode: .icons))
+        XCTAssertEqual(store.settings(for: loc("/Users/u/photos", cs, nil)), FolderViewSettings(iconSize: .small))
+        XCTAssertNil(store.settings(for: loc("/Users/u/PHOTOS", cs, nil)))
+        store.adopt(loc("/Users/u/Photos", cs, 7))
+        XCTAssertEqual(store.settings(for: loc("/Users/u/Moved", cs, 7)), FolderViewSettings(viewMode: .icons), "adopted")
+        XCTAssertEqual(store.count, 2)
+    }
+
+    /// Post-merge review: the file is read and decoded off main, and records made meanwhile win.
+    func testLegacyImportRunsOffMainAndKeepsNewerRecords() async throws {
+        let json = Data(#"{"folders":{"/Users/u/Photos":{"lastUsed":100,"settings":{"viewMode":"icons"}}},"version":1}"#.utf8)
+        let gate = LegacyReads(json, blocking: true)
+        let store = makeStore(legacyJSON: { gate.read() })
+        store.update(loc("/Users/u/Photos", nil, nil)) { $0.iconSize = .small }
+        gate.release()
+        await store.legacyImportFinished()
+        XCTAssertEqual(gate.readOnMain, false)
+        XCTAssertEqual(store.settings(for: loc("/Users/u/Photos", nil, nil)), FolderViewSettings(iconSize: .small))
+        XCTAssertEqual(store.count, 1)
+    }
+
+    /// Post-merge review: nothing to import still writes the new store, so the file is never probed again.
+    func testLegacyImportIsNotRetriedWhenNothingWasImported() async throws {
+        let storage = InMemorySettingsStorage()
+        let reads = LegacyReads(Data("{not json".utf8))
+        let store = makeStore(storage, delay: .zero, legacyJSON: { reads.read() })
+        await store.legacyImportFinished()
+        XCTAssertEqual(store.count, 0)
+        try await waitUntil { storage.data(forKey: FolderViewStore.storageKey) != nil }
+        let again = makeStore(storage, legacyJSON: { reads.read() })
+        await again.legacyImportFinished()
+        XCTAssertEqual(reads.count, 1)
+    }
+
+    /// A flush (quit) before the background import is done imports synchronously first; "Apply to All" drops it.
+    func testFlushBeforeTheImportFinishesKeepsTheLegacyViewsAndRemoveAllDropsThem() async throws {
+        let json = Data(#"{"folders":{"/Users/u/Photos":{"lastUsed":100,"settings":{"viewMode":"icons"}}},"version":1}"#.utf8)
+        let storage = InMemorySettingsStorage()
+        let gate = LegacyReads(json, blocking: true)
+        let store = makeStore(storage, legacyJSON: { gate.read() })
+        store.flush()
+        XCTAssertEqual(store.count, 1)
+        gate.release()
+        await store.legacyImportFinished()
+        XCTAssertEqual(makeStore(storage).settings(for: loc("/Users/u/Photos", nil, nil)), FolderViewSettings(viewMode: .icons))
+
+        let other = InMemorySettingsStorage()
+        let gate2 = LegacyReads(json, blocking: true)
+        let cleared = makeStore(other, legacyJSON: { gate2.read() })
+        cleared.removeAll()
+        gate2.release()
+        await cleared.legacyImportFinished()
+        XCTAssertEqual(cleared.count, 0)
+        XCTAssertEqual(makeStore(other).count, 0)
+    }
+
+    private func waitUntil(_ condition: @MainActor () -> Bool) async throws {
+        let deadline = ContinuousClock.now + .seconds(10)
+        while !condition() {
+            guard ContinuousClock.now < deadline else { return XCTFail("timed out") }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+    }
+
+    func testCorruptLegacyJSONIsIgnored() async {
         let store = makeStore(legacyJSON: { Data("{not json".utf8) })
+        await store.legacyImportFinished()
         XCTAssertEqual(store.count, 0)
     }
 
@@ -451,4 +531,33 @@ final class FolderViewStoreTests: XCTestCase {
         XCTAssertTrue(defaults.changes(from: defaults).isEmpty)
         XCTAssertEqual(defaults.settings.resolved(over: next), defaults)
     }
+}
+
+/// The legacy JSON reader for the import tests: counts reads, notes whether the first ran on main, and (blocking)
+/// holds the first read until `release()`; later reads (the synchronous import on flush) return at once.
+private final class LegacyReads: @unchecked Sendable {
+    private let lock = NSLock()
+    private let data: Data
+    private let gate = DispatchSemaphore(value: 0)
+    private var blocking: Bool
+    private var reads = 0
+    private var onMain: Bool?
+
+    init(_ data: Data, blocking: Bool = false) { self.data = data; self.blocking = blocking }
+
+    var count: Int { lock.withLock { reads } }
+    var readOnMain: Bool? { lock.withLock { onMain } }
+
+    func read() -> Data? {
+        let wait: Bool = lock.withLock {
+            reads += 1
+            if onMain == nil { onMain = Thread.isMainThread }
+            defer { blocking = false }
+            return blocking && !Thread.isMainThread
+        }
+        if wait { gate.wait() }
+        return data
+    }
+
+    func release() { gate.signal() }
 }

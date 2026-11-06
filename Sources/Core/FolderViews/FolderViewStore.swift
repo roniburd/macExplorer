@@ -10,8 +10,8 @@ import MacxFS
 /// view), the normalized path elsewhere and while the identity probe is pending. Lookup: object key, then the path
 /// index (each record's last known path). Records are created only by `update`/`save`. At most `capacity` records;
 /// the least recently used are evicted. Writes are debounced by `flushDelay`; `flush()` writes now. No file-system
-/// calls: `storage` holds the bytes (`FileSettingsStorage` does its own I/O off main); the one-time import of the
-/// previous path-keyed JSON file (`legacyJSON`) reads through the closure the caller passes.
+/// calls on main: `storage` holds the bytes (`FileSettingsStorage` does its own I/O off main); the one-time import of
+/// the previous path-keyed JSON file reads and decodes through the caller's `legacyJSON` closure on a utility task.
 ///
 /// §4.4 (review fix): the debounced write snapshots `records` on main, sorts and encodes on a background task, and
 /// only hands the bytes to `storage` on main; a newer write supersedes an encode still in flight. The persisted form
@@ -44,6 +44,11 @@ public final class FolderViewStore {
     private var records: [FolderViewKey: Record] = [:]
     /// Path key → the key of the record last seen at that path.
     private var byPath: [FolderViewKey: FolderViewKey] = [:]
+    /// Lowercased NFC path → key of a path record whose path is not lowercase (imported from main's JSON, or from a
+    /// case-sensitive volume): a case-insensitive lookup that misses its folded key claims it (`claimUnfoldedPathRecord`).
+    private var foldedPathIndex: [String: FolderViewKey] = [:]
+    /// The one-time import of main's JSON while it runs (`read` again synchronously if `flush` comes first).
+    private var legacyImport: (read: @Sendable () -> Data?, task: Task<Void, Never>)?
     /// Finder's view per standardized path, read this launch (empty settings = read, nothing found). Not persisted.
     private var finderViews: [String: FolderViewSettings] = [:]
     private var flushTask: Task<Void, Never>?
@@ -54,8 +59,11 @@ public final class FolderViewStore {
     private(set) var lastEncodeWasOnMain = false
 
     /// `legacyJSON` returns the bytes of the earlier path-keyed `folder-views.json` (design 2026-11-05 §2); it is
-    /// called only while `storage` holds no store yet, and the file itself is left in place.
-    public init(storage: any SettingsStorage, legacyJSON: () -> Data? = { nil },
+    /// called only while `storage` holds no store yet, on a utility task (never on main, except when `flush` runs
+    /// before that task is done), and the file itself is left in place. Its records join the store when they arrive,
+    /// behind any record made meanwhile; the store is then written even when nothing was imported, so the file is
+    /// probed once.
+    public init(storage: any SettingsStorage, legacyJSON: (@Sendable () -> Data?)? = nil,
                 now: @escaping @MainActor () -> Date = { Date() }, flushDelay: Duration = .seconds(1),
                 capacity: Int = FolderViewStore.capacity) {
         self.storage = storage
@@ -70,14 +78,19 @@ public final class FolderViewStore {
             load(Self.decode(data) ?? [])
             storage.set(nil, forKey: Self.v2StorageKey)
             imported = true
-        } else if let data = legacyJSON(), let list = Self.decodeLegacyJSON(data) {
-            load(list)
-            imported = !list.isEmpty
+        } else if let legacyJSON {
+            startLegacyImport(legacyJSON)
         }
         if imported { scheduleFlush() }
     }
 
-    deinit { flushTask?.cancel() }
+    deinit {
+        flushTask?.cancel()
+        legacyImport?.task.cancel()
+    }
+
+    /// Test hook: returns once the legacy import (if any) has been merged or dropped.
+    func legacyImportFinished() async { await legacyImport?.task.value }
 
     public var count: Int { records.count }
 
@@ -108,6 +121,7 @@ public final class FolderViewStore {
     /// own view. With an object key, a path record at the same path (an edit made while the probe was pending) is
     /// merged into the object record, newest fields winning, and removed (no duplicate).
     public func update(_ locator: FolderViewLocator, _ change: (inout FolderViewSettings) -> Void) {
+        claimUnfoldedPathRecord(for: locator)
         let key = locator.primaryKey
         var settings = records[key]?.settings ?? FolderViewSettings()
         if case .object = key, let old = byPath[locator.pathKey], old != key, case .path = old, let pending = records[old] {
@@ -137,6 +151,7 @@ public final class FolderViewStore {
     /// The identity probe returned: a pending path record at the folder's path moves to its object key. No-op
     /// when there is none (or the locator has no object key).
     public func adopt(_ locator: FolderViewLocator) {
+        claimUnfoldedPathRecord(for: locator)
         guard case .object = locator.primaryKey, let old = byPath[locator.pathKey], case .path = old,
               records[old] != nil else { return }
         update(locator) { _ in }
@@ -150,10 +165,14 @@ public final class FolderViewStore {
         if removed { scheduleFlush() }
     }
 
-    /// "Apply to All Folders": every folder follows the chain (Finder, built-in rule, defaults) again. Writes now.
+    /// "Apply to All Folders": every folder's own record goes (and a legacy import still running is dropped). Writes
+    /// now.
     public func removeAll() {
+        legacyImport?.task.cancel()
+        legacyImport = nil
         records.removeAll()
         byPath.removeAll()
+        foldedPathIndex.removeAll()
         flush()
     }
 
@@ -165,8 +184,17 @@ public final class FolderViewStore {
         finderViews[FolderViewLocator.standardPath(folder)] = view
     }
 
-    /// Writes now, synchronously (`applicationWillTerminate`, `removeAll`). Supersedes any encode in flight.
+    /// Forgets every Finder view read this launch ("Apply to All Folders"): the next visit reads again.
+    public func clearFinderViews() { finderViews.removeAll() }
+
+    /// Writes now, synchronously (`applicationWillTerminate`, `removeAll`). Supersedes any encode in flight. A legacy
+    /// import still running is done here first, synchronously, so its views are not lost.
     public func flush() {
+        if let pending = legacyImport {
+            pending.task.cancel()
+            legacyImport = nil
+            merge(pending.read().flatMap(Self.decodeLegacyJSON) ?? [])
+        }
         flushTask?.cancel()
         flushTask = nil
         writeGeneration += 1
@@ -300,15 +328,16 @@ public final class FolderViewStore {
 
     /// The earlier path-keyed JSON store (`folder-views.json`, design 2026-11-05 §2): `{"version": 1, "folders":
     /// {"<standardized path>": {"settings": {…}, "lastUsed": <seconds since 1970>}}}`. Paths become path records,
-    /// lowercased as on a case-insensitive volume (the volume is unknown at launch); the identity probe moves each to
-    /// its object key the first time the folder is opened. nil when the bytes are not that format.
+    /// NFC with their case kept (the volume, and so its case-sensitivity, is unknown here): a case-sensitive volume
+    /// finds them as they are, a case-insensitive one through `foldedPathIndex`. The identity probe moves each to its
+    /// object key the first time the folder is opened. nil when the bytes are not that format.
     nonisolated static func decodeLegacyJSON(_ data: Data) -> [Record]? {
         struct Entry: Decodable { var settings: FolderViewSettings; var lastUsed: Double }
         struct File: Decodable { var folders: [String: Entry] }
         guard let file = try? JSONDecoder().decode(File.self, from: data) else { return nil }
         return file.folders.compactMap { path, entry -> Record? in
             guard path.hasPrefix("/"), !entry.settings.isEmpty else { return nil }
-            let key = FolderViewKey.path(NameNormalizer.identityName(path, caseSensitive: false))
+            let key = FolderViewKey.path(NameNormalizer.identityName(path, caseSensitive: true))
             return Record(key: key, pathKey: key, settings: entry.settings,
                           lastUsed: Date(timeIntervalSince1970: entry.lastUsed))
         }.sorted { $0.lastUsed > $1.lastUsed }
@@ -398,11 +427,56 @@ public final class FolderViewStore {
             guard records.count < limit else { break }
             records[r.key] = r
             if byPath[r.pathKey] == nil { byPath[r.pathKey] = r.key }
+            indexUnfolded(r)
         }
+    }
+
+    private func indexUnfolded(_ r: Record) {
+        // Launch cost: only paths with an uppercase or non-ASCII byte can fold differently.
+        guard case .path(let path) = r.key, path.utf8.contains(where: { (0x41...0x5A).contains($0) || $0 >= 0x80 }) else { return }
+        let folded = NameNormalizer.identityName(path, caseSensitive: false)
+        if folded != path, foldedPathIndex[folded] == nil { foldedPathIndex[folded] = r.key }
+    }
+
+    /// Reads and decodes main's JSON on a utility task, then merges the records on main.
+    private func startLegacyImport(_ read: @escaping @Sendable () -> Data?) {
+        let task = Task { [weak self] in
+            let list = await Task.detached(priority: .utility) { read().flatMap(Self.decodeLegacyJSON) ?? [] }.value
+            guard let self, !Task.isCancelled, self.legacyImport != nil else { return }
+            self.legacyImport = nil
+            self.merge(list)
+            self.scheduleFlush()      // even when empty: the new store marks the import done
+        }
+        legacyImport = (read, task)
+    }
+
+    /// Imported records join behind the ones already here: a folder with a record at its path (in either case)
+    /// keeps it.
+    private func merge(_ list: [Record]) {
+        load(list.filter { r in
+            guard case .path(let path) = r.pathKey else { return true }
+            return byPath[r.pathKey] == nil && byPath[.path(NameNormalizer.identityName(path, caseSensitive: false))] == nil
+        })
+    }
+
+    /// A case-insensitive (or unknown) volume's lookup that has no record at its folded path takes over an unfolded
+    /// path record for the same path, re-keyed to the folded path.
+    private func claimUnfoldedPathRecord(for l: FolderViewLocator) {
+        guard !foldedPathIndex.isEmpty, l.volume?.capabilities.caseSensitive != true, byPath[l.pathKey] == nil,
+              case .path(let folded) = l.pathKey, let old = foldedPathIndex.removeValue(forKey: folded),
+              var r = records[old], case .path = r.key, old != l.pathKey, records[l.pathKey] == nil else { return }
+        records[old] = nil
+        if byPath[old] == old { byPath[old] = nil }
+        r.key = l.pathKey
+        r.pathKey = l.pathKey
+        records[r.key] = r
+        byPath[r.pathKey] = r.key
+        scheduleFlush()
     }
 
     private func lookup(_ l: FolderViewLocator) -> Record? {
         if let k = l.objectKey, let r = records[k] { return r }
+        claimUnfoldedPathRecord(for: l)
         guard let k = byPath[l.pathKey], let r = records[k] else { return nil }
         if case .object(_, let id) = r.key {
             // A different folder now lives at the record's last known path.

@@ -6,8 +6,9 @@ import MacxFS
 /// by field from its own record (`FolderViewStore`), Finder's `.DS_Store` view (read once per launch, local volumes,
 /// on a lane), the built-in rule (application folders open as Large Icons) and the global defaults. Lookups are in
 /// memory and never block; user changes save only the changed fields for that folder; the identity probe adds the
-/// folder's fileID when the caller did not know it. Implements "Use as Default for All Folders", "Reset View for
-/// This Folder" and "Apply to All Folders".
+/// folder's fileID when the caller did not know it. Implements "Use as Default for All Folders" (folders keep their
+/// own and Finder's views), "Reset View for This Folder" and "Apply to All Folders" (every folder, Finder's views
+/// included, takes the view).
 @MainActor
 final class FolderViewCoordinator {
     private let store: FolderViewStore
@@ -68,9 +69,11 @@ final class FolderViewCoordinator {
         if let cached = store.finderView(for: locator.url) { return cached }
         guard let volume = locator.volume, volume.isLocal else { return nil }
         let url = locator.url
-        let columns = settings.columns
-        let found = await FinderFolderView.read(folder: url, globalColumns: columns, lanes: lanes, volume: volume.id)
-        guard !Task.isCancelled else { return nil }
+        let columns = settings.columns, cutoff = settings.finderViewsIgnoredBefore
+        let found = await FinderFolderView.read(folder: url, globalColumns: columns, writtenAfter: cutoff, lanes: lanes,
+                                                volume: volume.id)
+        // "Apply to All Folders" ran meanwhile: this read is stale.
+        guard !Task.isCancelled, settings.finderViewsIgnoredBefore == cutoff else { return nil }
         let view = found ?? FolderViewSettings()
         store.setFinderView(view, for: url)
         return view
@@ -83,9 +86,13 @@ final class FolderViewCoordinator {
     /// themselves (and Finder's), and follow the new default for the rest.
     func useAsDefault(_ state: FolderViewState) { settings.applyDefaultView(state) }
 
-    /// "Apply to All Folders": `state` becomes the default and every folder's own record is dropped.
+    /// "Apply to All Folders": `state` becomes the default, every folder's own record is dropped and Finder's views
+    /// recorded until now stop applying (post-merge review: otherwise any folder Finder had a view for kept it). A
+    /// `.DS_Store` Finder writes later applies again.
     func applyToAll(_ state: FolderViewState) {
         settings.applyDefaultView(state)
+        settings.finderViewsIgnoredBefore = Date()
+        store.clearFinderViews()
         store.removeAll()
     }
 }

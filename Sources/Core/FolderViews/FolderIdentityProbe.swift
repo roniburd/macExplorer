@@ -23,11 +23,11 @@ public enum FolderIdentityProbe {
 extension FinderFolderView {
     /// `read(folder:globalColumns:)` on a read lane under no-materialization (§4.2): never on main, never writes, and
     /// a dataless `.DS_Store` is not downloaded. nil when Finder recorded nothing (or the read failed).
-    public static func read(folder url: URL, globalColumns: [ColumnSetting], lanes: LanePool, volume: VolumeID) async
-        -> FolderViewSettings? {
+    public static func read(folder url: URL, globalColumns: [ColumnSetting], writtenAfter: Date? = nil, lanes: LanePool,
+                            volume: VolumeID) async -> FolderViewSettings? {
         let result = try? await lanes.perform(on: volume, .read) { _ -> FolderViewSettings? in
             assertOffMain()
-            return withNoMaterialization { read(folder: url, globalColumns: globalColumns) }
+            return withNoMaterialization { read(folder: url, globalColumns: globalColumns, writtenAfter: writtenAfter) }
         }
         return result ?? nil
     }

@@ -35,6 +35,9 @@ public final class Settings {
     public var groupBy: GroupBy { didSet { save(groupBy, Key.groupBy) } }
     /// Icons view shows Quick Look thumbnails in place of type icons.
     public var showThumbnails: Bool { didSet { save(showThumbnails, Key.showThumbnails) } }
+    /// "Apply to All Folders" (post-merge review): Finder's `.DS_Store` views last written before this moment are
+    /// ignored, so the applied view really reaches every folder. nil = every Finder view applies.
+    public var finderViewsIgnoredBefore: Date? { didSet { save(finderViewsIgnoredBefore, Key.finderViewsIgnoredBefore) } }
     /// Columns view column width (the last width the user set).
     public var columnWidth: Double { didSet { save(columnWidth, Key.columnWidth) } }
     /// Show every filename extension, including ones Finder hides and ".app" (design 2026-11-05 §1).
@@ -101,6 +104,7 @@ public final class Settings {
         groupBy = Self.load(GroupBy.self, Key.groupBy, from: storage) ?? .none
         showThumbnails = Self.load(Bool.self, Key.showThumbnails, from: storage) ?? true
         columnWidth = Self.load(Double.self, Key.columnWidth, from: storage) ?? 220
+        finderViewsIgnoredBefore = Self.load(Date.self, Key.finderViewsIgnoredBefore, from: storage)
         showAllExtensions = Self.load(Bool.self, Key.showAllExtensions, from: storage) ?? false
         commandBarVisible = Self.load(Bool.self, Key.commandBarVisible, from: storage) ?? true
         autoRevealInTree = Self.load(Bool.self, Key.autoRevealInTree, from: storage) ?? true
@@ -189,7 +193,7 @@ public final class Settings {
         static let showCloudStorageInSidebar = "showCloudStorageInSidebar", showAllExtensions = "showAllExtensions"
         static let updateChannel = "updateChannel", checkForUpdatesAutomatically = "checkForUpdatesAutomatically"
         static let offerToReportCrashes = "offerToReportCrashes", lastReportedCrashes = "lastReportedCrashes"
-        static let keyBindings = "keyBindings"
+        static let keyBindings = "keyBindings", finderViewsIgnoredBefore = "finderViewsIgnoredBefore"
     }
 
     private struct TCCRecord: Codable {

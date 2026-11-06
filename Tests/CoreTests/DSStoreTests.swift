@@ -269,6 +269,29 @@ final class FinderFolderViewTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: other.appending(path: ".DS_Store").path(percentEncoded: false)))
     }
 
+    /// "Apply to All Folders" (post-merge review): a `.DS_Store` last written before the cut-off is ignored, the
+    /// folder's own one and the parent's alike; one written after it still counts.
+    func testIgnoresDSStoreFilesWrittenBeforeTheCutoff() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "macx-dsstore-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let child = root.appending(path: "Child", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: child, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let own = child.appending(path: ".DS_Store"), parent = root.appending(path: ".DS_Store")
+        try DSStoreWriter.file([R(name: ".", code: "vstl", value: .type("icnv"))]).write(to: own)
+        try DSStoreWriter.file([R(name: "Child", code: "vstl", value: .type("clmv"))]).write(to: parent)
+        let old = Date(timeIntervalSinceNow: -3_600)
+        for url in [own, parent] {
+            try FileManager.default.setAttributes([.modificationDate: old], ofItemAtPath: url.path(percentEncoded: false))
+        }
+        XCTAssertNil(FinderFolderView.read(folder: child, globalColumns: globals, writtenAfter: Date(timeIntervalSinceNow: -60)))
+        XCTAssertEqual(FinderFolderView.read(folder: child, globalColumns: globals,
+                                             writtenAfter: Date(timeIntervalSinceNow: -7_200))?.viewMode, .icons)
+        try FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: parent.path(percentEncoded: false))
+        XCTAssertEqual(FinderFolderView.read(folder: child, globalColumns: globals,
+                                             writtenAfter: Date(timeIntervalSinceNow: -60))?.viewMode, .columns,
+                       "the parent's record, written after the cut-off, applies")
+    }
+
     /// The session's read: on a read lane, off main (merge with Phase 2's lane rules).
     func testReadsOnALane() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: "macx-dsstore-\(UUID().uuidString)", directoryHint: .isDirectory)

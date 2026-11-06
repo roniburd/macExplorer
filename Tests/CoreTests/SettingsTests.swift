@@ -337,6 +337,16 @@ final class SettingsTests: XCTestCase {
                        "a newer store is never downgraded")
     }
 
+    /// "Apply to All Folders" cut-off for Finder's views (post-merge review): unset by default, persisted.
+    func testFinderViewsIgnoredBeforePersists() {
+        let storage = InMemorySettingsStorage()
+        let s = Settings(storage: storage, home: home)
+        XCTAssertNil(s.finderViewsIgnoredBefore)
+        let when = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        s.finderViewsIgnoredBefore = when
+        XCTAssertEqual(Settings(storage: storage, home: home).finderViewsIgnoredBefore, when)
+    }
+
     func testChangesAreObservable() async {
         let s = Settings(storage: InMemorySettingsStorage(), home: home)
         let fired = expectation(description: "observed")

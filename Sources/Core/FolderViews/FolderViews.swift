@@ -63,20 +63,28 @@ public enum FolderViewResolver {
 
 /// Finder's view of a folder from `.DS_Store` (design 2026-11-05 §3). Read-only; never creates or writes files.
 public enum FinderFolderView {
-    /// The folder's own record ("." in folder/.DS_Store), else its record in the parent's `.DS_Store`.
+    /// The folder's own record ("." in folder/.DS_Store), else its record in the parent's `.DS_Store`. A `.DS_Store`
+    /// last modified at or before `writtenAfter` is skipped ("Apply to All Folders" overrides it).
     /// Blocking file reads: call off main.
-    public static func read(folder: URL, globalColumns: [ColumnSetting]) -> FolderViewSettings? {
-        let own = records(in: folder)?["."]
+    public static func read(folder: URL, globalColumns: [ColumnSetting], writtenAfter: Date? = nil) -> FolderViewSettings? {
+        let own = records(in: folder, writtenAfter: writtenAfter)?["."]
         let parent = folder.path(percentEncoded: false) == "/" ? nil
-            : records(in: folder.deletingLastPathComponent())?[folder.lastPathComponent]
+            : records(in: folder.deletingLastPathComponent(), writtenAfter: writtenAfter)?[folder.lastPathComponent]
         let mapped = [own, parent].compactMap { $0.map { map($0, globalColumns: globalColumns) } }.filter { !$0.isEmpty }
         return mapped.first
     }
 
-    static func records(in directory: URL) -> [String: [String: DSValue]]? {
+    static func records(in directory: URL, writtenAfter: Date? = nil) -> [String: [String: DSValue]]? {
         let url = directory.appending(path: ".DS_Store", directoryHint: .notDirectory)
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
+        if let writtenAfter {
+            var info = stat()
+            guard fstat(handle.fileDescriptor, &info) == 0 else { return nil }
+            let modified = Date(timeIntervalSince1970: TimeInterval(info.st_mtimespec.tv_sec)
+                                + TimeInterval(info.st_mtimespec.tv_nsec) / 1_000_000_000)
+            guard modified > writtenAfter else { return nil }
+        }
         guard let data = try? handle.read(upToCount: DSStore.maxFileSize + 1), data.count <= DSStore.maxFileSize else { return nil }
         return DSStore.parse(data)
     }
