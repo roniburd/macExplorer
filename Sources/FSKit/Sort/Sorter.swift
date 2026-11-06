@@ -31,7 +31,7 @@ public enum Sorter {
                 let index = UInt32(i)
                 let entry = store.entry(index)
                 if !query.showHidden && entry.flags.isHidden { continue }
-                if let filter, !matches(index, store: store, searchKeys: searchKeys, filter: filter) { continue }
+                if let filter, !matches(index, store: store, searchKeys: searchKeys, filter: filter, showAllExtensions: query.showAllExtensions) { continue }
                 items.append(ordering.item(index))
             }
             ordering.sort(&items)
@@ -75,12 +75,12 @@ public enum Sorter {
         return ordering.merge(sorted.map(ordering.item), run.map(ordering.item)).map(\.index)
     }
 
-    static func matches(_ index: UInt32, store: EntryStore, searchKeys: SortKeyColumn?, filter: [UInt8]) -> Bool {
+    static func matches(_ index: UInt32, store: EntryStore, searchKeys: SortKeyColumn?, filter: [UInt8], showAllExtensions: Bool) -> Bool {
         if filter.isEmpty { return true }
         if let searchKeys, Int(index) < searchKeys.count {
             return searchKeys.withKey(Int(index)) { contains($0, filter) }
         }
-        let folded = SortKeys.searchFold(store.name(index))
+        let folded = SortKeys.searchFold(store.displayName(index, showAllExtensions: showAllExtensions))
         return folded.withUnsafeBytes { contains($0, filter) }
     }
 

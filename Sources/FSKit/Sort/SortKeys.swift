@@ -62,16 +62,22 @@ public enum SortKeys {
         return text.withUTF8 { bytes in bytes.allSatisfy { $0 < 0x80 } }
     }
 
-    /// Name keys for storage indices `range` of `store`, using concurrentPerform.
-    public static func nameKeys(_ store: EntryStore, range: Range<Int>) -> SortKeyColumn {
+    /// Name keys of the display names (DisplayName, design 2026-11-05 §1) for storage indices `range` of `store`,
+    /// using concurrentPerform.
+    public static func nameKeys(_ store: EntryStore, range: Range<Int>, showAllExtensions: Bool = false) -> SortKeyColumn {
         build(count: range.count) { i in
             let index = UInt32(range.lowerBound + i)
-            return nameKey(store.name(index), isFolder: store.entry(index).isFolderForSorting)
+            return nameKey(store.displayName(index, showAllExtensions: showAllExtensions), isFolder: store.entry(index).isFolderForSorting)
         }
     }
 
-    public static func nameKeys(_ batch: Batch) -> SortKeyColumn {
-        build(count: batch.count) { i in nameKey(batch.name(at: i), isFolder: batch.entries[i].isFolderForSorting) }
+    public static func nameKeys(_ batch: Batch, showAllExtensions: Bool = false) -> SortKeyColumn {
+        build(count: batch.count) { i in
+            let e = batch.entries[i]
+            let name = DisplayName.make(name: batch.name(at: i), kind: e.kind, flags: e.flags, localizedStem: nil,
+                                        showAllExtensions: showAllExtensions)
+            return nameKey(name, isFolder: e.isFolderForSorting)
+        }
     }
 
     /// Extension sort key: searchFold of the extension after the last "." (none for folders, ".bashrc", "name.").
@@ -95,8 +101,9 @@ public enum SortKeys {
         build(count: batch.count) { i in extensionKey(batch.name(at: i), kind: batch.entries[i].kind) }
     }
 
-    public static func searchKeys(_ store: EntryStore) -> SortKeyColumn {
-        build(count: store.count) { i in searchFold(store.name(UInt32(i))) }
+    /// Search keys of the display names (filter matches what the user sees).
+    public static func searchKeys(_ store: EntryStore, showAllExtensions: Bool = false) -> SortKeyColumn {
+        build(count: store.count) { i in searchFold(store.displayName(UInt32(i), showAllExtensions: showAllExtensions)) }
     }
 
     /// Parallel build in chunks of 1,024; chunks are concatenated in order.

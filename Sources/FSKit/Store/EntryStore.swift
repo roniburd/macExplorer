@@ -10,6 +10,7 @@ public struct EntryStore: Sendable {
     private var rowOfIndex: [Int32] = []               // inverse permutation; -1 = not displayed
     private var identities: [RowID: UInt32] = [:]      // first storage index per identity
     private var errors: [UInt32: Int32] = [:]          // per-entry errno side table
+    private var localizedStems: [UInt32: String] = [:] // Finder localized names (no extension), design 2026-11-05 §1
     private var garbageBytes = 0                       // arena bytes no entry references any more
 
     public init(identityMode: IdentityMode) { self.identityMode = identityMode }
@@ -25,6 +26,15 @@ public struct EntryStore: Sendable {
         let e = entries[Int(index)]
         return names.string(offset: e.nameOffset, length: e.nameLen)
     }
+
+    /// The name shown in lists (DisplayName rule + localized stem).
+    public func displayName(_ index: UInt32, showAllExtensions: Bool) -> String {
+        let e = entries[Int(index)]
+        return DisplayName.make(name: name(index), kind: e.kind, flags: e.flags, localizedStem: localizedStems.isEmpty ? nil : localizedStems[index],
+                                showAllExtensions: showAllExtensions)
+    }
+
+    public func localizedStem(_ index: UInt32) -> String? { localizedStems[index] }
 
     public func withNameBytes<R>(_ index: UInt32, _ body: (UnsafeBufferPointer<UInt8>) throws -> R) rethrows -> R {
         let e = entries[Int(index)]
@@ -121,6 +131,7 @@ public struct EntryStore: Sendable {
             entries[Int(index)] = e
             identities[id] = index
             errors[index] = nil
+            localizedStems[index] = nil
             version &+= 1
             return index
         }
@@ -148,6 +159,9 @@ public struct EntryStore: Sendable {
         var newErrors: [UInt32: Int32] = [:]
         for (i, code) in errors where remap[Int(i)] >= 0 { newErrors[UInt32(remap[Int(i)])] = code }
         errors = newErrors
+        var newStems: [UInt32: String] = [:]
+        for (i, stem) in localizedStems where remap[Int(i)] >= 0 { newStems[UInt32(remap[Int(i)])] = stem }
+        localizedStems = newStems
         if garbageBytes > 64 * 1024 && garbageBytes * 2 > names.bytes.count { compactArena() }
         rebuildIdentities()
         setOrder(order)   // rebuilds the inverse permutation; bumps version
@@ -156,6 +170,13 @@ public struct EntryStore: Sendable {
     public mutating func setError(_ code: Int32?, at index: UInt32) {
         errors[index] = code
         if code == nil { errors.removeValue(forKey: index) }
+        version &+= 1
+    }
+
+    /// Sets (or clears, for nil/empty) the localized stem of a storage index.
+    public mutating func setLocalizedStem(_ stem: String?, at index: UInt32) {
+        guard Int(index) < entries.count else { return }
+        if let stem, !stem.isEmpty { localizedStems[index] = stem } else { localizedStems.removeValue(forKey: index) }
         version &+= 1
     }
 

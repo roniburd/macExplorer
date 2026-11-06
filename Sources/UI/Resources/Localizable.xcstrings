@@ -3666,6 +3666,17 @@
         }
       }
     },
+    "Show all filename extensions" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show all filename extensions"
+          }
+        }
+      }
+    },
     "Show hidden files and folders" : {
       "extractionState" : "manual",
       "localizations" : {

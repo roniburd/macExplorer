@@ -11,9 +11,12 @@ public struct ViewQuery: Sendable, Hashable {
     public var sort: SortDescriptor
     public var showHidden: Bool
     public var filter: String                             // "" = no filter
-    public init(sort: SortDescriptor = .default, showHidden: Bool = false, filter: String = "") {
+    /// Display names keep every extension (Settings "Show all filename extensions"); sort/search keys follow.
+    public var showAllExtensions: Bool
+    public init(sort: SortDescriptor = .default, showHidden: Bool = false, filter: String = "", showAllExtensions: Bool = false) {
         self.sort = sort
         self.showHidden = showHidden
         self.filter = filter
+        self.showAllExtensions = showAllExtensions
     }
 }

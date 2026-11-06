@@ -366,9 +366,10 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
         if id == .name {
             let cell = tableView.makeView(withIdentifier: NameCellView.reuseID, owner: nil) as? NameCellView ?? NameCellView()
             let name = folder.name(atRow: row)
+            let shown = folder.displayName(atRow: row)
             let scale = Double(view.window?.backingScaleFactor ?? 2)
             let rowID = folder.identity(atRow: row)
-            cell.configure(name: name, icon: context.icons.typeIcon(entry.typeIndex, points: iconPoints, scale: scale),
+            cell.configure(name: shown, icon: context.icons.typeIcon(entry.typeIndex, points: iconPoints, scale: scale),
                            iconPoints: iconPoints, isCut: isCut, isDataless: entry.flags.contains(.dataless), rowID: rowID)
             requestFileIcon(entry: entry, name: name, row: row, rowID: rowID, cell: cell, scale: scale)
             return cell
@@ -396,7 +397,7 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
         guard let folder else { return "" }
         let entry = folder.entry(atRow: row)
         switch id {
-        case .name: return folder.name(atRow: row)
+        case .name: return folder.displayName(atRow: row)
         case .dateModified: return Formatters.date(nanoseconds: entry.mtime, style: settings.dateStyle)
         case .dateCreated: return Formatters.date(nanoseconds: entry.ctime, style: settings.dateStyle)
         case .size: return Formatters.size(of: entry)

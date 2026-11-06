@@ -126,6 +126,9 @@ public final class FolderModel {
     var deferredChanges: [LocalChange] = []
     var pendingSelect: [String] = []
     var pendingRename: String?
+    /// Localized stems by real name ("" = none); refresh() clears it. FolderModel+LocalizedNames.
+    var localizedNameCache: [String: String] = [:]
+    var localizedNamesTask: Task<Void, Never>?
 
     public init(directory: URL, context: FolderContext, query: ViewQuery) {
         self.directory = directory
@@ -166,6 +169,7 @@ public final class FolderModel {
         switch state {
         case .complete:
             if rereadInFlight && rereadStalled { abandonReread() }
+            localizedNameCache = [:]
             beginReread()
         case .loading, .partial: break
         case .error, .unresponsive, .waitingForPermission: retry()
@@ -189,6 +193,7 @@ public final class FolderModel {
         guard !closed else { return }
         closed = true
         readTask?.cancel()
+        localizedNamesTask?.cancel()
         pacerTask?.cancel()
         opTail?.cancel()
         stopLoadFeed()
@@ -208,7 +213,12 @@ public final class FolderModel {
 
     public var rowCount: Int { store.visibleCount }
     public func entry(atRow row: Int) -> Entry { store.entry(store.storageIndex(forRow: row)) }
+    /// The real file-system name (operations, rename, paths).
     public func name(atRow row: Int) -> String { store.name(store.storageIndex(forRow: row)) }
+    /// The name shown in lists (design 2026-11-05 §1): Finder-hidden extensions and localized names applied.
+    public func displayName(atRow row: Int) -> String {
+        store.displayName(store.storageIndex(forRow: row), showAllExtensions: query.showAllExtensions)
+    }
 
     public func url(atRow row: Int) -> URL {
         let kind = entry(atRow: row).kind
@@ -497,6 +507,7 @@ public final class FolderModel {
             if permissionAsked { context.recordPermissionOutcome(directory, true) }
             publishReset()
             setState(.complete)
+            scheduleLocalizedNames()
             startWatcher()
             flushDeferred()
             flushWatchBuffer()
@@ -526,6 +537,17 @@ public final class FolderModel {
         for (old, name) in carrying {
             if let index = carried[name] { substitute(old, with: store.identity(index)) }
         }
+        reconcileSelection(emitting: false)
+        if !result.diff.changes.isEmpty { emit(.changes(result.diff.changes)) }
+        if selection != before { emit(.selection(selection)) }
+        scheduleLocalizedNames()
+    }
+
+    /// Like applyPatch without re-scheduling localized names (a localized-name patch never adds candidates).
+    func applyLocalizedPatch(_ result: FolderWorker.PatchResult) {
+        let before = selection
+        store = result.store
+        keysTag = result.tag
         reconcileSelection(emitting: false)
         if !result.diff.changes.isEmpty { emit(.changes(result.diff.changes)) }
         if selection != before { emit(.selection(selection)) }

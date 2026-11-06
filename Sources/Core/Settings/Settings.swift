@@ -35,6 +35,8 @@ public final class Settings {
     public var columns: [ColumnSetting] { didSet { save(columns, Key.columns) } }
     public var sort: MacxFS.SortDescriptor { didSet { save(sort, Key.sort) } }
     public var showHidden: Bool { didSet { save(showHidden, Key.showHidden) } }
+    /// Show every filename extension, including ones Finder hides and ".app" (design 2026-11-05 §1).
+    public var showAllExtensions: Bool { didSet { save(showAllExtensions, Key.showAllExtensions) } }
     public var commandBarVisible: Bool { didSet { save(commandBarVisible, Key.commandBarVisible) } }
     public var autoRevealInTree: Bool { didSet { save(autoRevealInTree, Key.autoRevealInTree) } }
     public var dateStyle: DateStyle { didSet { save(dateStyle, Key.dateStyle) } }
@@ -83,6 +85,7 @@ public final class Settings {
         columns = storedColumns.isEmpty ? Self.defaultColumns : storedColumns
         sort = Self.load(MacxFS.SortDescriptor.self, Key.sort, from: storage) ?? .default
         showHidden = Self.load(Bool.self, Key.showHidden, from: storage) ?? false
+        showAllExtensions = Self.load(Bool.self, Key.showAllExtensions, from: storage) ?? false
         commandBarVisible = Self.load(Bool.self, Key.commandBarVisible, from: storage) ?? true
         autoRevealInTree = Self.load(Bool.self, Key.autoRevealInTree, from: storage) ?? true
         dateStyle = Self.load(DateStyle.self, Key.dateStyle, from: storage) ?? .relative
@@ -127,7 +130,7 @@ public final class Settings {
         tccOutcomes[location] = outcome
     }
 
-    public func viewQuery() -> ViewQuery { ViewQuery(sort: sort, showHidden: showHidden, filter: "") }
+    public func viewQuery() -> ViewQuery { ViewQuery(sort: sort, showHidden: showHidden, filter: "", showAllExtensions: showAllExtensions) }
 
     // MARK: Persistence
 
@@ -142,7 +145,7 @@ public final class Settings {
         static let onboardingCompleted = "onboardingCompleted", lastLocation = "lastLocation"
         static let toolbarFeedbackItemOffered = "toolbarFeedbackItemOffered"
         static let recentLocations = "recentLocations", tccOutcomes = "tccOutcomes"
-        static let showCloudStorageInSidebar = "showCloudStorageInSidebar"
+        static let showCloudStorageInSidebar = "showCloudStorageInSidebar", showAllExtensions = "showAllExtensions"
         static let updateChannel = "updateChannel", checkForUpdatesAutomatically = "checkForUpdatesAutomatically"
         static let offerToReportCrashes = "offerToReportCrashes", lastReportedCrashes = "lastReportedCrashes"
     }

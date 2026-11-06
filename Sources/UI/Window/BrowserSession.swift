@@ -31,8 +31,10 @@ final class BrowserSession {
         self.viewMode = environment.settings.viewMode
         attach(folder)
         // Every window follows Settings.showHidden (⇧⌘. or the Settings window in any window, QA round 1).
-        settingsLoop = ObservationLoop({ [weak self] in _ = self?.environment.settings.showHidden },
-                                       onChange: { [weak self] in self?.applyShowHiddenSetting() })
+        settingsLoop = ObservationLoop({ [weak self] in
+            _ = self?.environment.settings.showHidden
+            _ = self?.environment.settings.showAllExtensions
+        }, onChange: { [weak self] in self?.applyShowHiddenSetting() })
     }
 
     /// Closes the previous model, opens `url`, and (optionally) records it in history.
@@ -164,10 +166,11 @@ final class BrowserSession {
 
     private func applyShowHiddenSetting() {
         guard !closed else { return }
-        let wanted = environment.settings.showHidden
-        guard folder.query.showHidden != wanted else { return }
+        let settings = environment.settings
+        guard folder.query.showHidden != settings.showHidden || folder.query.showAllExtensions != settings.showAllExtensions else { return }
         var query = folder.query
-        query.showHidden = wanted
+        query.showHidden = settings.showHidden
+        query.showAllExtensions = settings.showAllExtensions
         folder.setQuery(query)
     }
 
