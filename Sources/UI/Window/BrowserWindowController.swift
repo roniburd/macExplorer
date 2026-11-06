@@ -28,9 +28,9 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
         self.session = BrowserSession(environment: context.environment, initialURL: initialURL)
         self.splitViewController = BrowserSplitViewController(context: context, session: session)
         self.toolbarController = ToolbarController(context: context, session: session)
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1000, height: 640),
-                              styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-                              backing: .buffered, defer: false)
+        let window = BrowserWindow(contentRect: NSRect(x: 0, y: 0, width: 1000, height: 640),
+                                   styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+                                   backing: .buffered, defer: false)
         super.init(window: window)
         window.isReleasedWhenClosed = false
         window.identifier = BrowserWindowRestoration.identifier

@@ -59,6 +59,35 @@ final class TabTests: XCTestCase {
         XCTAssertEqual(host.probeSelectedTabIndex, 2)
     }
 
+    /// QA round 1: tabs opened only in the background (middle-click, ⌘-click a tree node) must be reachable by
+    /// ⌃Tab / ⌃⇧Tab / Show Next/Previous Tab, including wrap-around.
+    func testBackgroundTabsAreReachableByTabCycling() async throws {
+        let h = try await harness()
+        try h.dir("B")
+        let host = try await h.openWindow()
+        let hostWindow = try XCTUnwrap(host.window)
+        let a = h.context.windows.openTab(at: h.url("A"), in: host, select: false)
+        let b = h.context.windows.openTab(at: h.url("B"), in: host, select: false)
+        XCTAssertTrue(hostWindow.tabGroup?.selectedWindow === hostWindow)
+        hostWindow.selectNextTab(nil)
+        XCTAssertTrue(hostWindow.tabGroup?.selectedWindow === a.window, "next reaches the first background tab")
+        try XCTUnwrap(a.window).selectNextTab(nil)
+        XCTAssertTrue(hostWindow.tabGroup?.selectedWindow === b.window)
+        try XCTUnwrap(b.window).selectNextTab(nil)
+        XCTAssertTrue(hostWindow.tabGroup?.selectedWindow === hostWindow, "next wraps around")
+        hostWindow.selectPreviousTab(nil)
+        XCTAssertTrue(hostWindow.tabGroup?.selectedWindow === b.window, "previous wraps around")
+    }
+
+    func testPreviousTabReachesABackgroundTab() async throws {
+        let h = try await harness()
+        let host = try await h.openWindow()
+        let hostWindow = try XCTUnwrap(host.window)
+        let a = h.context.windows.openTab(at: h.url("A"), in: host, select: false)
+        hostWindow.selectPreviousTab(nil)
+        XCTAssertTrue(hostWindow.tabGroup?.selectedWindow === a.window)
+    }
+
     func testTabTitleAndToolTipFollowNavigationAndIgnoreFullPathSetting() async throws {
         let h = try await harness()
         h.environment.settings.showFullPathInTitle = true

@@ -18,10 +18,21 @@ final class EventClassifierTests: XCTestCase {
     }
 
     func testEventsOutsideTheFolderAreDropped() {
-        let events = [e("/Users/u/Docs/sub/deep.txt", created), e("/Users/u/Other/x", created), e("/Users/u/DocsX/y", created),
+        let events = [e("/Users/u/Docs/sub/deeper/deep.txt", created), e("/Users/u/Other/x", created), e("/Users/u/DocsX/y", created),
                       e("/Users/u", created)]
         XCTAssertNil(EventClassifier.classify(events, folder: folder))
         XCTAssertNil(EventClassifier.classify([], folder: folder))
+    }
+
+    /// An entry created, removed or renamed inside a child folder changes that child's own mtime, which FSEvents
+    /// reports only as the grandchild's path: the child's row is re-read (QA round 1). Deeper paths change a
+    /// grandchild's mtime, not the child's, and are dropped.
+    func testGrandchildEventsReReadTheChildRow() {
+        let events = [e("/Users/u/Docs/sub/new.txt", created), e("/Users/u/Docs/sub/old.txt", removed),
+                      e("/Users/u/Docs/a.txt", created), e("/Users/u/Docs/other/x", renamed), e("/Users/u/Docs/sub", created)]
+        XCTAssertEqual(EventClassifier.classify(events, folder: folder), .items(["sub", "a.txt", "other"]))
+        XCTAssertNil(EventClassifier.classify([e("/Users/u/Docs/sub/deeper/deep.txt", created)], folder: folder))
+        XCTAssertEqual(EventClassifier.classify([e("/private/var/t/f/sub/n", created)], folder: "/var/t/f"), .items(["sub"]))
     }
 
     func testFolderOwnMetadataEventIsIgnored() {
@@ -51,7 +62,8 @@ final class EventClassifierTests: XCTestCase {
         XCTAssertEqual(EventClassifier.classify([e("/Users/u/Docs", must)], folder: folder), .fullRescan)
         XCTAssertEqual(EventClassifier.classify([e("/Users/u/", must)], folder: folder), .fullRescan)
         XCTAssertEqual(EventClassifier.classify([e("/", must)], folder: folder), .fullRescan)
-        XCTAssertNil(EventClassifier.classify([e("/Users/u/Docs/sub", must)], folder: folder), "a descendant is not the folder's listing")
+        XCTAssertEqual(EventClassifier.classify([e("/Users/u/Docs/sub", must)], folder: folder), .items(["sub"]),
+                       "a child's own contents changed: only its row is re-read")
         XCTAssertNil(EventClassifier.classify([e("/Users/u/Other", must)], folder: folder))
     }
 

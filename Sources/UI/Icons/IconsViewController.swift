@@ -180,6 +180,10 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
     /// The folder's icon size, from its view state (P2-08). `setIconSize` changes it.
     private(set) lazy var iconSize: IconSize = settings.iconSize
     private var isRestoringScroll = false
+    /// A scroll restore asked for before the grid had its width (first mount, a view switch): the row frames, and
+    /// so the offset and the visible items, are only known after the next layout pass (QA round 1).
+    private var pendingScrollAnchor: RowID??
+    private var laidOutWidth: CGFloat = 0
     let mouse = ListMouseHandler()
     let typeSelect = TypeSelect()
     private(set) var renameController: InlineRenameController?
@@ -244,6 +248,23 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
         scheduleThumbnailRefresh()   // the backing scale is known now
     }
 
+    /// The grid's width is final here: a deferred scroll restore runs now, and a width change (columns, so the
+    /// visible items) gets a thumbnail pass of its own.
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        let width = scrollView.contentSize.width
+        guard width > 0 else { return }
+        if let anchor = pendingScrollAnchor {
+            pendingScrollAnchor = nil
+            collectionView.layoutSubtreeIfNeeded()
+            restoreScroll(anchor: anchor)
+        }
+        if abs(width - laidOutWidth) > 0.5 || laidOutWidth == 0 {
+            laidOutWidth = width
+            scheduleThumbnailRefresh()
+        }
+    }
+
     override func viewDidDisappear() {
         super.viewDidDisappear()
         thumbnails.cancelAll()
@@ -256,6 +277,7 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
         renameController = nil
         self.folder = folder
         thumbnailFolder = nil
+        pendingScrollAnchor = nil
         layout.itemCount = folder?.rowCount ?? 0
         collectionView.reloadData()
         if let folder { restoreScroll(anchor: folder.scrollAnchor) }
@@ -328,6 +350,11 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
 
     private func restoreScroll(anchor: RowID?) {
         guard let folder else { return }
+        guard scrollView.contentSize.width > 0 else {
+            pendingScrollAnchor = .some(anchor)     // no geometry yet: viewDidLayout restores it
+            return
+        }
+        pendingScrollAnchor = nil
         isRestoringScroll = true
         defer { isRestoringScroll = false }
         let row = anchor.flatMap { folder.row(of: $0) } ?? 0
@@ -338,7 +365,7 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
 
     @objc private func clipBoundsChanged(_ note: Notification) {
         scheduleThumbnailRefresh()
-        guard !isRestoringScroll, let folder else { return }
+        guard !isRestoringScroll, pendingScrollAnchor == nil, let folder else { return }
         if let top = topVisibleRow(), top > 0 { folder.scrollAnchor = folder.identity(atRow: top) } else { folder.scrollAnchor = nil }
     }
 

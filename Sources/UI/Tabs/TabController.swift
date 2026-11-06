@@ -40,6 +40,20 @@ enum TabController {
     /// The tabs of `window`'s group in tab-bar order (just `window` while it has no tab group).
     static func orderedTabs(of window: NSWindow) -> [NSWindow] { window.tabbedWindows ?? [window] }
 
+    /// Selects the tab `offset` places from the group's selected tab in tab-bar order, wrapping around, and makes
+    /// it key. false = `window` has no other tab (nothing to cycle).
+    @discardableResult
+    static func cycleTab(of window: NSWindow, by offset: Int) -> Bool {
+        let tabs = orderedTabs(of: window)
+        guard tabs.count > 1 else { return false }
+        let current = window.tabGroup?.selectedWindow ?? window
+        let index = tabs.firstIndex { $0 === current } ?? tabs.firstIndex { $0 === window } ?? 0
+        let target = tabs[((index + offset) % tabs.count + tabs.count) % tabs.count]
+        window.tabGroup?.selectedWindow = target
+        target.makeKeyAndOrderFront(nil)
+        return true
+    }
+
     private static func pathKey(_ url: URL) -> String {
         var path = url.standardizedFileURL.path(percentEncoded: false)
         while path.count > 1, path.hasSuffix("/") { path.removeLast() }

@@ -162,6 +162,33 @@ final class FolderSizeServiceTests: XCTestCase {
         session.stop()
     }
 
+    /// The folder watcher refreshes a child's row when an entry inside it changes, so the session's cache key
+    /// (the row's mtime) matches what the rescan stored: turning sizes off and on again is a hit (QA round 1).
+    func testAfterAChangeInsideAChildReattachingIsACacheHit() async throws {
+        try sandbox.createFile("A/a.bin", contents: Data(count: 3_000))
+        try sandbox.createFile("B/sub/b.bin", contents: Data(count: 5_000))
+        let model = try await model()
+        try await Task.sleep(for: .milliseconds(1_500))      // the fixture's own events have been delivered
+        try sandbox.createFile("A/extra.bin", contents: Data(count: 1_000))
+        model.setFolderSizesEnabled(true)
+        let first = env.folderSizes.attach(to: model)
+        await waitUntil { model.folderSize(atRow: model.row(named: "A")!)?.bytes == 4_000 }
+        var st = stat()
+        XCTAssertEqual(lstat(sandbox.url("A").path(percentEncoded: false), &st), 0)
+        let onDisk = Int64(st.st_mtimespec.tv_sec) * 1_000_000_000 + Int64(st.st_mtimespec.tv_nsec)
+        await waitUntil { model.entry(atRow: model.row(named: "A")!).mtime == onDisk }
+        XCTAssertEqual(model.entry(atRow: model.row(named: "A")!).mtime, onDisk, "the row follows the child's mtime")
+        await first.waitUntilIdle()
+        first.stop()
+        model.setFolderSizesEnabled(false)
+        XCTAssertNil(model.folderSize(atRow: model.row(named: "A")!))
+        model.setFolderSizesEnabled(true)
+        let second = env.folderSizes.attach(to: model)
+        XCTAssertEqual(model.folderSize(atRow: model.row(named: "A")!)?.bytes, 4_000, "cache hit set synchronously")
+        XCTAssertEqual(model.folderSize(atRow: model.row(named: "B")!)?.bytes, 5_000, "cache hit set synchronously")
+        second.stop()
+    }
+
     func testStopCancelsEverything() async throws {
         for i in 0..<200 { try sandbox.createFile("d\(i)/f", contents: Data(count: 1)) }
         let model = try await model()

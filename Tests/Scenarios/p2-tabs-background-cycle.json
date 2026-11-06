@@ -1,0 +1,21 @@
+{"name": "p2-tabs-background-cycle",
+ "fixture": {"files": ["A/a.txt", "B/b.txt"], "dirs": ["A", "B"]},
+ "steps": [
+  {"waitFor": {"rows": ["A", "B"], "state": "complete", "tabs": [""], "activeTab": 0}},
+  {"middleClick": "A"},
+  {"waitFor": {"tabs": ["", "A"], "activeTab": 0}},
+  {"key": "ctrl+tab"},
+  {"waitFor": {"activeTab": 1, "folder": "A", "rows": ["a.txt"]}},
+  {"selectTab": 0},
+  {"waitFor": {"activeTab": 0, "folder": ""}},
+  {"click": "tree:B", "modifiers": ["cmd"]},
+  {"waitFor": {"tabs": ["", "A", "B"], "activeTab": 0}},
+  {"key": "ctrl+shift+tab"},
+  {"waitFor": {"activeTab": 2, "folder": "B", "rows": ["b.txt"]}},
+  {"key": "ctrl+tab"},
+  {"waitFor": {"activeTab": 0, "folder": ""}},
+  {"command": "previousTab"},
+  {"waitFor": {"activeTab": 2, "folder": "B"}},
+  {"command": "nextTab"},
+  {"waitFor": {"activeTab": 0, "folder": ""}}
+ ]}

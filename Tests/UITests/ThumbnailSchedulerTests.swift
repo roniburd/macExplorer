@@ -191,6 +191,29 @@ final class IconsThumbnailTests: XCTestCase {
         try await h.waitUntil("t.txt asked again") { gen.started.count == 3 }
     }
 
+    /// QA round 1: Details scrolled past the grid's first screen, then ⌘2. The grid has no width when it is bound,
+    /// so the scroll restore waits for its first layout; then the anchor's screen is shown and its thumbnails asked.
+    func testSwitchingToIconsRestoresTheScrollAfterLayoutAndAsksForThoseThumbnails() async throws {
+        let h = try await ContentTestHarness.make(self)
+        for i in 0..<400 { try h.file(String(format: "p%03d.png", i), bytes: 10) }
+        let gen = FakeThumbnailGenerator()
+        h.context.makeThumbnailGenerator = { gen }
+        let (content, session, _) = try await h.makeContent()
+        session.folder.select(.set(IndexSet(integer: 300), cursor: 300))
+        content.details.tableView.scrollRowToVisible(300)
+        try await h.waitUntil("details anchor") { session.folder.scrollAnchor != nil }
+        let anchor = try XCTUnwrap(session.folder.scrollAnchor)
+        content.setViewMode(.icons)
+        let icons = try XCTUnwrap(content.icons)
+        try await h.waitUntil("the anchor's screen is shown and asked for") {
+            icons.visibleRows().contains(300) && !gen.started.isEmpty
+        }
+        let visibleNames = Set(icons.visibleRows().map { String(format: "p%03d.png", $0) })
+        XCTAssertTrue(gen.started.allSatisfy { visibleNames.contains($0.lastPathComponent) },
+                      "only the shown screen is asked for: \(gen.started.map(\.lastPathComponent))")
+        XCTAssertEqual(session.folder.scrollAnchor, anchor, "the clamp before the first layout never moves the anchor")
+    }
+
     func testUnbindAndIconSizeChangeCancel() async throws {
         let h = try await ContentTestHarness.make(self)
         let gen = FakeThumbnailGenerator()

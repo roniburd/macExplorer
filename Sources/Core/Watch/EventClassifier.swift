@@ -13,7 +13,8 @@ public enum EventClassifier {
     private static let goneFlags = UInt32(kFSEventStreamEventFlagItemRemoved | kFSEventStreamEventFlagItemRenamed)
     private static let historyDone = UInt32(kFSEventStreamEventFlagHistoryDone)
 
-    /// Drops events whose parent is not exactly `folder` (except rescan/root flags). nil = nothing to do.
+    /// Keeps events on `folder`'s children and grandchildren (as the child's name); drops the rest (except
+    /// rescan/root flags). nil = nothing to do.
     /// Paths compare lexically, without trailing slashes and with /private/{var,tmp,etc} ≡ /{var,tmp,etc}.
     public static func classify(_ events: [RawFSEvent], folder: String) -> WatchEvent? {
         let folderParts = components(folder)
@@ -33,9 +34,17 @@ public enum EventClassifier {
             }
             if flags & mustScan != 0 {
                 if parts.count < folderParts.count && Array(folderParts.prefix(parts.count)) == parts { rescan = true }
+                // A descendant's contents changed in bulk: re-read the child that holds it (its own mtime).
+                if parts.count > folderParts.count, Array(parts.prefix(folderParts.count)) == folderParts,
+                   seen.insert(parts[folderParts.count]).inserted { names.append(parts[folderParts.count]) }
                 continue
             }
-            guard parts.count == folderParts.count + 1, Array(parts.dropLast()) == folderParts, let name = parts.last else { continue }
+            // A direct child, or an entry directly inside a child folder: creating, removing or renaming that
+            // entry changes the child's own mtime, which FSEvents reports only as the grandchild's path. Deeper
+            // paths change a grandchild's mtime, not the child's (QA round 1: stale Date Modified, size-cache misses).
+            guard parts.count == folderParts.count + 1 || parts.count == folderParts.count + 2,
+                  Array(parts.prefix(folderParts.count)) == folderParts else { continue }
+            let name = parts[folderParts.count]
             if seen.insert(name).inserted { names.append(name) }
         }
         if rescan || names.count > incrementalLimit { return .fullRescan }

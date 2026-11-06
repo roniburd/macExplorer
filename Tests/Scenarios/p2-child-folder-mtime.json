@@ -1,0 +1,11 @@
+{"name": "p2-child-folder-mtime",
+ "fixture": {"files": ["big/old.txt", "keep/k.txt"], "dirs": ["big", "keep"],
+             "mtimeDays": {"big": -400, "keep": -400}},
+ "steps": [
+  {"waitFor": {"rows": ["big", "keep"], "state": "complete"}},
+  {"menu": ["View", "Group By", "Date Modified"]},
+  {"waitFor": {"groupBy": "dateModified", "groups": ["A long time ago (2)"]}},
+  {"sleepMs": 1500},
+  {"fsWrite": {"path": "big/new.txt", "bytes": 3}},
+  {"waitFor": {"groups": ["Today (1)", "A long time ago (1)"], "visibleRows": ["big", "keep"]}, "timeoutMs": 5000}
+ ]}

@@ -314,6 +314,29 @@ final class FolderWatchTests: XCTestCase {
         XCTAssertEqual(Set(m.rowNames).count, 1_000)
     }
 
+    /// A file created (or removed) inside a child folder changes the child's own mtime; the child's row follows,
+    /// so Date Modified and the folder-size cache key stay current (QA round 1).
+    func testEntryCreatedInAChildFolderRefreshesTheChildRow() async throws {
+        let w = try await realWorld()
+        _ = try w.dir("p/big")
+        _ = try w.file("p/big/old.txt")
+        let m = try await w.open("p")
+        let before = m.entry(atRow: try XCTUnwrap(m.row(named: "big"))).mtime
+        try await Task.sleep(for: .milliseconds(1_500))      // the fixture's own events have been delivered
+        _ = try w.file("p/big/new.txt", "hi")
+        var st = stat()
+        XCTAssertEqual(lstat(w.sandbox.url("p/big").path(percentEncoded: false), &st), 0)
+        let onDisk = Int64(st.st_mtimespec.tv_sec) * 1_000_000_000 + Int64(st.st_mtimespec.tv_nsec)
+        XCTAssertNotEqual(onDisk, before)
+        try await w.waitUntil("child mtime") { m.row(named: "big").map { m.entry(atRow: $0).mtime == onDisk } ?? false }
+        try w.remove("p/big/old.txt")
+        XCTAssertEqual(lstat(w.sandbox.url("p/big").path(percentEncoded: false), &st), 0)
+        let afterRemove = Int64(st.st_mtimespec.tv_sec) * 1_000_000_000 + Int64(st.st_mtimespec.tv_nsec)
+        try await w.waitUntil("child mtime after remove") {
+            m.row(named: "big").map { m.entry(atRow: $0).mtime == afterRemove } ?? false
+        }
+    }
+
     func testAtomicSaveKeepsSelectionOnTheReplacement() async throws {
         let w = try await realWorld()
         try w.dir("doc")
