@@ -6,6 +6,14 @@ public enum ExtraSortValues: Sendable {
     case strings([[UInt8]?])                      // SortKeys.nameKey(isFolder: false) bytes
 }
 
+/// An extended column's values keyed by identity: what main hands the folder worker, which maps them to the
+/// storage indices of the store it sorts (`SortExtras.make`), since main cannot know them for a store the worker
+/// builds (P2-13/P2-14 notes). Missing identities sort last.
+public enum ExtraColumnValues: Sendable {
+    case integers([RowID: Int64])
+    case strings([RowID: [UInt8]])                // SortKeys.nameKey(isFolder: false) bytes
+}
+
 /// Sort inputs that are not in the EntryStore (§11 Phase 2): computed folder sizes now, extended-column values
 /// from P2-16.
 public struct SortExtras: Sendable {
@@ -31,11 +39,31 @@ public struct SortExtras: Sendable {
         for (id, bytes) in sizes { if let index = store.firstIndex(of: id) { byIndex[index] = bytes } }
         return SortExtras(folderSizes: byIndex)
     }
+
+    /// `sizes` and `column` (by identity) mapped to storage indices of `store`; identities not in it are left out.
+    public static func make(sizes: [RowID: Int64], column: ExtraColumnValues?, in store: EntryStore) -> SortExtras {
+        var extras = folderSizes(sizes, in: store)
+        switch column {
+        case .integers(let byID)?:
+            extras.column = .integers((0..<UInt32(store.count)).map { byID[store.identity($0)] })
+        case .strings(let byID)?:
+            extras.column = .strings((0..<UInt32(store.count)).map { byID[store.identity($0)] })
+        case nil: break
+        }
+        return extras
+    }
+}
+
+/// Byte-wise order of `SortKeys.nameKey` bytes.
+struct ByteKey: Comparable {
+    let bytes: [UInt8]
+    static func < (a: ByteKey, b: ByteKey) -> Bool { a.bytes.lexicographicallyPrecedes(b.bytes) }
 }
 
 extension Sorter {
     /// Phase 1 permutation plus: the size sort orders the folders group by `extras.folderSizes` (unknown sizes last
-    /// in both directions, name order breaking ties), and sized packages among the files by theirs. Folders stay first. Other fields ignore the extras until P2-16.
+    /// in both directions, name order breaking ties), and sized packages among the files by theirs. Folders stay first. Extended fields (P2-16) order
+    /// each of the two groups by `extras.column`, missing values last in both directions.
     public static func permutation(_ store: EntryStore, nameKeys: SortKeyColumn, searchKeys: SortKeyColumn?,
                                    query: ViewQuery, kindRanks: [UInt16], extensionKeys: SortKeyColumn? = nil,
                                    extras: SortExtras) -> [UInt32] {
@@ -59,7 +87,20 @@ extension Sorter {
                 }
             }
         }
-        // P2-16 handles extras.column for extended fields here.
+        if query.sort.field.isExtended, let column = extras.column {
+            // Folders stay first; each group is ordered by the column, missing values last, name order breaking ties.
+            let folderCount = order.prefix { store.entry($0).isFolderForSorting }.count
+            for range in [0..<folderCount, folderCount..<order.count] {
+                switch column {
+                case .integers(let values):
+                    reorder(&order, range: range, ascending: query.sort.ascending) { i in Int(i) < values.count ? values[Int(i)] : nil }
+                case .strings(let keys):
+                    reorder(&order, range: range, ascending: query.sort.ascending) { i in
+                        Int(i) < keys.count ? keys[Int(i)].map(ByteKey.init) : nil
+                    }
+                }
+            }
+        }
     }
 
     /// Stable: equal and unknown values keep their incoming (name-ordered) positions; unknown values go last.

@@ -1,0 +1,20 @@
+{"name": "p2-extra-columns",
+ "fixture": {"files": ["a.txt", "b.txt"], "dirs": [], "tags": {"a.txt": ["Work"]}, "comments": {"b.txt": "hello"},
+             "lastOpenedDays": {"b.txt": -400}},
+ "steps": [
+  {"waitFor": {"rows": ["a.txt", "b.txt"], "state": "complete"}},
+  {"rightClick": "header:name"}, {"chooseMenuItem": "Tags"},
+  {"rightClick": "header:name"}, {"chooseMenuItem": "Comments"},
+  {"rightClick": "header:name"}, {"chooseMenuItem": "Permissions"},
+  {"rightClick": "header:name"}, {"chooseMenuItem": "Owner"},
+  {"rightClick": "header:name"}, {"chooseMenuItem": "Date Last Opened"},
+  {"expect": {"visibleColumnsContain": ["name", "tags", "comments", "permissions", "owner", "dateLastOpened"]}},
+  {"waitFor": {"cells": {"a.txt": {"tags": "Work", "permissions": "-rw-r--r--", "owner": "{user}", "dateLastOpened": "--"},
+                         "b.txt": {"comments": "hello", "tags": ""}}}},
+  {"fsTags": {"path": "b.txt", "tags": ["Home", "Red"]}},
+  {"waitFor": {"cells": {"b.txt": {"tags": "Home, Red"}}}, "timeoutMs": 3000},
+  {"click": "header:tags"},
+  {"waitFor": {"sort": "tags.asc", "rows": ["b.txt", "a.txt"]}},
+  {"click": "header:tags"},
+  {"waitFor": {"sort": "tags.desc", "rows": ["a.txt", "b.txt"]}}
+ ]}

@@ -56,4 +56,30 @@ final class SortExtrasTests: XCTestCase {
                                        kindRanks: TypeRegistry.shared.kindRanks().ranks, extras: extras).map { s.name($0) }
         XCTAssertEqual(names, ["A"])
     }
+
+    func testExtendedColumnOrderingKeepsFoldersFirstAndMissingLast() {
+        let s = store([("D", .directory, 0), ("E", .directory, 0), ("a", .file, 0), ("b", .file, 0), ("c", .file, 0)])
+        let ints: [Int64?] = [nil, 5, 30, nil, 10]                         // by storage index
+        let q = ViewQuery(sort: SortDescriptor(field: .dateLastOpened, ascending: true))
+        XCTAssertEqual(sorted(s, q, SortExtras(column: .integers(ints))), ["E", "D", "c", "a", "b"])
+        let qd = ViewQuery(sort: SortDescriptor(field: .dateLastOpened, ascending: false))
+        XCTAssertEqual(sorted(s, qd, SortExtras(column: .integers(ints))), ["E", "D", "a", "c", "b"], "missing stays last descending")
+        let keys: [[UInt8]?] = [nil, nil, SortKeys.nameKey("work", isFolder: false), SortKeys.nameKey("Home", isFolder: false), nil]
+        XCTAssertEqual(sorted(s, ViewQuery(sort: SortDescriptor(field: .tags, ascending: true)), SortExtras(column: .strings(keys))).suffix(3), ["b", "a", "c"])
+        XCTAssertEqual(sorted(s, ViewQuery(sort: SortDescriptor(field: .tags, ascending: true)), .none), ["D", "E", "a", "b", "c"], "no values yet: name order")
+        XCTAssertEqual(sorted(s, ViewQuery(sort: .default), SortExtras(column: .integers(ints))), ["D", "E", "a", "b", "c"],
+                       "only extended fields use the column")
+    }
+
+    /// The worker gets values keyed by identity (P2-13/P2-14 notes) and maps them to its own store's indices.
+    func testColumnValuesByIdentityMapToStorageIndices() {
+        let s = store([("D", .directory, 0), ("a", .file, 0), ("b", .file, 0)])
+        let byID = ExtraColumnValues.integers([s.identity(2): 7, s.identity(0): 3, .name("zzz"): 1])
+        guard case .integers(let values)? = SortExtras.make(sizes: [:], column: byID, in: s).column else { return XCTFail("no column") }
+        XCTAssertEqual(values, [3, nil, 7])
+        let keys = ExtraColumnValues.strings([s.identity(1): [1, 2]])
+        guard case .strings(let k)? = SortExtras.make(sizes: [:], column: keys, in: s).column else { return XCTFail("no column") }
+        XCTAssertEqual(k, [nil, [1, 2], nil])
+        XCTAssertTrue(SortExtras.make(sizes: [:], column: nil, in: s).isEmpty)
+    }
 }

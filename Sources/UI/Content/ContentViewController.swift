@@ -184,7 +184,8 @@ final class ContentViewController: CommandHandlingViewController {
             // Only a selected row's size changes the status bar's selection total.
             let selected = session.folder.selection.ids
             if ids.contains(where: selected.contains) { updateStatus() }
-        case .extendedAttributes: break   // Details' extended columns reload these rows from P2-16
+        case .extendedAttributes(let ids):
+            if details.folder === session.folder { details.reloadExtendedAttributes(ids) }
         }
     }
 
@@ -223,6 +224,12 @@ final class ContentViewController: CommandHandlingViewController {
         controller.scenarioHooks.visibleRowNames = { [weak self] in self?.details.visibleRowNames() ?? [] }
         controller.scenarioHooks.groupHeaderTitles = { [weak self] in self?.details.groupHeaderTitles() ?? [] }
         controller.scenarioHooks.cellText = { [weak self] row, column in self?.details.cellText(rowNamed: row, column: column) }
+        controller.scenarioHooks.visibleColumnIDs = { [weak self] in self?.details.visibleColumnIDs() ?? [] }
+        controller.scenarioHooks.rightClickTarget = { [weak self] target in
+            guard target.hasPrefix("header:"), let details = self?.details,
+                  ColumnID(rawValue: String(target.dropFirst("header:".count))) != nil else { return nil }
+            return details.headerMenu()
+        }
         controller.scenarioHooks.performDrop = { [weak self] sources, onto, modifiers, secondary, choice in
             self?.scenarioDrop(sources: sources, onto: onto, modifiers: modifiers, secondary: secondary, choice: choice)
         }

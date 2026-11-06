@@ -6,8 +6,11 @@ import MacxFS
 @MainActor
 enum DetailsColumns {
     static let defaults: [ColumnSetting] = Settings.defaultColumns
-    /// Columns the table shows and the header chooser offers. P2-16 offers the Phase 2 columns.
-    static let offered: [ColumnID] = Array(ColumnID.allCases.prefix(6))
+    /// Columns the table holds and the header chooser offers (P2-16): every column, but Path only for listings
+    /// that span folders (Phase 3 search results); every Phase 2 folder listing passes false.
+    static func availableColumns(isMultiFolder: Bool) -> [ColumnID] {
+        ColumnID.allCases.filter { $0 != .path || isMultiFolder }
+    }
     private static let prefix = "macx.column."
 
     static func identifier(_ id: ColumnID) -> NSUserInterfaceItemIdentifier { .init(prefix + id.rawValue) }
@@ -74,9 +77,11 @@ enum DetailsColumns {
         return (widest + extra).rounded(.up)
     }
 
-    static func headerMenu(columns: [ColumnSetting], target: AnyObject, action: Selector) -> NSMenu {
+    /// The header's right-click chooser: every available column but Name (always shown), checked when visible.
+    static func headerMenu(columns: [ColumnSetting], isMultiFolder: Bool, target: AnyObject, action: Selector) -> NSMenu {
         let menu = NSMenu(title: L10n.string("Columns"))
-        for column in normalized(columns) where column.id != .name && offered.contains(column.id) {
+        let available = Set(availableColumns(isMultiFolder: isMultiFolder))
+        for column in normalized(columns) where column.id != .name && available.contains(column.id) {
             let item = NSMenuItem(title: title(column.id), action: action, keyEquivalent: "")
             item.target = target
             item.representedObject = column.id.rawValue

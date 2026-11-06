@@ -5112,6 +5112,13 @@ git add Sources Tests/FSKitTests/SortExtrasTests.swift Tests/UITests Tests/Scena
 git commit -m "feat: Tags, Date Last Opened, Permissions, Owner, Path and Comments columns with sorting"
 ```
 
+**P2-16 implementation notes (2026-11-05, deviations as built):**
+- Worker inputs: `FolderWorker.resort/patch/finishLoad/finishReread` take `values: SortValues = .none` (Core-internal: `sizes: [RowID: Int64]` plus `column: ExtraColumnValues?`), replacing P2-14's `sizes:`. `FolderModel.sortValues()` builds it (folder sizes under the size sort; the extended column's values under an extended sort). New public MacxFS `ExtraColumnValues` (`.integers([RowID: Int64])`, `.strings([RowID: [UInt8]])`) and `SortExtras.make(sizes:column:in:)`, which maps identities to the worker store's storage indices; `Sorter.applyExtras` handles `extras.column`.
+- `FolderModel+ExtendedSort.swift` holds the extended sort: `setQuery` emits `.query`, cancels any previous load, and for an extended field of a complete folder runs `startExtendedSort()` (load all → re-sort if still current) instead of an immediate re-sort, so rows keep their order. The same load also runs after a load or re-read completes under an extended sort. While sorted by an extended field, attribute reads that change a row's sort value (visible-row reads, watcher re-reads) schedule one coalesced re-sort (`FolderContext.resortCoalescing`). Owner falls back to the uid when the name is unknown; empty tags/comments count as missing.
+- `ExtendedColumns.text(_:row:in:dateStyle:home:)` has a `home:` parameter (default: the user's Home) for the Path column's `~` form; the controller passes `Settings.home` (the sandbox root in sandbox mode). `ExtendedColumns.required(visible:)` gives the union of visible columns' sets. `DetailsColumns.headerMenu` takes `isMultiFolder:`; `DetailsViewController.isMultiFolder` (false for every Phase 2 listing) controls the Path column.
+- Scenario hook `rightClickTarget` returns the menu to open (`((String) -> NSMenu?)?`, not `Bool`), so `chooseMenuItem` can pick from it. `header:<id>` clicks go through `DetailsViewController.clickHeader` → `tableView(_:didClick:)`.
+- Tests: besides the plan's, `FolderModelExtendedSortTests` (Core: comments both directions, permissions bits, a newer query wins over the load, a value change re-sorts) and a GUI Details test (chooser → visible-row load → header sort saved in the view state). The scenario also shows Date Last Opened.
+
 ---
 
 ### Task P2-17: Thumbnails in Icons view

@@ -26,11 +26,15 @@ extension BrowserWindowController {
         return content.newTabGesture(.middleClick, row: row)
     }
 
-    /// `tree:` and `group:` targets (P2-16 adds `header:`). For `tree:`, "cmd" is the ⌘-click path; otherwise a plain
-    /// click selects the node and navigates to it. `group:<title>` toggles that group of the Details list.
+    /// `tree:`, `group:` and `header:` targets. For `tree:`, "cmd" is the ⌘-click path; otherwise a plain click
+    /// selects the node and navigates to it. `group:<title>` toggles that group of the Details list, and
+    /// `header:<ColumnID>` clicks that Details column header (sorts by it, P2-16).
     private func scenarioClick(_ target: String, modifiers: [String]) async -> Bool {
         if target.hasPrefix("group:") {
             return contentController?.details.toggleGroup(titled: String(target.dropFirst("group:".count))) ?? false
+        }
+        if target.hasPrefix("header:") {
+            return contentController?.details.clickHeader(String(target.dropFirst("header:".count))) ?? false
         }
         guard let url = treeURL(target), let sidebar = sidebarController,
               let row = await sidebar.revealRow(for: url) else { return false }

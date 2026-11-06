@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Core
 import MacxFS
@@ -23,7 +24,7 @@ import MacxFS
     var thumbnailNames: (() -> [String])?                           // P2-17
     var performMiddleClick: ((String) async -> Bool)?               // P2-06 (async: tree: targets load the tree)
     var clickTarget: ((String, [String]) async -> Bool)?            // P2-06 tree:, P2-10 group:, P2-16 header: (target, modifiers)
-    var rightClickTarget: ((String) -> Bool)?                       // P2-16 header:
+    var rightClickTarget: ((String) -> NSMenu?)?                    // P2-16 header: (the menu a right-click opens)
 }
 
 /// What the in-process scenario driver (P1-41) reads from a browser window. BrowserWindowController conforms.

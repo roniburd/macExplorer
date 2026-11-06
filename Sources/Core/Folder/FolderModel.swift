@@ -173,6 +173,10 @@ public final class FolderModel {
     var attributeTask: Task<Void, Never>?
     var pendingAttributeRequest: AttributeRequest?
     var attributeRefreshScheduled = false
+    /// Sorting by an extended column (FolderModel+ExtendedSort, P2-16): the load of every row's value before the
+    /// re-sort, and the coalesced re-sort after values change while sorted by one.
+    var extendedSortTask: Task<Void, Never>?
+    var columnResortTask: Task<Void, Never>?
     /// Full selection walks so far (tests).
     private(set) var selectionSummaryPasses = 0
 
@@ -251,6 +255,7 @@ public final class FolderModel {
         sizeResortTask?.cancel()
         sizeResortTask = nil
         cancelExtendedAttributes()
+        cancelExtendedSort()
         busToken?.cancel()
         busToken = nil
         volumeToken?.cancel()
@@ -288,17 +293,23 @@ public final class FolderModel {
 
     // MARK: Query
 
-    /// Re-sort/filter off main; one .changes(.reset).
+    /// Re-sort/filter off main; one .changes(.reset). An extended sort field (P2-16) first loads that field for
+    /// every row (rows keep their order until then; FolderModel+ExtendedSort).
     public func setQuery(_ query: ViewQuery) {
         guard query != self.query else { return }
         self.query = query
         emit(.query(query))
+        cancelExtendedSort()
         switch state {
         case .loading, .partial, .unresponsive, .waitingForPermission:
             let worker = self.worker
             Task { await worker.setLoadingQuery(query) }
         case .complete:
-            enqueue { [weak self] in await self?.resortNow() }
+            if query.sort.field.isExtended {
+                startExtendedSort()
+            } else {
+                enqueue { [weak self] in await self?.resortNow() }
+            }
         case .error:
             break
         }
@@ -308,7 +319,7 @@ public final class FolderModel {
     func resortNow() async {
         let snapshot = store, wanted = query, epoch = self.epoch, group = currentGroupSpec()
         let signpost = PerfSignposts.signposter.beginInterval(PerfSignposts.sort)
-        let result = await worker.resort(snapshot, tag: keysTag, query: wanted, group: group, sizes: sortSizes())
+        let result = await worker.resort(snapshot, tag: keysTag, query: wanted, group: group, values: sortValues())
         PerfSignposts.signposter.endInterval(PerfSignposts.sort, signpost)
         // A newer setQuery or grouping change queued its own re-sort; a fresh load replaced the store.
         guard !closed, epoch == self.epoch, wanted == query, store.version == snapshot.version,
@@ -561,7 +572,7 @@ public final class FolderModel {
         case .completed:
             await drainLoadFeed()
             guard !closed, generation == gen else { return }
-            guard let finished = await worker.finishLoad(gen, query: query, group: currentGroupSpec(), sizes: sortSizes()),
+            guard let finished = await worker.finishLoad(gen, query: query, group: currentGroupSpec(), values: sortValues()),
                   !closed, generation == gen else { return }
             pacerTask?.cancel()
             pacerTask = nil
@@ -576,6 +587,7 @@ public final class FolderModel {
             startWatcher()
             flushDeferred()
             flushWatchBuffer()
+            startExtendedSort()             // sorted by an extended column: load its values, then re-sort
         case .failed(let failure):
             pacerTask?.cancel()
             pacerTask = nil
@@ -649,7 +661,7 @@ public final class FolderModel {
                 let old = self.store
                 guard let result = await self.worker.finishReread(gen, old: old, query: self.query,
                                                                   group: self.currentGroupSpec(),
-                                                                  sizes: self.sortSizes()) else { return }
+                                                                  values: self.sortValues()) else { return }
                 guard !self.closed, epoch == self.epoch, self.store.version == old.version else { return }
                 self.applyPatch(result)
                 self.rereadDone()
@@ -682,6 +694,7 @@ public final class FolderModel {
         let names = namesPatchedDuringReread
         namesPatchedDuringReread = []
         if !names.isEmpty { enqueuePatch(names.sorted(), renames: []) }
+        startExtendedSort()                 // new rows lack the sort column's values
         if rereadPending {
             rereadPending = false
             beginReread()

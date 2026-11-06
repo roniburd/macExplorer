@@ -97,6 +97,8 @@ extension FolderModel {
     /// stale and keeps its value until the follow-up read lands.
     private func storeAttributes(_ result: [String: ExtendedAttributes], ids: [String: RowID], readSerial: Int) {
         var changed = Set<RowID>()
+        var before: [RowID: ExtendedAttributes?] = [:], after: [RowID: ExtendedAttributes] = [:]
+        let tracksSort = query.sort.field.isExtended
         let store = self.store
         for (name, attributes) in result {
             guard let id = ids[name], store.firstIndex(of: id) != nil else { continue }
@@ -110,9 +112,13 @@ extension FolderModel {
                 new = old.map { $0.merging(attributes) } ?? attributes
             }
             attributeTable[id] = new
-            if new != old { changed.insert(id) }
+            if new != old {
+                changed.insert(id)
+                if tracksSort { before[id] = old; after[id] = new }
+            }
         }
         if !changed.isEmpty { emit(.extendedAttributes(changed)) }
+        if !after.isEmpty { attributesChangedForSort(old: before, new: after) }
     }
 
     // MARK: Invalidation

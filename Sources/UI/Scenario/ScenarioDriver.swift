@@ -445,7 +445,8 @@ final class ScenarioDriver {
             guard let hook = controller.scenarioHooks.rightClickTarget else {
                 throw DriverError("rightClick '\(target)': ScenarioHooks.rightClickTarget is not installed")
             }
-            guard hook(target) else { throw DriverError("right-click target '\(target)' not found") }
+            guard let menu = hook(target) else { throw DriverError("right-click target '\(target)' not found") }
+            contextMenu = menu
             return
         }
         guard let content = contentController(in: controller), let handler = content.handler else {

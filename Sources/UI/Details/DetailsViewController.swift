@@ -162,6 +162,11 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     /// call per run-loop turn; the folder-size session scans those folders first.
     var onVisibleRowsChanged: ((IndexSet) -> Void)?
     private var visibleRowsReportPending = false
+    private var attributeRequestPending = false
+    /// The listing spans folders (Phase 3 search results): the Path column is offered. Folder listings: false.
+    var isMultiFolder = false {
+        didSet { if oldValue != isMultiFolder, isViewLoaded { rebuildColumns() } }
+    }
     /// The folder's columns (order, widths, visibility), from its view state (P2-08). `apply(columns:)` sets them.
     private(set) lazy var columns: [ColumnSetting] = DetailsColumns.normalized(settings.columns)
     /// Installed by ContentViewController (P2-08): the user resized, moved, showed or hid a column.
@@ -256,6 +261,7 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
         }
         reloadSelectionDrawing()
         reportVisibleRows()
+        requestVisibleAttributes()
     }
 
     func apply(_ changes: ChangeSet) {
@@ -284,6 +290,7 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
         }
         context.icons.cancelFileIcons(notIn: visibleRowIDs())
         reportVisibleRows()
+        requestVisibleAttributes()
     }
 
     /// Mirrors the model's selection into the table highlight (S5-C4) and redraws cut state when it changed.
@@ -375,6 +382,7 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
         if let top = topVisibleRow(), top > 0 { folder.scrollAnchor = folder.identity(atRow: top) } else { folder.scrollAnchor = nil }
         context.icons.cancelFileIcons(notIn: visibleRowIDs())
         reportVisibleRows()
+        requestVisibleAttributes()
     }
 
     /// Calls `onVisibleRowsChanged` on the next run-loop turn with `visibleRows()` (model rows of the item rows on
@@ -407,6 +415,48 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
         }
         guard !rows.isEmpty else { return }
         tableView.reloadData(forRowIndexes: rows, columnIndexes: IndexSet(integer: column))
+    }
+
+    /// While an extended column (Tags, Date Last Opened, Permissions, Owner, Comments) is visible: asks the model for
+    /// the visible rows' attributes those columns need, on the next run-loop turn (scrolls coalesce). Called on
+    /// bind, scroll, changes and column changes.
+    func requestVisibleAttributes() {
+        guard folder != nil, !attributeRequestPending, !visibleAttributeSet.isEmpty else { return }
+        attributeRequestPending = true
+        RunLoop.main.perform { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.attributeRequestPending = false
+                let wanted = self.visibleAttributeSet
+                guard let folder = self.folder, !wanted.isEmpty else { return }
+                let rows = self.visibleRows()
+                if !rows.isEmpty { folder.requestExtendedAttributes(rows: rows, wanted) }
+            }
+        }
+    }
+
+    /// The attributes the columns on screen need.
+    private var visibleAttributeSet: ExtendedAttributeSet {
+        let available = Set(DetailsColumns.availableColumns(isMultiFolder: isMultiFolder))
+        return ExtendedColumns.required(visible: columns.filter { available.contains($0.id) })
+    }
+
+    /// `.extendedAttributes(ids)` (P2-15): redraws the extended cells of those rows that are on screen.
+    func reloadExtendedAttributes(_ ids: Set<RowID>) {
+        guard let folder, !ids.isEmpty else { return }
+        let columns = IndexSet(tableView.tableColumns.enumerated().compactMap { index, column in
+            DetailsColumns.columnID(column.identifier).flatMap { ExtendedColumns.isExtended($0) && !column.isHidden ? index : nil }
+        })
+        guard !columns.isEmpty else { return }
+        let mapping = self.mapping
+        var rows = IndexSet()
+        for table in visibleTableRows() {
+            guard let row = mapping.modelRow(forTableRow: table), row < folder.rowCount,
+                  ids.contains(folder.identity(atRow: row)) else { continue }
+            rows.insert(table)
+        }
+        guard !rows.isEmpty else { return }
+        tableView.reloadData(forRowIndexes: rows, columnIndexes: columns)
     }
 
     /// Folder sizes were turned on or off: every on-screen Size cell is redrawn.
@@ -602,19 +652,26 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
         isRebuildingColumns = true
         defer { isRebuildingColumns = false }
         for column in tableView.tableColumns { tableView.removeTableColumn(column) }
-        for setting in columns where DetailsColumns.offered.contains(setting.id) {
+        let available = Set(DetailsColumns.availableColumns(isMultiFolder: isMultiFolder))
+        for setting in columns where available.contains(setting.id) {
+            let definition = ExtendedColumns.definition(setting.id)
             let column = NSTableColumn(identifier: DetailsColumns.identifier(setting.id))
-            column.title = DetailsColumns.title(setting.id)
+            column.title = definition.title
             column.minWidth = DetailsColumns.minWidth(setting.id)
             column.width = setting.width
             column.isHidden = !setting.visible
             column.resizingMask = .userResizingMask
-            column.headerCell.alignment = setting.id == .size ? .right : .left
+            column.headerCell.alignment = definition.alignment
             tableView.addTableColumn(column)
         }
-        tableView.headerView?.menu = DetailsColumns.headerMenu(columns: columns, target: self,
-                                                               action: #selector(toggleColumn(_:)))
+        tableView.headerView?.menu = headerMenu()
         updateSortIndicator(folder?.query.sort ?? settings.sort)
+        requestVisibleAttributes()
+    }
+
+    /// The header's column chooser (right-click on the header).
+    func headerMenu() -> NSMenu {
+        DetailsColumns.headerMenu(columns: columns, isMultiFolder: isMultiFolder, target: self, action: #selector(toggleColumn(_:)))
     }
 
     /// The folder's view state (P2-08): its columns (rebuilt only when they differ from what the table shows, so a
@@ -643,9 +700,10 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
         onColumnsChanged?(next)
     }
 
-    /// The table only holds the offered columns: the others keep their stored width and visibility.
+    /// The table only holds the available columns: the others (Path in a folder listing) keep their stored width
+    /// and visibility.
     private func merged(_ shown: [ColumnSetting]) -> [ColumnSetting] {
-        let offered = Set(DetailsColumns.offered)
+        let offered = Set(DetailsColumns.availableColumns(isMultiFolder: isMultiFolder))
         let stored = Dictionary(columns.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         return DetailsColumns.normalized(shown.map { offered.contains($0.id) ? $0 : (stored[$0.id] ?? $0) })
     }
@@ -733,6 +791,21 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     /// Folders and packages: their Size cell shows the computed folder size (P2-14).
     static func isSizedFolder(_ entry: Entry) -> Bool { entry.kind == .directory || entry.kind == .package }
 
+    /// Scenario hook `visibleColumnIDs` (P2-16): the shown columns' ColumnID raw values, in table order.
+    func visibleColumnIDs() -> [String] {
+        tableView.tableColumns.filter { !$0.isHidden }.compactMap { DetailsColumns.columnID($0.identifier)?.rawValue }
+    }
+
+    /// Scenario click target "header:<id>" (P2-16): the same path as a click on that column's header.
+    @discardableResult
+    func clickHeader(_ raw: String) -> Bool {
+        guard let id = ColumnID(rawValue: raw), folder != nil else { return false }
+        let index = tableView.column(withIdentifier: DetailsColumns.identifier(id))
+        guard index >= 0, !tableView.tableColumns[index].isHidden else { return false }
+        tableView(tableView, didClick: tableView.tableColumns[index])
+        return true
+    }
+
     /// Scenario hook `cellText` (P2-14): the text the cell of `name`'s row shows in `column` (a ColumnID raw value),
     /// computed with the same formatting the cell uses. nil for an unknown row or column.
     func cellText(rowNamed name: String, column: String) -> String? {
@@ -754,7 +827,8 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
             return FolderSizeText.text(folder.folderSize(atRow: row), enabled: folder.folderSizesEnabled)
         case .kind: return context.environment.types.localizedDescription(entry.typeIndex)
         case .fileExtension: return Formatters.extensionText(name: folder.name(atRow: row), kind: entry.kind)
-        case .tags, .dateLastOpened, .permissions, .owner, .path, .comments: return ""   // P2-16: never shown before then
+        case .tags, .dateLastOpened, .permissions, .owner, .path, .comments:
+            return ExtendedColumns.text(id, row: row, in: folder, dateStyle: settings.dateStyle, home: settings.home)
         }
     }
 
