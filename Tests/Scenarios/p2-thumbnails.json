@@ -1,0 +1,7 @@
+{"name": "p2-thumbnails",
+ "fixture": {"files": ["t.txt"], "dirs": ["sub"], "images": ["p1.png", "p2.png"]},
+ "steps": [
+  {"key": "cmd+2"},
+  {"waitFor": {"viewMode": "icons", "thumbnailsContain": ["p1.png", "p2.png"]}, "timeoutMs": 5000},
+  {"expect": {"rows": ["sub", "p1.png", "p2.png", "t.txt"]}}
+ ]}

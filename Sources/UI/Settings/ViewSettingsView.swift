@@ -1,7 +1,7 @@
 import SwiftUI
 import Core
 
-/// §7 View: density, show hidden, command bar, auto-reveal in tree, date format.
+/// §7 View: density, show hidden, thumbnails (P2-17), command bar, auto-reveal in tree, date format.
 struct ViewSettingsView: View {
     @Bindable var settings: Core.Settings
 
@@ -11,6 +11,7 @@ struct ViewSettingsView: View {
                 ForEach(Density.allCases, id: \.self) { Text(SettingsChoices.title(for: $0)).tag($0) }
             }
             Toggle(L10n.string("Show hidden files and folders"), isOn: $settings.showHidden)
+            Toggle(L10n.string("Show thumbnails"), isOn: $settings.showThumbnails)
             Toggle(L10n.string("Show the command bar"), isOn: $settings.commandBarVisible)
             Toggle(L10n.string("Reveal the current folder in the tree"), isOn: $settings.autoRevealInTree)
             Picker(L10n.string("Dates:"), selection: $settings.dateStyle) {

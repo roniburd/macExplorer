@@ -66,8 +66,14 @@ final class IconItem: NSCollectionViewItem {
     let label = NSTextField(wrappingLabelWithString: "")
     let highlight = NSView()
     let cloudBadge = NSImageView()
+    /// Tier 2 (P2-17): the Quick Look thumbnail, aspect-fit inside the icon square with a 1 pt separator border.
+    let thumbnailView = NSView()
     private(set) var rowID: RowID?
+    /// The thumbnail on show, nil while the tier 0/1 icon is shown.
+    private(set) var thumbnailKey: ThumbnailKey?
     private var iconSide: NSLayoutConstraint!
+    private var thumbnailWidth: NSLayoutConstraint!
+    private var thumbnailHeight: NSLayoutConstraint!
     private var shownName = ""
     private var shownWidth: Double = 0
     private var shownCut = false
@@ -76,7 +82,11 @@ final class IconItem: NSCollectionViewItem {
         let root = NSView()
         highlight.wantsLayer = true
         highlight.layer?.cornerRadius = 6
-        for part in [highlight, iconView, label, cloudBadge] as [NSView] {
+        thumbnailView.wantsLayer = true
+        thumbnailView.layer?.contentsGravity = .resize
+        thumbnailView.layer?.borderWidth = 1
+        thumbnailView.isHidden = true
+        for part in [highlight, iconView, thumbnailView, label, cloudBadge] as [NSView] {
             part.translatesAutoresizingMaskIntoConstraints = false
             root.addSubview(part)
         }
@@ -89,6 +99,8 @@ final class IconItem: NSCollectionViewItem {
         cloudBadge.image = NSImage(systemSymbolName: "icloud", accessibilityDescription: L10n.string("In iCloud, not downloaded"))
         cloudBadge.contentTintColor = .secondaryLabelColor
         iconSide = iconView.widthAnchor.constraint(equalToConstant: 64)
+        thumbnailWidth = thumbnailView.widthAnchor.constraint(equalToConstant: 64)
+        thumbnailHeight = thumbnailView.heightAnchor.constraint(equalToConstant: 64)
         NSLayoutConstraint.activate([
             highlight.topAnchor.constraint(equalTo: root.topAnchor, constant: 2),
             highlight.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -2),
@@ -98,6 +110,10 @@ final class IconItem: NSCollectionViewItem {
             iconView.centerXAnchor.constraint(equalTo: root.centerXAnchor),
             iconSide,
             iconView.heightAnchor.constraint(equalTo: iconView.widthAnchor),
+            thumbnailView.centerXAnchor.constraint(equalTo: iconView.centerXAnchor),
+            thumbnailView.centerYAnchor.constraint(equalTo: iconView.centerYAnchor),
+            thumbnailWidth,
+            thumbnailHeight,
             label.topAnchor.constraint(equalTo: iconView.bottomAnchor, constant: 4),
             label.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 4),
             label.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -4),
@@ -126,9 +142,42 @@ final class IconItem: NSCollectionViewItem {
         applyState(isCut: isCut, isSelected: isSelected, emphasized: emphasized)
     }
 
+    /// The tier 0/1 type or file icon; replaces a thumbnail on show.
     func setIcon(_ icon: CGImage, points: Double) {
         iconSide.constant = points
         iconView.image = NSImage(cgImage: icon, size: NSSize(width: points, height: points))
+        if thumbnailKey != nil {
+            thumbnailKey = nil
+            thumbnailView.layer?.contents = nil
+            thumbnailView.isHidden = true
+            iconView.isHidden = false
+        }
+    }
+
+    /// Shows `image` (the cached thumbnail for `key`) aspect-fit inside the `points` icon square.
+    func setThumbnail(_ image: CGImage, key: ThumbnailKey, points: Double) {
+        iconSide.constant = points
+        let w = Double(max(image.width, 1)), h = Double(max(image.height, 1))
+        let fit = points / max(w, h)
+        thumbnailWidth.constant = max(1, (w * fit).rounded())
+        thumbnailHeight.constant = max(1, (h * fit).rounded())
+        thumbnailView.layer?.contents = image
+        thumbnailKey = key
+        thumbnailView.isHidden = false
+        iconView.isHidden = true
+        updateThumbnailBorder()
+    }
+
+    private func updateThumbnailBorder() {
+        guard thumbnailKey != nil else { return }
+        view.effectiveAppearance.performAsCurrentDrawingAppearance {
+            thumbnailView.layer?.borderColor = NSColor.separatorColor.cgColor
+        }
+    }
+
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        updateThumbnailBorder()   // the separator colour follows light/dark
     }
 
     /// Selection is drawn from the model (§5.5); cut items are dimmed and italic (§8).
@@ -140,5 +189,6 @@ final class IconItem: NSCollectionViewItem {
             let color: NSColor? = isSelected ? (emphasized ? .selectedContentBackgroundColor : .unemphasizedSelectedContentBackgroundColor) : nil
             highlight.layer?.backgroundColor = color?.cgColor
         }
+        updateThumbnailBorder()
     }
 }

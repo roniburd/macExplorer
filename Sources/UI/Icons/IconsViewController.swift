@@ -197,6 +197,16 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
     var focusView: NSView { collectionView }
     private var settings: Settings { context.environment.settings }
     private var points: Double { layout.iconSize.points }
+    /// Tier 2 (P2-17): Quick Look thumbnails for the visible eligible items, into the shared cache.
+    private(set) lazy var thumbnails: ThumbnailScheduler = {
+        let scheduler = ThumbnailScheduler(generator: context.makeThumbnailGenerator(), cache: context.thumbnails)
+        scheduler.onThumbnail = { [weak self] key in self?.thumbnailArrived(key) }
+        return scheduler
+    }()
+    private var thumbnailRefreshPending = false
+    /// The bound folder's volume and path for thumbnail keys, computed once per bind (configure stays cheap).
+    private var thumbnailFolder: (volume: VolumeID, directory: String)?
+    private var thumbnailSettingLoop: ObservationLoop?
 
     init(context: UIContext) {
         self.context = context
@@ -225,6 +235,18 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
         NotificationCenter.default.addObserver(self, selector: #selector(clipBoundsChanged(_:)),
                                                name: NSView.boundsDidChangeNotification, object: scrollView.contentView)
         view = scrollView
+        thumbnailSettingLoop = ObservationLoop({ [weak self] in _ = self?.context.environment.settings.showThumbnails },
+                                               onChange: { [weak self] in self?.showThumbnailsChanged() })
+    }
+
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        scheduleThumbnailRefresh()   // the backing scale is known now
+    }
+
+    override func viewDidDisappear() {
+        super.viewDidDisappear()
+        thumbnails.cancelAll()
     }
 
     // MARK: FileListView
@@ -233,10 +255,13 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
         renameController?.cancel()
         renameController = nil
         self.folder = folder
+        thumbnailFolder = nil
         layout.itemCount = folder?.rowCount ?? 0
         collectionView.reloadData()
         if let folder { restoreScroll(anchor: folder.scrollAnchor) }
         reloadSelectionDrawing()
+        thumbnails.cancelAll()
+        scheduleThumbnailRefresh()
     }
 
     func apply(_ changes: ChangeSet) {
@@ -254,6 +279,7 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
         renameController?.relayout()
         reloadSelectionDrawing()
         context.icons.cancelFileIcons(notIn: Set(visibleRows().filter { $0 < folder.rowCount }.map { folder.identity(atRow: $0) }))
+        scheduleThumbnailRefresh()
     }
 
     func reloadSelectionDrawing() {
@@ -311,6 +337,7 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
     }
 
     @objc private func clipBoundsChanged(_ note: Notification) {
+        scheduleThumbnailRefresh()
         guard !isRestoringScroll, let folder else { return }
         if let top = topVisibleRow(), top > 0 { folder.scrollAnchor = folder.identity(atRow: top) } else { folder.scrollAnchor = nil }
     }
@@ -394,6 +421,83 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
         layout.iconSize = size
         collectionView.reloadData()
         restoreScroll(anchor: anchor)
+        scheduleThumbnailRefresh()   // new pixels → new keys; the old size's requests are cancelled
+    }
+
+    // MARK: thumbnails (P2-17)
+
+    /// The visible set is recomputed on the next run-loop turn, so a burst of scroll/bounds changes costs one pass.
+    func scheduleThumbnailRefresh() {
+        guard !thumbnailRefreshPending else { return }
+        thumbnailRefreshPending = true
+        RunLoop.main.perform { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.thumbnailRefreshPending = false
+                self.refreshThumbnails()
+            }
+        }
+    }
+
+    /// Hands the visible eligible items to the scheduler, or cancels everything when thumbnails are off.
+    func refreshThumbnails() {
+        guard settings.showThumbnails, let folder, isViewLoaded, view.window != nil else {
+            thumbnails.cancelAll()
+            return
+        }
+        let scale = view.window?.backingScaleFactor ?? 2
+        var candidates: [ThumbnailCandidate] = []
+        for row in layout.indexes(in: collectionView.visibleRect) where row < folder.rowCount {
+            guard let key = thumbnailKey(row: row, scale: scale) else { continue }
+            candidates.append(ThumbnailCandidate(key: key, url: folder.url(atRow: row)))
+        }
+        thumbnails.updateVisible(candidates, pointSize: CGFloat(points), scale: scale)
+    }
+
+    /// The key for row `row`'s thumbnail, nil when the item never gets one. In memory only.
+    func thumbnailKey(row: Int, scale: CGFloat) -> ThumbnailKey? {
+        guard let folder, row < folder.rowCount else { return nil }
+        let entry = folder.entry(atRow: row)
+        guard ThumbnailScheduler.isEligible(entry, types: context.environment.types) else { return nil }
+        let place = thumbnailFolder ?? (folder.volume?.id ?? .unknown, folder.directory.standardizedFileURL.path(percentEncoded: false))
+        thumbnailFolder = place
+        return ThumbnailKey(volume: place.volume, id: folder.identity(atRow: row), directory: place.directory,
+                            mtime: entry.mtime, size: entry.size, pixels: Int((CGFloat(points) * scale).rounded()))
+    }
+
+    private func thumbnailArrived(_ key: ThumbnailKey) {
+        guard let folder, let row = folder.row(of: key.id),
+              let item = collectionView.item(at: IndexPath(item: row, section: 0)) as? IconItem,
+              item.rowID == key.id, let image = context.thumbnails.image(key),
+              thumbnailKey(row: row, scale: view.window?.backingScaleFactor ?? 2) == key else { return }
+        item.setThumbnail(image, key: key, points: points)
+    }
+
+    private func showThumbnailsChanged() {
+        guard let folder else { return }
+        if settings.showThumbnails {
+            scheduleThumbnailRefresh()
+            for case let item as IconItem in collectionView.visibleItems() {   // cached thumbnails show at once
+                guard let row = collectionView.indexPath(for: item)?.item, row < folder.rowCount else { continue }
+                configure(item, row: row)
+            }
+        } else {
+            thumbnails.cancelAll()
+            for case let item as IconItem in collectionView.visibleItems() where item.thumbnailKey != nil {
+                guard let row = collectionView.indexPath(for: item)?.item, row < folder.rowCount else { continue }
+                configure(item, row: row)
+            }
+        }
+    }
+
+    /// Scenario hook `thumbnailNames`: the visible items whose cell shows a cached thumbnail, in grid order.
+    func thumbnailNames() -> [String] {
+        guard let folder else { return [] }
+        return collectionView.visibleItems().compactMap { item -> (Int, String)? in
+            guard let item = item as? IconItem, let key = item.thumbnailKey, context.thumbnails.image(key) != nil,
+                  let row = collectionView.indexPath(for: item)?.item, row < folder.rowCount else { return nil }
+            return (row, folder.name(atRow: row))
+        }.sorted { $0.0 < $1.0 }.map(\.1)
     }
 
     // MARK: data source
@@ -417,12 +521,16 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
                        labelWidth: Double(layout.metrics.itemSize.width - 8), isCut: folder.isCut(row: row),
                        isSelected: folder.selection.rows.contains(row), emphasized: isEmphasized,
                        isDataless: entry.flags.contains(.dataless), rowID: rowID)
+        if settings.showThumbnails, let key = thumbnailKey(row: row, scale: CGFloat(scale)), let image = context.thumbnails.image(key) {
+            item.setThumbnail(image, key: key, points: points)
+            return   // the thumbnail replaces tiers 0/1
+        }
         let url = folder.url(atRow: row)
         let isVolumeRoot = entry.kind == .directory
             && context.environment.volumes.mountTable.volumes.contains { $0.mountPoint.standardizedFileURL == url.standardizedFileURL }
         guard context.icons.needsFileIcon(entry, name: name, isVolumeRoot: isVolumeRoot) else { return }
         context.icons.fileIcon(for: url, rowID: rowID, points: points, scale: scale) { [weak item] image in
-            guard let item, item.rowID == rowID else { return }
+            guard let item, item.rowID == rowID, item.thumbnailKey == nil else { return }   // a thumbnail wins
             item.setIcon(image, points: points)
         }
     }

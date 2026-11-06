@@ -16,6 +16,10 @@ public final class UIContext {
     public private(set) var interaction: any FileOpInteraction
     /// §4.4 icon tiers (P1-31), shared by every window's lists.
     let icons: IconCache
+    /// Tier 2 (P2-17): Quick Look thumbnails shared by every window's Icons view (64 MB cost limit).
+    let thumbnails = ThumbnailCache()
+    /// Makes each Icons view's thumbnail generator; tests install a fake so nothing calls Quick Look.
+    var makeThumbnailGenerator: @MainActor () -> any ThumbnailGenerating = { QLThumbnailGeneratorAdapter() }
     /// Eject questions and errors (P1-28 EjectFlow); tests install a scripted one.
     var ejectPrompts: any EjectPrompting = AlertEjectPrompts()
     /// The open Settings window (P1-30), if any; SettingsWindowController.show reuses it.
