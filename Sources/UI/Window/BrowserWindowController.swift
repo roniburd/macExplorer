@@ -159,7 +159,7 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
         case .folderChanged:
             quickLook.bind(session.folder)
             folderDidChange()
-        case .historyChanged, .viewModeChanged, .viewStateChanged, .banner: break
+        case .historyChanged, .viewModeChanged, .viewStateChanged, .banner, .columnsChanged: break
         }
     }
 

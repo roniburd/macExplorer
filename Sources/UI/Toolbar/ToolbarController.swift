@@ -184,7 +184,7 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
             navigation.update()
         case .viewModeChanged:
             syncViewMode()
-        case .banner, .viewStateChanged:
+        case .banner, .viewStateChanged, .columnsChanged:
             break
         }
     }

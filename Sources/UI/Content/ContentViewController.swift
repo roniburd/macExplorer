@@ -153,6 +153,7 @@ final class ContentViewController: CommandHandlingViewController {
             if session.sizeSession != nil { details.reportVisibleRows() }
         case .historyChanged: updateCommandBar()
         case .banner(let text): showBanner(text)
+        case .columnsChanged: break       // the Columns view (P2-19) rebuilds its columns; `.folderChanged` rebinds
         }
     }
 

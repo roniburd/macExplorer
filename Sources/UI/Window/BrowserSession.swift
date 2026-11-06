@@ -6,6 +6,8 @@ enum SessionEvent {
     case folderChanged(FolderModel), historyChanged, viewModeChanged(ViewMode), banner(String?)
     /// The folder's view state (P2-08): after every navigation, user change, identity correction and reload.
     case viewStateChanged(FolderViewState)
+    /// The Columns view's chain changed (P2-18): columns opened or closed, or the active column moved.
+    case columnsChanged
 }
 
 /// Per-window navigation (§5.2): the current FolderModel, back/forward history and view mode. Navigating closes
@@ -40,6 +42,11 @@ final class BrowserSession {
     /// Folder sizes (P2-14): while the folder's "Calculate Folder Sizes" is on and the window shows Details, one
     /// session sizes the current model's folders. Stopped on navigation, a mode change away and the toggle off.
     private(set) var sizeSession: FolderSizeSession?
+    /// Columns mode (P2-18): the chain owns every column's model, and `folder` is the active column's (borrowed:
+    /// the session never closes it itself). The view state belongs to the column root. nil in other modes.
+    private(set) var columnChain: ColumnChain?
+    /// The session itself is rerooting the chain (navigation): its own bookkeeping runs, not `chainRerooted`.
+    private var rerootingChain = false
 
     init(environment: CoreEnvironment, initialURL: URL) {
         self.environment = environment
@@ -49,11 +56,12 @@ final class BrowserSession {
         let (state, locator) = viewStates.state(for: initialURL, fileID: nil)
         self.viewState = state
         self.locator = locator
-        self.viewMode = state.mode
+        self.viewMode = state.mode == .columns ? .details : state.mode   // Columns adopts the model below
         self.folder = environment.makeFolderModel(initialURL, query: Self.query(for: state, settings: environment.settings))
         self.history = NavigationHistory(current: initialURL)
         folder.setGrouping(Self.grouping(for: state))
         attach(folder)
+        if state.mode == .columns { setDisplayedMode(.columns) }
         updateFolderSizes()
         refineLocator()
         // Every window follows Settings.showHidden (⇧⌘. or the Settings window in any window, QA round 1).
@@ -130,6 +138,10 @@ final class BrowserSession {
         mutate(&next)
         guard next != viewState else { return }
         editedSinceNavigation = true
+        if columnChain != nil, next.mode != .columns {
+            leaveColumns(with: next)
+            return
+        }
         viewStates.save(next, for: locator)
         apply(next)
     }
@@ -137,7 +149,9 @@ final class BrowserSession {
     /// Re-reads this folder's state (after "Apply to All Folders" in another window or tab).
     func reloadViewState() {
         guard !closed else { return }
-        apply(viewStates.state(for: locator))
+        let state = viewStates.state(for: locator)
+        if columnChain != nil, state.mode != .columns { leaveColumns(with: state); return }
+        apply(state)
     }
 
     /// The window closed: the model stops reading and watching.
@@ -150,7 +164,7 @@ final class BrowserSession {
         settingsLoop = nil
         folderToken = nil
         stopFolderSizes()
-        folder.close()
+        closeFolderOrChain()
     }
 
     /// Selects `name` as soon as it is listed (first window opened "selecting:" a name).
@@ -164,8 +178,21 @@ final class BrowserSession {
     private func open(_ url: URL, selecting name: String?, folderID: UInt64? = nil) {
         folderToken = nil
         stopFolderSizes()
-        folder.close()
         let (state, locator) = viewStates.state(for: url, fileID: folderID)
+        if let chain = columnChain, state.mode == .columns {
+            // Columns stay: the chain gets a new root column (the factory reads the new root's sort).
+            viewState = state
+            self.locator = locator
+            editedSinceNavigation = false
+            pendingSelection = nil
+            rerootingChain = true
+            chain.reroot(url, selecting: name)    // onChange: `folder` becomes the new root column
+            rerootingChain = false
+            observers.send(.viewStateChanged(state))
+            refineLocator()
+            return
+        }
+        closeFolderOrChain()
         viewState = state
         self.locator = locator
         editedSinceNavigation = false
@@ -197,11 +224,11 @@ final class BrowserSession {
         refineTask?.cancel()
         let start = locator
         guard start.fileID == nil, start.volume?.capabilities.idStable == true else { refineTask = nil; return }
-        let model = folder
+        let model = stateModel
         let viewStates = self.viewStates
         refineTask = Task { [weak self] in
             let refined = await viewStates.refine(start)
-            guard let self, !Task.isCancelled, !self.closed, self.folder === model, self.locator == start,
+            guard let self, !Task.isCancelled, !self.closed, self.stateModel === model, self.locator == start,
                   refined != start else { return }
             self.locator = refined
             if self.editedSinceNavigation {
@@ -220,10 +247,11 @@ final class BrowserSession {
     private func apply(_ state: FolderViewState) {
         let old = viewState
         viewState = state
-        if state.sort != old.sort {
-            var query = folder.query
+        // Every column uses the root's sort; after leaving Columns the kept model may still have the root's.
+        for model in displayedModels where model.query.sort != state.sort {
+            var query = model.query
             query.sort = state.sort
-            folder.setQuery(query)
+            model.setQuery(query)
         }
         setDisplayedMode(state.mode)
         folder.setGrouping(Self.grouping(for: state))
@@ -249,20 +277,128 @@ final class BrowserSession {
         sizeSession = nil
     }
 
-    /// The only writer of `viewMode`. Until P2-19 `.columns` is shown as Details by ContentViewController.
+    /// The only writer of `viewMode`. Entering Columns adopts the current model as column 0 (nothing is re-read);
+    /// leaving Columns is `leaveColumns`, which retargets the view state first. Until P2-19 `.columns` is shown as
+    /// Details by ContentViewController.
     private func setDisplayedMode(_ mode: ViewMode) {
         guard mode != viewMode else { return }
+        if mode == .columns, columnChain == nil {
+            let chain = ColumnChain(adopting: folder) { [unowned self] url in
+                self.environment.makeFolderModel(url, query: Self.query(for: self.viewState, settings: self.environment.settings))
+            }
+            columnChain = chain
+            chainRoot = chain.models.first
+            chain.onChange = { [weak self] in self?.columnChainChanged() }
+            viewMode = mode
+            observers.send(.viewModeChanged(mode))
+            columnChainChanged()            // the adopted folder may already have opened column 1
+            return
+        }
+        if viewMode == .columns, let chain = columnChain {
+            chain.onChange = nil
+            folder = chain.detachActive()
+            columnChain = nil
+            chainRoot = nil
+            observeFolder(folder)
+            observers.send(.folderChanged(folder))
+        }
         viewMode = mode
         observers.send(.viewModeChanged(mode))
     }
 
+    /// Switching from Columns to another mode (Finder): the state is retargeted to the active column's folder,
+    /// that folder is shown in `requested.mode`, and that mode is saved for it. The column root keeps its own record
+    /// (still Columns). When the root column is active, `requested` is saved for it as it is.
+    private func leaveColumns(with requested: FolderViewState) {
+        guard let chain = columnChain else { return }
+        refineTask?.cancel()
+        refineTask = nil
+        var next = requested
+        if chain.activeModel !== chain.models.first {
+            let (state, locator) = viewStates.state(for: chain.activeModel.directory, fileID: nil)
+            viewState = state
+            self.locator = locator
+            next = state
+            next.mode = requested.mode
+        }
+        setDisplayedMode(next.mode)         // detaches the active model; the chain closes the others
+        viewStates.save(next, for: locator)
+        apply(next)
+        refineLocator()
+    }
+
+    /// The chain opened or closed columns, or the active column moved: `folder` follows the active column.
+    private func columnChainChanged() {
+        guard let chain = columnChain, !chain.models.isEmpty else { return }
+        if !rerootingChain, let root = chain.models.first, root !== chainRoot {
+            chainRerooted(root)
+        }
+        chainRoot = chain.models.first
+        if chain.activeModel !== folder {
+            folder = chain.activeModel      // borrowed: the chain owns and closes it
+            observeFolder(folder)
+            observers.send(.folderChanged(folder))
+        }
+        observers.send(.columnsChanged)
+    }
+
+    /// The chain rerooted itself (⌘↑ at the root column): the view state follows the new root and the move is
+    /// recorded in history. The window stays in Columns, so Columns is saved for the new root (otherwise the identity
+    /// probe or the next visit would switch the window back to the folder's own mode).
+    private func chainRerooted(_ root: FolderModel) {
+        let (state, locator) = viewStates.state(for: root.directory, fileID: nil)
+        var shown = state
+        shown.mode = .columns
+        let old = viewState
+        viewState = shown
+        self.locator = locator
+        editedSinceNavigation = false
+        if state.mode != .columns { viewStates.save(shown, for: locator) }
+        if shown.sort != old.sort {
+            for model in displayedModels where model.query.sort != shown.sort {
+                var query = model.query
+                query.sort = shown.sort
+                model.setQuery(query)
+            }
+        }
+        history.visit(root.directory)
+        observers.send(.historyChanged)
+        if shown != old { observers.send(.viewStateChanged(shown)) }
+        refineLocator()
+    }
+
+    /// The column root identity seen by the last `columnChainChanged` (detects the chain's own reroots).
+    private var chainRoot: FolderModel?
+
+    /// The model whose folder the view state belongs to: the column root in Columns, otherwise `folder`.
+    private var stateModel: FolderModel { columnChain?.models.first ?? folder }
+
+    /// Every model the window shows: all columns in Columns, otherwise `folder`.
+    private var displayedModels: [FolderModel] { columnChain?.models ?? [folder] }
+
+    /// Leaves nothing reading: the chain closes all its columns (including `folder`), otherwise `folder` closes.
+    private func closeFolderOrChain() {
+        if let chain = columnChain {
+            chain.onChange = nil
+            chain.close()
+            columnChain = nil
+            chainRoot = nil
+        }
+        folder.close()                      // idempotent when the chain already closed it
+    }
+
     private func attach(_ model: FolderModel) {
+        observeFolder(model)
+        model.start()
+        applyPendingSelection()
+    }
+
+    /// Routes `model`'s events to `handle` while it is `folder`.
+    private func observeFolder(_ model: FolderModel) {
         folderToken = model.observe { [weak self, weak model] event in
             guard let self, let model, model === self.folder else { return }
             self.handle(event)
         }
-        model.start()
-        applyPendingSelection()
     }
 
     private func handle(_ event: FolderEvent) {
@@ -302,10 +438,11 @@ final class BrowserSession {
     private func applyShowHiddenSetting() {
         guard !closed else { return }
         let wanted = environment.settings.showHidden
-        guard folder.query.showHidden != wanted else { return }
-        var query = folder.query
-        query.showHidden = wanted
-        folder.setQuery(query)
+        for model in displayedModels where model.query.showHidden != wanted {
+            var query = model.query
+            query.showHidden = wanted
+            model.setQuery(query)
+        }
     }
 
     private func showBanner(_ text: String?) {

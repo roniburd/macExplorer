@@ -67,6 +67,7 @@ final class BrowserSessionTests: XCTestCase {
             case .viewModeChanged: events.append("viewMode")
             case .viewStateChanged: events.append("viewState")
             case .banner(let text): events.append("banner:\(text ?? "nil")")
+            case .columnsChanged: events.append("columns")
             }
         }
         defer { token.cancel() }
