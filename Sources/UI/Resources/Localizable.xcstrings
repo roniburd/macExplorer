@@ -89,6 +89,17 @@
         }
       }
     },
+    "%@ is used by %@." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is used by %@."
+          }
+        }
+      }
+    },
     "%@ items" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -593,6 +604,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Access control list"
+          }
+        }
+      }
+    },
+    "Add a key or mouse button" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add a key or mouse button"
           }
         }
       }
@@ -2028,6 +2050,17 @@
         }
       }
     },
+    "Fixed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fixed"
+          }
+        }
+      }
+    },
     "Fix…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2754,6 +2787,17 @@
         }
       }
     },
+    "Menu shortcuts need ⌘ or ⌃, or an F key. ⌥ alone works only with keys that don't type." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Menu shortcuts need ⌘ or ⌃, or an F key. ⌥ alone works only with keys that don't type."
+          }
+        }
+      }
+    },
     "Merge" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2838,6 +2882,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mount point"
+          }
+        }
+      }
+    },
+    "Mouse %d" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mouse %d"
+          }
+        }
+      }
+    },
+    "Mouse buttons can only be added as extras." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mouse buttons can only be added as extras."
           }
         }
       }
@@ -3646,6 +3712,17 @@
         }
       }
     },
+    "Reassign" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reassign"
+          }
+        }
+      }
+    },
     "Redo" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3833,6 +3910,28 @@
         }
       }
     },
+    "Reserved by macOS or MacExplorer." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reserved by macOS or MacExplorer."
+          }
+        }
+      }
+    },
+    "Reset View for This Folder" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reset View for This Folder"
+          }
+        }
+      }
+    },
     "Restart Now" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3851,6 +3950,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Restart to Update"
+          }
+        }
+      }
+    },
+    "Restore All Defaults" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore All Defaults"
+          }
+        }
+      }
+    },
+    "Restore all shortcuts to their defaults?" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore all shortcuts to their defaults?"
+          }
+        }
+      }
+    },
+    "Restore default" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore default"
           }
         }
       }
@@ -3954,6 +4086,17 @@
         }
       }
     },
+    "Search commands…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search commands…"
+          }
+        }
+      }
+    },
     "Select All" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4027,6 +4170,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Share…"
+          }
+        }
+      }
+    },
+    "Shortcuts" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shortcuts"
+          }
+        }
+      }
+    },
+    "Shortcuts set in System Settings › Keyboard › App Shortcuts take precedence over menu shortcuts." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shortcuts set in System Settings › Keyboard › App Shortcuts take precedence over menu shortcuts."
           }
         }
       }
@@ -4159,6 +4324,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Show Tab Bar"
+          }
+        }
+      }
+    },
+    "Show all filename extensions" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show all filename extensions"
           }
         }
       }
@@ -4313,6 +4489,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sort By"
+          }
+        }
+      }
+    },
+    "Space" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Space"
           }
         }
       }
@@ -4691,6 +4878,17 @@
         }
       }
     },
+    "Type shortcut…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type shortcut…"
+          }
+        }
+      }
+    },
     "Undo" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4819,6 +5017,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Use Terminal"
+          }
+        }
+      }
+    },
+    "Use as Default for All Folders" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use as Default for All Folders"
           }
         }
       }

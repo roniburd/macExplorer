@@ -83,7 +83,7 @@ final class Phase2KeyMapTests: XCTestCase {
     }
 
     func testQuickLookIsNotATextCollision() {
-        XCTAssertFalse(KeyMap.collidesWithTextEditing.contains(.quickLook))
-        XCTAssertFalse(KeyMap.collidesWithTextEditing.contains(.nextTab))
+        XCTAssertFalse(KeyBindings.defaults.collidesWithTextEditing.contains(.quickLook))
+        XCTAssertFalse(KeyBindings.defaults.collidesWithTextEditing.contains(.nextTab))
     }
 }

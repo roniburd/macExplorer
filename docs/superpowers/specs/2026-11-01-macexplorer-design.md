@@ -244,7 +244,7 @@ Conditions: Apple Silicon, local APFS, warm cache. Network and File Provider vol
   - View ▾: Details, Icons (Small/Medium/Large), Density (Compact/Regular/Comfortable), Hidden items, Command bar.
   - ⋯: Copy as Path, Select All, Select None, Invert Selection, Open in Terminal, Reveal in Finder.
 - Items enable or disable based on the first responder (content or sidebar, §5.4), the selection and the clipboard. Delete becomes Delete Permanently while ⇧ is held.
-- Every command is also in the main menu bar, so all of them can be found through Help search. Each menu item's single primary key equivalent (§5.6) can be rebound in System Settings › Keyboard › App Shortcuts.
+- Every command is also in the main menu bar, so all of them can be found through Help search. Each menu item's single primary key equivalent (§5.6) can be rebound in Settings › Shortcuts (see `2026-11-05-key-bindings-design.md`); System Settings › Keyboard › App Shortcuts still overrides it.
 
 ### 5.4 Sidebar (single `NSOutlineView`, source-list style)
 
@@ -307,6 +307,8 @@ Both views share a `FolderModel`, selection semantics, keyboard handling, contex
   - On the right, an operations capsule (§6.2), visible while operations run.
 
 ### 5.6 Interaction
+
+The key table below is the default. Users can change it and bind extra mouse buttons (default Mouse 4 = Back, Mouse 5 = Forward) in Settings › Shortcuts; see `2026-11-05-key-bindings-design.md`.
 
 **Key map.** Explorer conventions. Windows Ctrl maps to ⌘ and Windows Alt to ⌥. Each command has one **primary** key, which is its menu key equivalent; **alternates** work only when the content view or sidebar has focus.
 
@@ -554,6 +556,7 @@ On Apple keyboards F2–F5 are media keys and need fn unless "Use F1, F2, etc. k
 | General | Startup folder (Home / last location / custom), Open folders in (same / new window), Return key (Open (default) / Rename), Terminal app |
 | View | Density, show hidden, command bar, auto-reveal in tree, date format (relative/absolute) |
 | Sidebar | Show/hide each default favorite, Locations items |
+| Shortcuts | Rebind each command's primary key, alternate keys and mouse buttons; see `2026-11-05-key-bindings-design.md` |
 | Advanced | Confirm before trash (off) / delete (on, locked on), show full path in window title |
 
 ## 8. Accessibility & localization
@@ -623,7 +626,7 @@ On Apple keyboards F2–F5 are media keys and need fn unless "Use F1, F2, etc. k
   - A folder can be dragged onto the tab bar to open it.
   - Tab-bar drop: via the New Tab toolbar button (native tab bar has no drop API).
   - Middle-click a folder (content, sidebar or tree), or ⌘-click a folder in the sidebar or tree, opens it in a new tab. ⌘-click in the content view keeps its toggle meaning.
-- **Per-folder view state** (mode, columns, sort, icon size): stored in our own store, keyed by volume UUID and fileID on `idStable` volumes and by path elsewhere (path is also the fallback). "Apply to all folders" resets it.
+- **Per-folder view state** (mode, columns, sort, icon size, density, Group by, folder sizes): stored in our own store, keyed by volume UUID and fileID on `idStable` volumes and by path elsewhere (path is also the fallback). Each record holds only the fields changed in that folder; the rest resolve from Finder's `.DS_Store`, the application-folder rule and the defaults (design 2026-11-05 §2, merged). "Use as Default for All Folders" changes the defaults, "Apply to all folders" also resets every folder, "Reset View for This Folder" resets one.
 - **Group by:** Kind, Date Modified (Today, Yesterday, Earlier this week…), Size buckets, Name first letter. Collapsible group headers, using `NSTableView` floating group rows.
 - **Quick Look:** Space toggles a `QLPreviewPanel` over the selection, and arrow keys move through the items.
 - **Folder sizes:**

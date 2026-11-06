@@ -12,9 +12,10 @@ public final class MacxApplication: NSApplication {
     public override var mainWindow: NSWindow? { MacxApplication.scenarioKeyWindow ?? super.mainWindow }
     public override var isActive: Bool { MacxApplication.scenarioKeyWindow != nil || super.isActive }
 
-    /// §5.6 routing 1–3: colliding primaries reach the field editor being edited (FieldEditorKeyRouting).
+    /// §5.6 routing 1–3: colliding primaries reach the field editor being edited (FieldEditorKeyRouting); bound extra mouse buttons run their command (MouseRouter).
     public override func sendEvent(_ event: NSEvent) {
         if event.type == .keyDown, FieldEditorKeyRouting.route(event, in: keyWindow) { return }
+        if event.type == .otherMouseDown, MouseRouter.handle(event, in: event.window ?? keyWindow) { return }
         if let pinned = MacxApplication.scenarioKeyWindow, event.type == .keyDown || event.type == .keyUp,
            super.keyWindow !== pinned {
             // Scenario runs only: AppKit routes keys to its own key window, which can be nil or another window

@@ -39,7 +39,8 @@ final class FileCommandController: CommandHandler {
         var state = CommandStateBuilder.state(for: target, session: session, environment: environment,
                                               needsFolderCount: effective == .openInNewTab)
         if effective == .quickLook { state.quickLookVisible = window?.quickLook.isVisible ?? false }
-        return CommandAvailability.isEnabled(effective, focus: focus, state: state)
+        return CommandAvailability.isEnabled(effective, focus: focus, state: state,
+                                             collidesWithTextEditing: ActiveKeyBindings.current.collidesWithTextEditing)
     }
 
     func perform(_ command: Command, target: CommandTarget, sender: Any?) {
@@ -84,7 +85,7 @@ final class FileCommandController: CommandHandler {
             performWindowCommand(effective, target: target)
         case .viewAsDetails, .viewAsIcons, .viewAsColumns, .iconSizeSmall, .iconSizeMedium, .iconSizeLarge, .densityCompact, .densityRegular,
              .densityComfortable, .toggleHidden, .toggleCommandBar, .sortByName, .sortByDateModified, .sortBySize, .sortByKind,
-             .sortByDateCreated, .sortAscending, .sortDescending:
+             .sortByDateCreated, .sortAscending, .sortDescending, .useViewAsDefault, .resetFolderView:
             performViewCommand(effective)
         case .groupByNone, .groupByKind, .groupByDateModified, .groupBySize, .groupByName:
             if let groupBy = MenuValidation.groupBy(for: effective) { session?.updateViewState { $0.groupBy = groupBy } }

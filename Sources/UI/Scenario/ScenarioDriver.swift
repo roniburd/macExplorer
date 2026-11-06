@@ -310,6 +310,7 @@ final class ScenarioDriver {
     private func perform(_ step: ScenarioFile.Step) async throws {
         refreshKeyWindow()
         if let key = step.key { try await sendKey(key) }
+        else if let mouse = step.mouse { try await sendMouse(mouse) }
         else if let text = step.type { try await typeText(text) }
         else if let path = step.menu { try performMenu(path: path); await fence() }
         else if let command = step.command { try performCommand(command); await fence() }
@@ -352,6 +353,17 @@ final class ScenarioDriver {
     private func sendKey(_ text: String) async throws {
         guard let chord = KeyChord(parsing: text), let key = KeySynth.spec(for: chord) else { throw DriverError("cannot synthesize '\(text)'") }
         try post([key])
+        await fence()
+    }
+
+    /// An extra mouse button press, delivered synchronously through MacxApplication.sendEvent (MouseRouter) to the
+    /// pinned key window, like a real click on it.
+    private func sendMouse(_ text: String) async throws {
+        guard let button = MouseButton(parsing: text),
+              let cg = CGEvent(mouseEventSource: nil, mouseType: .otherMouseDown, mouseCursorPosition: .zero,
+                               mouseButton: CGMouseButton(rawValue: UInt32(button.number))!),
+              let event = NSEvent(cgEvent: cg) else { throw DriverError("cannot synthesize '\(text)'") }
+        NSApp.sendEvent(event)
         await fence()
     }
 

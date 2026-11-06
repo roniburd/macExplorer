@@ -6,6 +6,7 @@ import MacxFS
 struct TypeSelectQuery: Equatable, Sendable {
     var text: String
     var cycle: Bool   // one repeated character: move to the next match after the cursor (Explorer)
+    var showAllExtensions = false   // matches against display names (design 2026-11-05 §1)
 }
 
 /// Prefix search on display rows, folded like the filter (§4.2 SortKeys rule 5). O(rows) with a bounded fold per
@@ -21,7 +22,7 @@ enum TypeSelectSearch {
         for step in 0..<count {
             let row = (begin + step) % count
             if let mapping, mapping.tableRow(forModelRow: row) == nil { continue }
-            let name = store.name(store.storageIndex(forRow: row))
+            let name = store.displayName(store.storageIndex(forRow: row), showAllExtensions: query.showAllExtensions)
             if SortKeys.searchFold(String(name.prefix(prefixLength))).starts(with: needle) { return row }
         }
         return nil
@@ -109,7 +110,8 @@ final class TypeSelect {
     func handle(_ characters: String, folder: FolderModel, list: FileListView, mapping: RowMapping? = nil) {
         if !buffer.isEmpty, !ownsSelection(of: folder) { reset() }   // the selection moved since: a new name
         takeSelection(of: folder)
-        let query = append(characters)
+        var query = append(characters)
+        query.showAllExtensions = folder.query.showAllExtensions
         generation += 1
         run(query, token: generation, folder: folder, list: list, mapping: mapping, attempt: 1)
     }

@@ -10,7 +10,7 @@ public final class CoreEnvironment {
     public let readers: DirectoryReaders
     public let volumes: Volumes
     public let settings: Settings
-    /// Per-folder view state (P2-07), in the same storage as `settings`; untouched folders follow its defaults.
+    /// Per-folder view choices (P2-07 + design 2026-11-05 §2), in the same storage as `settings`.
     public let folderViews: FolderViewStore
     public let changeBus: ChangeBus
     /// On-demand folder sizes (P2-13): shared cache, one session per folder view with sizes on.
@@ -72,9 +72,10 @@ public final class CoreEnvironment {
         self.volumes = volumes
         let readers = DirectoryReaders(lanes: lanes, mountTable: volumes.mountTableStore, types: .shared)
         self.readers = readers
-        let settings = Settings(storage: settingsStorage, home: home)
-        self.settings = settings
-        self.folderViews = FolderViewStore(storage: settingsStorage, defaults: { [unowned settings] in settings.defaultFolderViewState() })
+        self.settings = Settings(storage: settingsStorage, home: home)
+        // Imports the earlier path-keyed folder-views.json once (the file is left in place).
+        let legacyFolderViews = statePaths.folderViewsFile
+        self.folderViews = FolderViewStore(storage: settingsStorage, legacyJSON: { try? Data(contentsOf: legacyFolderViews) })
         let bus = ChangeBus()
         self.changeBus = bus
         self.folderSizes = FolderSizeService(lanes: lanes, mountTable: volumes.mountTableStore, changeBus: bus,

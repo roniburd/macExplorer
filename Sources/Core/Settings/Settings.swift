@@ -37,6 +37,8 @@ public final class Settings {
     public var showThumbnails: Bool { didSet { save(showThumbnails, Key.showThumbnails) } }
     /// Columns view column width (the last width the user set).
     public var columnWidth: Double { didSet { save(columnWidth, Key.columnWidth) } }
+    /// Show every filename extension, including ones Finder hides and ".app" (design 2026-11-05 §1).
+    public var showAllExtensions: Bool { didSet { save(showAllExtensions, Key.showAllExtensions) } }
     public var commandBarVisible: Bool { didSet { save(commandBarVisible, Key.commandBarVisible) } }
     public var autoRevealInTree: Bool { didSet { save(autoRevealInTree, Key.autoRevealInTree) } }
     public var dateStyle: DateStyle { didSet { save(dateStyle, Key.dateStyle) } }
@@ -54,6 +56,12 @@ public final class Settings {
     public var updateChannel: UpdateChannel { didSet { save(updateChannel, Key.updateChannel) } }
     public var checkForUpdatesAutomatically: Bool { didSet { save(checkForUpdatesAutomatically, Key.checkForUpdatesAutomatically) } }
     public var offerToReportCrashes: Bool { didSet { save(offerToReportCrashes, Key.offerToReportCrashes) } }
+    /// Settings › Shortcuts: the user's changes to the key table (sparse; `.empty` = all defaults). Not stored while empty.
+    public var keyBindingOverrides: KeyBindingOverrides {
+        didSet { save(keyBindingOverrides.commands.isEmpty ? nil : keyBindingOverrides, Key.keyBindings) }
+    }
+    /// The resolved table for `keyBindingOverrides`.
+    public var keyBindings: KeyBindings { KeyBindings(overrides: keyBindingOverrides) }
     /// `.ips` file names already offered (newest first, ≤ 20), so one crash prompts once.
     public private(set) var lastReportedCrashes: [String] { didSet { save(lastReportedCrashes, Key.lastReportedCrashes) } }
     public var onboardingCompleted: Bool { didSet { save(onboardingCompleted, Key.onboardingCompleted) } }
@@ -72,7 +80,10 @@ public final class Settings {
     private var recents: [String] { didSet { save(recents, Key.recentLocations) } }
     private var tccOutcomes: [ProtectedLocation: TCCOutcome] { didSet { save(tccOutcomes.map(TCCRecord.init), Key.tccOutcomes) } }
 
-    public init(storage: any SettingsStorage, home: URL = FileManager.default.homeDirectoryForCurrentUser) {
+    /// `diagnostic` receives one message per stored value that exists but can't be decoded (key-bindings spec §6);
+    /// it defaults to NSLog.
+    public init(storage: any SettingsStorage, home: URL = FileManager.default.homeDirectoryForCurrentUser,
+                diagnostic: (String) -> Void = { NSLog("%@", $0) }) {
         self.storage = storage
         self.home = home
         let stored = Self.load(Int.self, Self.schemaVersionKey, from: storage)
@@ -90,6 +101,7 @@ public final class Settings {
         groupBy = Self.load(GroupBy.self, Key.groupBy, from: storage) ?? .none
         showThumbnails = Self.load(Bool.self, Key.showThumbnails, from: storage) ?? true
         columnWidth = Self.load(Double.self, Key.columnWidth, from: storage) ?? 220
+        showAllExtensions = Self.load(Bool.self, Key.showAllExtensions, from: storage) ?? false
         commandBarVisible = Self.load(Bool.self, Key.commandBarVisible, from: storage) ?? true
         autoRevealInTree = Self.load(Bool.self, Key.autoRevealInTree, from: storage) ?? true
         dateStyle = Self.load(DateStyle.self, Key.dateStyle, from: storage) ?? .relative
@@ -112,6 +124,17 @@ public final class Settings {
         checkForUpdatesAutomatically = Self.load(Bool.self, Key.checkForUpdatesAutomatically, from: storage) ?? true
         offerToReportCrashes = Self.load(Bool.self, Key.offerToReportCrashes, from: storage) ?? true
         lastReportedCrashes = Array((Self.load([String].self, Key.lastReportedCrashes, from: storage) ?? []).prefix(Self.lastReportedCrashesLimit))
+        // Undecodable data: defaults are used and the data is left in place (assigning in init doesn't save).
+        if let data = storage.data(forKey: Key.keyBindings) {
+            do {
+                keyBindingOverrides = try JSONDecoder().decode(KeyBindingOverrides.self, from: data)
+            } catch {
+                keyBindingOverrides = .empty
+                diagnostic("MacExplorer: stored \"\(Key.keyBindings)\" could not be read; using default shortcuts (\(error))")
+            }
+        } else {
+            keyBindingOverrides = .empty
+        }
         if (stored ?? 0) < Self.schemaVersion {
             storage.set(try? JSONEncoder().encode(Self.schemaVersion), forKey: Self.schemaVersionKey)
         }
@@ -146,7 +169,7 @@ public final class Settings {
         return result
     }
 
-    public func viewQuery() -> ViewQuery { ViewQuery(sort: sort, showHidden: showHidden, filter: "") }
+    public func viewQuery() -> ViewQuery { ViewQuery(sort: sort, showHidden: showHidden, filter: "", showAllExtensions: showAllExtensions) }
 
     // MARK: Persistence
 
@@ -163,9 +186,10 @@ public final class Settings {
         static let toolbarFeedbackItemOffered = "toolbarFeedbackItemOffered"
         static let toolbarNewTabItemOffered = "toolbarNewTabItemOffered"
         static let recentLocations = "recentLocations", tccOutcomes = "tccOutcomes"
-        static let showCloudStorageInSidebar = "showCloudStorageInSidebar"
+        static let showCloudStorageInSidebar = "showCloudStorageInSidebar", showAllExtensions = "showAllExtensions"
         static let updateChannel = "updateChannel", checkForUpdatesAutomatically = "checkForUpdatesAutomatically"
         static let offerToReportCrashes = "offerToReportCrashes", lastReportedCrashes = "lastReportedCrashes"
+        static let keyBindings = "keyBindings"
     }
 
     private struct TCCRecord: Codable {
@@ -188,21 +212,24 @@ public final class Settings {
     }
 }
 
-// MARK: per-folder view defaults (P2-07)
+// MARK: per-folder view defaults (P2-07, design 2026-11-05 §2)
 
 extension Settings {
-    /// The view of every folder without its own record (`FolderViewStore`). Folder sizes are always per folder.
+    /// The last level of the per-folder resolution chain: what every folder shows for the fields neither it, Finder
+    /// nor the built-in rule set. Folder sizes are always per folder (off by default).
     public func defaultFolderViewState() -> FolderViewState {
-        FolderViewState(mode: viewMode, columns: columns, sort: sort, iconSize: iconSize, groupBy: groupBy,
-                        calculateFolderSizes: false)
+        FolderViewState(mode: viewMode, columns: columns, sort: sort, iconSize: iconSize, density: density,
+                        groupBy: groupBy, calculateFolderSizes: false)
     }
 
-    /// "Apply to All Folders": `state` becomes the default (mode, columns, sort, icon size, Group by; never sizes).
+    /// "Use as Default for All Folders" and "Apply to All Folders": `state` becomes the default (mode, columns, sort,
+    /// icon size, density, Group by; never sizes). Only changed fields are written.
     public func applyDefaultView(_ state: FolderViewState) {
-        viewMode = state.mode
-        columns = state.columns
-        sort = state.sort
-        iconSize = state.iconSize
-        groupBy = state.groupBy
+        if viewMode != state.mode { viewMode = state.mode }
+        if columns != state.columns { columns = state.columns }
+        if sort != state.sort { sort = state.sort }
+        if iconSize != state.iconSize { iconSize = state.iconSize }
+        if density != state.density { density = state.density }
+        if groupBy != state.groupBy { groupBy = state.groupBy }
     }
 }

@@ -6,7 +6,8 @@ import MacxFixtures
 
 @MainActor
 final class FolderViewStoreTests: XCTestCase {
-    let defaults = FolderViewState(mode: .details, columns: [], sort: .default, iconSize: .medium, groupBy: .none, calculateFolderSizes: false)
+    let defaults = FolderViewState(mode: .details, columns: [], sort: .default, iconSize: .medium, density: .regular,
+                                   groupBy: .none, calculateFolderSizes: false)
     var icons: FolderViewState { var s = defaults; s.mode = .icons; s.iconSize = .large; return s }
 
     func volume(id: String, idStable: Bool, caseSensitive: Bool = false) -> VolumeInfo {
@@ -19,8 +20,13 @@ final class FolderViewStoreTests: XCTestCase {
         FolderViewLocator(url: URL(filePath: path, directoryHint: .isDirectory), volume: v, fileID: id)
     }
     func makeStore(_ storage: InMemorySettingsStorage = InMemorySettingsStorage(), delay: Duration = .seconds(60),
+                   capacity: Int = FolderViewStore.capacity, legacyJSON: () -> Data? = { nil },
                    now: @escaping @MainActor () -> Date = { Date() }) -> FolderViewStore {
-        FolderViewStore(storage: storage, defaults: { [defaults] in defaults }, now: now, flushDelay: delay)
+        FolderViewStore(storage: storage, legacyJSON: legacyJSON, now: now, flushDelay: delay, capacity: capacity)
+    }
+    /// The folder's own record over `defaults` (the store's part of the resolution chain).
+    func state(_ store: FolderViewStore, _ l: FolderViewLocator) -> FolderViewState {
+        store.settings(for: l)?.resolved(over: defaults) ?? defaults
     }
 
     func testKeys() {
@@ -34,15 +40,15 @@ final class FolderViewStoreTests: XCTestCase {
         XCTAssertEqual(loc("/A/Cafe\u{0301}", nil, nil).pathKey, .path("/a/caf\u{00E9}"), "NFC + lowercased")
     }
 
-    func testDefaultsWithoutRecord() {
-        XCTAssertEqual(makeStore().state(for: loc("/a", nil, nil)), defaults)
+    func testNoSettingsWithoutRecord() {
+        XCTAssertNil(makeStore().settings(for: loc("/a", nil, nil)))
         XCTAssertFalse(makeStore().hasOverride(for: loc("/a", nil, nil)))
     }
 
     func testStateLookupDoesNotCreateRecords() {
         let store = makeStore()
-        _ = store.state(for: loc("/a", nil, nil))
-        _ = store.state(for: loc("/b", volume(id: "uuid:ABC", idStable: true), 3))
+        _ = state(store, loc("/a", nil, nil))
+        _ = state(store, loc("/b", volume(id: "uuid:ABC", idStable: true), 3))
         XCTAssertEqual(store.count, 0)
     }
 
@@ -50,16 +56,16 @@ final class FolderViewStoreTests: XCTestCase {
         let v = volume(id: "uuid:ABC", idStable: true)
         let store = makeStore()
         store.save(icons, for: loc("/u/Photos", v, 42))
-        XCTAssertEqual(store.state(for: loc("/u/Pictures", v, 42)), icons, "renamed folder keeps its view")
-        XCTAssertEqual(store.state(for: loc("/u/Pictures", v, nil)), icons, "path index now points at the new name")
-        XCTAssertEqual(store.state(for: loc("/u/Photos", v, nil)), defaults, "old name no longer indexed")
+        XCTAssertEqual(state(store, loc("/u/Pictures", v, 42)), icons, "renamed folder keeps its view")
+        XCTAssertEqual(state(store, loc("/u/Pictures", v, nil)), icons, "path index now points at the new name")
+        XCTAssertEqual(state(store, loc("/u/Photos", v, nil)), defaults, "old name no longer indexed")
     }
 
     func testNewFolderAtOldPathDoesNotInheritWhenItsIDIsKnown() {
         let v = volume(id: "uuid:ABC", idStable: true)
         let store = makeStore()
         store.save(icons, for: loc("/u/Photos", v, 42))
-        XCTAssertEqual(store.state(for: loc("/u/Photos", v, 99)), defaults)
+        XCTAssertEqual(state(store, loc("/u/Photos", v, 99)), defaults)
         XCTAssertFalse(store.hasOverride(for: loc("/u/Photos", v, 99)))
     }
 
@@ -72,11 +78,11 @@ final class FolderViewStoreTests: XCTestCase {
         store.save(icons, for: loc("/u/Photos", v, 42))
         var list = defaults; list.mode = .columns
         store.save(list, for: loc("/u/Photos", v, nil))                     // edit before the probe returns
-        XCTAssertEqual(store.state(for: loc("/u/Photos", v, nil)), list, "the edit shows at the path meanwhile")
-        XCTAssertEqual(store.state(for: loc("/u/Pictures", v, 42)), icons, "P keeps its own view")
+        XCTAssertEqual(state(store, loc("/u/Photos", v, nil)), list, "the edit shows at the path meanwhile")
+        XCTAssertEqual(state(store, loc("/u/Pictures", v, 42)), icons, "P keeps its own view")
         store.save(list, for: loc("/u/Photos", v, 99))                      // the probe returned
-        XCTAssertEqual(store.state(for: loc("/u/Photos", v, 99)), list)
-        XCTAssertEqual(store.state(for: loc("/u/Pictures", v, 42)), icons)
+        XCTAssertEqual(state(store, loc("/u/Photos", v, 99)), list)
+        XCTAssertEqual(state(store, loc("/u/Pictures", v, 42)), icons)
         XCTAssertEqual(store.count, 2, "the pending path record became the new folder's object record")
     }
 
@@ -87,31 +93,31 @@ final class FolderViewStoreTests: XCTestCase {
         store.save(icons, for: loc("/u/dev", v, 7))
         var list = defaults; list.mode = .columns
         store.save(list, for: loc("/u/dev", v, nil))
-        XCTAssertEqual(store.state(for: loc("/u/dev", v, nil)), list)
+        XCTAssertEqual(state(store, loc("/u/dev", v, nil)), list)
         store.save(list, for: loc("/u/dev", v, 7))
         XCTAssertEqual(store.count, 1)
-        XCTAssertEqual(store.state(for: loc("/u/dev", v, 7)), list)
-        XCTAssertEqual(store.state(for: loc("/u/dev", v, nil)), list)
+        XCTAssertEqual(state(store, loc("/u/dev", v, 7)), list)
+        XCTAssertEqual(state(store, loc("/u/dev", v, nil)), list)
     }
 
     func testPathKeyOnCaseInsensitiveNonStableVolume() {
         let exfat = volume(id: "uuid:USB", idStable: false, caseSensitive: false)
         let store = makeStore()
         store.save(icons, for: loc("/Volumes/USB/Photos", exfat, 5))
-        XCTAssertEqual(store.state(for: loc("/Volumes/USB/photos", exfat, nil)), icons)
-        XCTAssertEqual(store.state(for: loc("/Volumes/USB/Photos\u{0301}", exfat, nil)), defaults, "different name")
+        XCTAssertEqual(state(store, loc("/Volumes/USB/photos", exfat, nil)), icons)
+        XCTAssertEqual(state(store, loc("/Volumes/USB/Photos\u{0301}", exfat, nil)), defaults, "different name")
     }
 
     func testPathRecordMigratesToObjectKeyWithoutDuplicating() {
         let v = volume(id: "uuid:ABC", idStable: true)
         let store = makeStore()
         store.save(icons, for: loc("/u/dev", v, nil))
-        XCTAssertEqual(store.state(for: loc("/u/dev", v, 7)), icons, "object miss falls back to the path record")
+        XCTAssertEqual(state(store, loc("/u/dev", v, 7)), icons, "object miss falls back to the path record")
         var grouped = icons; grouped.groupBy = .kind
         store.save(grouped, for: loc("/u/dev", v, 7))
         XCTAssertEqual(store.count, 1)
-        XCTAssertEqual(store.state(for: loc("/u/dev", v, 7)), grouped)
-        XCTAssertEqual(store.state(for: loc("/u/dev", v, nil)), grouped)
+        XCTAssertEqual(state(store, loc("/u/dev", v, 7)), grouped)
+        XCTAssertEqual(state(store, loc("/u/dev", v, nil)), grouped)
     }
 
     func testPersistenceAndDebounce() async throws {
@@ -124,7 +130,7 @@ final class FolderViewStoreTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(20))
         }
         XCTAssertNotNil(storage.data(forKey: FolderViewStore.storageKey))
-        XCTAssertEqual(makeStore(storage).state(for: loc("/a", nil, nil)), icons)
+        XCTAssertEqual(state(makeStore(storage), loc("/a", nil, nil)), icons)
     }
 
     func testFlushWritesImmediatelyAndRoundTripsObjectKeys() {
@@ -136,8 +142,8 @@ final class FolderViewStoreTests: XCTestCase {
         XCTAssertNotNil(storage.data(forKey: FolderViewStore.storageKey))
         let reloaded = makeStore(storage)
         XCTAssertEqual(reloaded.count, 1)
-        XCTAssertEqual(reloaded.state(for: loc("/u/Photos", v, nil)), icons, "path index survives a reload")
-        XCTAssertEqual(reloaded.state(for: loc("/u/Renamed", v, 42)), icons, "object key survives a reload")
+        XCTAssertEqual(state(reloaded, loc("/u/Photos", v, nil)), icons, "path index survives a reload")
+        XCTAssertEqual(state(reloaded, loc("/u/Renamed", v, 42)), icons, "object key survives a reload")
     }
 
     /// Review fix (P2-07 perf): a full store stays small. Every record carries all 12 columns (as saved from the
@@ -156,7 +162,7 @@ final class FolderViewStoreTests: XCTestCase {
         XCTAssertLessThan(bytes, FolderViewStore.capacity * 200, "\(bytes) bytes for \(FolderViewStore.capacity) records")
         let reloaded = makeStore(storage)
         XCTAssertEqual(reloaded.count, FolderViewStore.capacity)
-        XCTAssertEqual(reloaded.state(for: loc("/Users/someone/Projects/folder-7", v, 1_000_007)), state)
+        XCTAssertEqual(self.state(reloaded, loc("/Users/someone/Projects/folder-7", v, 1_000_007)), state)
     }
 
     /// Review fix (P2-07 perf): the debounced write sorts and encodes off the main thread; only `storage.set` runs
@@ -172,7 +178,7 @@ final class FolderViewStoreTests: XCTestCase {
         XCTAssertNotNil(storage.data(forKey: FolderViewStore.storageKey))
         XCTAssertEqual(store.backgroundEncodeCount, 1)
         XCTAssertFalse(store.lastEncodeWasOnMain)
-        XCTAssertEqual(makeStore(storage).state(for: loc("/a", nil, nil)), icons)
+        XCTAssertEqual(state(makeStore(storage), loc("/a", nil, nil)), icons)
     }
 
     /// A background encode that finishes after a newer synchronous write (removeAll, termination flush) is dropped.
@@ -210,18 +216,28 @@ final class FolderViewStoreTests: XCTestCase {
         var records: [FolderViewStore.Record] = []
         var state = FolderViewState(mode: .columns, columns: Settings.defaultColumns,
                                     sort: MacxFS.SortDescriptor(field: .dateModified, ascending: false), iconSize: .small,
-                                    groupBy: .nameFirstLetter, calculateFolderSizes: true)
+                                    density: .compact, groupBy: .nameFirstLetter, calculateFolderSizes: true)
         for i in 0..<50 {
             state.columns[i % state.columns.count].width += 0.5
             state.columns[(i + 3) % state.columns.count].visible.toggle()
             let l = loc("/r/\(i)", i.isMultiple(of: 2) ? v : nil, i.isMultiple(of: 2) ? UInt64(i) : nil)
-            records.append(.init(key: l.primaryKey, pathKey: l.pathKey, state: i == 7 ? defaults : state,
+            // Partial records too: one field set, or only some (the merge's per-field records).
+            let settings: FolderViewSettings = switch i % 5 {
+            case 0: FolderViewSettings(groupBy: .kind)
+            case 1: FolderViewSettings(viewMode: .icons, density: .comfortable)
+            case 2: FolderViewSettings(sort: MacxFS.SortDescriptor(field: .tags, ascending: true), columns: state.columns)
+            case 3: FolderViewSettings(calculateFolderSizes: false)
+            default: (i == 9 ? defaults : state).settings
+            }
+            records.append(.init(key: l.primaryKey, pathKey: l.pathKey, settings: settings,
                                  lastUsed: Date(timeIntervalSinceReferenceDate: 1_000_000.25 - Double(i))))
         }
         let data = try XCTUnwrap(FolderViewStore.encode(records))
         XCTAssertEqual(FolderViewStore.decode(data), records)
-        XCTAssertNil(FolderViewStore.decode(Data("macx-folder-views\t2\nR\tbad\n".utf8)))
-        XCTAssertEqual(FolderViewStore.decode(Data("macx-folder-views\t2\n".utf8)), [])
+        XCTAssertNil(FolderViewStore.decode(Data("macx-folder-views\t3\nR\tbad\n".utf8)))
+        XCTAssertEqual(FolderViewStore.decode(Data("macx-folder-views\t3\n".utf8)), [])
+        XCTAssertNil(FolderViewStore.decode(Data("macx-folder-views\t3\nR\t\t\t\tname\t\t\t\t\t\t\t\t0\t/p\n".utf8)),
+                     "a sort field without its direction")
     }
 
     func testCorruptStorageIsEmptyStore() {
@@ -229,7 +245,7 @@ final class FolderViewStoreTests: XCTestCase {
         storage.set(Data("not json".utf8), forKey: FolderViewStore.storageKey)
         let store = makeStore(storage)
         XCTAssertEqual(store.count, 0)
-        XCTAssertEqual(store.state(for: loc("/a", nil, nil)), defaults)
+        XCTAssertEqual(state(store, loc("/a", nil, nil)), defaults)
     }
 
     func testEvictionKeepsMostRecentlyUsed() {
@@ -238,7 +254,7 @@ final class FolderViewStoreTests: XCTestCase {
         for i in 0...FolderViewStore.capacity {
             t = t.addingTimeInterval(1)
             store.save(icons, for: loc("/f\(i)", nil, nil))
-            if i == 1 { t = t.addingTimeInterval(1); _ = store.state(for: loc("/f0", nil, nil)) }   // /f0 used after /f1
+            if i == 1 { t = t.addingTimeInterval(1); _ = state(store, loc("/f0", nil, nil)) }   // /f0 used after /f1
         }
         XCTAssertEqual(store.count, FolderViewStore.capacity)
         XCTAssertFalse(store.hasOverride(for: loc("/f1", nil, nil)), "least recently used is evicted")
@@ -249,28 +265,26 @@ final class FolderViewStoreTests: XCTestCase {
     func testRemoveAllAndApplyDefaultView() {
         let storage = InMemorySettingsStorage()
         let settings = Settings(storage: storage)
-        let store = FolderViewStore(storage: storage, defaults: { settings.defaultFolderViewState() })
+        let store = FolderViewStore(storage: storage)
         store.save(icons, for: loc("/a", nil, nil))
         var applied = icons; applied.calculateFolderSizes = true; applied.groupBy = .size
         settings.applyDefaultView(applied)
         store.removeAll()
         XCTAssertEqual(store.count, 0)
         XCTAssertNotNil(storage.data(forKey: FolderViewStore.storageKey), "removeAll writes now")
-        XCTAssertEqual(FolderViewStore(storage: storage, defaults: { settings.defaultFolderViewState() }).count, 0)
-        let d = store.state(for: loc("/b", nil, nil))
+        XCTAssertEqual(FolderViewStore(storage: storage).count, 0)
+        let d = store.settings(for: loc("/b", nil, nil))?.resolved(over: settings.defaultFolderViewState()) ?? settings.defaultFolderViewState()
         XCTAssertEqual(d.mode, .icons); XCTAssertEqual(d.iconSize, .large); XCTAssertEqual(d.groupBy, .size)
         XCTAssertFalse(d.calculateFolderSizes, "folder sizes are always per folder, never a default")
         XCTAssertEqual(settings.viewMode, .icons)
-        XCTAssertEqual(store.state(for: loc("/a", nil, nil)), d, "untouched folders follow the new defaults")
+        XCTAssertNil(store.settings(for: loc("/a", nil, nil)), "every folder follows the new defaults")
     }
 
     func testSandboxedEnvironmentHasFolderViewsOverInMemoryStorage() throws {
         let sandbox = try Sandbox(); defer { sandbox.destroy() }
         let env = CoreEnvironment.sandboxed(root: sandbox.root)
         XCTAssertEqual(env.folderViews.count, 0)
-        XCTAssertEqual(env.folderViews.state(for: loc(sandbox.root.path, nil, nil)), env.settings.defaultFolderViewState())
-        env.settings.viewMode = .icons
-        XCTAssertEqual(env.folderViews.state(for: loc(sandbox.root.path, nil, nil)).mode, .icons, "defaults are live")
+        XCTAssertNil(env.folderViews.settings(for: loc(sandbox.root.path, nil, nil)))
     }
 
     func testIdentityProbeReadsDirectoryInode() async throws {
@@ -282,5 +296,159 @@ final class FolderViewStoreTests: XCTestCase {
         XCTAssertEqual(id, UInt64(st.st_ino))
         let missing = await FolderIdentityProbe.fileID(of: sandbox.url("missing"), lanes: lanes, volume: .unknown)
         XCTAssertNil(missing)
+    }
+    // MARK: per-field records (the merge with design 2026-11-05 §2)
+
+    func testUpdatePersistsOnlyChangedFieldsAndSurvivesReload() {
+        let storage = InMemorySettingsStorage()
+        let store = makeStore(storage)
+        store.update(loc("/tmp/macx-test/a", nil, nil)) { $0.iconSize = .large }
+        store.update(loc("/tmp/macx-test/a/", nil, nil)) { $0.viewMode = .icons }
+        store.flush()
+        let reloaded = makeStore(storage)
+        XCTAssertEqual(reloaded.settings(for: loc("/tmp/macx-test/a", nil, nil)), FolderViewSettings(viewMode: .icons, iconSize: .large))
+        XCTAssertNil(reloaded.settings(for: loc("/tmp/macx-test/b", nil, nil)))
+    }
+
+    func testEmptySettingsRemoveTheEntry() {
+        let store = makeStore()
+        store.update(loc("/a", nil, nil)) { $0.density = .compact }
+        store.update(loc("/a", nil, nil)) { $0.density = nil }
+        XCTAssertEqual(store.count, 0)
+    }
+
+    func testLeastRecentlyUsedEntriesAreEvicted() {
+        final class Clock { var t = 0.0 }
+        let clock = Clock()
+        let store = makeStore(capacity: 3, now: { Date(timeIntervalSince1970: clock.t) })
+        for name in ["a", "b", "c"] {
+            clock.t += 1
+            store.update(loc("/\(name)", nil, nil)) { $0.viewMode = .icons }
+        }
+        clock.t += 1
+        _ = store.settings(for: loc("/a", nil, nil))            // a is now the most recent
+        clock.t += 1
+        store.update(loc("/d", nil, nil)) { $0.viewMode = .icons }
+        XCTAssertEqual(store.count, 3)
+        XCTAssertNil(store.settings(for: loc("/b", nil, nil)))
+        XCTAssertNotNil(store.settings(for: loc("/a", nil, nil)))
+    }
+
+    /// An edit made while the identity probe was pending (a partial path record) is merged into the folder's object
+    /// record when the probe returns: the newer fields win, the object record's other fields stay.
+    func testAdoptMergesPendingPathEditIntoObjectRecord() {
+        let v = volume(id: "uuid:ABC", idStable: true)
+        let store = makeStore()
+        store.update(loc("/u/dev", v, 7)) { $0.viewMode = .icons; $0.iconSize = .large }
+        store.update(loc("/u/dev", v, nil)) { $0.iconSize = .small; $0.groupBy = .kind }
+        store.adopt(loc("/u/dev", v, 7))
+        XCTAssertEqual(store.count, 1)
+        XCTAssertEqual(store.settings(for: loc("/u/moved", v, 7)), FolderViewSettings(viewMode: .icons, iconSize: .small, groupBy: .kind))
+        store.adopt(loc("/u/dev", v, 7))      // nothing pending: no-op
+        XCTAssertEqual(store.count, 1)
+    }
+
+    func testRemoveForgetsTheFolderOnly() {
+        let v = volume(id: "uuid:ABC", idStable: true)
+        let store = makeStore()
+        store.update(loc("/u/a", v, 1)) { $0.viewMode = .icons }
+        store.update(loc("/u/b", v, 2)) { $0.viewMode = .icons }
+        store.remove(loc("/u/renamed-a", v, 1))
+        XCTAssertNil(store.settings(for: loc("/u/a", v, 1)))
+        XCTAssertNotNil(store.settings(for: loc("/u/b", v, 2)))
+        store.update(loc("/x", nil, nil)) { $0.groupBy = .size }
+        store.remove(loc("/X", nil, nil))     // case-insensitive path key
+        XCTAssertEqual(store.count, 1)
+    }
+
+    func testFinderViewsAreCachedPerPathAndNeverPersisted() {
+        let storage = InMemorySettingsStorage()
+        let store = makeStore(storage)
+        XCTAssertNil(store.finderView(for: URL(filePath: "/f")))
+        store.setFinderView(FolderViewSettings(viewMode: .icons), for: URL(filePath: "/f/", directoryHint: .isDirectory))
+        XCTAssertEqual(store.finderView(for: URL(filePath: "/f")), FolderViewSettings(viewMode: .icons))
+        store.flush()
+        XCTAssertNil(makeStore(storage).finderView(for: URL(filePath: "/f")))
+        XCTAssertEqual(makeStore(storage).count, 0)
+    }
+
+    /// Users of the path-keyed JSON store (`folder-views.json`) keep their views: imported once as path records
+    /// (the identity probe later moves each to its object key), written in the new format; the file is untouched.
+    func testImportsLegacyJSONOnceAsPathRecords() throws {
+        let json = Data("""
+        {"folders":{"/Users/u/Photos":{"lastUsed":100,"settings":{"iconSize":"large","viewMode":"icons"}},
+                    "/Users/u/Docs":{"lastUsed":200,"settings":{"sort":{"ascending":false,"field":"size"}}},
+                    "/Users/u/Empty":{"lastUsed":300,"settings":{}}},"version":1}
+        """.utf8)
+        let storage = InMemorySettingsStorage()
+        var reads = 0
+        let store = makeStore(storage, delay: .zero, legacyJSON: { reads += 1; return json })
+        XCTAssertEqual(reads, 1)
+        XCTAssertEqual(store.count, 2, "empty entries are dropped")
+        let v = volume(id: "uuid:ABC", idStable: true)
+        XCTAssertEqual(store.settings(for: loc("/Users/u/Photos", v, nil)), FolderViewSettings(viewMode: .icons, iconSize: .large))
+        XCTAssertEqual(store.settings(for: loc("/Users/u/Docs", nil, nil))?.sort, MacxFS.SortDescriptor(field: .size, ascending: false))
+        store.adopt(loc("/Users/u/Photos", v, 42))
+        XCTAssertEqual(store.settings(for: loc("/Users/u/Pictures", v, 42))?.viewMode, .icons, "now keyed by identity")
+        store.flush()
+        let again = makeStore(storage, legacyJSON: { reads += 1; return json })
+        XCTAssertEqual(reads, 1, "imported once: the new store exists now")
+        XCTAssertEqual(again.count, 2)
+    }
+
+    func testCorruptLegacyJSONIsIgnored() {
+        let store = makeStore(legacyJSON: { Data("{not json".utf8) })
+        XCTAssertEqual(store.count, 0)
+    }
+
+    /// Phase 2 development builds wrote full records in format 2 under "folderViews.v2": imported, then removed.
+    func testImportsVersion2Store() throws {
+        let storage = InMemorySettingsStorage()
+        let v2 = "macx-folder-views\t2\nC\tname:280.0:1\nR\tABC\t42\ticons\tsize\t0\tlarge\tkind\t1\t0\t1000.0\t/u/photos\n"
+        storage.set(Data(v2.utf8), forKey: "folderViews.v2")
+        let store = makeStore(storage)
+        let v = volume(id: "uuid:ABC", idStable: true)
+        XCTAssertEqual(store.settings(for: loc("/u/elsewhere", v, 42)),
+                       FolderViewSettings(viewMode: .icons, iconSize: .large, sort: MacxFS.SortDescriptor(field: .size, ascending: false),
+                                          columns: [ColumnSetting(id: .name, width: 280, visible: true)], groupBy: .kind,
+                                          calculateFolderSizes: true))
+        XCTAssertNil(storage.data(forKey: "folderViews.v2"))
+    }
+
+    // MARK: resolution chain
+
+    func testResolverOrder() {
+        let defaults = FolderViewState(mode: .details, columns: Settings.defaultColumns, sort: .default, iconSize: .medium,
+                                       density: .regular, groupBy: .none, calculateFolderSizes: false)
+        let finder = FolderViewSettings(viewMode: .details, iconSize: .small, sort: .init(field: .size, ascending: false))
+        let builtIn = FolderViewSettings(viewMode: .icons, iconSize: .large)
+        let stored = FolderViewSettings(iconSize: .large, groupBy: .kind)
+        let view = FolderViewResolver.resolve(stored: stored, finder: finder, builtIn: builtIn, defaults: defaults)
+        XCTAssertEqual(view.mode, .details)                              // Finder beats the built-in rule
+        XCTAssertEqual(view.iconSize, .large)                            // ours beats Finder
+        XCTAssertEqual(view.sort, .init(field: .size, ascending: false))
+        XCTAssertEqual(view.density, .regular)                           // nobody set it: global default
+        XCTAssertEqual(view.groupBy, .kind)
+        XCTAssertFalse(view.calculateFolderSizes)
+        let none = FolderViewResolver.resolve(stored: nil, finder: nil, builtIn: builtIn, defaults: defaults)
+        XCTAssertEqual(none.mode, .icons)
+        XCTAssertEqual(none.iconSize, .large)
+    }
+
+    func testBuiltInRuleCoversApplicationFolders() {
+        let home = URL(filePath: "/Users/someone", directoryHint: .isDirectory)
+        for path in ["/Applications", "/Applications/", "/System/Applications", "/Applications/Utilities", "/Users/someone/Applications"] {
+            XCTAssertEqual(FolderViewResolver.builtIn(for: URL(filePath: path), home: home).iconSize, .large, path)
+        }
+        XCTAssertTrue(FolderViewResolver.builtIn(for: URL(filePath: "/Users/someone/Documents"), home: home).isEmpty)
+    }
+
+    func testChangesFromAnotherStateAreTheDelta() {
+        var next = defaults
+        next.iconSize = .small
+        next.calculateFolderSizes = true
+        XCTAssertEqual(next.changes(from: defaults), FolderViewSettings(iconSize: .small, calculateFolderSizes: true))
+        XCTAssertTrue(defaults.changes(from: defaults).isEmpty)
+        XCTAssertEqual(defaults.settings.resolved(over: next), defaults)
     }
 }

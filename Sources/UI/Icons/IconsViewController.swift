@@ -555,7 +555,7 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
         let scale = Double(view.window?.backingScaleFactor ?? 2)
         let rowID = folder.identity(atRow: row)
         let points = self.points
-        item.configure(name: name, icon: context.icons.typeIcon(entry.typeIndex, points: points, scale: scale), points: points,
+        item.configure(name: folder.displayName(atRow: row), icon: context.icons.typeIcon(entry.typeIndex, points: points, scale: scale), points: points,
                        labelWidth: Double(layout.metrics.itemSize.width - 8), isCut: folder.isCut(row: row),
                        isSelected: folder.selection.rows.contains(row), emphasized: isEmphasized,
                        isDataless: entry.flags.contains(.dataless), rowID: rowID)

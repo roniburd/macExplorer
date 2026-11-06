@@ -150,6 +150,9 @@ public final class FolderModel {
     var deferredChanges: [LocalChange] = []
     var pendingSelect: [String] = []
     var pendingRename: String?
+    /// Localized stems by real name ("" = none); refresh() clears it. FolderModel+LocalizedNames.
+    var localizedNameCache: [String: String] = [:]
+    var localizedNamesTask: Task<Void, Never>?
 
     // Group by (FolderModel+Grouping, P2-09)
     public internal(set) var grouping: GroupBy = .none
@@ -244,6 +247,7 @@ public final class FolderModel {
         case .complete:
             if rereadInFlight && rereadStalled { abandonReread() }
             invalidateAllExtendedAttributes()       // F5 re-reads the visible rows' attributes too (P2-15)
+            localizedNameCache = [:]
             beginReread()
         case .loading, .partial: break
         case .error, .unresponsive, .waitingForPermission: retry()
@@ -267,6 +271,7 @@ public final class FolderModel {
         guard !closed else { return }
         closed = true
         readTask?.cancel()
+        localizedNamesTask?.cancel()
         pacerTask?.cancel()
         opTail?.cancel()
         stopLoadFeed()
@@ -291,7 +296,12 @@ public final class FolderModel {
 
     public var rowCount: Int { store.visibleCount }
     public func entry(atRow row: Int) -> Entry { store.entry(store.storageIndex(forRow: row)) }
+    /// The real file-system name (operations, rename, paths).
     public func name(atRow row: Int) -> String { store.name(store.storageIndex(forRow: row)) }
+    /// The name shown in lists (design 2026-11-05 §1): Finder-hidden extensions and localized names applied.
+    public func displayName(atRow row: Int) -> String {
+        store.displayName(store.storageIndex(forRow: row), showAllExtensions: query.showAllExtensions)
+    }
 
     public func url(atRow row: Int) -> URL {
         let kind = entry(atRow: row).kind
@@ -612,6 +622,7 @@ public final class FolderModel {
             publishReset()
             setState(.complete)
             if finished.revision != groupingRevision { regroup() }
+            scheduleLocalizedNames()
             startWatcher()
             flushDeferred()
             flushWatchBuffer()
@@ -646,6 +657,18 @@ public final class FolderModel {
         reconcileSelection(emitting: false)
         pruneAttributes(old: old, diff: result.diff)
         invalidateReloadedAttributes(result.diff.changes)
+        publishPatch(result.diff.changes, runs: result.runs)
+        if selection != before { emit(.selection(selection)) }
+        if result.groupRevision != groupingRevision { regroup() }
+        scheduleLocalizedNames()
+    }
+
+    /// Like applyPatch without re-scheduling localized names (a localized-name patch never adds candidates).
+    func applyLocalizedPatch(_ result: FolderWorker.PatchResult) {
+        let before = selection
+        store = result.store
+        keysTag = result.tag
+        reconcileSelection(emitting: false)
         publishPatch(result.diff.changes, runs: result.runs)
         if selection != before { emit(.selection(selection)) }
         if result.groupRevision != groupingRevision { regroup() }

@@ -54,7 +54,8 @@ final class ShellCommandHandler: CommandHandler {
             state.selectionCount = 1
             state.singleFolderSelected = true
         }
-        return CommandAvailability.isEnabled(command, focus: focus, state: state)
+        return CommandAvailability.isEnabled(command, focus: focus, state: state,
+                                             collidesWithTextEditing: ActiveKeyBindings.current.collidesWithTextEditing)
     }
 
     /// The focus a command target comes from (Tab cycle origin).

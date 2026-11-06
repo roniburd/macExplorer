@@ -2,23 +2,16 @@ import AppKit
 import Core
 
 /// §5.6 key routing 1–3: while a field editor (address bar, inline rename, search) is first responder, the primaries
-/// of `KeyMap.collidesWithTextEditing` (⌘↑, ⌘↓, ⌘⌫, ⌥⌘⌫, ⌘[, ⌘], F2, ⌘D) belong to the text. Disabling their menu
+/// in `KeyBindings.collidesWithTextEditing` (by default ⌘↑, ⌘↓, ⌘⌫, ⌥⌘⌫, ⌘[, ⌘], F2, ⌘D; see `KeyMap.textEditingChords`) belong to the text. Disabling their menu
 /// items (MenuValidation) is not enough: AppKit swallows the key equivalent of a disabled item, so the field editor
 /// never sees ⌘↑ or ⌘⌫ (verified in the P1-41 colliding-keys scenario). MacxApplication.sendEvent therefore hands
 /// those keys to the field editor before the menu is consulted.
 @MainActor enum FieldEditorKeyRouting {
-    private static let collidingPrimaries: [KeyChord: Command] = {
-        var table: [KeyChord: Command] = [:]
-        for command in KeyMap.collidesWithTextEditing {
-            if let chord = KeyMap.primary(command) { table[chord] = command }
-        }
-        return table
-    }()
-
-    /// The colliding command whose primary `event` is, if any.
+    /// The colliding command whose current primary `event` is, if any.
     static func collidingCommand(for event: NSEvent) -> Command? {
         guard event.type == .keyDown, let chord = KeyEventTranslator.chord(for: event) else { return nil }
-        return collidingPrimaries[chord]
+        let bindings = ActiveKeyBindings.current
+        return bindings.collidesWithTextEditing.first { bindings.primary($0) == chord }
     }
 
     /// Delivers a colliding primary straight to `window`'s field editor. Returns true if it did.

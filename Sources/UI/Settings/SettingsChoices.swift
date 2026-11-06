@@ -1,15 +1,16 @@
 import SwiftUI
 import Core
 
-/// The four §7 sections, in tab order.
+/// The §7 sections, in tab order.
 enum SettingsSection: String, CaseIterable, Hashable {
-    case general, view, sidebar, advanced
+    case general, view, sidebar, shortcuts, advanced
 
     var title: String {
         switch self {
         case .general: L10n.string("General")
         case .view: L10n.string("View")
         case .sidebar: L10n.string("Sidebar")
+        case .shortcuts: L10n.string("Shortcuts")
         case .advanced: L10n.string("Advanced")
         }
     }
@@ -19,6 +20,7 @@ enum SettingsSection: String, CaseIterable, Hashable {
         case .general: "gearshape"
         case .view: "eye"
         case .sidebar: "sidebar.left"
+        case .shortcuts: "keyboard"
         case .advanced: "slider.horizontal.3"
         }
     }

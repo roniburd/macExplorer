@@ -10,6 +10,19 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-01-macexplorer-design.md` §11 Phase 2 (source of truth), plus the sections it relies on: §4.2 (lanes, materialization policy, icon tiers), §4.3 (FolderModel, Watcher, Settings), §4.4 (budgets), §5.5 (content views), §5.6 (key routing, clipboard), §8 (accessibility). Phase 1 interface contract: `docs/superpowers/plans/2026-11-01-phase1-00-overview.md` §3. Research: `docs/research/explorer.md` §12, `docs/research/finder.md`, `docs/research/perf.md` §7.
 
+> **Merged with main's Finder-compatible folder views (2026-11-06).** The P2-07/P2-08 store and main's design
+> `docs/superpowers/specs/2026-11-05-finder-names-folder-views-design.md` §2 are one store and one set of commands:
+> `Sources/Core/FolderViews/` holds `FolderViewSettings` (per-field, every field optional), `FolderViewState` (resolved,
+> now with `density`), `FolderViewKey`/`FolderViewLocator`, `FolderViewStore`, `FolderIdentityProbe`, `DSStore` and
+> `FinderFolderView`. A folder's view resolves field by field from its own record → Finder's `.DS_Store` (read on a
+> lane under no-materialization, local volumes, once per launch) → Large Icons for application folders →
+> `Settings.defaultFolderViewState()`. Records keep Phase 2's identity keys (volume UUID + fileID on `idStable`
+> volumes, path fallback, rename/move tracking) but hold only the fields the user changed in that folder (mode,
+> columns, sort, icon size, density, Group by, folder sizes). The persisted form is format 3 (`folderViews.v3`, the
+> same compact text with empty = unset); format 2 and main's `folder-views.json` are imported once. Commands: "Use as
+> Default for All Folders" (defaults only), "Apply to All Folders…" (defaults + forget every folder's record, with
+> confirmation) and "Reset View for This Folder". The `folderViews.*` budgets are unchanged.
+
 **Prerequisite:** Phase 1 is complete: P1-42's "working" definition holds on the branch this plan starts from. Run it first (Task P2-00). Phase 2 task IDs are `P2-00` … `P2-20` and run in ID order; that order is a valid topological order of the dependency table at the end of this document.
 
 ## Global Constraints

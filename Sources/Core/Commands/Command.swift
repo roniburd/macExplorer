@@ -20,6 +20,7 @@ public enum Command: String, Sendable, Codable, CaseIterable {
     case viewAsDetails, viewAsIcons, iconSizeSmall, iconSizeMedium, iconSizeLarge
     case densityCompact, densityRegular, densityComfortable, toggleHidden, toggleCommandBar
     case sortByName, sortByDateModified, sortBySize, sortByKind, sortByDateCreated, sortAscending, sortDescending
+    case useViewAsDefault, resetFolderView
     // sidebar / volumes
     case eject, removeFromFavorites
     // escape: clear cut marks / cancel inline state
@@ -75,7 +76,7 @@ public enum Command: String, Sendable, Codable, CaseIterable {
              .newTab, .nextTab, .previousTab, .showTabBar, .showAllTabs, .moveTabToNewWindow, .mergeAllWindows,
              .openInNewTab, .quickLook, .viewAsColumns,
              .groupByNone, .groupByKind, .groupByDateModified, .groupBySize, .groupByName,
-             .toggleFolderSizes, .applyViewToAllFolders,
+             .toggleFolderSizes, .applyViewToAllFolders, .useViewAsDefault, .resetFolderView,
              .copyPathTilde, .copyPathFileURL, .copyName, .copyPathShellQuoted:
             false
         }

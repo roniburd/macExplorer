@@ -192,11 +192,6 @@ final class KeyMapTests: XCTestCase {
         }
     }
 
-    func testCollidingPrimaries() {
-        XCTAssertEqual(KeyMap.collidesWithTextEditing,
-                       [.open, .up, .moveToTrash, .deletePermanently, .back, .forward, .rename, .duplicate])
-    }
-
     // MARK: KeyDispatcher
 
     func testDispatchesAlternatesInContent() {

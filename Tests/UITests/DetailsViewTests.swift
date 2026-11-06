@@ -112,10 +112,11 @@ final class DetailsViewTests: XCTestCase {
         let h = try await ContentTestHarness.make(self)
         try h.file("a.txt")
         let (details, _) = try await makeDetails(h)
-        h.environment.settings.density = .compact
-        try await h.waitUntil("compact rows") { details.tableView.rowHeight == 20 }
-        h.environment.settings.density = .comfortable
-        try await h.waitUntil("comfortable rows") { details.tableView.rowHeight == 30 }
+        details.apply(columns: details.columns, sort: .default, density: .compact)     // the folder's view state
+        XCTAssertEqual(details.tableView.rowHeight, 20)
+        details.apply(columns: details.columns, sort: .default, density: .comfortable)
+        XCTAssertEqual(details.tableView.rowHeight, 30)
+        XCTAssertEqual(details.iconPoints, 20)
     }
 
     func testHeaderClickSortsAndReportsTheSort() async throws {

@@ -12,8 +12,17 @@ final class SettingsChoicesTests: XCTestCase {
         Settings(storage: InMemorySettingsStorage(), home: URL(filePath: "/tmp/macx-tests-home", directoryHint: .isDirectory))
     }
 
-    func testSectionsAreTheFourOfSpecSeven() {
-        XCTAssertEqual(SettingsSection.allCases.map(\.title), ["General", "View", "Sidebar", "Advanced"])
+    func testSectionsInTabOrder() {
+        XCTAssertEqual(SettingsSection.allCases.map(\.title), ["General", "View", "Sidebar", "Shortcuts", "Advanced"])
+        XCTAssertEqual(SettingsSection.shortcuts.symbolName, "keyboard")
+    }
+
+    func testShortcutsPageRenders() {
+        let s = settings()
+        let host = NSHostingView(rootView: ShortcutsSettingsView(settings: s))
+        host.frame = NSRect(x: 0, y: 0, width: 500, height: 520)
+        host.layoutSubtreeIfNeeded()
+        XCTAssertGreaterThan(host.fittingSize.height, 0)
     }
 
     func testStartupChoiceMirrorsTheSetting() {

@@ -1,0 +1,118 @@
+import XCTest
+@testable import UI
+import Core
+import MacxFS
+
+/// Per-folder views and display names in a window session (design 2026-11-05).
+@MainActor
+final class FolderViewSessionTests: XCTestCase {
+    private func makeSession(_ h: ShellHarness, _ relative: String = "") async throws -> BrowserSession {
+        let session = BrowserSession(environment: h.environment, initialURL: h.url(relative))
+        addTeardownBlock { @MainActor in session.close() }
+        try await h.waitUntil("initial folder complete") { session.folder.state == .complete }
+        return session
+    }
+
+    private func go(_ session: BrowserSession, _ h: ShellHarness, _ relative: String) async throws {
+        session.navigate(to: h.url(relative))
+        try await h.waitUntil("\(relative) complete") { session.folder.state == .complete }
+    }
+
+    func testViewChangesStayWithTheirFolder() async throws {
+        let h = try await ShellHarness.make(self)
+        try h.dir("a"); try h.dir("b")
+        let session = try await makeSession(h, "a")
+        session.updateViewState { $0.mode = .icons }
+        session.updateViewState { $0.iconSize = .large }
+        try await go(session, h, "b")
+        XCTAssertEqual(session.viewMode, .details)
+        XCTAssertEqual(session.viewState.iconSize, .medium)
+        try await go(session, h, "a")
+        XCTAssertEqual(session.viewMode, .icons)
+        XCTAssertEqual(session.viewState.iconSize, .large)
+        // Global defaults are untouched.
+        XCTAssertEqual(h.environment.settings.viewMode, .details)
+        XCTAssertEqual(h.environment.settings.iconSize, .medium)
+    }
+
+    func testSortIsPerFolder() async throws {
+        let h = try await ShellHarness.make(self)
+        try h.file("a/x.txt"); try h.dir("b")
+        let session = try await makeSession(h, "a")
+        let bySize = MacxFS.SortDescriptor(field: .size, ascending: false)
+        session.updateViewState { $0.sort = bySize }
+        XCTAssertEqual(session.folder.query.sort, bySize)
+        try await go(session, h, "b")
+        XCTAssertEqual(session.folder.query.sort, .default)
+        try await go(session, h, "a")
+        XCTAssertEqual(session.folder.query.sort, bySize)
+    }
+
+    func testResetFallsBackAndUseAsDefaultChangesEveryFolder() async throws {
+        let h = try await ShellHarness.make(self)
+        try h.dir("a"); try h.dir("b")
+        let session = try await makeSession(h, "a")
+        session.updateViewState { $0.density = .compact }
+        session.resetFolderView()
+        XCTAssertEqual(session.viewState.density, .regular)
+
+        session.updateViewState { $0.density = .comfortable }
+        session.useViewAsDefault()
+        XCTAssertEqual(h.environment.settings.density, .comfortable)
+        try await go(session, h, "b")
+        XCTAssertEqual(session.viewState.density, .comfortable)
+    }
+
+    /// The merge: Phase 2's fields are per folder too, and a folder's record holds only the fields changed there,
+    /// so the others keep following the defaults.
+    func testRecordsHoldOnlyChangedFieldsAndFollowDefaultsForTheRest() async throws {
+        let h = try await ShellHarness.make(self)
+        try h.dir("a"); try h.dir("b")
+        let session = try await makeSession(h, "a")
+        session.updateViewState { $0.groupBy = .kind }
+        let locator = session.locator
+        XCTAssertEqual(h.environment.folderViews.settings(for: locator), FolderViewSettings(groupBy: .kind))
+        h.environment.settings.iconSize = .small      // a new global default (Settings window, another window)
+        try await h.waitUntil("defaults followed") { session.viewState.iconSize == .small }
+        XCTAssertEqual(session.viewState.groupBy, .kind)
+        try await go(session, h, "b")
+        XCTAssertEqual(session.viewState.groupBy, .none)
+        XCTAssertEqual(session.viewState.iconSize, .small)
+    }
+
+    /// Finder's view of a folder (here already read this launch) applies to the fields the folder doesn't set itself;
+    /// "Reset View for This Folder" falls back to it, and Finder's column view opens as Columns.
+    func testFinderViewIsTheFallbackForFieldsTheFolderDoesNotSet() async throws {
+        let h = try await ShellHarness.make(self)
+        try h.dir("a/sub"); try h.dir("b")
+        h.environment.folderViews.setFinderView(FolderViewSettings(viewMode: .icons, iconSize: .small), for: h.url("a"))
+        h.environment.folderViews.setFinderView(FolderViewSettings(viewMode: .columns), for: h.url("b"))
+        let session = try await makeSession(h, "a")
+        XCTAssertEqual(session.viewMode, .icons)
+        XCTAssertEqual(session.viewState.iconSize, .small)
+        session.updateViewState { $0.iconSize = .large }
+        XCTAssertEqual(h.environment.folderViews.settings(for: session.locator), FolderViewSettings(iconSize: .large),
+                       "only the changed field is the folder's own")
+        session.resetFolderView()
+        XCTAssertEqual(session.viewState.iconSize, .small)
+        XCTAssertNil(h.environment.folderViews.settings(for: session.locator))
+        session.navigate(to: h.url("b"))
+        XCTAssertEqual(session.viewMode, .columns)
+        XCTAssertNotNil(session.columnChain)
+    }
+
+    func testAppBundlesShowWithoutTheirExtension() async throws {
+        let h = try await ShellHarness.make(self)
+        try h.file("Apps/Tool.app/Contents/Info.plist")
+        try h.file("Apps/readme.txt")
+        let session = try await makeSession(h, "Apps")
+        let names = (0..<session.folder.rowCount).map { session.folder.displayName(atRow: $0) }
+        XCTAssertEqual(Set(names), ["Tool", "readme.txt"])
+        XCTAssertTrue((0..<session.folder.rowCount).map { session.folder.name(atRow: $0) }.contains("Tool.app"))
+
+        h.environment.settings.showAllExtensions = true
+        try await h.waitUntil("extensions shown") { session.folder.query.showAllExtensions }
+        let shown = (0..<session.folder.rowCount).map { session.folder.displayName(atRow: $0) }
+        XCTAssertEqual(Set(shown), ["Tool.app", "readme.txt"])
+    }
+}

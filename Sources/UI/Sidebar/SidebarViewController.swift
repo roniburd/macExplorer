@@ -81,7 +81,8 @@ final class SidebarViewController: CommandHandlingViewController {
     /// as a sidebar target, so Tab leaves the sidebar and ⌘N/⌘W stay enabled.
     private func resolve(_ command: Command) -> (Command, CommandTarget)? {
         guard let effective = CommandAvailability.effectiveCommand(command, focus: focusContext),
-              CommandAvailability.isEnabled(effective, focus: focusContext, state: Self.focusOnlyState) else { return nil }
+              CommandAvailability.isEnabled(effective, focus: focusContext, state: Self.focusOnlyState,
+                                            collidesWithTextEditing: ActiveKeyBindings.current.collidesWithTextEditing) else { return nil }
         if let target = commandTarget { return (effective, target) }
         guard Self.rowIndependent.contains(effective) else { return nil }
         return (effective, .folder(session.folder.directory))
@@ -103,6 +104,7 @@ final class SidebarViewController: CommandHandlingViewController {
         .sortByName, .sortByDateModified, .sortBySize, .sortByKind, .sortByDateCreated, .sortAscending, .sortDescending,
         .viewAsColumns, .groupByNone, .groupByKind, .groupByDateModified, .groupBySize, .groupByName,
         .toggleFolderSizes, .applyViewToAllFolders,
+        .useViewAsDefault, .resetFolderView,
     ]
 
     // MARK: view

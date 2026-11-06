@@ -185,7 +185,12 @@ public enum Grouping {
         case .nameFirstLetter:
             var ascii = [Int32](repeating: -1, count: 128)
             var prefixes = PrefixTable()
+            let localized = store.hasLocalizedStems
             for (i, index) in sorted.enumerated() {
+                if localized, let stem = store.localizedStem(index) {   // the name shown (Finder localized names)
+                    assigned[i] = id(.letter(letterKey(stem)))
+                    continue
+                }
                 assigned[i] = store.withNameBytes(index) { bytes -> Int32 in
                     let start = bytes.firstIndex { $0 != UInt8(ascii: ".") } ?? bytes.endIndex
                     if start == bytes.endIndex { return id(.letter(.other)) }

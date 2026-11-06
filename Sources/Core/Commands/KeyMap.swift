@@ -1,7 +1,8 @@
 import Foundation
 
-/// The §5.6 key table. Each command has at most one primary (its menu key equivalent, rebindable in System Settings)
-/// and any number of alternates, which only the content views and sidebar handle (through `KeyDispatcher`).
+/// The §5.6 built-in key table (defaults; the user's changes live in Settings › Shortcuts, see KeyBindings).
+/// Each command has at most one primary (its menu key equivalent) and any number of alternates, which only the
+/// content views and sidebar handle (through `KeyDispatcher`).
 public enum KeyMap {
     /// Menu key equivalent (§5.6).
     public static func primary(_ command: Command) -> KeyChord? {
@@ -48,7 +49,7 @@ public enum KeyMap {
              // Quick Look's Space is a content-only alternate, so type-select and text fields keep it.
              .showTabBar, .moveTabToNewWindow, .mergeAllWindows, .openInNewTab, .quickLook,
              .groupByNone, .groupByKind, .groupByDateModified, .groupBySize, .groupByName,
-             .toggleFolderSizes, .applyViewToAllFolders,
+             .toggleFolderSizes, .applyViewToAllFolders, .useViewAsDefault, .resetFolderView,
              .copyPathTilde, .copyPathFileURL, .copyName, .copyPathShellQuoted:
             nil
         }
@@ -90,17 +91,46 @@ public enum KeyMap {
              .newTab, .nextTab, .previousTab, .showTabBar, .showAllTabs, .moveTabToNewWindow, .mergeAllWindows,
              .openInNewTab, .viewAsColumns,
              .groupByNone, .groupByKind, .groupByDateModified, .groupBySize, .groupByName,
-             .toggleFolderSizes, .applyViewToAllFolders,
+             .toggleFolderSizes, .applyViewToAllFolders, .useViewAsDefault, .resetFolderView,
              .copyPathTilde, .copyPathFileURL, .copyName, .copyPathShellQuoted:
             []
         }
     }
 
-    /// Commands whose primary is also a text-editing key: open(⌘↓), up(⌘↑), moveToTrash(⌘⌫),
-    /// deletePermanently(⌥⌘⌫), back(⌘[), forward(⌘]), rename(F2), duplicate(⌘D).
-    public static let collidesWithTextEditing: Set<Command> = [
-        .open, .up, .moveToTrash, .deletePermanently, .back, .forward, .rename, .duplicate,
-    ]
+    /// Default mouse buttons (AppKit buttonNumber): the "back" side button (3) and the "forward" one (4), as in browsers.
+    public static func defaultMouse(_ command: Command) -> [MouseButton] {
+        switch command {
+        case .back: [MouseButton(number: 3)!]
+        case .forward: [MouseButton(number: 4)!]
+        default: []
+        }
+    }
+
+    /// Chords a text field uses for editing. A command whose primary is one of these is disabled while a field editor
+    /// is active, so the key reaches the text (`KeyBindings.collidesWithTextEditing`). Two parts:
+    /// - the default primaries that collide (⌘↑, ⌘↓, ⌘⌫, ⌥⌘⌫, ⌘[, ⌘], F2, ⌘D);
+    /// - the Cocoa text system's movement and deletion keys a user might rebind onto: ⌥/⌘/⌃ + arrows (with or without
+    ///   ⇧), ⌥⌫, ⌥Del, ⌃⌫, ⌘Del, and the emacs-style ⌃ letters (with or without ⇧). None is a default primary.
+    public static let textEditingChords: Set<KeyChord> = {
+        var chords: Set<KeyChord> = [
+            KeyChord(.up, .command), KeyChord(.down, .command), KeyChord(.backspace, .command),
+            KeyChord(.backspace, [.option, .command]), KeyChord(.character("["), .command), KeyChord(.character("]"), .command),
+            KeyChord(.function(2)), KeyChord(.character("d"), .command),
+            KeyChord(.backspace, .option), KeyChord(.forwardDelete, .option), KeyChord(.backspace, .control),
+            KeyChord(.forwardDelete, .command),
+        ]
+        for modifier: KeyModifiers in [.option, .command, .control] {
+            for key: Key in [.left, .right, .up, .down] {
+                chords.insert(KeyChord(key, modifier))
+                chords.insert(KeyChord(key, modifier.union(.shift)))
+            }
+        }
+        for letter in ["a", "b", "d", "e", "f", "h", "k", "l", "n", "o", "p", "t", "v", "y"] {
+            chords.insert(KeyChord(.character(letter), .control))
+            chords.insert(KeyChord(.character(letter), [.control, .shift]))
+        }
+        return chords
+    }()
 
     private static func cmd(_ c: String) -> KeyChord { KeyChord(.character(c), .command) }
     private static func ctrl(_ c: String) -> KeyChord { KeyChord(.character(c), .control) }

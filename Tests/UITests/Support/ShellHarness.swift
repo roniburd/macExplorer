@@ -73,6 +73,7 @@ final class ShellHarness {
     static func names(_ folder: FolderModel) -> [String] { (0..<folder.rowCount).map { folder.name(atRow: $0) } }
 
     func tearDown() async {
+        ActiveKeyBindings.current = .defaults
         for controller in context.windows.windows { controller.close() }
         await environment.fileOps.waitUntilIdle()
         if let name = context.options.pasteboardName { NSPasteboard(name: NSPasteboard.Name(name)).releaseGlobally() }

@@ -62,9 +62,11 @@ under a fresh `${TMPDIR}/macx-fixtures-<UUID>` and prints its path.
   Tab" is also in the context menu. To open a dragged folder as a tab, drop it on the "＋" New Tab toolbar button
   (the P2-06 spike: AppKit's tab bar has no public drop target). Conflict and error dialogs of a job are shown on
   the tab that started it, which is selected first; if that tab has closed they go to the Operations panel.
-- **Per-folder views.** Each folder remembers its view mode, columns, sort, icon size, Group by and "Calculate
-  Folder Sizes" (keyed by volume UUID + file ID where IDs are stable, by path elsewhere). View › Apply to All
-  Folders… makes the current folder's view the default and forgets the per-folder ones.
+- **Per-folder views.** Each folder remembers its view mode, columns, sort, icon size, density, Group by and "Calculate
+  Folder Sizes" (keyed by volume UUID + file ID where IDs are stable, by path elsewhere). A folder you never changed
+  follows Finder's view of it, application folders open as large icons, and everything else follows the defaults.
+  View › Use as Default for All Folders makes the current view the default; View › Apply to All Folders… also forgets
+  every folder's own view; View › Reset View for This Folder forgets this one's.
 - **Group by** (View › Group By, or the context menu): Kind, Date Modified (Today, Yesterday, Earlier this Week…),
   Size buckets or Name (first letter), with floating group rows you can collapse. VoiceOver reads a group row as
   "<title>, <n> items, collapsed/expanded".

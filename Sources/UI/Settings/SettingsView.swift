@@ -1,7 +1,7 @@
 import SwiftUI
 import Core
 
-/// §7 Settings (SwiftUI in an NSWindow, SettingsWindowController): General, View, Sidebar, Advanced tabs. Every control
+/// §7 Settings (SwiftUI in an NSWindow, SettingsWindowController): General, View, Sidebar, Shortcuts, Advanced tabs. Every control
 /// writes straight to `Settings`, which persists the value and lets the open windows observe it.
 struct SettingsView: View {
     let settings: Core.Settings
@@ -33,6 +33,7 @@ struct SettingsView: View {
         case .general: GeneralSettingsView(settings: settings, panels: panels, updates: updates)
         case .view: ViewSettingsView(settings: settings)
         case .sidebar: SidebarSettingsView(settings: settings)
+        case .shortcuts: ShortcutsSettingsView(settings: settings)
         case .advanced: AdvancedSettingsView(settings: settings)
         }
     }

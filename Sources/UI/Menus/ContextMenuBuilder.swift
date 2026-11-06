@@ -82,6 +82,8 @@ enum ContextMenuTitles {
         case .groupByDateModified: L10n.string("Date Modified")
         case .groupBySize: L10n.string("Size")
         case .groupByName: L10n.string("Name")
+        case .useViewAsDefault: L10n.string("Use as Default for All Folders")
+        case .resetFolderView: L10n.string("Reset View for This Folder")
         default: command.rawValue
         }
     }
@@ -148,7 +150,8 @@ final class ContextMenuBuilder {
         menu.addItem(newSubmenu(folder: folder, handler: handler))
         menu.addItem(submenu(L10n.string("View"), id: "view", [.viewAsDetails, .viewAsIcons, .iconSizeSmall, .iconSizeMedium,
                                                               .iconSizeLarge, .densityCompact, .densityRegular, .densityComfortable,
-                                                              .toggleHidden, .toggleCommandBar], target, handler, folder, view))
+                                                              .toggleHidden, .toggleCommandBar, .useViewAsDefault, .resetFolderView],
+                             target, handler, folder, view))
         menu.addItem(submenu(L10n.string("Sort By"), id: "sortBy", [.sortByName, .sortByDateModified, .sortBySize, .sortByKind,
                                                                    .sortByDateCreated, .sortAscending, .sortDescending], target, handler, folder, view))
         menu.addItem(submenu(L10n.string("Group By"), id: "groupBy", [.groupByNone, .groupByKind, .groupByDateModified, .groupBySize,
@@ -198,9 +201,9 @@ final class ContextMenuBuilder {
         case .iconSizeSmall: view.iconSize == .small
         case .iconSizeMedium: view.iconSize == .medium
         case .iconSizeLarge: view.iconSize == .large
-        case .densityCompact: settings.density == .compact
-        case .densityRegular: settings.density == .regular
-        case .densityComfortable: settings.density == .comfortable
+        case .densityCompact: view.density == .compact
+        case .densityRegular: view.density == .regular
+        case .densityComfortable: view.density == .comfortable
         case .toggleHidden: folder.query.showHidden
         case .toggleCommandBar: settings.commandBarVisible
         case .sortByName: sort.field == .name

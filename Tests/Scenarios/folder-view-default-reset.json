@@ -1,0 +1,23 @@
+{"name": "folder-view-default-reset",
+ "fixture": {"files": ["A/x.txt", "B/y.txt"], "dirs": ["A", "B"]},
+ "steps": [
+  {"waitFor": {"rows": ["A", "B"], "state": "complete"}},
+  {"doubleClick": "A"},
+  {"waitFor": {"folder": "A", "viewMode": "details"}},
+  {"key": "cmd+2"},
+  {"expect": {"viewMode": "icons"}},
+  {"menu": ["View", "Reset View for This Folder"]},
+  {"waitFor": {"folder": "A", "viewMode": "details"}},
+  {"key": "cmd+2"},
+  {"menu": ["View", "Use as Default for All Folders"]},
+  {"key": "cmd+["},
+  {"waitFor": {"folder": "", "viewMode": "icons"}},
+  {"key": "cmd+1"},
+  {"waitFor": {"viewMode": "details"}},
+  {"doubleClick": "B"},
+  {"waitFor": {"folder": "B", "viewMode": "icons"}},
+  {"key": "cmd+["},
+  {"waitFor": {"folder": "", "viewMode": "details"}},
+  {"menu": ["View", "Reset View for This Folder"]},
+  {"waitFor": {"folder": "", "viewMode": "icons"}}
+ ]}

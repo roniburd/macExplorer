@@ -17,6 +17,11 @@ import Core
         // beeping.
         guard let command = command(for: event, focus: focus, returnKey: returnKey, typeSelectActive: typeSelectActive),
               !FileCommandController.pendingCommands.contains(command) else { return false }
+        return send(command, from: view)
+    }
+
+    /// Sends `command`'s action to the first responder up the chain from `view` that implements it, else nil-targeted.
+    @discardableResult static func send(_ command: Command, from view: NSView) -> Bool {
         let action = Selector(command.selectorName)
         if let responder = responder(for: action, from: view) {
             return NSApp.sendAction(action, to: responder, from: view)
@@ -24,7 +29,7 @@ import Core
         return NSApp.sendAction(action, to: nil, from: view)
     }
 
-    /// The command a keyDown maps to (nil: not an alternate here).
+    /// The command a keyDown maps to with the active bindings (nil: not an alternate here).
     static func command(for event: NSEvent, focus: FocusContext, returnKey: ReturnKeyBehavior,
                         typeSelectActive: Bool = false) -> Command? {
         guard event.type == .keyDown, let chord = KeyEventTranslator.chord(for: event) else { return nil }
@@ -34,9 +39,9 @@ import Core
     /// Pure: while type-select is collecting, plain Space is typed into its buffer (`my f` → "my file.txt"), not
     /// Quick Look (Review Focus 1).
     static func command(for chord: KeyChord, focus: FocusContext, returnKey: ReturnKeyBehavior,
-                        typeSelectActive: Bool) -> Command? {
+                        typeSelectActive: Bool, bindings: KeyBindings = ActiveKeyBindings.current) -> Command? {
         if typeSelectActive, chord.key == .space, chord.modifiers.isEmpty { return nil }
-        return KeyDispatcher(returnKey: returnKey).command(for: chord, in: focus)
+        return KeyDispatcher(returnKey: returnKey, bindings: bindings).command(for: chord, in: focus)
     }
 
     private static func responder(for action: Selector, from view: NSView) -> NSResponder? {

@@ -2,7 +2,7 @@ import Core
 import Foundation
 
 /// §3.14 schema (field names and types exactly as in the contract) plus additive optional fields
-/// (Contract note C6): Fixture.modes, Step.command, Step.answerAlert, Expectation.rowCount/editingAddress/
+/// (Contract note C6): Fixture.modes, Step.command, Step.answerAlert, Step.mouse, Expectation.rowCount/editingAddress/
 /// viewMode/sheetPresent/propertiesWindows/windowCount/fileSizes. Phase 2 (plan §2.4, P2-03) adds the fixture
 /// metadata fields, the middleClick/selectTab/fsWrite/fsTags actions, prefixed click targets and the view/tab
 /// expectations.
@@ -52,10 +52,11 @@ struct ScenarioFile: Codable {
         var selectTab: Int?                   // tab index in the key window's tab group
         var fsWrite: FSWrite?                 // {path, bytes}: writes inside --root (guarded), simulating another app
         var fsTags: FSTags?                   // {path, tags}: rewrites the tags xattr inside --root (guarded)
+        var mouse: String?                    // additive: "mouse4" = buttonNumber 3, via MacxApplication.sendEvent
 
         var actions: [String] {
             let named: [(String, Bool)] = [
-                ("key", key != nil), ("type", type != nil), ("menu", menu != nil), ("command", command != nil),
+                ("key", key != nil), ("mouse", mouse != nil), ("type", type != nil), ("menu", menu != nil), ("command", command != nil),
                 ("click", click != nil), ("doubleClick", doubleClick != nil), ("rightClick", rightClick != nil),
                 ("chooseMenuItem", chooseMenuItem != nil), ("drop", drop != nil), ("answerConflict", answerConflict != nil),
                 ("answerAlert", answerAlert != nil), ("waitFor", waitFor != nil), ("expect", expect != nil), ("sleepMs", sleepMs != nil),
@@ -128,6 +129,7 @@ struct ScenarioFile: Codable {
         case badTarget(step: Int, String)
         case badExpectation(step: Int, String)
         case badSize(step: Int, Int)
+        case badMouse(step: Int, String)
         var description: String {
             switch self {
             case .actionCount(let s, let a): "step \(s): exactly one action required, found \(a)"
@@ -143,6 +145,7 @@ struct ScenarioFile: Codable {
             case .badTarget(let s, let t): "step \(s): unsupported click target '\(t)' (prefixed targets: tree:<path in root>, group:, header:; doubleClick takes row names only)"
             case .badExpectation(let s, let what): "step \(s): \(what)"
             case .badSize(let s, let n): "step \(s): fsWrite bytes \(n) must be in 0...\(ScenarioFile.maxWriteBytes)"
+            case .badMouse(let s, let m): "step \(s): mouse button '\(m)' must be mouse4…mouse9"
             }
         }
     }
@@ -158,6 +161,7 @@ struct ScenarioFile: Codable {
             let actions = step.actions
             guard actions.count == 1 else { throw .actionCount(step: index, actions: actions) }
             if let key = step.key, KeyChord(parsing: key).flatMap(KeySynth.spec(for:)) == nil { throw .badKey(step: index, key) }
+            if let mouse = step.mouse, MouseButton(parsing: mouse) == nil { throw .badMouse(step: index, mouse) }
             if let action = step.answerConflict, ConflictAction(rawValue: action) == nil { throw .badConflictAction(step: index, action) }
             if let choice = step.drop?.choose, !Self.dropChoices.contains(choice) { throw .badDropChoice(step: index, choice) }
             if let command = step.command, Command(rawValue: command) == nil { throw .badCommand(step: index, command) }

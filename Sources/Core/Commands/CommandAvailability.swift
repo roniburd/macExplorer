@@ -48,12 +48,14 @@ public enum CommandAvailability {
     ///
     /// `.content` with no selection means "the current folder" (Properties, Open in Terminal, Reveal in Finder still
     /// work). Sidebar foci act on the focused row; `selectionCount` is 1 when that row has a usable target.
-    /// `.fieldEditor` disables the commands in `KeyMap.collidesWithTextEditing` so their keys reach the text field;
-    /// the standard edit actions stay enabled there because the field editor validates them itself.
-    public static func isEnabled(_ command: Command, focus: FocusContext, state: CommandState) -> Bool {
+    /// `.fieldEditor` disables the commands in `collidesWithTextEditing` (pass `KeyBindings.collidesWithTextEditing`
+    /// for the bindings in use) so their keys reach the text field; the standard edit actions stay enabled there
+    /// because the field editor validates them itself.
+    public static func isEnabled(_ command: Command, focus: FocusContext, state: CommandState,
+                                 collidesWithTextEditing: Set<Command> = KeyBindings.defaults.collidesWithTextEditing) -> Bool {
         let section = Section(focus)
         if section == .fieldEditor {
-            if KeyMap.collidesWithTextEditing.contains(command) { return false }
+            if collidesWithTextEditing.contains(command) { return false }
             if fieldEditorOwned.contains(command) { return true }
         }
         if section.isSidebarPointer, sidebarPointerDisabled.contains(command) { return false }
@@ -83,7 +85,7 @@ public enum CommandAvailability {
              .newWindow, .closeWindow, .showOperations,
              .viewAsDetails, .viewAsIcons, .iconSizeSmall, .iconSizeMedium, .iconSizeLarge,
              .densityCompact, .densityRegular, .densityComfortable, .toggleHidden, .toggleCommandBar,
-             .sortByName, .sortByDateModified, .sortBySize, .sortByKind, .sortByDateCreated, .sortAscending, .sortDescending,
+             .sortByName, .sortByDateModified, .sortBySize, .sortByKind, .sortByDateCreated, .sortAscending, .sortDescending, .useViewAsDefault, .resetFolderView,
              .cancelOperation:
             return true
         case .eject: return section == .locations && state.targetIsEjectable

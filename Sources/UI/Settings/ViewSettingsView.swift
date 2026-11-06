@@ -12,6 +12,7 @@ struct ViewSettingsView: View {
             }
             Toggle(L10n.string("Show hidden files and folders"), isOn: $settings.showHidden)
             Toggle(L10n.string("Show thumbnails"), isOn: $settings.showThumbnails)
+            Toggle(L10n.string("Show all filename extensions"), isOn: $settings.showAllExtensions)
             Toggle(L10n.string("Show the command bar"), isOn: $settings.commandBarVisible)
             Toggle(L10n.string("Reveal the current folder in the tree"), isOn: $settings.autoRevealInTree)
             Picker(L10n.string("Dates:"), selection: $settings.dateStyle) {

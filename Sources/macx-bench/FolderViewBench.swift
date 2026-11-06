@@ -2,8 +2,8 @@ import Foundation
 import Core
 import MacxFS
 
-/// P2-07 review fix: the per-folder view store at `FolderViewStore.capacity` records, every one carrying all 12
-/// columns. Measures main-actor work only (no file system): launch decode, the synchronous flush (termination and
+/// P2-07 review fix: the per-folder view store at `FolderViewStore.capacity` records, every one carrying every field
+/// (the worst case of the per-field records) with all 12 columns. Measures main-actor work only (no file system): launch decode, the synchronous flush (termination and
 /// "Apply to All Folders"), and one save into a full store (eviction included).
 @MainActor
 enum FolderViewBench {
@@ -22,10 +22,9 @@ enum FolderViewBench {
                               volume: volume, fileID: UInt64(10_000_000 + i))
         }
         var state = FolderViewState(mode: .icons, columns: Settings.defaultColumns, sort: .default, iconSize: .large,
-                                    groupBy: .kind, calculateFolderSizes: false)
-        let defaults = state
+                                    density: .regular, groupBy: .kind, calculateFolderSizes: false)
         let storage = InMemorySettingsStorage()
-        let full = FolderViewStore(storage: storage, defaults: { defaults }, flushDelay: .seconds(3_600))
+        let full = FolderViewStore(storage: storage, flushDelay: .seconds(3_600))
         for i in 0..<n {
             state.columns[i % state.columns.count].width += Double(i % 3)   // a few distinct layouts, as in use
             full.save(state, for: locator(i))
@@ -41,7 +40,7 @@ enum FolderViewBench {
         if wants("folderViews.load") {
             let samples = try await Stats.sample(warmups: options.warmups, iterations: options.iterations) {
                 var loaded = 0
-                let t = ms { loaded = FolderViewStore(storage: storage, defaults: { defaults }).count }
+                let t = ms { loaded = FolderViewStore(storage: storage).count }
                 guard loaded == n else { throw BenchFailure.check("folder-view store reload (\(loaded) of \(n) records)") }
                 return t
             }

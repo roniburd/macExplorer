@@ -189,11 +189,14 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     var rightDownEvent: NSEvent?
 
     var focusView: NSView { tableView }
-    var iconPoints: Double { settings.density == .comfortable ? 20 : 16 }
+    var iconPoints: Double { density == .comfortable ? 20 : 16 }
     private var settings: Settings { context.environment.settings }
+    /// The folder's row density (per folder, design 2026-11-05 §2), set by `apply(columns:sort:density:)`.
+    private(set) var density: Density
 
     init(context: UIContext) {
         self.context = context
+        self.density = context.environment.settings.density
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -235,10 +238,8 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
         applyDensity()
         settingsLoop = ObservationLoop { [weak self] in
             guard let self else { return }
-            _ = self.settings.density
             _ = self.settings.dateStyle
         } onChange: { [weak self] in
-            self?.applyDensity()
             self?.reloadVisibleRows()
         }
     }
@@ -702,14 +703,20 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     }
 
     /// The folder's view state (P2-08): its columns (rebuilt only when they differ from what the table shows, so a
-    /// resize in progress is never interrupted) and the sort indicator.
-    func apply(columns new: [ColumnSetting], sort: MacxFS.SortDescriptor) {
+    /// resize in progress is never interrupted), the sort indicator and the row density.
+    func apply(columns new: [ColumnSetting], sort: MacxFS.SortDescriptor, density newDensity: Density? = nil) {
         let normalized = DetailsColumns.normalized(new)
         if normalized != columns {
             columns = normalized
             if isViewLoaded { rebuildColumns() }
         }
         if isViewLoaded { updateSortIndicator(sort) }
+        if let newDensity, newDensity != density {
+            density = newDensity
+            guard isViewLoaded else { return }
+            applyDensity()
+            reloadVisibleRows()      // icon points follow the density
+        }
     }
 
     @objc func toggleColumn(_ sender: NSMenuItem) {
@@ -787,9 +794,10 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
         if id == .name {
             let cell = tableView.makeView(withIdentifier: NameCellView.reuseID, owner: nil) as? NameCellView ?? NameCellView()
             let name = folder.name(atRow: row)
+            let shown = folder.displayName(atRow: row)
             let scale = Double(view.window?.backingScaleFactor ?? 2)
             let rowID = folder.identity(atRow: row)
-            cell.configure(name: name, icon: context.icons.typeIcon(entry.typeIndex, points: iconPoints, scale: scale),
+            cell.configure(name: shown, icon: context.icons.typeIcon(entry.typeIndex, points: iconPoints, scale: scale),
                            iconPoints: iconPoints, isCut: isCut, isDataless: entry.flags.contains(.dataless), rowID: rowID)
             requestFileIcon(entry: entry, name: name, row: row, rowID: rowID, cell: cell, scale: scale)
             return cell
@@ -846,7 +854,7 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
         guard let folder else { return "" }
         let entry = folder.entry(atRow: row)
         switch id {
-        case .name: return folder.name(atRow: row)
+        case .name: return folder.displayName(atRow: row)
         case .dateModified: return Formatters.date(nanoseconds: entry.mtime, style: settings.dateStyle)
         case .dateCreated: return Formatters.date(nanoseconds: entry.ctime, style: settings.dateStyle)
         case .size:
@@ -873,7 +881,7 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     }
 
     private func applyDensity() {
-        tableView.rowHeight = settings.density.rowHeight
+        tableView.rowHeight = density.rowHeight
     }
 
     func reloadVisibleRows() {

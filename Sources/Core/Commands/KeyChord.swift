@@ -118,3 +118,19 @@ public struct KeyChord: Hashable, Sendable, CustomStringConvertible {
         }
     }
 }
+
+/// Stored as the canonical text form ("opt+cmd+delete").
+extension KeyChord: Codable {
+    public init(from decoder: any Decoder) throws {
+        let text = try decoder.singleValueContainer().decode(String.self)
+        guard let chord = KeyChord(parsing: text) else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "bad key chord '\(text)'"))
+        }
+        self = chord
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(description)
+    }
+}

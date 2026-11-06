@@ -31,9 +31,11 @@ extension FileCommandController {
         case .iconSizeSmall: setIconSize(.small)
         case .iconSizeMedium: setIconSize(.medium)
         case .iconSizeLarge: setIconSize(.large)
-        case .densityCompact: settings.density = .compact
-        case .densityRegular: settings.density = .regular
-        case .densityComfortable: settings.density = .comfortable
+        case .densityCompact: session.updateViewState { $0.density = .compact }
+        case .densityRegular: session.updateViewState { $0.density = .regular }
+        case .densityComfortable: session.updateViewState { $0.density = .comfortable }
+        case .useViewAsDefault: session.useViewAsDefault()
+        case .resetFolderView: session.resetFolderView()
         case .toggleHidden:
             // Flip what this window shows; every session (this one included) follows the setting.
             let show = !session.folder.query.showHidden

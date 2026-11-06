@@ -176,7 +176,7 @@ final class FolderViewCoordinatorTests: XCTestCase {
         XCTAssertEqual(session.viewMode, .details)
         h.environment.settings.applyDefaultView(FolderViewState(
             mode: .icons, columns: h.environment.settings.columns, sort: MacxFS.SortDescriptor(field: .kind, ascending: true),
-            iconSize: .small, groupBy: .none, calculateFolderSizes: false))
+            iconSize: .small, density: .regular, groupBy: .none, calculateFolderSizes: false))
         session.reloadViewState()
         XCTAssertEqual(session.viewMode, .icons)
         XCTAssertEqual(session.folder.query.sort.field, .kind)

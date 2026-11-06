@@ -17,19 +17,14 @@ public enum FocusContext: Sendable, Hashable {
 /// Maps alternate keys (§5.6) to commands for the content views' and sidebar's `keyDown`.
 public struct KeyDispatcher: Sendable {
     private let returnKey: ReturnKeyBehavior
-    private static let table: [KeyChord: Command] = {
-        var table: [KeyChord: Command] = [:]
-        for command in Command.allCases {
-            for chord in KeyMap.alternates(command) { table[chord] = command }
-        }
-        return table
-    }()
+    private let bindings: KeyBindings
 
-    public init(returnKey: ReturnKeyBehavior) {
+    public init(returnKey: ReturnKeyBehavior, bindings: KeyBindings = .defaults) {
         self.returnKey = returnKey
+        self.bindings = bindings
     }
 
-    /// Alternates only (Return/⌥Return, Del/⇧Del, ⌃X/⌃C/⌃V/⌃Z/⌃A, ⌘Y, ⌫, ⌥←/⌥→/⌥↑, ⌥D, F4, F3, F5, ⌘⇧R,
+    /// The current alternates only (defaults: Return/⌥Return, Del/⇧Del, ⌃X/⌃C/⌃V/⌃Z/⌃A, ⌘Y, ⌫, ⌥←/⌥→/⌥↑, ⌥D, F4, F3, F5, ⌘⇧R,
     /// Tab/⇧Tab, Esc, Space). Always nil for .fieldEditor and .addressBar.
     /// Space (Quick Look) is content-only. Any ⌃Tab chord is nil in every focus: it is the Show Next/Previous Tab
     /// menu key, never focus cycling.
@@ -43,7 +38,7 @@ public struct KeyDispatcher: Sendable {
             break
         }
         if chord.key == .tab, chord.modifiers.contains(.control) { return nil }
-        guard var command = Self.table[chord] else { return nil }
+        guard var command = bindings.alternateCommand(for: chord) else { return nil }
         if command == .quickLook, focus != .content { return nil }
         if command == .open, chord == KeyChord(.returnKey), focus == .content, returnKey == .rename {
             command = .rename

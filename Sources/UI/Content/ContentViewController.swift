@@ -334,7 +334,7 @@ final class ContentViewController: CommandHandlingViewController {
 
     /// The folder's columns (order, widths, visibility), sort indicator and icon size.
     func applyViewState(_ state: FolderViewState) {
-        details.apply(columns: state.columns, sort: state.sort)
+        details.apply(columns: state.columns, sort: state.sort, density: state.density)
         icons?.setIconSize(state.iconSize)
     }
 

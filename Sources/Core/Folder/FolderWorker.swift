@@ -34,15 +34,35 @@ actor FolderWorker {
         var name = SortKeyColumn()
         var ext = SortKeyColumn()
         var search: SortKeyColumn?         // searchFold per storage index; built on the first filtered sort
+        /// Name and search keys are of display names (design 2026-11-05 §1), which depend on this flag.
+        var showAllExtensions = false
 
         mutating func append(_ batch: Batch) {
-            name.append(contentsOf: SortKeys.nameKeys(batch))
+            name.append(contentsOf: SortKeys.nameKeys(batch, showAllExtensions: showAllExtensions))
             ext.append(contentsOf: SortKeys.extensionKeys(batch))
             search = nil
         }
 
-        static func build(_ store: EntryStore) -> Keys {
-            Keys(name: SortKeys.nameKeys(store, range: 0..<store.count), ext: SortKeys.extensionKeys(store, range: 0..<store.count))
+        static func build(_ store: EntryStore, showAllExtensions: Bool) -> Keys {
+            Keys(name: SortKeys.nameKeys(store, range: 0..<store.count, showAllExtensions: showAllExtensions),
+                 ext: SortKeys.extensionKeys(store, range: 0..<store.count), showAllExtensions: showAllExtensions)
+        }
+
+        /// Rebuilds the display-name keys when the extension display flag changed.
+        mutating func follow(_ query: ViewQuery, store: EntryStore) {
+            guard query.showAllExtensions != showAllExtensions else { return }
+            showAllExtensions = query.showAllExtensions
+            name = SortKeys.nameKeys(store, range: 0..<store.count, showAllExtensions: showAllExtensions)
+            search = nil
+        }
+
+        /// Replaces the name/search keys of storage indices whose display name changed (localized names).
+        mutating func refreshNames(_ indices: some Sequence<UInt32>, store: EntryStore) {
+            for index in indices where Int(index) < name.count {
+                let display = store.displayName(index, showAllExtensions: showAllExtensions)
+                name.replace(Int(index), with: SortKeys.nameKey(display, isFolder: store.entry(index).isFolderForSorting))
+            }
+            search = nil
         }
     }
 
@@ -85,7 +105,8 @@ actor FolderWorker {
     func begin(_ generation: Generation, identityMode: IdentityMode, query: ViewQuery) {
         if let newest = newestBegun, generation < newest { return }
         newestBegun = generation
-        building = Building(generation: generation, store: EntryStore(identityMode: identityMode), query: query)
+        building = Building(generation: generation, store: EntryStore(identityMode: identityMode),
+                            keys: Keys(showAllExtensions: query.showAllExtensions), query: query)
     }
     private var newestBegun: Generation?
 
@@ -112,6 +133,7 @@ actor FolderWorker {
         guard var b = building, b.query != query else { return }
         building = nil
         b.query = query
+        b.keys.follow(query, store: b.store)
         b.runs = []
         b.order = permutation(b.store, b.keys, query)
         b.dirty = true
@@ -168,7 +190,8 @@ actor FolderWorker {
     func resort(_ store: EntryStore, tag storeTag: KeysTag, query: ViewQuery, group: GroupSpec = .none,
                 values: SortValues = .none) -> Ordered {
         sync(store, storeTag)
-        if !query.filter.isEmpty && keys.search == nil { keys.search = SortKeys.searchKeys(store) }
+        keys.follow(query, store: store)
+        if !query.filter.isEmpty && keys.search == nil { keys.search = SortKeys.searchKeys(store, showAllExtensions: keys.showAllExtensions) }
         let (order, runs) = partition(store, sorted: permutation(store, keys, query, values), by: group.groupBy, buckets: group.buckets)
         return Ordered(order: order, runs: runs, revision: group.revision)
     }
@@ -188,6 +211,7 @@ actor FolderWorker {
     func patch(_ old: EntryStore, tag storeTag: KeysTag, result: ItemReadResult, query: ViewQuery,
                caseSensitive: Bool, group: GroupSpec = .none, values: SortValues = .none) -> PatchResult {
         sync(old, storeTag)
+        keys.follow(query, store: old)
         var store = old
         var k = keys
         k.search = nil
@@ -197,7 +221,8 @@ actor FolderWorker {
             let name = result.batch.name(at: i), entry = result.batch.entries[i]
             let before = store.count
             let index = store.upsert(entry, name: name)
-            let nameKey = SortKeys.nameKey(name, isFolder: entry.isFolderForSorting)
+            let nameKey = SortKeys.nameKey(store.displayName(index, showAllExtensions: k.showAllExtensions),
+                                           isFolder: entry.isFolderForSorting)
             let extKey = SortKeys.extensionKey(name, kind: entry.kind)
             if Int(index) == before {
                 nameKey.withUnsafeBytes { k.name.append($0) }
@@ -269,11 +294,33 @@ actor FolderWorker {
         return PatchResult(store: store, diff: diff, tag: newTag(), runs: runs, groupRevision: group.revision)
     }
 
+    /// Sets localized stems (design 2026-11-05 §1) on the rows that still exist; re-keys and re-sorts those rows.
+    /// Nil when nothing changed.
+    func applyLocalizedStems(_ old: EntryStore, tag storeTag: KeysTag, stems: [RowID: String], query: ViewQuery,
+                             group: GroupSpec = .none, values: SortValues = .none) -> PatchResult? {
+        sync(old, storeTag)
+        keys.follow(query, store: old)
+        var store = old
+        var changed: [UInt32] = []
+        for (id, stem) in stems {
+            guard let index = store.firstIndex(of: id), store.localizedStem(index) != (stem.isEmpty ? nil : stem) else { continue }
+            store.setLocalizedStem(stem, at: index)
+            changed.append(index)
+        }
+        guard !changed.isEmpty else { return nil }
+        keys.refreshNames(changed, store: store)
+        let (order, runs) = partition(store, sorted: permutation(store, keys, query, values), by: group.groupBy, buckets: group.buckets)
+        store.setOrder(order)
+        let identityMap = (0..<old.count).map { Int32($0) }
+        let diff = StoreDiff.diff(old: old, new: store, storageMap: identityMap, touched: Set(changed))
+        return PatchResult(store: store, diff: diff, tag: newTag(), runs: runs, groupRevision: group.revision)
+    }
+
     // MARK: Private
 
     private func sync(_ store: EntryStore, _ storeTag: KeysTag) {
         guard storeTag != tag || keys.name.count != store.count else { return }
-        keys = Keys.build(store)
+        keys = Keys.build(store, showAllExtensions: keys.showAllExtensions)
         tag = storeTag
     }
 

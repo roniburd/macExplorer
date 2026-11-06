@@ -12,9 +12,11 @@ enum SessionEvent {
 
 /// Per-window navigation (§5.2): the current FolderModel, back/forward history and view mode. Navigating closes
 /// the previous model first, so its late batches, stalls and completions never reach the new folder (Review Focus 3).
-/// Every folder has its own view state (P2-08): it is looked up in memory on navigation (the first paint never
-/// waits for I/O), refined by the folder's fileID when that was not known, and every user change is saved for the
-/// current folder only through `updateViewState`.
+/// Every folder has its own view state (P2-08, design 2026-11-05 §2): it is resolved in memory on navigation (the
+/// first paint never waits for I/O) from the folder's own record, Finder's `.DS_Store` view if already read, the
+/// built-in rule and the defaults; refined by the folder's fileID when that was not known and by Finder's view when
+/// it arrives (read on a lane, applied only within `finderApplyDeadline` and before any user change); and every user
+/// change is saved for the current folder only (just the changed fields) through `updateViewState`.
 @MainActor
 final class BrowserSession {
     private let environment: CoreEnvironment
@@ -30,6 +32,12 @@ final class BrowserSession {
     /// The user changed the view state since the last navigation (the identity probe must not overwrite it).
     private var editedSinceNavigation = false
     private var refineTask: Task<Void, Never>?
+    /// Finder's `.DS_Store` view of the current folder, read on a lane after opening it.
+    private var finderTask: Task<Void, Never>?
+    /// Finder data later than this after opening is cached for next time but not applied (no surprise switches).
+    static let finderApplyDeadline: Duration = .seconds(1)
+    /// Folders follow changes of the global defaults (Settings window, Use as Default) for fields they don't set.
+    private var defaultsLoop: ObservationLoop?
 
     private let observers = Observers<SessionEvent>()
     private var folderToken: ObserverToken?
@@ -68,10 +76,15 @@ final class BrowserSession {
         attach(folder)
         if state.mode == .columns { setDisplayedMode(.columns) }
         updateFolderSizes()
-        refineLocator()
-        // Every window follows Settings.showHidden (⇧⌘. or the Settings window in any window, QA round 1).
-        settingsLoop = ObservationLoop({ [weak self] in _ = self?.environment.settings.showHidden },
-                                       onChange: { [weak self] in self?.applyShowHiddenSetting() })
+        lookUpFolder()
+        defaultsLoop = ObservationLoop({ [weak self] in _ = self?.environment.settings.defaultFolderViewState() },
+                                       onChange: { [weak self] in self?.reloadViewState() })
+        // Every window follows Settings.showHidden (⇧⌘. or the Settings window in any window, QA round 1) and
+        // Settings.showAllExtensions (design 2026-11-05 §1).
+        settingsLoop = ObservationLoop({ [weak self] in
+            _ = self?.environment.settings.showHidden
+            _ = self?.environment.settings.showAllExtensions
+        }, onChange: { [weak self] in self?.applyShowHiddenSetting() })
     }
 
     /// Closes the previous model, opens `url`, and (optionally) records it in history. `folderID` is the folder's
@@ -137,8 +150,9 @@ final class BrowserSession {
 
     // MARK: view state (P2-08)
 
-    /// Every user change of mode, columns, sort, icon size (and later Group by, folder sizes): saved for this folder
-    /// only, then applied. The global defaults (`Settings.viewMode/sort/iconSize/columns`) are never written here.
+    /// Every user change of mode, columns, sort, icon size, density, Group by and folder sizes: the changed fields
+    /// are saved for this folder only, then applied. The global defaults (`Settings.viewMode/sort/…`) are never
+    /// written here.
     func updateViewState(_ mutate: (inout FolderViewState) -> Void) {
         guard !closed else { return }
         var next = viewState
@@ -149,16 +163,31 @@ final class BrowserSession {
             leaveColumns(with: next)
             return
         }
-        viewStates.save(record(next, for: locator), for: locator)
+        viewStates.update(next.changes(from: viewState), for: locator)
         apply(next)
     }
 
-    /// Re-reads this folder's state (after "Apply to All Folders" in another window or tab).
+    /// Re-resolves this folder's state (after "Apply to All Folders" or "Reset View", a change of the global
+    /// defaults, or Finder's view arriving). Saves nothing.
     func reloadViewState() {
         guard !closed else { return }
         let state = shown(viewStates.state(for: locator))
-        if columnChain != nil, state.mode != .columns { leaveColumns(with: state); return }
+        if columnChain != nil, state.mode != .columns { leaveColumns(with: state, persist: false); return }
         apply(state)
+    }
+
+    /// "Use as Default for All Folders": the current view becomes the global default (every window re-resolves).
+    func useViewAsDefault() {
+        guard !closed else { return }
+        viewStates.useAsDefault(viewState)
+    }
+
+    /// "Reset View for This Folder": forget MacExplorer's choices here (Finder → built-in → defaults apply again).
+    func resetFolderView() {
+        guard !closed else { return }
+        viewStates.reset(locator)
+        editedSinceNavigation = false
+        reloadViewState()
     }
 
     /// The window closed: the model stops reading and watching.
@@ -167,8 +196,12 @@ final class BrowserSession {
         closed = true
         refineTask?.cancel()
         refineTask = nil
+        finderTask?.cancel()
+        finderTask = nil
         settingsLoop?.cancel()
         settingsLoop = nil
+        defaultsLoop?.cancel()
+        defaultsLoop = nil
         folderToken = nil
         stopFolderSizes()
         closeFolderOrChain()
@@ -197,7 +230,7 @@ final class BrowserSession {
             chain.reroot(url, selecting: name)    // onChange: `folder` becomes the new root column
             rerootingChain = false
             observers.send(.viewStateChanged(state))
-            refineLocator()
+            lookUpFolder()
             return
         }
         closeFolderOrChain()
@@ -213,11 +246,11 @@ final class BrowserSession {
         setDisplayedMode(state.mode)
         updateFolderSizes()
         observers.send(.viewStateChanged(state))
-        refineLocator()
+        lookUpFolder()
     }
 
     private static func query(for state: FolderViewState, settings: Settings) -> ViewQuery {
-        ViewQuery(sort: state.sort, showHidden: settings.showHidden)
+        ViewQuery(sort: state.sort, showHidden: settings.showHidden, showAllExtensions: settings.showAllExtensions)
     }
 
     /// Group by applies only while the window displays Details (P2-09); Icons and Columns are never grouped.
@@ -225,9 +258,38 @@ final class BrowserSession {
         state.mode == .details ? state.groupBy : .none
     }
 
+    /// A folder became the current one (navigation, column root change): its identity and Finder's view are looked
+    /// up off main.
+    private func lookUpFolder() {
+        refineLocator()
+        readFinderView()
+    }
+
+    /// Finder's `.DS_Store` view (design 2026-11-05 §2), read once per launch on a lane for local volumes. Applied
+    /// when it arrives while the folder is still current, the user hasn't changed the view since opening it, and
+    /// within `finderApplyDeadline`; otherwise only cached for the next visit.
+    private func readFinderView() {
+        finderTask?.cancel()
+        finderTask = nil
+        let start = locator
+        guard viewStates.needsFinderView(start) else { return }
+        let model = stateModel
+        let viewStates = self.viewStates
+        let started = ContinuousClock.now
+        finderTask = Task { [weak self] in
+            let found = await viewStates.readFinderView(start)
+            guard let self, !Task.isCancelled, !self.closed else { return }
+            self.finderTask = nil
+            guard self.stateModel === model, self.locator.path == start.path, !self.editedSinceNavigation,
+                  let found, !found.isEmpty, ContinuousClock.now - started < Self.finderApplyDeadline else { return }
+            self.reloadViewState()
+        }
+    }
+
     /// Identity correction: without a fileID on an idStable volume, probe it on a lane. If the folder is still
-    /// current, keep the refined locator; its own record (found by object key after a rename or move) wins over
-    /// the path lookup, unless the user changed the view meanwhile, in which case that change is saved under it.
+    /// current, keep the refined locator; a pending path record (an edit made meanwhile) moves to the object key;
+    /// the folder's own record (found by object key after a rename or move) wins over the path lookup, unless the
+    /// user changed the view meanwhile.
     private func refineLocator() {
         refineTask?.cancel()
         let start = locator
@@ -239,17 +301,10 @@ final class BrowserSession {
             guard let self, !Task.isCancelled, !self.closed, self.stateModel === model, self.locator == start,
                   refined != start else { return }
             self.locator = refined
-            if self.editedSinceNavigation {
-                viewStates.save(self.record(self.viewState, for: refined), for: refined)
-                return
-            }
-            let stored = viewStates.state(for: refined)
-            let better = self.shown(stored)
-            if better != self.viewState {
-                self.apply(better)
-            } else if refined.objectKey != nil, viewStates.hasOverride(for: refined) {
-                viewStates.save(stored, for: refined)      // a path record becomes an object record
-            }
+            viewStates.adopt(refined)                      // a path record becomes an object record
+            if self.editedSinceNavigation { return }
+            let better = self.shown(viewStates.state(for: refined))
+            if better != self.viewState { self.apply(better) }
         }
     }
 
@@ -259,14 +314,6 @@ final class BrowserSession {
         var shown = state
         shown.mode = .columns
         return shown
-    }
-
-    /// `state` as it is saved for `locator`: while Columns is shown without a record, with the stored mode.
-    private func record(_ state: FolderViewState, for locator: FolderViewLocator) -> FolderViewState {
-        guard columnsShownWithoutRecord, columnChain != nil, state.mode == .columns else { return state }
-        var record = state
-        record.mode = viewStates.state(for: locator).mode
-        return record
     }
 
     private func apply(_ state: FolderViewState) {
@@ -334,30 +381,37 @@ final class BrowserSession {
     }
 
     /// Switching from Columns to another mode (Finder): the state is retargeted to the active column's folder,
-    /// that folder is shown in `requested.mode`, and that mode is saved for it. The column root keeps its own record
-    /// (still Columns). When the root column is active, `requested` is saved for it as it is.
-    private func leaveColumns(with requested: FolderViewState) {
+    /// that folder is shown in `requested.mode`, and (`persist`, a user change) that mode is saved for it. The column
+    /// root keeps its own record (still Columns). When the root column is active, `requested`'s changes are saved
+    /// for it. A re-resolve (`persist` false) leaving Columns saves nothing.
+    private func leaveColumns(with requested: FolderViewState, persist: Bool = true) {
         guard let chain = columnChain else { return }
         columnsShownWithoutRecord = false
         refineTask?.cancel()
         refineTask = nil
         var next = requested
+        var base = viewState
         if chain.activeModel !== chain.models.first {
             let (state, locator) = viewStates.state(for: chain.activeModel.directory, fileID: nil)
             viewState = state
             self.locator = locator
+            base = state
             next = state
             next.mode = requested.mode
         }
         let retargeted = chain.activeModel !== chain.models.first
         setDisplayedMode(next.mode)         // detaches the active model; the chain closes the others
-        viewStates.save(next, for: locator)
+        if persist {
+            var delta = next.changes(from: base)
+            if retargeted { delta.viewMode = next.mode }      // the user picked this mode for the folder shown
+            viewStates.update(delta, for: locator)
+        }
         apply(next)
         if retargeted {                     // the window now shows a deeper folder: Back returns to the column root
             history.visit(folder.directory)
             observers.send(.historyChanged)
         }
-        refineLocator()
+        lookUpFolder()
     }
 
     /// The chain opened or closed columns, or the active column moved: `folder` follows the active column.
@@ -405,7 +459,7 @@ final class BrowserSession {
         history.visit(root.directory)
         observers.send(.historyChanged)
         if shown != old { observers.send(.viewStateChanged(shown)) }
-        refineLocator()
+        lookUpFolder()
     }
 
     /// The column root identity seen by the last `columnChainChanged` (detects the chain's own reroots).
@@ -484,10 +538,12 @@ final class BrowserSession {
 
     private func applyShowHiddenSetting() {
         guard !closed else { return }
-        let wanted = environment.settings.showHidden
-        for model in displayedModels where model.query.showHidden != wanted {
+        let settings = environment.settings
+        for model in displayedModels
+        where model.query.showHidden != settings.showHidden || model.query.showAllExtensions != settings.showAllExtensions {
             var query = model.query
-            query.showHidden = wanted
+            query.showHidden = settings.showHidden
+            query.showAllExtensions = settings.showAllExtensions
             model.setQuery(query)
         }
     }

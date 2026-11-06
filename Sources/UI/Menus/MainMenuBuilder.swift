@@ -3,8 +3,8 @@ import Core
 
 /// The menu bar (§5.3: every command is in it, so Help search finds them all). Command items are nil-targeted
 /// `Selector(command.selectorName)` actions that follow the first responder (§5.6 step 5), carry the identifier
-/// `macx.menu.<rawValue>`, and take their single key equivalent from `KeyMap.primary` (rebindable in System Settings ›
-/// Keyboard › App Shortcuts). Titles are matched in English by the scenario runner (`menu` steps).
+/// `macx.menu.<rawValue>`, and take their single key equivalent from the active bindings' primary (Settings ›
+/// Shortcuts; System Settings › Keyboard › App Shortcuts still overrides it). Titles are matched in English by the scenario runner (`menu` steps).
 @MainActor public enum MainMenuBuilder {
     /// Commands with no main-menu item. Esc (cancelOperation) is a key, not a menu command.
     static let notInMenu: Set<Command> = [.cancelOperation]
@@ -75,15 +75,15 @@ import Core
             standard("Check for Updates…", UpdateCommands.checkForUpdates),
             .separator(),
             // P1-30's AppDelegate implements macx_showSettings: (disabled until then).
-            standard("Settings…", NSSelectorFromString("macx_showSettings:"), ","),
+            standard("Settings…", NSSelectorFromString("macx_showSettings:")),
             .separator(),
             services,
             .separator(),
-            standard("Hide MacExplorer", #selector(NSApplication.hide(_:)), "h"),
-            standard("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
+            standard("Hide MacExplorer", #selector(NSApplication.hide(_:))),
+            standard("Hide Others", #selector(NSApplication.hideOtherApplications(_:))),
             standard("Show All", #selector(NSApplication.unhideAllApplications(_:))),
             .separator(),
-            standard("Quit MacExplorer", #selector(NSApplication.terminate(_:)), "q"),
+            standard("Quit MacExplorer", #selector(NSApplication.terminate(_:))),
         ]
     }
 
@@ -121,13 +121,14 @@ import Core
                 item(.groupByNone), .separator(),
                 item(.groupByKind), item(.groupByDateModified), item(.groupBySize), item(.groupByName),
             ]),
-            item(.toggleFolderSizes), item(.applyViewToAllFolders),
+            item(.toggleFolderSizes), .separator(),
+            item(.useViewAsDefault), item(.applyViewToAllFolders), item(.resetFolderView),
             .separator(),
             item(.toggleHidden), item(.toggleCommandBar),
-            standard("Show Sidebar", #selector(NSSplitViewController.toggleSidebar(_:)), "s", [.command, .control]),
+            standard("Show Sidebar", #selector(NSSplitViewController.toggleSidebar(_:))),
             .separator(),
             item(.refresh), .separator(),
-            standard("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control]),
+            standard("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:))),
         ]
     }
 
@@ -141,7 +142,7 @@ import Core
 
     private static func windowItems() -> [NSMenuItem] {
         [
-            standard("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m"),
+            standard("Minimize", #selector(NSWindow.performMiniaturize(_:))),
             standard("Zoom", #selector(NSWindow.performZoom(_:))),
             .separator(),
             // NSWindow's own tab actions (Command.windowTabCommands); NSWindow validates and retitles them.
@@ -156,7 +157,7 @@ import Core
 
     private static func helpItems() -> [NSMenuItem] {
         [
-            standard("MacExplorer Help", #selector(NSApplication.showHelp(_:)), "?"),
+            standard("MacExplorer Help", #selector(NSApplication.showHelp(_:))),
             .separator(),
             standard("Report a Bug…", FeedbackActions.reportBugAction),
             standard("Request a Feature…", FeedbackActions.requestFeatureAction),
@@ -165,21 +166,47 @@ import Core
 
     // MARK: items
 
-    /// A command item: nil target, `macx.menu.<raw>` identifier, KeyMap primary.
+    /// A command item: nil target, `macx.menu.<raw>` identifier, the active primary.
     static func item(_ command: Command) -> NSMenuItem {
         let item = NSMenuItem(title: MainMenuTitles.title(command), action: Selector(command.selectorName), keyEquivalent: "")
         item.identifier = NSUserInterfaceItemIdentifier("macx.menu.\(command.rawValue)")
-        if let chord = KeyMap.primary(command), let equivalent = keyEquivalent(for: chord) {
-            item.keyEquivalent = equivalent.key
-            item.keyEquivalentModifierMask = equivalent.modifiers
-        }
+        if let chord = ActiveKeyBindings.current.primary(command) { setKeyEquivalent(of: item, to: chord) }
         return item
     }
 
-    private static func standard(_ title: String, _ action: Selector, _ key: String = "",
-                                 _ modifiers: NSEvent.ModifierFlags = .command) -> NSMenuItem {
-        let item = NSMenuItem(title: L10n.string(title), action: action, keyEquivalent: key)
-        if !key.isEmpty { item.keyEquivalentModifierMask = modifiers }
+    /// Rewrites the key equivalent of every command item in `menu` (recursively) from `bindings`. Never rebuilds.
+    static func applyKeyEquivalents(_ bindings: KeyBindings, to menu: NSMenu) {
+        let prefix = "macx.menu."
+        for item in menu.items {
+            if let submenu = item.submenu { applyKeyEquivalents(bindings, to: submenu) }
+            guard let id = item.identifier?.rawValue, id.hasPrefix(prefix),
+                  let command = Command(rawValue: String(id.dropFirst(prefix.count))) else { continue }
+            setKeyEquivalent(of: item, to: bindings.primary(command))
+        }
+    }
+
+    private static func setKeyEquivalent(of item: NSMenuItem, to chord: KeyChord?) {
+        if let chord, let equivalent = keyEquivalent(for: chord) {
+            item.keyEquivalent = equivalent.key
+            item.keyEquivalentModifierMask = equivalent.modifiers
+        } else {
+            item.keyEquivalent = ""
+            item.keyEquivalentModifierMask = []
+        }
+    }
+
+    /// A non-command item. Its key equivalent, if any, comes from `KeyBindings.fixedMenuChords[title]` (all reserved,
+    /// so no rebinding can shadow or take it).
+    private static func standard(_ title: String, _ action: Selector) -> NSMenuItem {
+        let item = NSMenuItem(title: L10n.string(title), action: action, keyEquivalent: "")
+        if let chord = KeyBindings.fixedMenuChords[title] {
+            if chord == KeyChord(.character("/"), [.shift, .command]) {
+                item.keyEquivalent = "?"                         // shown as ⌘?, the macOS Help convention
+                item.keyEquivalentModifierMask = .command
+            } else {
+                setKeyEquivalent(of: item, to: chord)
+            }
+        }
         return item
     }
 

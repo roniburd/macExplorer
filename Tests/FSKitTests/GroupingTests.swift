@@ -97,6 +97,16 @@ final class GroupingTests: XCTestCase {
         XCTAssertEqual(letterOrder.map { store.name($0) }, ["a.txt", "b.txt", "c.png", "sub"])
     }
 
+    /// Name groups follow the name shown: a Finder localized stem (merge of the display-names work) decides the letter.
+    func testNameGroupsUseLocalizedStem() {
+        var store = makeStore([("Applications", .directory, 0, 0), ("Zeta", .directory, 0, 0)])
+        store.setLocalizedStem("Programme", at: 0)
+        let b = DateBuckets(now: Date(timeIntervalSince1970: 0), calendar: utc)
+        let (order, runs) = Grouping.partition(store.order, store: store, by: .nameFirstLetter, dateBuckets: b, types: .shared)
+        XCTAssertEqual(runs.map(\.key), [.letter(.letter("P")), .letter(.letter("Z"))])
+        XCTAssertEqual(order.map { store.name($0) }, ["Applications", "Zeta"])
+    }
+
     func testPartitionOfSubsetKeepsOnlyGivenRows() {
         let store = makeStore([("x.txt", .file, 1, 0), ("y.txt", .file, 1, 0), ("z.png", .file, 1, 0)])
         let b = DateBuckets(now: Date(timeIntervalSince1970: 0), calendar: utc)
