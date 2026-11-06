@@ -47,11 +47,21 @@ extension KeyBindingOverrides: Codable {
         }
     }
 
+    private struct NameKey: CodingKey {
+        var stringValue: String
+        var intValue: Int? { nil }
+        init(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue: Int) { nil }
+    }
+
+    /// The root must be an object (anything else throws). Each command entry decodes on its own, so a non-object
+    /// value (`"forward": 5`, `null`) or an unknown command drops only that entry.
     public init(from decoder: any Decoder) throws {
-        let raw = try decoder.singleValueContainer().decode([String: Raw].self)
+        let container = try decoder.container(keyedBy: NameKey.self)
         var commands: [Command: Entry] = [:]
-        for (name, value) in raw {
-            guard let command = Command(rawValue: name) else { continue }
+        for key in container.allKeys {
+            guard let command = Command(rawValue: key.stringValue),
+                  let value = try? container.decode(Raw.self, forKey: key) else { continue }
             var entry = Entry()
             if let text = value.primary {
                 entry.primary = text.isEmpty ? .unbound : KeyChord(parsing: text).map(PrimaryOverride.chord)

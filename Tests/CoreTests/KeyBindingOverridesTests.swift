@@ -12,6 +12,12 @@ final class KeyBindingOverridesTests: XCTestCase {
         XCTAssertEqual(MouseButton(parsing: "Mouse9"), MouseButton(number: 8))
         XCTAssertNil(MouseButton(parsing: "mouse3"), "buttonNumber 2 (middle) is not bindable")
         XCTAssertNil(MouseButton(parsing: "mousex"))
+        XCTAssertNil(MouseButton(parsing: "mouse-9223372036854775808"), "Int.min label must not overflow")
+        XCTAssertNil(MouseButton(parsing: "mouse9223372036854775807"))
+        XCTAssertNil(MouseButton(parsing: "mouse+4"))
+        XCTAssertNil(MouseButton(parsing: "mouse04"))
+        XCTAssertNil(MouseButton(parsing: "mouse"))
+        XCTAssertNil(MouseButton(parsing: "mouse\u{0664}"), "non-ASCII digits are not accepted")
         XCTAssertLessThan(MouseButton(number: 3)!, MouseButton(number: 4)!)
     }
 
@@ -45,6 +51,17 @@ final class KeyBindingOverridesTests: XCTestCase {
         XCTAssertEqual(o.commands[.forward], .init(primary: nil, alternates: nil, mouse: [MouseButton(number: 4)!]))
         XCTAssertEqual(o.commands[.duplicate], .init(primary: .unbound))
         XCTAssertEqual(o.commands.count, 3)
+    }
+
+    func testNonObjectEntryLosesOnlyItself() throws {
+        let json = #"""
+        {"back": {"primary": "opt+cmd+b"}, "forward": 5, "duplicate": null, "noSuchCommand": [1],
+         "newWindow": "cmd+n", "closeWindow": {"primary": ""}}
+        """#
+        let o = try JSONDecoder().decode(KeyBindingOverrides.self, from: Data(json.utf8))
+        XCTAssertEqual(o.commands[.back], .init(primary: .chord(chord("opt+cmd+b"))))
+        XCTAssertEqual(o.commands[.closeWindow], .init(primary: .unbound))
+        XCTAssertEqual(o.commands.count, 2)
     }
 
     func testNonObjectFailsToDecode() {
