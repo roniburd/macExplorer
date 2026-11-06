@@ -359,14 +359,21 @@ final class FolderSizeServiceTests: XCTestCase {
         await session.waitUntilIdle()
         let before = session.scansStarted
         try sandbox.createFile("big/b.bin", contents: Data(count: 50))
+        let start = ContinuousClock.now
         for _ in 0..<30 {
             watcher.handler?(.children(["big"]))
             try await Task.sleep(for: .milliseconds(50))
         }
+        let eventSpan = ContinuousClock.now - start
         await session.waitUntilIdle()
         XCTAssertEqual(model.folderSize(atRow: model.row(named: "big")!)?.bytes, 150, "the last value still arrives")
-        XCTAssertGreaterThanOrEqual(session.scansStarted - before, 1)
-        XCTAssertLessThanOrEqual(session.scansStarted - before, 3, "rescans are rate limited, not one per event")
+        let scans = session.scansStarted - before
+        XCTAssertGreaterThanOrEqual(scans, 1)
+        // At most one rescan per started second of events, plus the trailing rescan that coalesces the last window.
+        // Bounded by the measured span, not the nominal 1.5 s: on a loaded machine the 50 ms sleeps run long.
+        let allowed = 2 + Int(eventSpan / .seconds(1))
+        XCTAssertLessThanOrEqual(scans, allowed, "rescans are rate limited (events spanned \(eventSpan))")
+        XCTAssertLessThan(scans, 10, "rescans are rate limited, not one per event")
         session.stop()
     }
 
