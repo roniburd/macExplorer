@@ -42,4 +42,11 @@ final class DisplayNameTests: XCTestCase {
         XCTAssertEqual(make("Applications", .directory, stem: "Aplicaciones"), "Aplicaciones")
         XCTAssertEqual(make("Applications", .directory, stem: ""), "Applications")
     }
+
+    /// "*.localized" folders show their localized stem without the ".localized" suffix, as in Finder.
+    func testLocalizedFoldersHideTheirSuffix() {
+        XCTAssertEqual(make("Projects.localized", .directory, stem: "Projects"), "Projects")
+        XCTAssertEqual(make("Projects.localized", .directory, stem: "Proyectos", all: true), "Proyectos")
+        XCTAssertEqual(make("Projects.localized", .directory), "Projects.localized", "no stem yet: the real name")
+    }
 }

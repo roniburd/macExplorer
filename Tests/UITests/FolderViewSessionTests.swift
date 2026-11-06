@@ -132,6 +132,37 @@ final class FolderViewSessionTests: XCTestCase {
         XCTAssertEqual(session.viewMode, .details)
     }
 
+    /// Review: "Apply to All Folders…" also reaches the folders whose built-in default is Large Icons (~/Applications
+    /// and its Utilities, here in the sandbox home); "Use as Default" keeps the built-in rule.
+    func testApplyToAllOverridesTheBuiltInApplicationsRule() async throws {
+        let h = try await ShellHarness.make(self)
+        let env = h.environment
+        let apps = try h.sandbox.createDirectory("Applications")
+        let utilities = try h.sandbox.createDirectory("Applications/Utilities")
+        XCTAssertEqual(env.settings.home.standardizedFileURL, h.sandbox.root.standardizedFileURL)
+        let session = try await makeSession(h)
+        session.navigate(to: apps)
+        try await h.waitUntil("Applications complete") { session.folder.state == .complete }
+        XCTAssertEqual(session.viewMode, .icons, "built-in rule: Applications opens as Large Icons")
+        XCTAssertEqual(session.viewState.iconSize, .large)
+        session.navigate(to: h.url(""))
+        try await h.waitUntil("files complete") { session.folder.state == .complete }
+        session.useViewAsDefault()
+        session.navigate(to: apps)
+        XCTAssertEqual(session.viewMode, .icons, "Use as Default keeps the built-in rule")
+        XCTAssertFalse(env.settings.builtInFolderViewsOff)
+
+        FolderViewCoordinator(store: env.folderViews, settings: env.settings, lanes: env.lanes, volumes: env.volumes)
+            .applyToAll(env.settings.defaultFolderViewState())
+        XCTAssertTrue(env.settings.builtInFolderViewsOff)
+        session.reloadViewState()
+        XCTAssertEqual(session.viewMode, .details, "Apply to All reaches Applications")
+        XCTAssertEqual(session.viewState.iconSize, .medium)
+        session.navigate(to: utilities)
+        try await h.waitUntil("Utilities complete") { session.folder.state == .complete }
+        XCTAssertEqual(session.viewMode, .details, "and its Utilities folder")
+    }
+
     func testAppBundlesShowWithoutTheirExtension() async throws {
         let h = try await ShellHarness.make(self)
         try h.file("Apps/Tool.app/Contents/Info.plist")

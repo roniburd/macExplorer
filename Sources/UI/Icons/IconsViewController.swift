@@ -387,6 +387,9 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
             return true
         }
         guard let folder else { return false }
+        // Settle a pending layout pass first (no-op when none): a vertical scroller that appears with the rows takes
+        // width and so a column, and arrows must move over the grid as it will be drawn.
+        view.layoutSubtreeIfNeeded()
         let page = max(1, visibleRows().count - layout.columns)
         defer { reloadSelectionDrawing() }   // mirror at once, also when hosted without ContentViewController
         return ListKeys.handle(event, folder: folder, list: self, pageSize: page,

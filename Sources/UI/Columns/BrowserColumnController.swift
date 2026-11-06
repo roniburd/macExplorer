@@ -322,10 +322,10 @@ final class BrowserColumnController: NSViewController, FileListView, FocusableLi
         if save, settings.columnWidth != Double(width) { settings.columnWidth = Double(width) }
     }
 
-    /// Double-click on the handle: the widest name among the first 2,000 rows, measured with the cell font.
+    /// Double-click on the handle: the widest shown (display) name among the first 2,000 rows, measured with the cell font.
     func autoFit() {
         let count = min(model.rowCount, ColumnWidth.fitSampleLimit)
-        setWidth(ColumnWidth.fit(names: (0..<count).map { model.name(atRow: $0) }, font: CellStyle.font), save: true)
+        setWidth(ColumnWidth.fit(names: (0..<count).map { model.displayName(atRow: $0) }, font: CellStyle.font), save: true)
     }
 
     // MARK: scrolling
@@ -480,7 +480,7 @@ final class BrowserColumnController: NSViewController, FileListView, FocusableLi
         let name = model.name(atRow: row)
         let rowID = model.identity(atRow: row)
         let scale = Double(view.window?.backingScaleFactor ?? 2)
-        cell.configure(name: name, icon: context.icons.typeIcon(entry.typeIndex, points: ColumnCellView.iconPoints, scale: scale),
+        cell.configure(name: model.displayName(atRow: row), icon: context.icons.typeIcon(entry.typeIndex, points: ColumnCellView.iconPoints, scale: scale),
                        isFolder: entry.kind == .directory, isCut: model.isCut(row: row), rowID: rowID)
         requestFileIcon(entry: entry, name: name, row: row, rowID: rowID, cell: cell, scale: scale)
         return cell

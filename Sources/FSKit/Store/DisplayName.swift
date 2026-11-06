@@ -17,6 +17,8 @@ public enum DisplayName {
         }
         guard let ext else { return stem }
         let extText = name.withUTF8 { String(decoding: UnsafeBufferPointer(rebasing: $0[ext]), as: UTF8.self) }
+        // Finder never shows the ".localized" suffix of a folder it has a localized name for.
+        if localizedStem != nil, kind == .directory, extText == "localized" { return stem }
         let hide = !showAllExtensions
             && (flags.contains(.extensionHidden) || (kind == .package && extText.lowercased() == "app"))
         return hide ? stem : stem + "." + extText

@@ -4,26 +4,25 @@ import MacxFS
 
 /// Per-folder view state for browsing (spec §11 Phase 2 + design 2026-11-05 §2). A folder's view is resolved field
 /// by field from its own record (`FolderViewStore`), Finder's `.DS_Store` view (read once per launch, local volumes,
-/// on a lane), the built-in rule (application folders open as Large Icons) and the global defaults. Lookups are in
+/// on a lane), the built-in rule (application folders open as Large Icons, until "Apply to All Folders") and the
+/// global defaults. Lookups are in
 /// memory and never block; user changes save only the changed fields for that folder; the identity probe adds the
 /// folder's fileID when the caller did not know it. Implements "Use as Default for All Folders" (folders keep their
-/// own and Finder's views), "Reset View for This Folder" and "Apply to All Folders" (every folder, Finder's views
-/// included, takes the view).
+/// own and Finder's views), "Reset View for This Folder" and "Apply to All Folders" (every folder, Finder's views and
+/// the built-in rule included, takes the view).
 @MainActor
 final class FolderViewCoordinator {
     private let store: FolderViewStore
     private let settings: Settings
     private let lanes: LanePool
     private let volumes: Volumes
-    private let home: URL
 
-    init(store: FolderViewStore, settings: Settings, lanes: LanePool, volumes: Volumes,
-         home: URL = FileManager.default.homeDirectoryForCurrentUser) {
+    /// The built-in rule's ~/Applications is the settings' home (the sandbox root in sandbox mode).
+    init(store: FolderViewStore, settings: Settings, lanes: LanePool, volumes: Volumes) {
         self.store = store
         self.settings = settings
         self.lanes = lanes
         self.volumes = volumes
-        self.home = home
     }
 
     func state(for url: URL, fileID: UInt64?) -> (FolderViewState, FolderViewLocator) {
@@ -34,7 +33,8 @@ final class FolderViewCoordinator {
     func state(for locator: FolderViewLocator) -> FolderViewState {
         let url = locator.url
         return FolderViewResolver.resolve(stored: store.settings(for: locator), finder: store.finderView(for: url),
-                                          builtIn: FolderViewResolver.builtIn(for: url, home: home),
+                                          builtIn: settings.builtInFolderViewsOff
+                                              ? FolderViewSettings() : FolderViewResolver.builtIn(for: url, home: settings.home),
                                           defaults: settings.defaultFolderViewState())
     }
 
@@ -86,12 +86,13 @@ final class FolderViewCoordinator {
     /// themselves (and Finder's), and follow the new default for the rest.
     func useAsDefault(_ state: FolderViewState) { settings.applyDefaultView(state) }
 
-    /// "Apply to All Folders": `state` becomes the default, every folder's own record is dropped and Finder's views
-    /// recorded until now stop applying (post-merge review: otherwise any folder Finder had a view for kept it). A
-    /// `.DS_Store` Finder writes later applies again.
+    /// "Apply to All Folders": `state` becomes the default, every folder's own record is dropped, Finder's views
+    /// recorded until now stop applying (post-merge review: otherwise any folder Finder had a view for kept it) and
+    /// the built-in Applications rule is turned off for good. A `.DS_Store` Finder writes later applies again.
     func applyToAll(_ state: FolderViewState) {
         settings.applyDefaultView(state)
         settings.finderViewsIgnoredBefore = Date()
+        settings.builtInFolderViewsOff = true
         store.clearFinderViews()
         store.removeAll()
     }

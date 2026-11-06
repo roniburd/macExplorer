@@ -131,6 +131,8 @@ public enum StoreDiff {
         guard x.rowID == y.rowID, x.fileID == y.fileID, x.size == y.size, x.allocSize == y.allocSize,
               x.mtime == y.mtime, x.ctime == y.ctime, x.nameLen == y.nameLen, x.kind == y.kind,
               x.flags == y.flags, x.typeIndex == y.typeIndex, a.errno(ai) == b.errno(bi) else { return false }
+        // A localized-name patch changes only the shown name: it must still reload the row.
+        if a.hasLocalizedStems || b.hasLocalizedStems, a.localizedStem(ai) != b.localizedStem(bi) { return false }
         return a.withNameBytes(ai) { an in b.withNameBytes(bi) { bn in an.elementsEqual(bn) } }
     }
 

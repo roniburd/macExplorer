@@ -79,6 +79,32 @@ final class ColumnsViewTests: XCTestCase {
         XCTAssertEqual(folderCell.label.lineBreakMode, .byTruncatingMiddle)
     }
 
+    /// Columns show Finder display names like Details and Icons: hidden ".app", localized stems; auto-fit measures them.
+    func testColumnCellsShowDisplayNames() async throws {
+        try requireGUISession()
+        let h = try await ContentTestHarness.make(self)
+        let wide = "Wide " + String(repeating: "W", count: 18)
+        try h.dir("\(wide).app/Contents")
+        try h.dir("Projects.localized/inner")
+        let controller = ColumnsViewController(context: h.context)
+        try h.host(controller)
+        let chain = makeChain(h, "")
+        controller.bindChain(chain)
+        let model = chain.models[0]
+        try await waitUntil("root listed with localized stems") {
+            model.state == .complete && (0..<model.rowCount).map { model.displayName(atRow: $0) }.contains("Projects")
+        }
+        let column = controller.columnControllers[0]
+        func labels() -> Set<String> {
+            Set((0..<column.tableView.numberOfRows).compactMap {
+                (column.tableView.view(atColumn: 0, row: $0, makeIfNecessary: true) as? ColumnCellView)?.label.stringValue
+            })
+        }
+        try await waitUntil("cells show display names") { labels() == [wide, "Projects"] }
+        column.autoFit()
+        XCTAssertEqual(column.width, ColumnWidth.fit(names: [wide, "Projects"], font: CellStyle.font))
+    }
+
     func testKeyboardRightLeftReturn() async throws {
         try requireGUISession()
         let h = try await ContentTestHarness.make(self)

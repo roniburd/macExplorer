@@ -70,7 +70,8 @@ name. A Settings observer in `BrowserSession` pushes the toggle into every sessi
 > columns). The resolved type is `FolderViewState`; sessions change it with `updateViewState`. Persistence moved to
 > the settings storage (`folderViews.v3`, compact text); an existing `folder-views.json` is imported once and left
 > in place. Finder's `.DS_Store` is read on a lane under no-materialization. Phase 2's "Apply to All Folders…" is
-> kept next to "Use as Default for All Folders" (it also forgets every folder's own record).
+> kept next to "Use as Default for All Folders" (it also forgets every folder's own record, ignores Finder's views
+> written before it and turns the built-in Applications rule off, so every folder takes the view).
 
 ### Data (Core)
 

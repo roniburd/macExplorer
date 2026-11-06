@@ -347,6 +347,15 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(Settings(storage: storage, home: home).finderViewsIgnoredBefore, when)
     }
 
+    /// "Apply to All Folders" turns the built-in Applications rule off (review): unset by default, persisted.
+    func testBuiltInFolderViewsOffPersists() {
+        let storage = InMemorySettingsStorage()
+        let s = Settings(storage: storage, home: home)
+        XCTAssertFalse(s.builtInFolderViewsOff)
+        s.builtInFolderViewsOff = true
+        XCTAssertTrue(Settings(storage: storage, home: home).builtInFolderViewsOff)
+    }
+
     func testChangesAreObservable() async {
         let s = Settings(storage: InMemorySettingsStorage(), home: home)
         let fired = expectation(description: "observed")

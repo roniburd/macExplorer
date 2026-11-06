@@ -2408,7 +2408,7 @@ Behaviour:
 - **Saving:** every user change goes through `updateViewState` and is saved for this folder only. That covers the view switcher, ⌘1/⌘2/⌘3, View menu modes, icon size, header-click sort, the Sort menu, column resize, reorder and visibility, Group by (P2-10) and Calculate Folder Sizes (P2-14). These code paths no longer write `Settings.viewMode/sort/iconSize/columns`; find the old writes with `grep -rn "settings\.\(viewMode\|sort\|iconSize\|columns\) =" Sources/UI` and redirect them.
 - **Apply to All Folders…:**
   1. A window-modal sheet asks: title "Use this view for all folders?", text "Folders that have their own view settings will be reset to this view.", buttons "Apply" and "Cancel".
-  2. Apply calls `coordinator.applyToAll(session.viewState)`, which runs `settings.applyDefaultView` and then `store.removeAll()`.
+  2. Apply calls `coordinator.applyToAll(session.viewState)`, which runs `settings.applyDefaultView` and then `store.removeAll()`. After the merge with main it also sets `settings.finderViewsIgnoredBefore` (Finder's older `.DS_Store` views stop applying) and `settings.builtInFolderViewsOff` (the Large Icons rule for the Applications folders stops applying).
   3. Every other open window and tab then runs `session.reloadViewState()`.
 
 - [ ] **Step 1: Write the failing tests**

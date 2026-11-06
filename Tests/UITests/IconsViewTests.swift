@@ -101,6 +101,9 @@ final class IconsViewTests: XCTestCase {
         let icons = IconsViewController(context: h.context)
         try h.host(icons, size: NSSize(width: 620, height: 500))
         icons.bind(folder)
+        // Settle the first layout pass (as a display cycle would): with legacy scrollers the vertical scroller that
+        // appears with the rows takes a column, so a grid read before it is stale.
+        icons.view.layoutSubtreeIfNeeded()
         return (icons, folder)
     }
 
@@ -129,6 +132,23 @@ final class IconsViewTests: XCTestCase {
         XCTAssertEqual(folder.selection.rows, IndexSet([columns, columns + 1]))
         _ = icons.handleKeyDown(try key(.downArrow, flags: .command, window: icons.view.window))
         XCTAssertEqual(folder.selection.rows, IndexSet([columns, columns + 1]), "⌘-arrows never change the selection")
+    }
+
+    /// Review: with legacy scrollers the scroller that appears with the rows takes a column; the first ↓ after a
+    /// bind, before any display cycle, moves over the grid as it will be drawn, not the stale wider one.
+    func testFirstArrowAfterBindUsesTheSettledGrid() async throws {
+        let h = try await ContentTestHarness.make(self)
+        h.environment.settings.iconSize = .medium
+        for i in 0..<90 { try h.file(String(format: "i%02d.txt", i)) }
+        let folder = try await h.openFolder()
+        let icons = IconsViewController(context: h.context)
+        try h.host(icons, size: NSSize(width: 620, height: 500))
+        icons.scrollView.scrollerStyle = .legacy
+        icons.bind(folder)
+        folder.select(.set(IndexSet(integer: 0), cursor: 0))
+        XCTAssertTrue(icons.handleKeyDown(try key(.downArrow, window: icons.view.window)))
+        icons.view.layoutSubtreeIfNeeded()
+        XCTAssertEqual(folder.selection.rows, IndexSet(integer: icons.layout.columns))
     }
 
     /// QA round 2: arrows past the last visible row scroll the grid so the cursor item stays on screen (the

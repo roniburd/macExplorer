@@ -38,6 +38,9 @@ public final class Settings {
     /// "Apply to All Folders" (post-merge review): Finder's `.DS_Store` views last written before this moment are
     /// ignored, so the applied view really reaches every folder. nil = every Finder view applies.
     public var finderViewsIgnoredBefore: Date? { didSet { save(finderViewsIgnoredBefore, Key.finderViewsIgnoredBefore) } }
+    /// "Apply to All Folders" (review): the built-in rule (application folders open as Large Icons) no longer applies,
+    /// so the applied view really reaches every folder. false = the rule applies.
+    public var builtInFolderViewsOff: Bool { didSet { save(builtInFolderViewsOff, Key.builtInFolderViewsOff) } }
     /// Columns view column width (the last width the user set).
     public var columnWidth: Double { didSet { save(columnWidth, Key.columnWidth) } }
     /// Show every filename extension, including ones Finder hides and ".app" (design 2026-11-05 §1).
@@ -105,6 +108,7 @@ public final class Settings {
         showThumbnails = Self.load(Bool.self, Key.showThumbnails, from: storage) ?? true
         columnWidth = Self.load(Double.self, Key.columnWidth, from: storage) ?? 220
         finderViewsIgnoredBefore = Self.load(Date.self, Key.finderViewsIgnoredBefore, from: storage)
+        builtInFolderViewsOff = Self.load(Bool.self, Key.builtInFolderViewsOff, from: storage) ?? false
         showAllExtensions = Self.load(Bool.self, Key.showAllExtensions, from: storage) ?? false
         commandBarVisible = Self.load(Bool.self, Key.commandBarVisible, from: storage) ?? true
         autoRevealInTree = Self.load(Bool.self, Key.autoRevealInTree, from: storage) ?? true
@@ -194,6 +198,7 @@ public final class Settings {
         static let updateChannel = "updateChannel", checkForUpdatesAutomatically = "checkForUpdatesAutomatically"
         static let offerToReportCrashes = "offerToReportCrashes", lastReportedCrashes = "lastReportedCrashes"
         static let keyBindings = "keyBindings", finderViewsIgnoredBefore = "finderViewsIgnoredBefore"
+        static let builtInFolderViewsOff = "builtInFolderViewsOff"
     }
 
     private struct TCCRecord: Codable {

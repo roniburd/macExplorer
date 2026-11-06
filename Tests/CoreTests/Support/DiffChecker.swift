@@ -66,6 +66,7 @@ enum DiffChecker {
         x.nameOffset = 0
         y.nameOffset = 0
         return x == y && a.name(ai).utf8.elementsEqual(b.name(bi).utf8) && a.errno(ai) == b.errno(bi)
+            && a.localizedStem(ai) == b.localizedStem(bi)
     }
 
     /// O(n²) reference LIS length.

@@ -64,6 +64,17 @@ final class DisplayNameSortTests: XCTestCase {
         XCTAssertNil(again)
     }
 
+    /// A stem that keeps the row in place still reloads it, so every view redraws the new name.
+    func testLocalizedStemWithoutAMoveReloadsTheRow() async throws {
+        var store = appsStore()
+        let worker = FolderWorker(types: types)
+        store.setOrder(await worker.resort(store, tag: 99, query: ViewQuery()).order)
+        let applied = await worker.applyLocalizedStems(store, tag: 99, stems: [.object(3): "Notizen"], query: ViewQuery())
+        let result = try XCTUnwrap(applied)
+        XCTAssertEqual(names(result.store), ["Notizen", "Safari", "Safari Technology Preview"])
+        XCTAssertEqual(result.diff.changes.changes, [.reload(IndexSet(integer: 0))])
+    }
+
     /// Merge with Group by (P2-09): a localized-name patch regroups by the names shown.
     func testLocalizedStemsRegroupByName() async throws {
         var store = appsStore()

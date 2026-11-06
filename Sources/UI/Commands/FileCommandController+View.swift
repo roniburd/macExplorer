@@ -75,7 +75,8 @@ extension FileCommandController {
     }
 
     /// "Apply to All Folders…": asks on a sheet, then this folder's view becomes the default, every folder's own
-    /// state is dropped and every open window and tab re-reads its state.
+    /// state is dropped (Finder's older views and the built-in Applications rule stop applying too) and every open
+    /// window and tab re-reads its state.
     func applyViewToAllFolders() {
         guard let session else { return }
         let state = session.viewState
