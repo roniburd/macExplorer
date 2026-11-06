@@ -96,6 +96,14 @@ new_case two-escapes;      put two-escapes Sources/Core/Bad.swift $'final class 
 new_case sparkle-elsewhere; put sparkle-elsewhere Sources/UI/Settings/Bad.swift 'import Sparkle'
 new_case sparkle-in-test;  put sparkle-in-test Tests/UITests/Bad.swift '@testable import Sparkle'
 new_case sparkle-bridge-ok; put sparkle-bridge-ok Sources/UI/Updates/SparkleBridge.swift $'import AppKit\nimport Sparkle'
+new_case quartz-in-core;   put quartz-in-core Sources/Core/Bad.swift 'import Quartz'
+new_case qlthumb-in-fs;    put qlthumb-in-fs Sources/FSKit/Bad.swift '@preconcurrency import QuickLookThumbnailing'
+new_case quicklookui-in-core; put quicklookui-in-core Sources/Core/Model/Bad.swift 'import class QuickLookUI.QLPreviewPanel'
+new_case quicklook-ui-ok;  put quicklook-ui-ok Sources/UI/QuickLook/Preview.swift $'import Quartz\nimport QuickLookThumbnailing'
+new_case quicklook-platform-ok; put quicklook-platform-ok Sources/Core/Platform/Preview.swift 'import QuickLook'
+new_case ql-in-coretests;  put ql-in-coretests Tests/CoreTests/Bad.swift '    let g = QLThumbnailGenerator.shared'
+new_case ql-panel-in-bench; put ql-panel-in-bench Tests/BenchTests/Bad.swift '    QLPreviewPanel.shared()?.reloadData()'
+new_case ql-uitests-ok;    put ql-uitests-ok Tests/UITests/QuickLookTests.swift $'    _ = QLPreviewPanel.shared()\n    _ = QLThumbnailGenerator.shared'
 
 run_case appkit-in-core 1 appkit-in-core
 run_case swiftui-in-fs 1 appkit-in-core
@@ -122,6 +130,14 @@ run_case two-escapes 1 unsafe-escape
 run_case sparkle-elsewhere 1 sparkle-confined
 run_case sparkle-in-test 1 sparkle-confined
 run_case sparkle-bridge-ok 0
+run_case quartz-in-core 1 quicklook-in-core
+run_case qlthumb-in-fs 1 quicklook-in-core
+run_case quicklookui-in-core 1 quicklook-in-core
+run_case quicklook-ui-ok 0
+run_case quicklook-platform-ok 0
+run_case ql-in-coretests 1 quicklook-in-tests
+run_case ql-panel-in-bench 1 quicklook-in-tests
+run_case ql-uitests-ok 0
 
 if [ "$fails" -gt 0 ]; then echo "test-check-layering: $fails case(s) failed"; exit 1; fi
 echo "test-check-layering: all cases passed"

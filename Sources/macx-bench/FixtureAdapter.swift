@@ -21,6 +21,22 @@ struct SandboxHandle: Sendable {
     @discardableResult func flat(_ relative: String, count: Int) -> URL {
         fixtureWrite(relative) { try FixtureTree.flat(in: sandbox, at: relative, count: count) }
     }
+    /// P2-20: `folders` directories "d<n>" under `relative`, each holding `filesPerFolder` files "f<n>" of `bytes` bytes.
+    @discardableResult func folders(_ relative: String, folders: Int, filesPerFolder: Int, bytes: Int) -> URL {
+        fixtureWrite(relative) {
+            let root = try sandbox.createDirectory(relative)
+            let contents = Data(count: bytes)
+            for d in 0..<folders {
+                try sandbox.createDirectory("\(relative)/d\(d)")
+                for f in 0..<filesPerFolder { try sandbox.createFile("\(relative)/d\(d)/f\(f)", contents: contents) }
+            }
+            return root
+        }
+    }
+    /// P2-20: Finder tags through the guarded fixture writer (refuses paths outside the sandbox).
+    func finderTags(_ tags: [String], on relative: String) {
+        fixtureWrite(relative) { try sandbox.setFinderTags(tags, on: relative) }
+    }
     func destroy() { sandbox.destroy() }
 }
 

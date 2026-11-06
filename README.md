@@ -6,7 +6,7 @@ tree, a command bar, Explorer keyboard conventions, cut and paste, right-drag me
 Open With / choose the default app. It is built to be fast: folders with 100,000 entries open within the budgets
 in the design spec (§4.4).
 
-Status: Phase 1 ("Core"), version `0.x`. Design: `docs/superpowers/specs/2026-11-01-macexplorer-design.md`.
+Status: Phase 2 ("Views & Tabs"), version `0.x`. Design: `docs/superpowers/specs/2026-11-01-macexplorer-design.md`.
 
 ## Requirements
 
@@ -52,6 +52,38 @@ rm -rf "$SB"                              # afterwards
 
 `scripts/make-fixtures.sh` builds a larger fixture tree (NFD names, emoji, symlinks, packages, locked files…)
 under a fresh `${TMPDIR}/macx-fixtures-<UUID>` and prints its path.
+
+## Views & Tabs (Phase 2)
+
+- **Tabs.** Every window is a native macOS tab group. ⌘T opens a new tab on the current folder (on `--root` in
+  sandbox mode), ⌃Tab / ⌃⇧Tab move to the next / previous tab, ⌘W closes the tab, and ⇧⌘\ shows all tabs.
+  Middle-click a folder in the content area, the sidebar or the folder tree to open it in a new tab; ⌘-click opens
+  a new tab in the sidebar and the tree (in the content area ⌘-click still toggles the selection). "Open in New
+  Tab" is also in the context menu. To open a dragged folder as a tab, drop it on the "＋" New Tab toolbar button
+  (the P2-06 spike: AppKit's tab bar has no public drop target). Conflict and error dialogs of a job are shown on
+  the tab that started it, which is selected first; if that tab has closed they go to the Operations panel.
+- **Per-folder views.** Each folder remembers its view mode, columns, sort, icon size, Group by and "Calculate
+  Folder Sizes" (keyed by volume UUID + file ID where IDs are stable, by path elsewhere). View › Apply to All
+  Folders… makes the current folder's view the default and forgets the per-folder ones.
+- **Group by** (View › Group By, or the context menu): Kind, Date Modified (Today, Yesterday, Earlier this Week…),
+  Size buckets or Name (first letter), with floating group rows you can collapse. VoiceOver reads a group row as
+  "<title>, <n> items, collapsed/expanded".
+- **Quick Look.** Space opens and closes the Quick Look panel for the selection, and the arrow keys move through
+  the items. While you are type-selecting (the last letter was typed less than a second ago) Space is part of the
+  name, so `my f` reaches `my file.txt`.
+- **Folder sizes.** View › Calculate Folder Sizes scans each folder of the current folder on a background lane:
+  hard links count once, symlinks are never followed, other volumes are not entered, and iCloud placeholders are
+  not downloaded. A size with unreadable or not-downloaded parts shows as "≥ 1.2 MB". Results are cached and
+  updated through the file-system watcher; sorting by Size uses them.
+- **More columns** (right-click a column header): Tags, Date Last Opened, Permissions (rwx), Owner, Comments, and
+  Path in search results. All of them sort; their values are read in the background and refresh when another app
+  changes only a tag or comment.
+- **Copy Path As ▸** (Edit menu and context menu): POSIX Path (⇧⌘C, "Copy as Path"), ~ Path, File URL, Name,
+  Quoted for Shell.
+- **Thumbnails** in Icons view replace type icons for visible items once Quick Look has made them (never for iCloud
+  placeholders); scrolling away cancels the request, and a 64 MB cache keeps recent ones.
+- **Columns view** (⌘3, View › as Columns): one column per folder level. Selecting a folder opens the next column,
+  → / ← move into and out of columns, and each column's trailing handle resizes it (double-click fits the names).
 
 ## Install
 
@@ -107,10 +139,10 @@ pasteboard or your default apps. Each runner prints the sandbox roots it used an
 |---|---|
 | `swift test --parallel` | unit and integration tests (`FSKitTests`, `CoreTests`, `UITests`, `MacxFixturesTests`, `BenchTests`, `ScenarioRunnerTests`); GUI and `hdiutil` tests skip with a reason when unavailable |
 | `scripts/run-scenarios.sh [debug\|release]` | headless end-to-end Core scenarios: every file operation, conflicts, undo, watcher bursts, cross-volume moves on disk images, crash/kill recovery |
-| `scripts/ui-scenarios.sh` | the 25 scripted UI scenarios in `Tests/Scenarios/` driven inside the bundled app (needs a logged-in GUI session) |
+| `scripts/ui-scenarios.sh` | the 40 scripted UI scenarios in `Tests/Scenarios/` (Phase 1 plus the `p2-*` ones) driven inside the bundled app (needs a logged-in GUI session) |
 | `scripts/ui-ax-smoke.sh` | optional Accessibility smoke through System Events; skips when the terminal lacks Accessibility permission |
-| `swift run -c release macx-bench` | 1k/10k/100k benchmarks (model level, plus `listSorted.busyMain` with the main actor as busy as in the app), median and p90 as JSON; `--check-budgets` gates §4.4 on Apple Silicon, `--compare baseline.json` applies the CI relative gate |
-| `scripts/check-layering.sh` | `MacxFS`/`Core` never import AppKit (except `Sources/Core/Platform`), layers only import downwards, fixtures never ship, tests never use global user state |
+| `swift run -c release macx-bench` | 1k/10k/100k benchmarks (model level, plus `listSorted.busyMain` with the main actor as busy as in the app, re-sorts with Group by on as `resort.grouped.*`, and the non-gated `folderSize.scan` of 10k files and `extattrs.read` of 2,000 files), median and p90 as JSON; `--check-budgets` gates §4.4 on Apple Silicon, `--compare baseline.json` applies the CI relative gate |
+| `scripts/check-layering.sh` | `MacxFS`/`Core` never import AppKit or the Quick Look frameworks (except `Sources/Core/Platform`), layers only import downwards, fixtures never ship, tests never use global user state, Quick Look is exercised only from `UITests` |
 | `scripts/verify-phase1.sh` | every gate above in one run, then checks that nothing was left behind |
 
 UI scenarios run in a separate bundle (`com.macexplorer.app.scenarios`, `.build/macExplorer-scenarios.app`), so
@@ -203,3 +235,16 @@ Run before every release, on Apple Silicon, from a clean checkout of the release
     (`MiddleClickTests.testRealDraggingInfoOnTheNewTabButtonIsALinkAndOpensTabs`) drives `draggingEntered` /
     `performDragOperation` with an `NSDraggingInfo` on a private pasteboard and gets `.link` only; the real
     window-server drag is still not run (2026-11-05) and stays a sign-off gate for the operator.
+13. Quick Look visual check in a sandbox folder (`scripts/make-fixtures.sh`, plus a PNG, a PDF and a text file you
+    put there): Space shows each correctly, ↑/↓ move through them, Space closes the panel, and typing `my f` then
+    Space type-selects `my file.txt` instead of opening the panel.
+14. Thumbnails in Icons view on an external disk and on an SMB share, in a test folder you created there: they
+    appear after the type icons without blocking scrolling, and scrolling fast through a large folder stays smooth.
+15. iCloud Drive placeholders: in a folder of not-downloaded items, Icons view shows type icons only (no
+    thumbnails), and Calculate Folder Sizes shows "≥" sizes without downloading anything (Activity Monitor ›
+    Network shows no downloads by `bird`; `brctl status` shows no new transfers).
+16. VoiceOver with Group By on: each group row is announced as "<title>, <n> items, collapsed" or "…, expanded",
+    and collapsing or expanding a group changes the announcement.
+17. Columns view keyboard pass (⌘3) on a sandbox tree: ↓/↑ select in a column and open folders in the next one,
+    → enters the child column, ← returns, holding ↓ over many folders leaves one child column on the last folder,
+    Space opens Quick Look, middle-click opens a folder in a new tab, and Tab moves focus out of the columns.

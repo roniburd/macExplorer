@@ -1,5 +1,6 @@
 #!/bin/bash
-# Layering and test-safety checks (spec §4.1, overview Global Constraints, S6 Contract notes C11 and C13).
+# Layering and test-safety checks (spec §4.1, overview Global Constraints, S6 Contract notes C11 and C13,
+# Phase 2 plan P2-20 for the Quick Look rules).
 # Usage: scripts/check-layering.sh [--root <repository dir>]   (default: the repository containing this script)
 # Prints one "RULE <id>: <file>:<line>: <text>" line per violation and exits 1 if there is any, 0 when clean,
 # 64 on usage errors. It only reads source files and runs `swift package dump-package`; it writes nothing.
@@ -130,8 +131,16 @@ report unsafe-escape keep < <(
 # 9. Sparkle is imported in exactly one file (distribution spec §2): everything else talks to UpdateController.
 report sparkle-confined < <(scan "${IMPORT}Sparkle${END}" Sources Tests | grep -v '^Sources/UI/Updates/SparkleBridge.swift:')
 
+# 10. Quick Look frameworks are UI-only (Phase 2 plan P2-20): MacxFS and Core never import Quartz, QuickLook,
+#     QuickLookUI or QuickLookThumbnailing, except Sources/Core/Platform (as for AppKit, rule 1).
+report quicklook-in-core < <(scan "${IMPORT}(Quartz|QuickLookThumbnailing|QuickLook|QuickLookUI)${END}" Sources/FSKit Sources/Core \
+  | grep -v '^Sources/Core/Platform/')
+
+# 11. Quick Look is exercised only from UITests (Phase 2 plan P2-20; previews and thumbnails stay on sandbox files).
+report quicklook-in-tests < <(scan 'QLPreviewPanel|QLThumbnailGenerator' Tests | grep -v '^Tests/UITests/')
+
 if [ "$violations" -gt 0 ]; then
   echo "check-layering: $violations violation(s)"
   exit 1
 fi
-echo "check-layering: OK (9 rules)"
+echo "check-layering: OK (11 rules)"

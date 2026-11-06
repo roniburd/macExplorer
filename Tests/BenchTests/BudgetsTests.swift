@@ -47,6 +47,25 @@ final class BudgetsTests: XCTestCase {
         XCTAssertEqual(checks.first?.passed, false)
     }
 
+    /// P2-20: re-sorting 100k with Group by on includes the partition, under the same 30 ms budget (§4.4).
+    func testGroupedResortHasA30msBudgetAt100kForEveryGroupBy() {
+        for g in GroupBy.allCases where g != .none {
+            let budget = Budgets.table.first { $0.metric == "resort.grouped.\(g.rawValue)" }
+            XCTAssertEqual(budget?.limit, 30, g.rawValue)
+            XCTAssertEqual(budget?.unit, "ms", g.rawValue)
+            XCTAssertEqual(budget?.sizes, [100_000], g.rawValue)
+        }
+        let checks = Budgets.evaluate([MetricResult(name: "resort.grouped.kind", size: 100_000, samples: [31])])
+        XCTAssertEqual(checks.map(\.passed), [false])
+    }
+
+    /// P2-20: the folder-size scan and extended-attribute read are reported, not gated.
+    func testFolderSizeScanAndExtattrsAreReportedWithoutABudget() {
+        let checks = Budgets.evaluate([MetricResult(name: "folderSize.scan", size: 10_000, samples: [900]),
+                                       MetricResult(name: "extattrs.read", size: 2_000, samples: [900])])
+        XCTAssertTrue(checks.isEmpty)
+    }
+
     func testMemoryBudgetUsesMegabytes() {
         let checks = Budgets.evaluate([MetricResult(name: "memory.steady", size: 100_000, unit: "MB", samples: [25])])
         XCTAssertEqual(checks.first?.passed, false)

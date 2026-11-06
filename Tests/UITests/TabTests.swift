@@ -130,7 +130,7 @@ final class TabTests: XCTestCase {
         let close = try XCTUnwrap(file.items.first { $0.identifier?.rawValue == "macx.menu.closeWindow" })
         close.title = "Close Tab"   // stale from a tabbed browser window
         CloseItemTitler.shared.menuNeedsUpdate(file)
-        XCTAssertEqual(close.title, MenuValidation.closeTitle(for: NSApp.keyWindow))
+        XCTAssertEqual(close.title, MenuValidation.closeTitle(for: NSApplication.shared.keyWindow))
     }
 
     // Review Focus 4

@@ -203,7 +203,7 @@ final class CloseItemTitler: NSObject, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         let action = Selector(Command.closeWindow.selectorName)
         for item in menu.items where item.action == action {
-            MenuValidation.updateTitle(of: item, command: .closeWindow, window: NSApp.keyWindow)
+            MenuValidation.updateTitle(of: item, command: .closeWindow, window: NSApplication.shared.keyWindow)
         }
     }
 }

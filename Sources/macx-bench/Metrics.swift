@@ -195,7 +195,7 @@ final class MetricSuite {
             out.append(result("listSorted.busyMain", try await samples { try await self.listWithBusyMain() }))
         }
 
-        let needsStore = ["sortkeys", "sort", "resort", "filter", "pasteboard"].contains { wants($0) }
+        let needsStore = ["sortkeys", "sort", "resort", "resort.grouped", "filter", "pasteboard"].contains { wants($0) }
         if needsStore {
             let store = try await readStore()
             let keys = SortKeys.nameKeys(store, range: 0..<store.count)
@@ -246,6 +246,23 @@ final class MetricSuite {
                                                extensionKeys: extensionKeys, extras: extras)
                     withExtendedLifetime(p) {}
                     return self.elapsedMs(since: start)
+                }))
+            }
+            // P2-20: a re-sort with Group by on is the sort plus the partition FolderWorker runs on its result
+            // (§4.4 re-sort 100k < 30 ms includes the partition).
+            let buckets = DateBuckets(now: Date(), calendar: .autoupdatingCurrent)
+            for groupBy in GroupBy.allCases where groupBy != .none && wants("resort.grouped.\(groupBy.rawValue)") {
+                let types = env.types
+                out.append(result("resort.grouped.\(groupBy.rawValue)", try await samples {
+                    let start = self.clock.now
+                    let p = Sorter.permutation(store, nameKeys: keys, searchKeys: nil, query: ViewQuery(), kindRanks: ranks,
+                                               extensionKeys: extensionKeys)
+                    let grouped = Grouping.partition(p, store: store, by: groupBy, dateBuckets: buckets, types: types)
+                    let ms = self.elapsedMs(since: start)
+                    guard grouped.order.count == store.count, !grouped.runs.isEmpty else {
+                        throw BenchFailure.check("grouped re-sort by \(groupBy.rawValue) (\(grouped.order.count) of \(store.count) rows)")
+                    }
+                    return ms
                 }))
             }
             if wants("filter") {
@@ -407,9 +424,9 @@ enum Bench {
                 let suite = MetricSuite(env: env, sandbox: sandbox, relativeDir: relative, directory: directory, size: size, options: options)
                 metrics += try await suite.runAll()
             }
-            metrics += try await FolderViewBench.run(options) { name in
-                options.metrics.map { filter in filter.contains { name.hasPrefix($0) } } ?? true
-            }
+            let wants: (String) -> Bool = { name in options.metrics.map { filter in filter.contains { name.hasPrefix($0) } } ?? true }
+            metrics += try await FolderViewBench.run(options, wants: wants)
+            metrics += try await ScanBench.run(options, env: env, sandbox: sandbox, wants: wants)
         } catch {
             failure = error
         }
