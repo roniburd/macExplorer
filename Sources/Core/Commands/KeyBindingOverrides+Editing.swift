@@ -41,7 +41,20 @@ extension KeyBindingOverrides {
         }
     }
 
-    public mutating func reset(_ command: Command) { commands[command] = nil }
+    /// Restores `command`'s defaults. Like `reassign`, each restored trigger is first taken from any other command
+    /// that holds it now (e.g. a ⌘[ given to Up after Back's was reassigned), so no two commands end up sharing it.
+    public mutating func reset(_ command: Command) {
+        guard commands[command] != nil else { return }
+        commands[command] = nil
+        guard !KeyBindings.fixedCommands.contains(command) else { return }
+        let restored = [KeyMap.primary(command)].compactMap { $0 }.map(Trigger.key)
+            + KeyMap.alternates(command).map(Trigger.key) + KeyMap.defaultMouse(command).map(Trigger.mouse)
+        for trigger in restored {
+            for use in KeyBindings(overrides: self).uses(of: trigger) where use.command != command {
+                remove(trigger, from: use)
+            }
+        }
+    }
 
     private mutating func remove(_ trigger: Trigger, from use: KeyBindings.Use) {
         switch (use.slot, trigger) {

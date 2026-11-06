@@ -64,16 +64,25 @@ struct ShortcutsSettingsView: View {
     @ViewBuilder private func row(_ command: Command) -> some View {
         let b = model.bindings
         let fixed = model.isFixed(command)
+        let conflicts = model.conflicts(for: command)
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
                 Text(model.title(command))
                     .fontWeight(model.isModified(command) ? .bold : .regular)
                     .frame(width: 170, alignment: .leading)
                     .lineLimit(1)
-                primaryCell(command, chord: b.primary(command), fixed: fixed)
+                primaryCell(command, chord: b.primary(command), fixed: fixed,
+                            conflicted: b.primary(command).map { conflicts[.key($0)] != nil } ?? false)
                     .frame(width: 90, alignment: .leading)
-                chips(command, keys: b.alternates(command), mouse: b.mouse(command), fixed: fixed)
+                chips(command, keys: b.alternates(command), mouse: b.mouse(command), fixed: fixed, conflicts: conflicts)
                 Spacer(minLength: 0)
+                if !conflicts.isEmpty {
+                    // Spec §6: a trigger another command also holds is flagged on both rows.
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                        .help(conflicts.sorted { $0.key.displayString < $1.key.displayString }
+                            .map { model.conflictMessage($0.key, $0.value) }.joined(separator: "\n"))
+                }
                 if !fixed {
                     Button { begin(command, .alternate) } label: {
                         Image(systemName: isRecording(command, .alternate) ? "record.circle" : "plus")
@@ -93,21 +102,29 @@ struct ShortcutsSettingsView: View {
         .help(fixed ? L10n.string("Fixed") : "")
     }
 
-    @ViewBuilder private func primaryCell(_ command: Command, chord: KeyChord?, fixed: Bool) -> some View {
+    @ViewBuilder private func primaryCell(_ command: Command, chord: KeyChord?, fixed: Bool, conflicted: Bool) -> some View {
         if isRecording(command, .primary) {
             Text(L10n.string("Type shortcut…")).foregroundStyle(.tint)
         } else if fixed {
             Text(chord?.displayString ?? "—").foregroundStyle(.secondary)
+        } else if conflicted {
+            Button(chord?.displayString ?? "—") { begin(command, .primary) }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.orange)
         } else {
             Button(chord?.displayString ?? "—") { begin(command, .primary) }
                 .buttonStyle(.borderless)
         }
     }
 
-    private func chips(_ command: Command, keys: [KeyChord], mouse: [MouseButton], fixed: Bool) -> some View {
+    /// `keys` and `mouse` hold no repeats (`KeyBindings` drops them), so `\.self` is a unique id.
+    private func chips(_ command: Command, keys: [KeyChord], mouse: [MouseButton], fixed: Bool,
+                       conflicts: [Trigger: [KeyBindings.Use]]) -> some View {
         HStack(spacing: 4) {
             ForEach(keys.map(Trigger.key) + mouse.map(Trigger.mouse), id: \.self) { trigger in
-                ShortcutChip(text: trigger.displayString, removable: !fixed) { model.remove(trigger, from: command) }
+                ShortcutChip(text: trigger.displayString, removable: !fixed, conflicted: conflicts[trigger] != nil) {
+                    model.remove(trigger, from: command)
+                }
             }
             if isRecording(command, .alternate) {
                 Text(L10n.string("Type shortcut…")).foregroundStyle(.tint)
@@ -161,6 +178,7 @@ struct ShortcutsSettingsView: View {
 private struct ShortcutChip: View {
     let text: String
     let removable: Bool
+    let conflicted: Bool
     let remove: () -> Void
     @State private var hovering = false
 
@@ -175,7 +193,7 @@ private struct ShortcutChip: View {
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 2)
-        .background(RoundedRectangle(cornerRadius: 4).fill(Color.secondary.opacity(0.15)))
+        .background(RoundedRectangle(cornerRadius: 4).fill(conflicted ? Color.orange.opacity(0.3) : Color.secondary.opacity(0.15)))
         .onHover { hovering = $0 }
     }
 }

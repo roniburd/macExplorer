@@ -1,11 +1,13 @@
 import Foundation
 
 public enum BindingRejection: Sendable, Equatable {
-    /// ⌘Q, ⌘H, ⌥⌘H, ⌘M, ⌘, and ⌘` belong to the app and window menus; Tab, ⇧Tab and Esc to focus and cancel.
+    /// ⌘Q, ⌘H, ⌥⌘H, ⌘M, ⌘, ⌃⌘S, ⌃⌘F, ⌘? (⇧⌘/) and ⌘` belong to fixed menu items (`KeyBindings.fixedMenuChords`)
+    /// and window cycling; Tab, ⇧Tab and Esc to focus and cancel.
     case reserved
-    /// A primary with no ⌘, ⌃ or ⌥ that isn't a function key (a character, space, Return, Enter, ⌫, Del or an arrow,
-    /// with or without ⇧). Menu key equivalents are matched before the field editor sees the key, so it would fire
-    /// while typing or editing a name or path instead of reaching the text.
+    /// A primary with no ⌘ or ⌃ that isn't a function key, other than ⌥ with a key that doesn't type (arrows, ↩, ⌤,
+    /// ⌫, Del). So: a character or space with any mix of ⌥/⇧ (⌥L types @ on a German layout), or a bare/⇧ Return,
+    /// Enter, ⌫, Del or arrow. Menu key equivalents are matched before the field editor sees the key, so it would
+    /// fire while typing or editing a name or path instead of reaching the text.
     case editsTextAsPrimary
     /// A mouse button in a key slot, or a key in the mouse slot.
     case wrongSlot
@@ -27,12 +29,22 @@ public struct KeyBindings: Sendable, Equatable {
     public static let defaults = KeyBindings(overrides: .empty)
     /// Tab / ⇧Tab (focus cycle) and Esc stay as they are; Settings shows them but can't edit them.
     public static let fixedCommands: Set<Command> = [.cycleFocusForward, .cycleFocusBackward, .cancelOperation]
-    public static let reservedChords: Set<KeyChord> = [
-        KeyChord(.character("q"), .command), KeyChord(.character("h"), .command),
-        KeyChord(.character("h"), [.option, .command]), KeyChord(.character("m"), .command),
-        KeyChord(.character(","), .command), KeyChord(.character("`"), .command),
-        KeyChord(.tab), KeyChord(.tab, .shift), KeyChord(.escape),
+    /// Key equivalents of the menu items that aren't commands, keyed by their English title. `MainMenuBuilder` takes
+    /// them from here, so the reserved set can't drift from the menu. Help's ⇧⌘/ is shown as ⌘?.
+    public static let fixedMenuChords: [String: KeyChord] = [
+        "Settings…": KeyChord(.character(","), .command),
+        "Hide MacExplorer": KeyChord(.character("h"), .command),
+        "Hide Others": KeyChord(.character("h"), [.option, .command]),
+        "Quit MacExplorer": KeyChord(.character("q"), .command),
+        "Show Sidebar": KeyChord(.character("s"), [.control, .command]),
+        "Enter Full Screen": KeyChord(.character("f"), [.control, .command]),
+        "Minimize": KeyChord(.character("m"), .command),
+        "MacExplorer Help": KeyChord(.character("/"), [.shift, .command]),
     ]
+    /// The fixed menu items' chords, ⌘` (cycle windows), and Tab, ⇧Tab and Esc.
+    public static let reservedChords: Set<KeyChord> = Set(fixedMenuChords.values).union([
+        KeyChord(.character("`"), .command), KeyChord(.tab), KeyChord(.tab, .shift), KeyChord(.escape),
+    ])
 
     public let overrides: KeyBindingOverrides
     public let collidesWithTextEditing: Set<Command>
@@ -60,10 +72,11 @@ public struct KeyBindings: Sendable, Equatable {
             // Stored alternates go through the same check as stored primaries, so hand-edited or stale data can't
             // take Tab, ⇧Tab, Esc or a menu chord away from its owner. (Stored mouse lists need no filtering: they
             // can only hold mouse buttons, and every mouse button is valid in the mouse slot.)
-            let alternates = entry?.alternates.map { $0.filter { Self.validate(.key($0), as: .alternate) == nil } }
+            // Repeats in hand-edited lists are dropped (first kept), so each trigger shows once in Settings.
+            let alternates = entry?.alternates.map { Self.unique($0.filter { Self.validate(.key($0), as: .alternate) == nil }) }
                 ?? KeyMap.alternates(command)
             alternateLists[command] = alternates
-            let mouse = entry?.mouse ?? KeyMap.defaultMouse(command)
+            let mouse = entry?.mouse.map(Self.unique) ?? KeyMap.defaultMouse(command)
             mouseLists[command] = mouse
             for chord in alternates where alternateTable[chord] == nil { alternateTable[chord] = command }
             for button in mouse where mouseTable[button] == nil { mouseTable[button] = command }
@@ -77,6 +90,11 @@ public struct KeyBindings: Sendable, Equatable {
     }
 
     public static func == (a: KeyBindings, b: KeyBindings) -> Bool { a.overrides == b.overrides }
+
+    private static func unique<T: Hashable>(_ list: [T]) -> [T] {
+        var seen: Set<T> = []
+        return list.filter { seen.insert($0).inserted }
+    }
 
     public func primary(_ command: Command) -> KeyChord? { primaries[command] }
     public func alternates(_ command: Command) -> [KeyChord] { alternateLists[command] ?? [] }
@@ -105,9 +123,12 @@ public struct KeyBindings: Sendable, Equatable {
         case (.mouse, _), (.key, .mouse): return .wrongSlot
         case (.key(let chord), _):
             if reservedChords.contains(chord) { return .reserved }
-            guard slot == .primary, chord.modifiers.isDisjoint(with: [.command, .control, .option]) else { return nil }
-            if case .function = chord.key { return nil }
-            return .editsTextAsPrimary
+            guard slot == .primary, chord.modifiers.isDisjoint(with: [.command, .control]) else { return nil }
+            switch chord.key {
+            case .function: return nil
+            case .character, .space: return .editsTextAsPrimary
+            default: return chord.modifiers.contains(.option) ? nil : .editsTextAsPrimary
+            }
         }
     }
 }

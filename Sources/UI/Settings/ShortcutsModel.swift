@@ -59,6 +59,20 @@ enum ShortcutApply: Equatable {
         }
     }
 
+    /// Spec §6: each trigger `command` holds that another command also holds (only possible through hand-edited or
+    /// older stored data), with those other uses. Shown on every row involved.
+    func conflicts(for command: Command) -> [Trigger: [KeyBindings.Use]] {
+        let b = bindings
+        let triggers = [b.primary(command)].compactMap { $0 }.map(Trigger.key)
+            + b.alternates(command).map(Trigger.key) + b.mouse(command).map(Trigger.mouse)
+        var result: [Trigger: [KeyBindings.Use]] = [:]
+        for trigger in triggers {
+            let others = b.uses(of: trigger).filter { $0.command != command }
+            if !others.isEmpty { result[trigger] = others }
+        }
+        return result
+    }
+
     func isModified(_ command: Command) -> Bool { settings.keyBindingOverrides.commands[command] != nil }
     func isFixed(_ command: Command) -> Bool { KeyBindings.fixedCommands.contains(command) }
 
@@ -86,7 +100,7 @@ enum ShortcutApply: Equatable {
     static func message(_ rejection: BindingRejection) -> String {
         switch rejection {
         case .reserved: L10n.string("Reserved by macOS or MacExplorer.")
-        case .editsTextAsPrimary: L10n.string("Menu shortcuts need ⌘, ⌃ or ⌥, or an F key.")
+        case .editsTextAsPrimary: L10n.string("Menu shortcuts need ⌘ or ⌃, or an F key. ⌥ alone works only with keys that don't type.")
         case .wrongSlot: L10n.string("Mouse buttons can only be added as extras.")
         }
     }

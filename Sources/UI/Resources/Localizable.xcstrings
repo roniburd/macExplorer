@@ -2456,13 +2456,13 @@
         }
       }
     },
-    "Menu shortcuts need ⌘, ⌃ or ⌥, or an F key." : {
+    "Menu shortcuts need ⌘ or ⌃, or an F key. ⌥ alone works only with keys that don't type." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Menu shortcuts need ⌘, ⌃ or ⌥, or an F key."
+            "value" : "Menu shortcuts need ⌘ or ⌃, or an F key. ⌥ alone works only with keys that don't type."
           }
         }
       }

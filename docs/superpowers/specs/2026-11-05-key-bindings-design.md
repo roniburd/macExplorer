@@ -104,14 +104,14 @@ public struct KeyBindings: Sendable, Equatable {
 
 ```swift
 public enum BindingRejection: Sendable, Equatable {
-    case reserved            // ⌘Q, ⌘H, ⌥⌘H, ⌘M, ⌘, (Settings), ⌘` (cycle windows); Tab, ⇧Tab; Esc
-    case editsTextAsPrimary  // a primary with no ⌘/⌃/⌥ that isn't a function key (character, space, ↩, ⌤, ⌫, Del, arrows; ⇧ or not)
+    case reserved            // ⌘Q, ⌘H, ⌥⌘H, ⌘M, ⌘, (Settings), ⌃⌘S (Show Sidebar), ⌃⌘F (Full Screen), ⌘? (⇧⌘/, Help), ⌘` (cycle windows); Tab, ⇧Tab; Esc
+    case editsTextAsPrimary  // a primary with no ⌘/⌃ that isn't a function key: a character or space with any ⌥/⇧, or ↩, ⌤, ⌫, Del, arrows with no ⌥ (⇧ or not)
     case unsupported         // a chord MainMenuBuilder.keyEquivalent can't express, used as a primary
 }
 public static func validate(_ trigger: Trigger, as slot: Slot) -> BindingRejection?
 ```
 
-Tab and ⇧Tab stay bound to `cycleFocusForward` / `cycleFocusBackward`, and Esc to `cancelOperation`. Those rows are shown in Settings but can't be edited. A primary with no ⌘, ⌃ or ⌥ must be a function key (F1…F20, ⇧ allowed). A primary becomes a menu key equivalent, and AppKit matches those before the field editor gets the key, so a bare Return, Enter, ⌫, Del or arrow (with or without ⇧) would fire while editing a name or path; none of them are in `textEditingChords`, so collision handling wouldn't catch them. A stored primary that fails this falls back to the default. Any of these keys, and a bare character, is allowed as an alternate, because alternates never fire in text fields.
+Tab and ⇧Tab stay bound to `cycleFocusForward` / `cycleFocusBackward`, and Esc to `cancelOperation`. Those rows are shown in Settings but can't be edited. A primary with no ⌘, ⌃ or ⌥ must be a function key (F1…F20, ⇧ allowed). A primary becomes a menu key equivalent, and AppKit matches those before the field editor gets the key, so a bare Return, Enter, ⌫, Del or arrow (with or without ⇧) would fire while editing a name or path; none of them are in `textEditingChords`, so collision handling wouldn't catch them. ⌥ (with or without ⇧) and a character or space is refused too, because it types a character (⌥L is @ on a German layout). The reserved chords include every key equivalent of a non-command menu item; `KeyBindings.fixedMenuChords` is the single list `MainMenuBuilder` reads them from. A stored primary that fails this falls back to the default. Any of these keys, and a bare character, is allowed as an alternate, because alternates never fire in text fields.
 
 ### 3.5 Settings
 
@@ -250,3 +250,4 @@ Made while writing the implementation plan (`docs/superpowers/plans/2026-11-05-k
 - **`Trigger` is not `Codable`.** Only `KeyChord` and `MouseButton` are stored. `MouseButton.displayName` lives in UI (localized), and Core has the canonical text form `"mouse4"`.
 - **`rebind-back` scenario → UI tests.** Rebinding is covered by `KeyBindingsRoutingTests` and `MouseRouterTests.testReboundButtonFollowsActiveBindings`. Only `mouse-back-forward.json` is a scenario.
 - **Fixed rows.** `cancelOperation` is titled "Cancel" (its existing `MainMenuTitles` entry).
+- **Branch review.** ⌃⌘S, ⌃⌘F and ⌘? (⇧⌘/) are reserved, from the shared `KeyBindings.fixedMenuChords`. ⌥/⇧ + a character or space is refused as a primary ("Menu shortcuts need ⌘ or ⌃, or an F key. ⌥ alone works only with keys that don't type."). `reset(_:)` works like `reassign`: each restored default trigger is first removed from any other command holding it. Settings flags a trigger two commands share on both rows (orange chip or shortcut, ⚠ with a tooltip), via `ShortcutsModel.conflicts(for:)`. Resolved alternate and mouse lists drop repeats. An undecodable "keyBindings" value is reported once through `Settings.init`'s `diagnostic` hook (NSLog by default).

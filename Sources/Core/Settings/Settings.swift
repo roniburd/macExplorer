@@ -76,7 +76,10 @@ public final class Settings {
     private var recents: [String] { didSet { save(recents, Key.recentLocations) } }
     private var tccOutcomes: [ProtectedLocation: TCCOutcome] { didSet { save(tccOutcomes.map(TCCRecord.init), Key.tccOutcomes) } }
 
-    public init(storage: any SettingsStorage, home: URL = FileManager.default.homeDirectoryForCurrentUser) {
+    /// `diagnostic` receives one message per stored value that exists but can't be decoded (key-bindings spec §6);
+    /// it defaults to NSLog.
+    public init(storage: any SettingsStorage, home: URL = FileManager.default.homeDirectoryForCurrentUser,
+                diagnostic: (String) -> Void = { NSLog("%@", $0) }) {
         self.storage = storage
         self.home = home
         let stored = Self.load(Int.self, Self.schemaVersionKey, from: storage)
@@ -113,7 +116,17 @@ public final class Settings {
         checkForUpdatesAutomatically = Self.load(Bool.self, Key.checkForUpdatesAutomatically, from: storage) ?? true
         offerToReportCrashes = Self.load(Bool.self, Key.offerToReportCrashes, from: storage) ?? true
         lastReportedCrashes = Array((Self.load([String].self, Key.lastReportedCrashes, from: storage) ?? []).prefix(Self.lastReportedCrashesLimit))
-        keyBindingOverrides = Self.load(KeyBindingOverrides.self, Key.keyBindings, from: storage) ?? .empty
+        // Undecodable data: defaults are used and the data is left in place (assigning in init doesn't save).
+        if let data = storage.data(forKey: Key.keyBindings) {
+            do {
+                keyBindingOverrides = try JSONDecoder().decode(KeyBindingOverrides.self, from: data)
+            } catch {
+                keyBindingOverrides = .empty
+                diagnostic("MacExplorer: stored \"\(Key.keyBindings)\" could not be read; using default shortcuts (\(error))")
+            }
+        } else {
+            keyBindingOverrides = .empty
+        }
         if (stored ?? 0) < Self.schemaVersion {
             storage.set(try? JSONEncoder().encode(Self.schemaVersion), forKey: Self.schemaVersionKey)
         }

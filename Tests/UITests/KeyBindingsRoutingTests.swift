@@ -22,6 +22,35 @@ final class KeyBindingsRoutingTests: XCTestCase {
         return nil
     }
 
+    /// Every key equivalent on a non-command menu item (Show Sidebar, Enter Full Screen, Help…) is reserved, so no
+    /// rebinding can be shadowed by it or take it away.
+    func testFixedMenuItemKeyEquivalentsAreReserved() {
+        _ = NSApplication.shared
+        var found: [KeyChord] = []
+        func walk(_ menu: NSMenu) {
+            for item in menu.items {
+                if let sub = item.submenu { walk(sub) }
+                let id = item.identifier?.rawValue ?? ""
+                guard !item.keyEquivalent.isEmpty,
+                      !(id.hasPrefix("macx.menu.") && Command(rawValue: String(id.dropFirst("macx.menu.".count))) != nil)
+                else { continue }
+                var modifiers: KeyModifiers = []
+                let mask = item.keyEquivalentModifierMask
+                if mask.contains(.command) { modifiers.insert(.command) }
+                if mask.contains(.option) { modifiers.insert(.option) }
+                if mask.contains(.control) { modifiers.insert(.control) }
+                if mask.contains(.shift) { modifiers.insert(.shift) }
+                var key = item.keyEquivalent
+                if key == "?" { key = "/"; modifiers.insert(.shift) }      // ⌘? is ⇧⌘/
+                let chord = KeyChord(.character(key.lowercased()), modifiers)
+                found.append(chord)
+                XCTAssertTrue(KeyBindings.reservedChords.contains(chord), "\(item.title): \(chord)")
+            }
+        }
+        walk(MainMenuBuilder.build())
+        XCTAssertEqual(Set(found), Set(KeyBindings.fixedMenuChords.values))
+    }
+
     func testApplyKeyEquivalentsSetsChangesAndClears() throws {
         _ = NSApplication.shared
         let menu = MainMenuBuilder.build()

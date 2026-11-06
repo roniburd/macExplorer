@@ -30,6 +30,21 @@ final class KeyBindingSettingsTests: XCTestCase {
         XCTAssertNil(storage.data(forKey: "keyBindings"))
     }
 
+    /// Spec §6: undecodable data → defaults, data left in place, one diagnostic.
+    func testUndecodableStoredValueIsReportedOnceAndLeftInPlace() {
+        let storage = InMemorySettingsStorage()
+        let garbage = Data("42".utf8)
+        storage.set(garbage, forKey: "keyBindings")
+        var reports: [String] = []
+        let s = Settings(storage: storage, home: home, diagnostic: { reports.append($0) })
+        XCTAssertEqual(s.keyBindingOverrides, .empty)
+        XCTAssertEqual(storage.data(forKey: "keyBindings"), garbage)
+        XCTAssertEqual(reports.count, 1)
+        XCTAssertTrue(reports.first?.contains("keyBindings") == true, reports.first ?? "")
+        _ = Settings(storage: InMemorySettingsStorage(), home: home, diagnostic: { reports.append($0) })
+        XCTAssertEqual(reports.count, 1, "nothing stored → nothing reported")
+    }
+
     func testGarbageStoredValueFallsBackWithoutOverwriting() {
         let storage = InMemorySettingsStorage()
         let garbage = Data("[\"not an object\"]".utf8)

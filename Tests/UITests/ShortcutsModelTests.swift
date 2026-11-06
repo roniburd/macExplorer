@@ -75,10 +75,36 @@ final class ShortcutsModelTests: XCTestCase {
         XCTAssertEqual(s.keyBindingOverrides, .empty)
     }
 
+    /// Spec §6: a trigger two commands hold (stored by hand, or left by an older build) is flagged on both rows.
+    func testConflictsInStoredDataShowOnBothRows() {
+        let s = settings()
+        var o = KeyBindingOverrides.empty
+        o.commands[.refresh] = .init(alternates: [chord("F3")])
+        o.commands[.up] = .init(primary: .chord(chord("cmd+[")))
+        s.keyBindingOverrides = o
+        let m = ShortcutsModel(settings: s)
+        XCTAssertEqual(m.conflicts(for: .refresh), [.key(chord("F3")): [.init(command: .focusSearch, slot: .alternate)]])
+        XCTAssertEqual(m.conflicts(for: .focusSearch), [.key(chord("F3")): [.init(command: .refresh, slot: .alternate)]])
+        XCTAssertEqual(m.conflicts(for: .back), [.key(chord("cmd+[")): [.init(command: .up, slot: .primary)]])
+        XCTAssertEqual(m.conflicts(for: .up), [.key(chord("cmd+[")): [.init(command: .back, slot: .primary)]])
+        XCTAssertEqual(m.conflicts(for: .forward), [:])
+        XCTAssertEqual(ShortcutsModel(settings: settings()).conflicts(for: .back), [:], "defaults have no conflicts")
+    }
+
+    func testResetThroughTheModelLeavesNoSharedTrigger() {
+        let s = settings()
+        let m = ShortcutsModel(settings: s)
+        XCTAssertEqual(m.apply(.key(chord("cmd+d")), to: .rename, as: .primary, reassigning: true), .saved)
+        m.reset(.duplicate)
+        XCTAssertEqual(s.keyBindings.uses(of: .key(chord("cmd+d"))), [.init(command: .duplicate, slot: .primary)])
+        XCTAssertEqual(m.conflicts(for: .rename), [:])
+    }
+
     func testMessages() {
         let m = ShortcutsModel(settings: settings())
         XCTAssertEqual(ShortcutsModel.message(.reserved), "Reserved by macOS or MacExplorer.")
-        XCTAssertEqual(ShortcutsModel.message(.editsTextAsPrimary), "Menu shortcuts need ⌘, ⌃ or ⌥, or an F key.")
+        XCTAssertEqual(ShortcutsModel.message(.editsTextAsPrimary),
+                       "Menu shortcuts need ⌘ or ⌃, or an F key. ⌥ alone works only with keys that don't type.")
         XCTAssertEqual(m.conflictMessage(.key(chord("cmd+d")), [.init(command: .duplicate, slot: .primary)]),
                        "⌘D is used by Duplicate.")
     }

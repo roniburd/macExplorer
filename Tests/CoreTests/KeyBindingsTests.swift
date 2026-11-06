@@ -188,6 +188,51 @@ final class KeyBindingsTests: XCTestCase {
         XCTAssertNotNil(o.commands[.forward])
     }
 
+    /// Review of the branch: ↺ on a command whose default was reassigned must not leave two commands on one trigger.
+    func testResetTakesBackTheDefaultsFromWhoeverHoldsThem() {
+        var o = KeyBindingOverrides.empty
+        o.reassign(.key(chord("cmd+[")), to: .up, as: .primary)
+        o.reassign(.key(chord("delete")), to: .open, as: .alternate)
+        o.reassign(.mouse(mouse4), to: .forward, as: .mouse)
+        o.reset(.back)
+        let b = KeyBindings(overrides: o)
+        XCTAssertNil(o.commands[.back])
+        XCTAssertEqual(b.uses(of: .key(chord("cmd+["))), [.init(command: .back, slot: .primary)])
+        XCTAssertEqual(b.uses(of: .key(chord("delete"))), [.init(command: .back, slot: .alternate)])
+        XCTAssertEqual(b.uses(of: .mouse(mouse4)), [.init(command: .back, slot: .mouse)])
+        XCTAssertNil(b.primary(.up), "Up gives ⌘[ back and is left unbound, as after a reassign")
+        XCTAssertEqual(b.mouse(.forward), [mouse5])
+        XCTAssertNil(o.commands[.forward], "Forward is back to its defaults")
+    }
+
+    func testResolvedListsDropRepeatedEntries() {
+        var o = KeyBindingOverrides.empty
+        o.commands[.refresh] = .init(alternates: [chord("F5"), chord("F5")], mouse: [mouse6, mouse6])
+        let b = KeyBindings(overrides: o)
+        XCTAssertEqual(b.alternates(.refresh), [chord("F5")])
+        XCTAssertEqual(b.mouse(.refresh), [mouse6])
+    }
+
+    /// Fixed (non-command) menu items: Show Sidebar ⌃⌘S, Enter Full Screen ⌃⌘F, Help ⌘? (⇧⌘/).
+    func testFixedMenuItemChordsAreReserved() {
+        for text in ["ctrl+cmd+s", "ctrl+cmd+f", "shift+cmd+/"] {
+            XCTAssertEqual(KeyBindings.validate(.key(chord(text)), as: .primary), .reserved, text)
+            XCTAssertEqual(KeyBindings.validate(.key(chord(text)), as: .alternate), .reserved, text)
+        }
+        XCTAssertTrue(Set(KeyBindings.fixedMenuChords.values).isSubset(of: KeyBindings.reservedChords))
+    }
+
+    /// ⌥/⇧ + a character or space types a character (⌥L is @ on a German layout), so it can't be a menu shortcut.
+    func testOptionCharacterPrimariesAreRejected() {
+        for text in ["opt+l", "opt+shift+l", "opt+5", "opt+space", "opt+shift+space", "opt+["] {
+            XCTAssertEqual(KeyBindings.validate(.key(chord(text)), as: .primary), .editsTextAsPrimary, text)
+            XCTAssertNil(KeyBindings.validate(.key(chord(text)), as: .alternate), text)
+        }
+        for text in ["opt+cmd+l", "ctrl+opt+l", "ctrl+l", "opt+down", "opt+F5"] {
+            XCTAssertNil(KeyBindings.validate(.key(chord(text)), as: .primary), text)
+        }
+    }
+
     func testDispatcherUsesCustomAlternates() {
         var o = KeyBindingOverrides.empty
         o.reassign(.key(chord("ctrl+b")), to: .back, as: .alternate)

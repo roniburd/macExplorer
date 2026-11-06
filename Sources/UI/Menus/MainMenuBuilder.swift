@@ -71,15 +71,15 @@ import Core
             standard("Check for Updates…", UpdateCommands.checkForUpdates),
             .separator(),
             // P1-30's AppDelegate implements macx_showSettings: (disabled until then).
-            standard("Settings…", NSSelectorFromString("macx_showSettings:"), ","),
+            standard("Settings…", NSSelectorFromString("macx_showSettings:")),
             .separator(),
             services,
             .separator(),
-            standard("Hide MacExplorer", #selector(NSApplication.hide(_:)), "h"),
-            standard("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
+            standard("Hide MacExplorer", #selector(NSApplication.hide(_:))),
+            standard("Hide Others", #selector(NSApplication.hideOtherApplications(_:))),
             standard("Show All", #selector(NSApplication.unhideAllApplications(_:))),
             .separator(),
-            standard("Quit MacExplorer", #selector(NSApplication.terminate(_:)), "q"),
+            standard("Quit MacExplorer", #selector(NSApplication.terminate(_:))),
         ]
     }
 
@@ -116,10 +116,10 @@ import Core
             item(.useViewAsDefault), item(.resetFolderView),
             .separator(),
             item(.toggleHidden), item(.toggleCommandBar),
-            standard("Show Sidebar", #selector(NSSplitViewController.toggleSidebar(_:)), "s", [.command, .control]),
+            standard("Show Sidebar", #selector(NSSplitViewController.toggleSidebar(_:))),
             .separator(),
             item(.refresh), .separator(),
-            standard("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control]),
+            standard("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:))),
         ]
     }
 
@@ -133,7 +133,7 @@ import Core
 
     private static func windowItems() -> [NSMenuItem] {
         [
-            standard("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m"),
+            standard("Minimize", #selector(NSWindow.performMiniaturize(_:))),
             standard("Zoom", #selector(NSWindow.performZoom(_:))),
             .separator(),
             item(.showOperations),
@@ -144,7 +144,7 @@ import Core
 
     private static func helpItems() -> [NSMenuItem] {
         [
-            standard("MacExplorer Help", #selector(NSApplication.showHelp(_:)), "?"),
+            standard("MacExplorer Help", #selector(NSApplication.showHelp(_:))),
             .separator(),
             standard("Report a Bug…", FeedbackActions.reportBugAction),
             standard("Request a Feature…", FeedbackActions.requestFeatureAction),
@@ -182,10 +182,18 @@ import Core
         }
     }
 
-    private static func standard(_ title: String, _ action: Selector, _ key: String = "",
-                                 _ modifiers: NSEvent.ModifierFlags = .command) -> NSMenuItem {
-        let item = NSMenuItem(title: L10n.string(title), action: action, keyEquivalent: key)
-        if !key.isEmpty { item.keyEquivalentModifierMask = modifiers }
+    /// A non-command item. Its key equivalent, if any, comes from `KeyBindings.fixedMenuChords[title]` (all reserved,
+    /// so no rebinding can shadow or take it).
+    private static func standard(_ title: String, _ action: Selector) -> NSMenuItem {
+        let item = NSMenuItem(title: L10n.string(title), action: action, keyEquivalent: "")
+        if let chord = KeyBindings.fixedMenuChords[title] {
+            if chord == KeyChord(.character("/"), [.shift, .command]) {
+                item.keyEquivalent = "?"                         // shown as ⌘?, the macOS Help convention
+                item.keyEquivalentModifierMask = .command
+            } else {
+                setKeyEquivalent(of: item, to: chord)
+            }
+        }
         return item
     }
 
