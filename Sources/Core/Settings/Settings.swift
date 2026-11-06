@@ -54,6 +54,12 @@ public final class Settings {
     public var updateChannel: UpdateChannel { didSet { save(updateChannel, Key.updateChannel) } }
     public var checkForUpdatesAutomatically: Bool { didSet { save(checkForUpdatesAutomatically, Key.checkForUpdatesAutomatically) } }
     public var offerToReportCrashes: Bool { didSet { save(offerToReportCrashes, Key.offerToReportCrashes) } }
+    /// Settings › Shortcuts: the user's changes to the key table (sparse; `.empty` = all defaults). Not stored while empty.
+    public var keyBindingOverrides: KeyBindingOverrides {
+        didSet { save(keyBindingOverrides.commands.isEmpty ? nil : keyBindingOverrides, Key.keyBindings) }
+    }
+    /// The resolved table for `keyBindingOverrides`.
+    public var keyBindings: KeyBindings { KeyBindings(overrides: keyBindingOverrides) }
     /// `.ips` file names already offered (newest first, ≤ 20), so one crash prompts once.
     public private(set) var lastReportedCrashes: [String] { didSet { save(lastReportedCrashes, Key.lastReportedCrashes) } }
     public var onboardingCompleted: Bool { didSet { save(onboardingCompleted, Key.onboardingCompleted) } }
@@ -107,6 +113,7 @@ public final class Settings {
         checkForUpdatesAutomatically = Self.load(Bool.self, Key.checkForUpdatesAutomatically, from: storage) ?? true
         offerToReportCrashes = Self.load(Bool.self, Key.offerToReportCrashes, from: storage) ?? true
         lastReportedCrashes = Array((Self.load([String].self, Key.lastReportedCrashes, from: storage) ?? []).prefix(Self.lastReportedCrashesLimit))
+        keyBindingOverrides = Self.load(KeyBindingOverrides.self, Key.keyBindings, from: storage) ?? .empty
         if (stored ?? 0) < Self.schemaVersion {
             storage.set(try? JSONEncoder().encode(Self.schemaVersion), forKey: Self.schemaVersionKey)
         }
@@ -148,6 +155,7 @@ public final class Settings {
         static let showCloudStorageInSidebar = "showCloudStorageInSidebar", showAllExtensions = "showAllExtensions"
         static let updateChannel = "updateChannel", checkForUpdatesAutomatically = "checkForUpdatesAutomatically"
         static let offerToReportCrashes = "offerToReportCrashes", lastReportedCrashes = "lastReportedCrashes"
+        static let keyBindings = "keyBindings"
     }
 
     private struct TCCRecord: Codable {
