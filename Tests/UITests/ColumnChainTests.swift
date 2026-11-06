@@ -180,4 +180,78 @@ extension ColumnChainTests {
         while session.columnChain!.models.count < 2 && Date() < end { try? await Task.sleep(for: .milliseconds(20)) }
         XCTAssertEqual(session.columnChain!.models.last?.directory.lastPathComponent, "A")
     }
+
+    // Review fix (P2-18): renaming the selected folder in place keeps its row (and RowID on objectID volumes), so
+    // no `.selection` is sent; the child column must still follow the new name.
+    func testRenamingTheSelectedFolderInPlaceRetargetsItsColumn() async throws {
+        let chain = ColumnChain(root: sandbox.url("A"), makeModel: factory())
+        await settle(chain)
+        chain.models[0].select(.names(["B"]))
+        await settle(chain)
+        XCTAssertEqual(names(chain), ["A", "B"])
+        try FileManager.default.moveItem(at: sandbox.url("A/B"), to: sandbox.url("A/B2"))   // sandbox only
+        chain.models[0].refresh()                     // the counting watcher sends no events: re-read by hand
+        let end = Date().addingTimeInterval(3)
+        while names(chain).last != "B2" && Date() < end { try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertEqual(chain.models[0].selectedURLs.map(\.lastPathComponent), ["B2"])
+        XCTAssertEqual(names(chain), ["A", "B2"], "the child column follows the renamed folder")
+        XCTAssertEqual(chain.models.last?.directory.resolvingSymlinksInPath().path,
+                       sandbox.url("A/B2").resolvingSymlinksInPath().path)
+    }
+
+    // Review fix (P2-18): ⌘↑ at the column root keeps Columns in memory only; the parent's own mode is not rewritten.
+    func testChainRerootDoesNotPersistColumnsForTheParent() async {
+        let session = BrowserSession(environment: env, initialURL: sandbox.url("A"))
+        defer { session.close() }
+        session.updateViewState { $0.mode = .columns }
+        session.columnChain!.up()
+        XCTAssertEqual(session.viewMode, .columns)
+        XCTAssertEqual(session.viewState.mode, .columns)
+        let other = BrowserSession(environment: env, initialURL: sandbox.root)
+        defer { other.close() }
+        XCTAssertNotEqual(other.viewMode, .columns, "the parent's stored mode is untouched")
+        session.reloadViewState()
+        XCTAssertEqual(session.viewMode, .columns, "reloading the state keeps the window in Columns")
+        var sort = session.viewState.sort
+        sort.ascending.toggle()
+        session.updateViewState { $0.sort = sort }   // a real user change while the parent is the root: saved
+        let third = BrowserSession(environment: env, initialURL: sandbox.root)
+        defer { third.close() }
+        XCTAssertEqual(third.viewState.sort, sort)
+    }
+
+    // Review fix (P2-18): the search filter follows the active column and clears on the column it leaves.
+    func testActivationChangeClearsThePreviousColumnsFilter() async {
+        let session = BrowserSession(environment: env, initialURL: sandbox.root)
+        defer { session.close() }
+        session.updateViewState { $0.mode = .columns }
+        let end = Date().addingTimeInterval(3)
+        while session.folder.state != .complete && Date() < end { try? await Task.sleep(for: .milliseconds(20)) }
+        let chain = session.columnChain!
+        chain.models[0].select(.names(["A"]))
+        let root = chain.models[0]
+        var query = root.query
+        query.filter = "A"
+        root.setQuery(query)
+        XCTAssertTrue(chain.moveRight())
+        XCTAssertTrue(session.folder === chain.models[1])
+        XCTAssertEqual(root.query.filter, "", "the column that lost activation is unfiltered")
+    }
+
+    // Review fix (P2-18): a deeper column whose folder is gone closes (with every column after it); the active
+    // column falls back to its parent column.
+    func testRelocatingAChildColumnClosesItAndDeeperColumns() async {
+        let chain = ColumnChain(root: sandbox.root, makeModel: factory())
+        await settle(chain)
+        chain.models[0].select(.names(["A"]))
+        await settle(chain)
+        chain.models[1].select(.names(["B"]))
+        await settle(chain)
+        XCTAssertTrue(chain.moveRight())
+        XCTAssertTrue(chain.moveRight())
+        XCTAssertEqual(chain.activeIndex, 2)
+        chain.models[1].relocate(to: sandbox.root, reason: .movedOrDeleted(name: "A"))
+        XCTAssertEqual(chain.models.count, 1)
+        XCTAssertEqual(chain.activeIndex, 0)
+    }
 }

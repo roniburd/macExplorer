@@ -47,6 +47,10 @@ final class BrowserSession {
     private(set) var columnChain: ColumnChain?
     /// The session itself is rerooting the chain (navigation): its own bookkeeping runs, not `chainRerooted`.
     private var rerootingChain = false
+    /// The column root came from the chain's own reroot (⌘↑ at the root) and its stored mode is not Columns: the
+    /// window shows it in Columns from memory only. Nothing is saved until the user changes the view state (review
+    /// fix: ⌘↑ must not rewrite the parent's own mode). Cleared on navigation and when leaving Columns.
+    private var columnsShownWithoutRecord = false
 
     init(environment: CoreEnvironment, initialURL: URL) {
         self.environment = environment
@@ -145,13 +149,14 @@ final class BrowserSession {
             return
         }
         viewStates.save(next, for: locator)
+        columnsShownWithoutRecord = false               // the user's change saved Columns with it
         apply(next)
     }
 
     /// Re-reads this folder's state (after "Apply to All Folders" in another window or tab).
     func reloadViewState() {
         guard !closed else { return }
-        let state = viewStates.state(for: locator)
+        let state = shown(viewStates.state(for: locator))
         if columnChain != nil, state.mode != .columns { leaveColumns(with: state); return }
         apply(state)
     }
@@ -178,6 +183,7 @@ final class BrowserSession {
     // MARK: private
 
     private func open(_ url: URL, selecting name: String?, folderID: UInt64? = nil) {
+        columnsShownWithoutRecord = false
         folderToken = nil
         stopFolderSizes()
         let (state, locator) = viewStates.state(for: url, fileID: folderID)
@@ -237,13 +243,22 @@ final class BrowserSession {
                 viewStates.save(self.viewState, for: refined)
                 return
             }
-            let better = viewStates.state(for: refined)
+            let stored = viewStates.state(for: refined)
+            let better = self.shown(stored)
             if better != self.viewState {
                 self.apply(better)
             } else if refined.objectKey != nil, viewStates.hasOverride(for: refined) {
-                viewStates.save(better, for: refined)      // a path record becomes an object record
+                viewStates.save(stored, for: refined)      // a path record becomes an object record
             }
         }
+    }
+
+    /// `state` as the window shows it: Columns while the column root is shown without a Columns record.
+    private func shown(_ state: FolderViewState) -> FolderViewState {
+        guard columnsShownWithoutRecord, columnChain != nil else { return state }
+        var shown = state
+        shown.mode = .columns
+        return shown
     }
 
     private func apply(_ state: FolderViewState) {
@@ -313,6 +328,7 @@ final class BrowserSession {
     /// (still Columns). When the root column is active, `requested` is saved for it as it is.
     private func leaveColumns(with requested: FolderViewState) {
         guard let chain = columnChain else { return }
+        columnsShownWithoutRecord = false
         refineTask?.cancel()
         refineTask = nil
         var next = requested
@@ -335,6 +351,7 @@ final class BrowserSession {
     }
 
     /// The chain opened or closed columns, or the active column moved: `folder` follows the active column.
+    /// The search filter follows the active column (plan P2-18): the column that loses activation is unfiltered.
     private func columnChainChanged() {
         guard let chain = columnChain, !chain.models.isEmpty else { return }
         if !rerootingChain, let root = chain.models.first, root !== chainRoot {
@@ -342,6 +359,12 @@ final class BrowserSession {
         }
         chainRoot = chain.models.first
         if chain.activeModel !== folder {
+            let previous = folder
+            if !previous.query.filter.isEmpty, chain.models.contains(where: { $0 === previous }) {
+                var query = previous.query
+                query.filter = ""
+                previous.setQuery(query)
+            }
             folder = chain.activeModel      // borrowed: the chain owns and closes it
             observeFolder(folder)
             observers.send(.folderChanged(folder))
@@ -350,8 +373,9 @@ final class BrowserSession {
     }
 
     /// The chain rerooted itself (⌘↑ at the root column): the view state follows the new root and the move is
-    /// recorded in history. The window stays in Columns, so Columns is saved for the new root (otherwise the identity
-    /// probe or the next visit would switch the window back to the folder's own mode).
+    /// recorded in history. The window stays in Columns; when the new root's own mode is not Columns, that is kept
+    /// in memory only (`columnsShownWithoutRecord`), so the identity probe and reloads keep Columns while the
+    /// folder's stored mode is untouched (explicit navigation to it still opens its own mode).
     private func chainRerooted(_ root: FolderModel) {
         let (state, locator) = viewStates.state(for: root.directory, fileID: nil)
         var shown = state
@@ -360,7 +384,7 @@ final class BrowserSession {
         viewState = shown
         self.locator = locator
         editedSinceNavigation = false
-        if state.mode != .columns { viewStates.save(shown, for: locator) }
+        columnsShownWithoutRecord = state.mode != .columns
         if shown.sort != old.sort {
             for model in displayedModels where model.query.sort != shown.sort {
                 var query = model.query

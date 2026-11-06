@@ -128,14 +128,33 @@ final class ColumnChain {
                 if m === self.models.first { self.pendingRootSelection = nil }
                 if m === self.pendingFirstRow { self.pendingFirstRow = nil }
                 self.selectionDidChange(in: m)
-            case .changes, .state:
+            case .changes:
                 if m === self.models.first { self.applyPendingRootSelection() }
                 if m === self.pendingFirstRow { self.applyPendingFirstRow(m) }
-            case .beginRename, .relocate, .query, .groups, .folderSizes, .extendedAttributes:
+                // A rename (or move) of the selected folder that keeps its row and identity sends no `.selection`:
+                // re-check that the next column still shows the selected folder (review fix).
+                self.selectionDidChange(in: m)
+            case .state:
+                if m === self.models.first { self.applyPendingRootSelection() }
+                if m === self.pendingFirstRow { self.applyPendingFirstRow(m) }
+            case .relocate:
+                self.columnRelocated(m)
+            case .beginRename, .query, .groups, .folderSizes, .extendedAttributes:
                 break
             }
         }
         if start { m.start() }
+    }
+
+    /// A non-root column's folder was moved or deleted: it and every deeper column close. Column k's own
+    /// `.changes` (the rename seen from the parent) reopens the folder under its new name. When that column was
+    /// active, column k becomes active and the session (observing after the chain) ignores the closed model's
+    /// `.relocate`. The root column has no parent column to fall back to: it is left as it is here.
+    private func columnRelocated(_ m: FolderModel) {
+        guard let index = models.firstIndex(where: { $0 === m }), index > 0 else { return }
+        if m === pendingFirstRow { pendingFirstRow = nil }
+        truncate(after: index - 1)
+        onChange?()
     }
 
     private func applyPendingRootSelection() {
