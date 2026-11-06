@@ -276,8 +276,9 @@ final class SystemVolumeScannerTests: XCTestCase {
         ]
         for (format, mode, clone) in expectations {
             let image = try DiskImage.create(in: sandbox, format: format, sizeMB: 16, volumeName: "MACXVOL")
-            let mounted = try await scan().first { $0.mountPoint.path(percentEncoded: false).trimmingCharacters(in: ["/"]) ==
-                                                       image.mountPoint.path(percentEncoded: false).trimmingCharacters(in: ["/"]) }
+            let mountPath = image.mountPoint.path(percentEncoded: false).trimmingCharacters(in: ["/"])
+            let isThisImage: (VolumeInfo) -> Bool = { $0.mountPoint.path(percentEncoded: false).trimmingCharacters(in: ["/"]) == mountPath }
+            let mounted = try await scan().first(where: isThisImage)
             let info = try XCTUnwrap(mounted, "\(format) image not in scan")
             XCTAssertFalse(info.isBrowsable, "\(format): -nobrowse images stay out of the sidebar")
             XCTAssertEqual(info.capabilities.identityMode, mode, "\(format)")
@@ -289,7 +290,9 @@ final class SystemVolumeScannerTests: XCTestCase {
             XCTAssertTrue(standardized.hasPrefix("/var/"), "sandbox lives under /private/var: \(standardized)")
             XCTAssertEqual(table.volume(containing: standardized)?.id, info.id, "\(format): /var spelling of the mount point")
             try image.detach()
-            let after = try await scan().contains { $0.id == info.id }
+            // Match by this image's mount point, not `info.id`: exFAT/FAT volume UUIDs derive from a time-based
+            // serial, so an image a parallel test formats in the same second has the same "uuid:" id.
+            let after = try await scan().contains(where: isThisImage)
             XCTAssertFalse(after, "\(format) still listed after detach")
         }
     }

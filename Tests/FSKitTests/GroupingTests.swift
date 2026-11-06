@@ -105,14 +105,25 @@ final class GroupingTests: XCTestCase {
         XCTAssertEqual(runs.count, 2)
     }
 
+    /// Best of 5 passes: the intrinsic cost, not scheduling noise when `swift test --parallel` loads every core
+    /// (same approach as `IconsViewTests.testTruncationIsFast`). `partition` keeps no state between calls, so later
+    /// passes are not warmed by earlier ones. The release gate is `macx-bench --check-budgets` (`resort-grouped-*`).
+    private static func bestOf5(_ body: () -> Void) -> Duration {
+        var best = Duration.seconds(60)
+        for _ in 0..<5 {
+            let start = ContinuousClock.now
+            body()
+            best = min(best, ContinuousClock.now - start)
+        }
+        return best
+    }
+
     func testPartition100kWithinDebugBudget() {
         let items = (0..<100_000).map { (name: "file \($0 % 977) \($0).\(["txt", "png", "swift", "md"][$0 % 4])", kind: Kind.file, size: Int64($0 * 37), mtime: Int64($0) * 86_400_000_000_000) }
         let store = makeStore(items)
         let b = DateBuckets(now: Date(timeIntervalSince1970: 100_000 * 86_400), calendar: utc)
         for g in [GroupBy.kind, .dateModified, .size, .nameFirstLetter] {
-            let start = ContinuousClock.now
-            _ = Grouping.partition(store.order, store: store, by: g, dateBuckets: b, types: .shared)
-            let elapsed = ContinuousClock.now - start
+            let elapsed = Self.bestOf5 { _ = Grouping.partition(store.order, store: store, by: g, dateBuckets: b, types: .shared) }
             XCTAssertLessThan(elapsed, .milliseconds(120), "\(g): 4x the 30 ms re-sort budget in debug")
         }
     }
@@ -125,9 +136,8 @@ final class GroupingTests: XCTestCase {
                                          kind: Kind.file, size: Int64($0), mtime: Int64($0)) }
         let store = makeStore(items)
         let b = DateBuckets(now: Date(timeIntervalSince1970: 0), calendar: utc)
-        let start = ContinuousClock.now
+        let elapsed = Self.bestOf5 { _ = Grouping.partition(store.order, store: store, by: .nameFirstLetter, dateBuckets: b, types: .shared) }
         let (order, runs) = Grouping.partition(store.order, store: store, by: .nameFirstLetter, dateBuckets: b, types: .shared)
-        let elapsed = ContinuousClock.now - start
         XCTAssertLessThan(elapsed, .milliseconds(120), "4x the 30 ms re-sort budget in debug")
         for run in runs {
             for row in run.rows { XCTAssertEqual(.letter(Grouping.letterKey(store.name(order[row]))), run.key) }
