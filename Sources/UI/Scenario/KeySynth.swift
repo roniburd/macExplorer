@@ -6,9 +6,10 @@ struct SynthKey: Equatable, Sendable {
     var characters: String
     var charactersIgnoringModifiers: String
     var flags: NSEvent.ModifierFlags
-    /// ⌥ + a character, without ⌃ (P3-13): keep the characters the keyboard layout produces ("π" for ⌥P, "®" for
-    /// ⌥⌘R on US), as a real keyboard does: a focused text field receives the composed character, and menu key
-    /// equivalents such as ⌥⌘R match the hardware event (an overridden string does not match them).
+    /// ⌥ or ⌃ + a character: keep the characters the keyboard layout produces ("π" for ⌥P, "®" for ⌥⌘R on US, the
+    /// control character "\u{0F}" for ⌃⌘O), as a real keyboard does: a focused text field receives the composed
+    /// character, and menu key equivalents such as ⌥⌘R or a rebound ⌃⌘O match the hardware event (an overridden
+    /// string does not match them; P3-13, Search QA).
     var layoutCharacters = false
 }
 
@@ -47,7 +48,7 @@ enum KeySynth {
         case .character(let c):
             guard c.count == 1, let ch = c.first, let code = ansiKeyCodes[ch] else { return nil }
             let shown = chord.modifiers.contains(.shift) && !chord.modifiers.contains(.command) ? c.uppercased() : c
-            let composed = chord.modifiers.contains(.option) && !chord.modifiers.contains(.control)
+            let composed = !chord.modifiers.isDisjoint(with: [.option, .control])
             return SynthKey(keyCode: code, characters: shown, charactersIgnoringModifiers: c, flags: base, layoutCharacters: composed)
         case .up: return function(NSUpArrowFunctionKey, 126, numericPad: true)
         case .down: return function(NSDownArrowFunctionKey, 125, numericPad: true)

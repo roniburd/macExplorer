@@ -154,8 +154,10 @@ final class JobContext: Sendable {
     func landed(_ url: URL, select: Bool = true, beginRename: Bool = false) {
         state.withLock { $0.created.append(url) }
         let name = url.lastPathComponent
+        let restored = if case .undo = kind { true } else { false }      // put back where it was (§6.6)
         mutateChange(url.deletingLastPathComponent()) { c in
             c.added.append(name)
+            if restored { c.restored.append(name) }
             if select { c.select.append(name) }
             if beginRename { c.beginRename = name }
         }

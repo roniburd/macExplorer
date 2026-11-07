@@ -234,12 +234,16 @@ struct CrawlRun: Sendable {
                             ? DisplayName.make(name: name, kind: e.kind, flags: e.flags, localizedStem: nil, showAllExtensions: false)
                             : name
                         let hit: Bool
+                        let names = matcher.needsNames     // "?" counts characters of the unfolded names
                         if display != name {
                             hit = SortKeys.searchFold(display).withUnsafeBytes { shown in
-                                folded.withUnsafeBytes { matcher.matches(e, foldedName: shown, foldedFileName: $0) }
+                                folded.withUnsafeBytes {
+                                    matcher.matches(e, foldedName: shown, foldedFileName: $0, name: names ? display : nil,
+                                                    fileName: names ? name : nil)
+                                }
                             }
                         } else {
-                            hit = folded.withUnsafeBytes { matcher.matches(e, foldedName: $0) }
+                            hit = folded.withUnsafeBytes { matcher.matches(e, foldedName: $0, name: names ? name : nil) }
                         }
                         if hit { hits.append(e, nameBytes: bytes) }
                     }

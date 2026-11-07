@@ -15,9 +15,12 @@ public struct LocalChange: Sendable, Equatable {
     public var modified: [String]
     public var select: [String]          // select these names once present
     public var beginRename: String?      // enter inline rename on this name once present (new items)
+    /// Added names that were put back where they were removed from (undo of a trash or move): search results
+    /// re-insert their rows (Search QA). Always also in `added`.
+    public var restored: [String]
 
     public init(directory: URL, added: [String] = [], removed: [String] = [], renamed: [Rename] = [],
-                modified: [String] = [], select: [String] = [], beginRename: String? = nil) {
+                modified: [String] = [], select: [String] = [], beginRename: String? = nil, restored: [String] = []) {
         self.directory = directory
         self.added = added
         self.removed = removed
@@ -25,6 +28,7 @@ public struct LocalChange: Sendable, Equatable {
         self.modified = modified
         self.select = select
         self.beginRename = beginRename
+        self.restored = restored
     }
 
     /// Every name whose current state must be read, without duplicates, in first-mention order.

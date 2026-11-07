@@ -146,4 +146,44 @@ final class CriteriaMatcherTests: XCTestCase {
         XCTAssertEqual(Sorter.sortedRun(store, range: 0..<store.count, nameKeys: keys, searchKeys: nil, query: ext,
                                         kindRanks: ranks, types: types).map { store.name($0) }, ["Hidden.pdf"])
     }
+
+    /// Search QA: the query's kinds and the Filters panel's kinds are two constraints, both required.
+    func testAndKindsAreASecondRequiredKindConstraint() {
+        let pdfDoc = SearchCriteria(kinds: [.pdf], andKinds: [.document])
+        XCTAssertTrue(matches(pdfDoc, entry("a.pdf"), "a.pdf"))
+        XCTAssertFalse(matches(pdfDoc, entry("a.txt"), "a.txt"))
+        let imagePdf = SearchCriteria(kinds: [.image], andKinds: [.pdf])
+        XCTAssertFalse(matches(imagePdf, entry("a.pdf"), "a.pdf"))
+        XCTAssertFalse(matches(imagePdf, entry("a.png"), "a.png"))
+        XCTAssertFalse(matches(SearchCriteria(kinds: [.pdf], andKinds: []), entry("a.pdf"), "a.pdf"))
+        XCTAssertFalse(SearchCriteria(andKinds: [.pdf]).isEmpty)
+    }
+
+    /// Search QA: "?" counts characters of the name it is given, also when folding expands one (ß → "ss").
+    func testQuestionMarkUsesTheOriginalNames() {
+        var m = CriteriaMatcher(SearchCriteria(nameTerms: [NameTerm("stra?e.txt")]), types: types)
+        XCTAssertTrue(m.needsNames)
+        let name = "Straße.txt"
+        XCTAssertTrue(SortKeys.searchFold(name).withUnsafeBytes { m.matches(entry(name), foldedName: $0, name: name) })
+        // The on-disk name is tried too when the display name differs.
+        let shown = "Straße"
+        XCTAssertTrue(SortKeys.searchFold(shown).withUnsafeBytes { s in
+            SortKeys.searchFold(name).withUnsafeBytes { f in m.matches(entry(name), foldedName: s, foldedFileName: f, name: shown, fileName: name) }
+        })
+        XCTAssertFalse(CriteriaMatcher(SearchCriteria(nameTerms: [NameTerm("*.txt")]), types: types).needsNames)
+    }
+
+    func testSorterQuestionMarkMatchesExpandingCharacters() {
+        let store = makeStore([("Straße.txt", .file), ("Strasse.txt", .file), ("ﬁle.txt", .file)])
+        let keys = SortKeys.nameKeys(store, range: 0..<store.count)
+        let ranks = types.kindRanks().ranks
+        for search in [SortKeys.searchKeys(store), nil] {
+            let q = ViewQuery(criteria: SearchCriteria(nameTerms: [NameTerm("stra?e.txt")]))
+            XCTAssertEqual(Sorter.permutation(store, nameKeys: keys, searchKeys: search, query: q, kindRanks: ranks, types: types)
+                .map { store.name($0) }, ["Straße.txt"])
+            let fi = ViewQuery(criteria: SearchCriteria(nameTerms: [NameTerm("?le.txt")]))
+            XCTAssertEqual(Sorter.permutation(store, nameKeys: keys, searchKeys: search, query: fi, kindRanks: ranks, types: types)
+                .map { store.name($0) }, ["ﬁle.txt"])
+        }
+    }
 }

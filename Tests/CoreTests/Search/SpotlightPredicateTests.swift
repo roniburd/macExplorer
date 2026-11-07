@@ -11,7 +11,7 @@ final class SpotlightPredicateTests: XCTestCase {
     // Review Focus 1
     func testGlobTermBecomesLikePatternWithoutExtraStars() {
         XCTAssertEqual(format(SearchCriteria(nameTerms: [NameTerm("*.pdf")])), expected("kMDItemFSName LIKE[cd] %@", "*.pdf"))
-        XCTAssertEqual(format(SearchCriteria(nameTerms: [NameTerm("report?.doc")])), expected("kMDItemFSName LIKE[cd] %@", "report?.doc"))
+        XCTAssertEqual(format(SearchCriteria(nameTerms: [NameTerm("report?.doc")])), expected("kMDItemFSName LIKE[cd] %@", "report*.doc"))
         XCTAssertEqual(format(SearchCriteria(nameTerms: [NameTerm("IMG_**")])), expected("kMDItemFSName LIKE[cd] %@", "IMG_*"))
         XCTAssertEqual(format(SearchCriteria(nameTerms: [NameTerm("tax")])), expected("kMDItemFSName LIKE[cd] %@", "*tax*"))
     }
@@ -63,5 +63,17 @@ final class SpotlightPredicateTests: XCTestCase {
         let want = NSPredicate(format: "kMDItemFSContentChangeDate >= %@ AND kMDItemFSCreationDate < %@",
                                Date(timeIntervalSince1970: 86_400) as NSDate, Date(timeIntervalSince1970: 172_800) as NSDate)
         XCTAssertEqual(p.predicateFormat, want.predicateFormat)
+    }
+
+    /// Search QA: "?" is widened to "*" for Spotlight (whose LIKE may count folded characters); the post-filter keeps
+    /// exactly one character, the same rule as the crawler and the in-folder filter.
+    func testQuestionMarkIsPostFilteredNotLiked() {
+        XCTAssertEqual(format(SearchCriteria(nameTerms: [NameTerm("stra?e*")])), expected("kMDItemFSName LIKE[cd] %@", "stra*e*"))
+    }
+
+    func testAndKindsAddASecondKindClause() {
+        XCTAssertEqual(format(SearchCriteria(kinds: [.pdf], andKinds: [.text])),
+                       expected("kMDItemContentTypeTree == %@ AND kMDItemContentTypeTree == %@", "com.adobe.pdf", "public.text"))
+        XCTAssertTrue(SpotlightPredicate.matchesNothing(SearchCriteria(kinds: [.pdf], andKinds: [])))
     }
 }

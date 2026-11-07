@@ -26,7 +26,8 @@ public struct SyntaxDiagnostic: Sendable, Codable, Equatable {
 public struct ParsedQuery: Sendable, Equatable {
     public var freeTerms: [String] = []
     public var nameTerms: [String] = []
-    public var kinds: Set<KindFilter> = []
+    /// nil = no kind: term; empty = only unknown kind words (kind:banana), which match nothing.
+    public var kinds: Set<KindFilter>? = nil
     public var extensions: Set<String> = []
     public var size: ByteRange? = nil
     public var modified: [DateToken] = []
@@ -84,17 +85,17 @@ public enum QuerySyntax {
             case .name:
                 q.nameTerms.append(value)
             case .kind:
+                // A token's known words join the kinds (any of them); one with none still constrains: it matches
+                // nothing rather than being dropped, which would widen the search.
                 var bad = false
+                var kinds = q.kinds ?? []
                 for word in value.lowercased().split(separator: ",") {
-                    if let k = kindWords[String(word)] { q.kinds.insert(k) } else { bad = true }
+                    if let k = kindWords[String(word)] { kinds.insert(k) } else { bad = true }
                 }
+                q.kinds = kinds
                 if bad { q.diagnostics.append(.init(token: token.text, problem: .badKind)) }
             case .ext:
-                for raw in value.lowercased().split(separator: ",") {
-                    var e = Substring(raw)
-                    if e.hasPrefix("*.") { e = e.dropFirst(2) } else if e.hasPrefix(".") { e = e.dropFirst() }
-                    if !e.isEmpty { q.extensions.insert(String(e)) }
-                }
+                q.extensions.formUnion(extensions(value))
             case .size:
                 if let r = parseSize(value) { q.size = q.size.map { $0.intersection(r) } ?? r }
                 else { q.diagnostics.append(.init(token: token.text, problem: .badSize)) }
@@ -104,6 +105,19 @@ public enum QuerySyntax {
             }
         }
         return q
+    }
+
+    /// Extensions in an ext: value or the Filters panel's Extension field: "*.pdf", ".pdf" or "pdf", separated by
+    /// commas, semicolons or spaces; lowercased, without the leading "*." / ".".
+    public static func extensions(_ text: String) -> Set<String> {
+        var out = Set<String>()
+        for raw in text.lowercased().split(whereSeparator: { $0 == "," || $0 == ";" || $0.isWhitespace }) {
+            var e = Substring(raw)
+            if e.hasPrefix("*") { e = e.dropFirst() }
+            while e.hasPrefix(".") { e = e.dropFirst() }
+            if !e.isEmpty { out.insert(String(e)) }
+        }
+        return out
     }
 
     static func tokenize(_ s: String) -> [RawToken] {

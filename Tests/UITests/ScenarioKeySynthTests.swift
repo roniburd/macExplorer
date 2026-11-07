@@ -35,11 +35,13 @@ final class ScenarioKeySynthTests: XCTestCase {
     }
 
     /// P3-13: ⌥ chords keep the layout's composed characters (⌥P types "π" into a field; ⌥⌘R matches its menu item);
-    /// ⌃ chords and plain/⌘ chords keep the base character.
+    /// ⌃ chords keep the layout's control characters (Search QA: a real ⌃⌘O reports "\u{0F}"); plain/⌘ chords keep the
+    /// base character.
     func testOptionChordsUseLayoutCharacters() throws {
         XCTAssertTrue(try spec("opt+p").layoutCharacters)
         XCTAssertTrue(try spec("opt+cmd+r").layoutCharacters)
-        XCTAssertFalse(try spec("ctrl+opt+p").layoutCharacters)
+        XCTAssertTrue(try spec("ctrl+opt+p").layoutCharacters)
+        XCTAssertTrue(try spec("ctrl+cmd+o").layoutCharacters)
         XCTAssertFalse(try spec("cmd+r").layoutCharacters)
         XCTAssertFalse(try spec("p").layoutCharacters)
         XCTAssertEqual(try spec("opt+p").charactersIgnoringModifiers, "p")
@@ -80,5 +82,28 @@ final class ScenarioKeySynthTests: XCTestCase {
         XCTAssertEqual(target.hits, 1)
         let typed = try XCTUnwrap(KeySynth.events(KeySynth.typingSpecs("é")[0], windowNumber: 42).first)
         XCTAssertEqual(typed.characters, "é")
+    }
+
+    /// Search QA: rebound ⌃⌘<letter> / ⌃⌥<letter> primaries fire through their menu item with the events the harness
+    /// posts, as they do from the hardware keyboard (whose events carry control characters in `characters`).
+    @MainActor
+    func testControlChordsMatchTheirMenuKeyEquivalentsLikeRealKeys() throws {
+        _ = NSApplication.shared
+        final class Target: NSObject { var hits = 0; @objc func fire(_ sender: Any?) { hits += 1 } }
+        for text in ["ctrl+cmd+o", "ctrl+opt+o", "ctrl+opt+cmd+o", "ctrl+shift+cmd+o"] {
+            let chord = try XCTUnwrap(KeyChord(parsing: text))
+            let equivalent = try XCTUnwrap(MainMenuBuilder.keyEquivalent(for: chord))
+            let target = Target()
+            let menu = NSMenu(title: "m")
+            let item = NSMenuItem(title: "Open Containing Folder", action: #selector(Target.fire(_:)), keyEquivalent: equivalent.key)
+            item.keyEquivalentModifierMask = equivalent.modifiers
+            item.target = target
+            menu.addItem(item)
+            let down = try XCTUnwrap(KeySynth.events(try spec(text), windowNumber: 0).first)
+            XCTAssertEqual(down.characters, "\u{0F}", text)
+            XCTAssertEqual(KeyEventTranslator.chord(for: down), chord, text)
+            XCTAssertTrue(menu.performKeyEquivalent(with: down), text)
+            XCTAssertEqual(target.hits, 1, text)
+        }
     }
 }

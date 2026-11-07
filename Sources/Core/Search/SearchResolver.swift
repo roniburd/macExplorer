@@ -18,10 +18,16 @@ public enum SearchResolver {
         func dates(_ tokens: [DateToken]) -> TimeRange? {
             tokens.map { DateRanges.range($0, now: now, calendar: calendar) }.reduce(nil) { acc, r in acc.map { $0.intersection(r) } ?? r }
         }
+        // Kinds combine by meaning: the query's kind: and the Filters panel's kinds are both required (kind:pdf +
+        // Document finds PDFs). Intersecting the labels would find nothing there.
+        let filterKinds: Set<KindFilter>? = spec.filters.kinds.isEmpty ? nil : spec.filters.kinds
+        let kinds = p.kinds ?? filterKinds
+        let andKinds = p.kinds != nil && filterKinds != p.kinds ? filterKinds : nil
         let criteria = SearchCriteria(
             nameTerms: nameTerms.map(NameTerm.init),
-            kinds: merge(p.kinds, spec.filters.kinds),
-            extensions: merge(p.extensions, Set(spec.filters.extensions.map { $0.lowercased() })),
+            kinds: kinds,
+            andKinds: andKinds,
+            extensions: merge(p.extensions, Set(spec.filters.extensions.flatMap { QuerySyntax.extensions($0) })),
             size: size,
             modified: dates(p.modified + [spec.filters.modified].compactMap { $0 }),
             created: dates(p.created + [spec.filters.created].compactMap { $0 }))

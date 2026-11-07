@@ -102,9 +102,14 @@ public enum Sorter {
         let entry = store.entry(index)
         let differs = (store.hasLocalizedStems && store.localizedStem(index) != nil)
             || (!showAllExtensions && (entry.kind == .package || entry.flags.contains(.extensionHidden)))
+        // "?" counts characters of the unfolded names (CriteriaMatcher.needsNames).
+        let shown = matcher.needsNames ? store.displayName(index, showAllExtensions: showAllExtensions) : nil
         func run(_ display: UnsafeRawBufferPointer) -> Bool {
-            guard differs else { return matcher.matches(entry, foldedName: display) }
-            return SortKeys.searchFold(store.name(index)).withUnsafeBytes { matcher.matches(entry, foldedName: display, foldedFileName: $0) }
+            guard differs else { return matcher.matches(entry, foldedName: display, name: shown) }
+            let fileName = store.name(index)
+            return SortKeys.searchFold(fileName).withUnsafeBytes {
+                matcher.matches(entry, foldedName: display, foldedFileName: $0, name: shown, fileName: matcher.needsNames ? fileName : nil)
+            }
         }
         if let searchKeys, Int(index) < searchKeys.count { return searchKeys.withKey(Int(index)) { run($0) } }
         return SortKeys.searchFold(store.displayName(index, showAllExtensions: showAllExtensions)).withUnsafeBytes { run($0) }

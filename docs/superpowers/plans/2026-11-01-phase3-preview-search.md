@@ -5691,7 +5691,7 @@ git commit -m "feat: preview planner, 256 KB text loader, preview metadata and d
 - Details columns: `source.showsPathColumn ? settings.resultsColumns : <Phase 2 folder view-state columns>`. Column moves and resizes persist back to that same list, so results columns never change a folder's columns.
 - Path cell: the parent folder, `~`-abbreviated, truncated in the middle, with the full path as tooltip and accessibility value.
 - Header click: for a folder, the Phase 2 path (`BrowserSession.updateViewState`); for results, `source.setSortDescriptor`. `.path` is sortable for results.
-- `ContentViewController.display(_:)` binds the active list. A `SearchResultsModel` in Columns mode is shown in Details (Columns cannot show results), without changing the stored view mode. It observes `SearchModelEvent` to refresh the empty state and status bar. `focusContext` is `.searchResults` while results are shown.
+- `ContentViewController.display(_:)` binds the active list. A `SearchResultsModel` is always shown in Details with the Path column (spec §11; Columns cannot show results and Icons shows no path; Search QA), without changing the stored view mode. It observes `SearchModelEvent` to refresh the empty state and status bar. `focusContext` is `.searchResults` while results are shown.
 - Results empty states (only when `rowCount == 0`):
   - `.searching` → "Searching…" with spinner.
   - `.complete` / `.stopped` with `.spotlightOff` → "Spotlight is turned off" / "This Mac can't be searched. Search Subfolders instead." (`.searchSubfolders`).

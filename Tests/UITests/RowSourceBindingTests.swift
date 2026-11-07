@@ -231,6 +231,28 @@ final class RowSourceBindingTests: XCTestCase {
         XCTAssertTrue(content.activeList.source === session.folder)
     }
 
+    /// Spec §11 (Search QA): results show in Details with the Path column also when the folder is in Icons; the
+    /// folder's own mode is kept and comes back when the folder shows again.
+    func testContentShowsResultsInDetailsWithPathColumnEvenInIconsMode() async {
+        let session = BrowserSession(environment: env, initialURL: sandbox.root)
+        addTeardownBlock { @MainActor in session.close() }
+        let content = ContentViewController(context: context, session: session)
+        _ = content.view
+        session.updateViewState { $0.mode = .icons }
+        XCTAssertTrue(content.activeList is IconsViewController)
+        let model = results([(p("a"), ["one.txt"])])
+        content.display(model)
+        model.start()
+        XCTAssertTrue(content.activeList is DetailsViewController)
+        XCTAssertTrue(content.details.isMultiFolder)
+        XCTAssertTrue(content.details.columns.contains { $0.id == .path && $0.visible }, "the Path column shows")
+        await waitUntil("rows") { content.activeList.source?.rowCount == 1 }
+        XCTAssertEqual(session.viewMode, .icons, "the folder's mode is unchanged")
+        content.display(session.folder)
+        XCTAssertTrue(content.activeList is IconsViewController, "the folder's mode is restored")
+        XCTAssertTrue(content.activeList.source === session.folder)
+    }
+
     func testContentShowsResultsEmptyState() async {
         let session = BrowserSession(environment: env, initialURL: sandbox.root)
         addTeardownBlock { @MainActor in session.close() }

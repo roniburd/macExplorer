@@ -153,4 +153,12 @@ final class SpotlightSearchTests: XCTestCase {
         XCTAssertEqual(events.count, 2)
         XCTAssertEqual(fake.requests().count, 2)
     }
+
+    /// Search QA: the post-filter applies "?" to original characters (ß is one), like the crawler.
+    func testPostFilterQuestionMarkMatchesCharactersThatFoldLonger() async {
+        let fake = FakeMetadataQuery(items: [item("/r/Straße.txt"), item("/r/Strasse.txt")])
+        let seen = await run(SpotlightRequest(criteria: SearchCriteria(nameTerms: [NameTerm("stra?e.txt")]), contentTerms: [],
+                                              scope: .localComputer), fake)
+        XCTAssertEqual(seen.batches.flatMap(\.1), ["Straße.txt"])
+    }
 }

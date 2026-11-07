@@ -65,17 +65,20 @@ public struct NameTerm: Sendable, Codable, Hashable {
 /// What a search matches, independent of the engine. Every non-nil part must match (AND).
 public struct SearchCriteria: Sendable, Codable, Hashable {
     public var nameTerms: [NameTerm]          // AND
-    public var kinds: Set<KindFilter>?        // nil = any; empty set = matches nothing
+    public var kinds: Set<KindFilter>?        // any of these; nil = any; empty set = matches nothing
+    /// A second kind constraint, required as well as `kinds` (any of these): the Filters panel's kinds when the query
+    /// also has kind: (kind:pdf + Document = PDFs, since a PDF is a document; the labels are not intersected).
+    public var andKinds: Set<KindFilter>?     // nil = none; empty set = matches nothing
     public var extensions: Set<String>?       // lowercased, no dot; nil = any; empty = nothing
     public var size: ByteRange?               // files only: directories and packages never match a size filter
     public var modified: TimeRange?
     public var created: TimeRange?
-    public init(nameTerms: [NameTerm] = [], kinds: Set<KindFilter>? = nil, extensions: Set<String>? = nil,
-                size: ByteRange? = nil, modified: TimeRange? = nil, created: TimeRange? = nil) {
-        self.nameTerms = nameTerms; self.kinds = kinds; self.extensions = extensions
+    public init(nameTerms: [NameTerm] = [], kinds: Set<KindFilter>? = nil, andKinds: Set<KindFilter>? = nil,
+                extensions: Set<String>? = nil, size: ByteRange? = nil, modified: TimeRange? = nil, created: TimeRange? = nil) {
+        self.nameTerms = nameTerms; self.kinds = kinds; self.andKinds = andKinds; self.extensions = extensions
         self.size = size; self.modified = modified; self.created = created
     }
     public var isEmpty: Bool {
-        nameTerms.isEmpty && kinds == nil && extensions == nil && size == nil && modified == nil && created == nil
+        nameTerms.isEmpty && kinds == nil && andKinds == nil && extensions == nil && size == nil && modified == nil && created == nil
     }
 }

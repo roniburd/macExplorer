@@ -227,6 +227,37 @@ final class SearchResultsModelTests: XCTestCase {
         XCTAssertEqual(m.selectionSummary.count, 1)
     }
 
+    /// Search QA: undoing the trash of a result (or of a folder holding results) puts its rows back; a plain added
+    /// name with the same path does not (contract note 12).
+    func testRestoredItemsRejoinTheResults() async throws {
+        let script = ScriptedSearchEvents()
+        let m = makeModel(script)
+        m.start()
+        let gen = m.generation
+        script.continuations[gen]!.yield(batch("/dir", ["a.txt", "b.txt", "sub"], dirs: ["sub"], gen: gen))
+        script.continuations[gen]!.yield(batch("/dir/sub/deeper", ["c.txt"], gen: gen))
+        script.continuations[gen]!.yield(.completed(SearchSummary(resultCount: 4)))
+        await waitUntil("rows") { m.rowCount == 4 }
+        let dir = URL(filePath: rootPath + "/dir", directoryHint: .isDirectory)
+        env.changeBus.post([LocalChange(directory: dir, removed: ["a.txt", "sub"])])
+        await waitUntil("trashed") { self.names(m) == ["b.txt"] }
+        env.changeBus.post([LocalChange(directory: dir, added: ["a.txt"])])             // a new file, not a put back
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(names(m), ["b.txt"])
+        env.changeBus.post([LocalChange(directory: dir, added: ["a.txt", "sub"], restored: ["a.txt", "sub"])])
+        await waitUntil("put back") { Set(self.names(m)) == ["a.txt", "b.txt", "sub", "c.txt"] }
+        let c = try XCTUnwrap((0..<m.rowCount).first { m.name(atRow: $0) == "c.txt" })
+        XCTAssertEqual(m.url(atRow: c).path(percentEncoded: false), rootPath + "/dir/sub/deeper/c.txt")
+        if case .complete = m.state {} else { XCTFail("state stays complete: \(m.state)") }
+        // Restored once: a later put back of the same name (nothing set aside any more) adds nothing.
+        env.changeBus.post([LocalChange(directory: dir, removed: ["b.txt"])])
+        await waitUntil("trashed again") { m.rowCount == 3 }
+        m.rerun()                                                                       // a re-run forgets what was set aside
+        env.changeBus.post([LocalChange(directory: dir, added: ["b.txt"], restored: ["b.txt"])])
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertFalse(names(m).contains("b.txt"))
+    }
+
     func testSelectionFollowsIdentityAcrossBatches() async {
         let script = ScriptedSearchEvents()
         let m = makeModel(script)

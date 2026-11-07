@@ -197,8 +197,9 @@ final class ContentViewController: CommandHandlingViewController {
     }
 
     /// Shows `source` in the active list: the session's folder, or search results (P3-10 calls this on
-    /// `SessionEvent.resultsChanged`). Columns cannot show results: they appear in Details without changing the
-    /// stored view mode, and showing the folder again returns to it.
+    /// `SessionEvent.resultsChanged`). Results always appear in Details with the Path column (§11; Icons and
+    /// Columns show no path) without changing the folder's stored view mode, and showing the folder again
+    /// returns to it.
     func display(_ source: any RowSource) {
         resultsToken?.cancel(); resultsToken = nil
         rowsToken?.cancel(); rowsToken = nil
@@ -495,7 +496,7 @@ final class ContentViewController: CommandHandlingViewController {
         case .icons: list = iconsController()
         case .columns: list = columnsController()
         }
-        let shown: FileListView = displayedResults != nil && list is ColumnsViewController ? details : list
+        let shown: FileListView = displayedResults != nil ? details : list      // results: Details + Path (§11)
         guard shown !== activeList || mountedListView !== shown.view else { return }
         if shown !== activeList {
             activeList.bind(nil)

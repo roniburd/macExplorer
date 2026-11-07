@@ -5,7 +5,7 @@ public enum SpotlightPredicate {
     /// True when the criteria can match nothing (an empty kinds or extensions set, e.g. `kind:pdf` typed with the
     /// Kind filter set to Image). SpotlightSearch short-circuits these without starting a query.
     public static func matchesNothing(_ c: SearchCriteria) -> Bool {
-        c.kinds?.isEmpty == true || c.extensions?.isEmpty == true
+        c.kinds?.isEmpty == true || c.andKinds?.isEmpty == true || c.extensions?.isEmpty == true
     }
 
     /// Never a value predicate: NSMetadataQuery raises NSInvalidArgumentException on FALSEPREDICATE/TRUEPREDICATE
@@ -21,7 +21,7 @@ public enum SpotlightPredicate {
         for term in request.contentTerms {
             clauses.append(NSPredicate(format: "%K CONTAINS[cd] %@", "kMDItemTextContent", term))
         }
-        if let kinds = c.kinds {
+        for kinds in [c.kinds, c.andKinds].compactMap({ $0 }) {      // each group: any of its kinds; both groups required
             var ors: [NSPredicate] = []
             for kind in kinds.sorted(by: { $0.rawValue < $1.rawValue }) {
                 if kind == .folder { ors.append(NSPredicate(format: "%K == %@", "kMDItemContentType", "public.folder")); continue }
@@ -42,12 +42,14 @@ public enum SpotlightPredicate {
         return clauses.count == 1 ? clauses[0] : NSCompoundPredicate(andPredicateWithSubpredicates: clauses)
     }
 
+    /// "?" becomes "*": Spotlight's LIKE[cd] may count folded characters (ß → "ss"); SpotlightSearch's post-filter
+    /// (CriteriaMatcher) keeps exactly one original character, the crawler's and the in-folder filter's rule.
     static func likePattern(_ term: NameTerm) -> String {
         let text = escape(term.text)
         guard term.isGlob else { return "*" + text + "*" }
         var out = "", lastStar = false
         for ch in text {
-            if ch == "*" { if !lastStar { out.append(ch) }; lastStar = true } else { out.append(ch); lastStar = false }
+            if ch == "*" || ch == "?" { if !lastStar { out.append("*") }; lastStar = true } else { out.append(ch); lastStar = false }
         }
         return out
     }

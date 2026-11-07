@@ -442,6 +442,16 @@ final class SubtreeCrawlerTests: XCTestCase {
         XCTAssertEqual(rel(c.paths), ["w4999/needle-last.txt", "w10/needle-ten.txt"])
         XCTAssertEqual(c.summary?.directoriesScanned, 5_001)
     }
+
+    /// Search QA: "?" is one character of the name even when folding expands it (ß → "ss").
+    func testQuestionMarkMatchesCharactersThatFoldLonger() async throws {
+        try sandbox.createFile("x/Straße.txt")
+        try sandbox.createFile("x/Strase.txt")
+        let c = await collect(crawl("stra?e.txt"))
+        XCTAssertEqual(rel(c.paths).map { $0.precomposedStringWithCanonicalMapping }.sorted(), ["x/Strase.txt", "x/Straße.txt"].sorted())
+        let none = await collect(crawl("stra??e.txt"))
+        XCTAssertEqual(rel(none.paths), [])
+    }
 }
 
 /// Lock-protected value for spies that lane threads call concurrently.

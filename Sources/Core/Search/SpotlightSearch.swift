@@ -85,7 +85,7 @@ public enum SpotlightSearch {
             if let parent, LexicalPath.parent(of: key) != parent { return false }
             if !includeHidden && (item.isInvisible || hasHiddenComponent(key)) { return false }
             let (entry, name) = SpotlightSearch.entry(for: item, types: types)
-            return SortKeys.searchFold(name).withUnsafeBytes { matcher.matches(entry, foldedName: $0) }
+            return SortKeys.searchFold(name).withUnsafeBytes { matcher.matches(entry, foldedName: $0, name: name) }
         }
 
         /// Strictly below `base` (both folded).

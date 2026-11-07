@@ -18,6 +18,22 @@ final class TrashDeleteTests: FileOpsTestCase {
         XCTAssertTrue(o.record.isUndoable)
     }
 
+    /// Search QA: undo puts the item back and marks it restored, so search results re-insert their row (a new
+    /// file landing under the same name is only `added`, never `restored`).
+    func testUndoOfTrashMarksTheItemRestored() async throws {
+        let a = try file("d/a.txt", "A")
+        let (queue, _) = makeQueue()
+        let o = try await run(.trash([a]), on: queue)
+        XCTAssertEqual(o.localChanges.flatMap(\.restored), [])
+        let undone = try await run(.undo(o.record), on: queue)
+        XCTAssertTrue(exists(a))
+        let back = try XCTUnwrap(undone.localChanges.first { $0.directory.standardizedFileURL.path == a.deletingLastPathComponent().standardizedFileURL.path })
+        XCTAssertEqual(back.added, ["a.txt"])
+        XCTAssertEqual(back.restored, ["a.txt"])
+        let copied = try await run(.copy(sources: [a], destination: url("e")), on: queue)
+        XCTAssertEqual(copied.localChanges.flatMap(\.restored), [])
+    }
+
     func testNoTrashFallsBackToConfirmedPermanentDelete() async throws {
         let a = try file("nt/a.txt")
         let scripted = ScriptedInteraction(noTrash: [true])

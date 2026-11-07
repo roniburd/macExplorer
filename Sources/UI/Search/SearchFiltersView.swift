@@ -221,11 +221,8 @@ final class SearchFiltersView: NSViewController {
     }
 
     /// Comma- or space-separated, normalised like `ext:` (lowercased, no dot).
-    static func extensions(_ text: String) -> Set<String> {
-        Set(text.split(whereSeparator: { $0 == "," || $0 == " " || $0 == ";" }).map {
-            String($0.drop(while: { $0 == "." })).lowercased()
-        }.filter { !$0.isEmpty })
-    }
+    /// The ext: parser ("*.pdf", ".pdf", "pdf"; comma, semicolon or space separated).
+    static func extensions(_ text: String) -> Set<String> { QuerySyntax.extensions(text) }
 
     private static func stamp(_ date: Date) -> DayStamp {
         let c = calendar.dateComponents([.year, .month, .day], from: date)

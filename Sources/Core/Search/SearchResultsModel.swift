@@ -47,6 +47,12 @@ public final class SearchResultsModel: RowSource {
     private var directoriesScanned = 0
     private var parentKeys = SortKeyColumn()             // ResultSorter.parentKey per results.parents entry
     private var parentLookupKeys: [String] = []          // SearchResultStore.key per results.parents entry (append-only)
+    /// Rows a local trash or move removed, by SearchResultStore.key of their path, so an undo that puts the item
+    /// back (`LocalChange.restored`) re-inserts them: they still match (same name, same entry). Bounded; cleared by rerun.
+    private var setAside: [String: SetAside] = [:]
+    private var setAsideOrder: [String] = []
+    static let setAsideLimit = 10_000
+    private struct SetAside { var parent: String; var entry: Entry; var name: [UInt8] }
     private let rowObservers = Observers<RowSourceEvent>()
     private let observers = Observers<SearchModelEvent>()
     private var changeToken: ObserverToken?
@@ -150,6 +156,8 @@ public final class SearchResultsModel: RowSource {
         results = SearchResultStore()
         parentKeys = SortKeyColumn()
         parentLookupKeys = []
+        setAside = [:]
+        setAsideOrder = []
         selection = .empty
         scrollAnchor = nil
         notices = baseNotices
@@ -250,20 +258,25 @@ public final class SearchResultsModel: RowSource {
     }
 
     private func receive(_ change: LocalChange) {
-        guard !closed, !change.removed.isEmpty || !change.renamed.isEmpty, results.count > 0 || !pending.isEmpty else { return }
+        guard !closed else { return }
+        let removes = (!change.removed.isEmpty || !change.renamed.isEmpty) && (results.count > 0 || !pending.isEmpty)
+        let restores = !change.restored.isEmpty && !setAside.isEmpty
+        guard removes || restores else { return }
         enqueue(.local(change))
     }
 
-    /// Removed names drop their row and every result below them (folder trashed or moved). Renamed items are
-    /// re-keyed and re-sorted; results below a renamed folder are dropped (their paths are stale). Added and
-    /// modified names never join the results (contract note 12).
+    /// Removed names drop their row and every result below them (folder trashed or moved); those rows are set
+    /// aside, and come back when an undo puts the item back (`restored`, Search QA). Renamed items are re-keyed and
+    /// re-sorted; results below a renamed folder are dropped (their paths are stale). Other added and modified names
+    /// never join the results (contract note 12).
     private func applyLocal(_ change: LocalChange) {
         let dir = SearchResultStore.standardizedParent(change.directory)
         // Fast reject (observeAll sees every local change in the app): nothing to do unless the changed folder
-        // holds results directly or is an ancestor of a results folder.
+        // holds results directly or is an ancestor of a results folder (`results.parents` keeps removed rows' too).
         let dirKey = SearchResultStore.key(dir)
         let keys = foldedParentKeys()
         guard keys.contains(where: { $0 == dirKey || LexicalPath.isSelfOrDescendant($0, of: dirKey) }) else { return }
+        restore(change.restored.map { SearchResultStore.join(dir, $0) })
         var exact: [String] = []
         var under: [String] = []
         for name in change.removed {
@@ -272,8 +285,8 @@ public final class SearchResultsModel: RowSource {
             under.append(p)
         }
         for rename in change.renamed { under.append(SearchResultStore.join(dir, rename.from)) }
-        if !exact.isEmpty { results.remove(paths: exact) }
-        removeResults(under: under)
+        if !exact.isEmpty { putAside(exact); results.remove(paths: exact) }
+        removeResults(under: under, setAside: Set(change.removed.map { SearchResultStore.key(SearchResultStore.join(dir, $0)) }))
         for rename in change.renamed {
             let from = SearchResultStore.join(dir, rename.from)
             guard let old = results.index(ofPath: from) else { continue }
@@ -287,16 +300,60 @@ public final class SearchResultsModel: RowSource {
     }
 
     /// Drops every result whose parent is one of `folders` or below one (lexical keys, any /private spelling).
-    private func removeResults(under folders: [String]) {
+    /// Rows below a folder in `setAside` (removed, not renamed: their paths come back on undo) are set aside.
+    private func removeResults(under folders: [String], setAside removedKeys: Set<String> = []) {
         guard !folders.isEmpty else { return }
         let keys = folders.map(SearchResultStore.key)
         var stale = Set<UInt32>()
+        var keep = Set<UInt32>()
         for (i, k) in foldedParentKeys().enumerated() {
-            if keys.contains(where: { k == $0 || k.hasPrefix($0 == "/" ? "/" : $0 + "/") }) { stale.insert(UInt32(i)) }
+            guard let folder = keys.first(where: { k == $0 || k.hasPrefix($0 == "/" ? "/" : $0 + "/") }) else { continue }
+            stale.insert(UInt32(i))
+            if removedKeys.contains(folder) { keep.insert(UInt32(i)) }
         }
         guard !stale.isEmpty else { return }
-        let paths = (0..<UInt32(results.count)).filter { stale.contains(results.parentIndex($0)) }.map { results.path($0) }
-        results.remove(paths: paths)
+        let indices = (0..<UInt32(results.count)).filter { stale.contains(results.parentIndex($0)) }
+        putAside(indices.filter { keep.contains(results.parentIndex($0)) }.map { results.path($0) })
+        results.remove(paths: indices.map { results.path($0) })
+    }
+
+    /// Remembers the rows at `paths` (still in `results`) for `restore`.
+    private func putAside(_ paths: [String]) {
+        for path in paths {
+            guard let i = results.index(ofPath: path) else { continue }
+            let key = SearchResultStore.key(path)
+            var name: [UInt8] = []
+            results.store.withNameBytes(i) { name = Array($0) }
+            if setAside[key] == nil { setAsideOrder.append(key) }
+            setAside[key] = SetAside(parent: results.parentPath(i), entry: results.store.entry(i), name: name)
+        }
+        if setAsideOrder.count > Self.setAsideLimit {
+            for key in setAsideOrder.prefix(setAsideOrder.count - Self.setAsideLimit) { setAside[key] = nil }
+            setAsideOrder.removeFirst(setAsideOrder.count - Self.setAsideLimit)
+        }
+    }
+
+    /// Re-inserts the set-aside rows at `paths` and below them (an undone trash of a folder brings its results back).
+    private func restore(_ paths: [String]) {
+        guard !paths.isEmpty, !setAside.isEmpty else { return }
+        let keys = paths.map(SearchResultStore.key)
+        let back = setAsideOrder.filter { k in keys.contains { k == $0 || k.hasPrefix($0 == "/" ? "/" : $0 + "/") } }
+        guard !back.isEmpty else { return }
+        var byParent: [String: Batch] = [:]
+        var parentOrder: [String] = []
+        for key in back {
+            guard let item = setAside.removeValue(forKey: key) else { continue }
+            if byParent[item.parent] == nil { byParent[item.parent] = Batch(generation: generation); parentOrder.append(item.parent) }
+            item.name.withUnsafeBufferPointer { byParent[item.parent]!.append(item.entry, nameBytes: $0) }
+        }
+        let gone = Set(back)
+        setAsideOrder.removeAll { gone.contains($0) }
+        var fresh: [UInt32] = []
+        for parent in parentOrder {
+            if !fresh.isEmpty { mergeIntoOrder(fresh); fresh = [] }       // append compacts storage when it replaces
+            fresh = results.append(SearchBatch(parent: URL(filePath: parent, directoryHint: .isDirectory), batch: byParent[parent]!))
+        }
+        mergeIntoOrder(fresh)
     }
 
     /// `SearchResultStore.key` of every results parent, folded once per parent (`results.parents` only grows

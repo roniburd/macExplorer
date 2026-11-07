@@ -74,4 +74,21 @@ final class QuerySyntaxTests: XCTestCase {
         XCTAssertEqual(q.freeTerms, ["a", "b"])
         XCTAssertTrue(QuerySyntax.parse(#""""#).freeTerms.isEmpty)
     }
+
+    /// Search QA: a kind: value with no known word keeps its diagnostic and matches nothing (it never widens).
+    func testKindWithNoValidWordMatchesNothing() {
+        let q = QuerySyntax.parse("report kind:banana")
+        XCTAssertEqual(q.kinds, [])
+        XCTAssertEqual(q.diagnostics, [SyntaxDiagnostic(token: "kind:banana", problem: .badKind)])
+        XCTAssertNil(QuerySyntax.parse("report").kinds)
+        XCTAssertEqual(QuerySyntax.parse("kind:banana kind:pdf").kinds, [.pdf])
+    }
+
+    /// Search QA: ext: and the Filters panel's Extension field share one parser.
+    func testExtensionListsAcceptStarDotAndSeparators() {
+        XCTAssertEqual(QuerySyntax.extensions("*.pdf"), ["pdf"])
+        XCTAssertEqual(QuerySyntax.extensions(".PDF, doc;  *.TXT md"), ["pdf", "doc", "txt", "md"])
+        XCTAssertEqual(QuerySyntax.extensions(" , *. ."), [])
+        XCTAssertEqual(QuerySyntax.parse("ext:*.pdf,.doc").extensions, ["pdf", "doc"])
+    }
 }

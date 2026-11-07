@@ -43,4 +43,24 @@ final class NamePatternTests: XCTestCase {
         XCTAssertFalse(m("?", ""))
         XCTAssertFalse(m("??", "😀"))
     }
+
+    /// Search QA: "?" is one character of the name, also when folding expands it (ß → "ss", ﬁ → "fi").
+    func testQuestionMarkMatchesOneOriginalCharacterWhenFoldingExpandsIt() {
+        func mo(_ pattern: String, _ name: String) -> Bool {
+            SortKeys.searchFold(name).withUnsafeBytes { NamePattern(pattern).matches($0, original: name) }
+        }
+        XCTAssertTrue(mo("stra?e.txt", "Straße.txt"))
+        XCTAssertTrue(mo("?", "ß"))
+        XCTAssertFalse(mo("??", "ß"))
+        XCTAssertTrue(mo("?le.txt", "ﬁle.txt"))
+        XCTAssertFalse(mo("??le.txt", "ﬁle.txt"))
+        XCTAssertTrue(mo("??le.txt", "file.txt"))
+        XCTAssertTrue(mo("*?e.txt", "Straße.txt"))
+        XCTAssertTrue(mo("?.txt", "日.txt"))
+        XCTAssertFalse(mo("?.txt", "日本.txt"))
+        XCTAssertTrue(mo("report?.doc", "reporté.doc"))
+        XCTAssertTrue(mo("strasse", "Straße"))           // substrings still match the expanded fold
+        XCTAssertTrue(NamePattern("a?").needsOriginal)
+        XCTAssertFalse(NamePattern("a*").needsOriginal)
+    }
 }

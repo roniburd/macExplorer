@@ -6,6 +6,10 @@
    {"click": "needle-2.txt"}, {"key": "cmd+delete"},
    {"waitFor": {"rows": ["needle-1.txt", "needle-3.txt"]}, "timeoutMs": 3000},
    {"expect": {"filesAbsent": ["b/needle-2.txt"], "filesExist": ["a/needle-1.txt", "b/needle-3.txt", "keep.txt"], "searchState": "complete"}},
+   {"key": "cmd+z"},
+   {"waitFor": {"rows": ["needle-1.txt", "needle-2.txt", "needle-3.txt"], "filesExist": ["b/needle-2.txt"]}, "timeoutMs": 5000},
+   {"click": "needle-2.txt"}, {"key": "cmd+delete"},
+   {"waitFor": {"rows": ["needle-1.txt", "needle-3.txt"], "filesAbsent": ["b/needle-2.txt"]}, "timeoutMs": 3000},
    {"click": "needle-3.txt"}, {"key": "F2"}, {"type": "renamed-3"}, {"key": "return"},
    {"waitFor": {"rows": ["needle-1.txt", "renamed-3.txt"]}, "timeoutMs": 3000},
    {"expect": {"filesExist": ["b/renamed-3.txt"], "filesAbsent": ["b/needle-3.txt"], "rowPaths": ["a", "b"], "selection": ["renamed-3.txt"]}}
