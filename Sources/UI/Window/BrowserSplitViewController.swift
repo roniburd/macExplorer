@@ -24,6 +24,10 @@ final class BrowserSplitViewController: NSSplitViewController {
         self.session = session
         self.previewPane = PreviewPaneController(context: context)
         super.init(nibName: nil, bundle: nil)
+        let tracking = DividerTrackingSplitView()
+        tracking.isVertical = splitView.isVertical
+        tracking.dividerStyle = splitView.dividerStyle
+        splitView = tracking
 
         let sidebar = SidebarViewController(context: context, session: session)
         let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebar)
@@ -71,7 +75,9 @@ final class BrowserSplitViewController: NSSplitViewController {
         previewWidthRestored = true
     }
 
-    /// Moves the divider before the inspector so the pane is `width` points wide (clamped by the item's limits).
+    /// Moves the divider before the inspector so the pane is `width` points wide (clamped by the item's limits,
+    /// and by the window: a window too narrow for `width` shows a narrower pane). Never persisted — only a divider
+    /// drag stores a width.
     func setPreviewWidth(_ width: Double) {
         let index = splitViewItems.count - 2
         let clamped = min(max(CGFloat(width), Self.previewMinimumWidth), Self.previewMaximumWidth)
@@ -120,9 +126,13 @@ final class BrowserSplitViewController: NSSplitViewController {
         if abs(Double(previewPane.view.frame.width) - width) >= 1 { setPreviewWidth(width) }
     }
 
+    /// Persists the pane's width only while the user drags a divider (QA round 2): programmatic widths
+    /// (`setPreviewWidth`, the toggle), window resizes and the clamps a narrow window forces are layout, not intent —
+    /// storing them would replace the user's width with whatever currently fits.
     override func splitViewDidResizeSubviews(_ notification: Notification) {
         super.splitViewDidResizeSubviews(notification)
-        guard let item = previewItem, !item.isCollapsed, !isAnimatingPreview, previewWidthRestored else { return }
+        guard let item = previewItem, !item.isCollapsed, !isAnimatingPreview, previewWidthRestored,
+              (splitView as? DividerTrackingSplitView)?.isTrackingDivider == true else { return }
         let width = Double(item.viewController.view.frame.width)
         if width >= Double(Self.previewMinimumWidth), abs(width - settings.previewPaneWidth) >= 1 { settings.previewPaneWidth = width }
     }
@@ -145,5 +155,18 @@ final class BrowserSplitViewController: NSSplitViewController {
     override func splitView(_ splitView: NSSplitView, shouldCollapseSubview subview: NSView,
                             forDoubleClickOnDividerAt dividerIndex: Int) -> Bool {
         false
+    }
+}
+
+/// Knows when the user is dragging one of its dividers: NSSplitView runs the whole drag inside `mouseDown`, and
+/// only a press on a divider reaches the split view itself (presses elsewhere land in its subviews).
+@MainActor
+final class DividerTrackingSplitView: NSSplitView {
+    private(set) var isTrackingDivider = false
+
+    override func mouseDown(with event: NSEvent) {
+        isTrackingDivider = true
+        defer { isTrackingDivider = false }
+        super.mouseDown(with: event)
     }
 }

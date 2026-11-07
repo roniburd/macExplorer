@@ -214,13 +214,68 @@ final class PreviewPaneTests: XCTestCase {
         await waitUntil("shown") { !split.previewItem.isCollapsed && !split.isAnimatingPreview }
         XCTAssertTrue(env.settings.previewPaneVisible)
         XCTAssertTrue(split.previewPane.isActive)
+        let before = env.settings.previewPaneWidth
         split.setPreviewWidth(400)
-        await waitUntil("width persisted") { abs(self.env.settings.previewPaneWidth - 400) < 2 }
+        XCTAssertEqual(env.settings.previewPaneWidth, before, "a programmatic width is never persisted")
+        try dragPreviewDivider(split, toWidth: 420)
+        await waitUntil("dragged width persisted") { abs(self.env.settings.previewPaneWidth - before) > 40 }
+        let dragged = env.settings.previewPaneWidth
+        XCTAssertEqual(dragged, Double(split.previewPane.view.frame.width), accuracy: 1, "the dragged width is stored")
+        XCTAssertEqual(dragged, 420, accuracy: 12)
         split.togglePreviewPane()
         await waitUntil("hidden") { split.previewItem.isCollapsed && !split.isAnimatingPreview }
         XCTAssertFalse(env.settings.previewPaneVisible)
         XCTAssertFalse(split.previewPane.isActive)
-        XCTAssertEqual(env.settings.previewPaneWidth, 400, accuracy: 2, "collapsing never stores a smaller width")
+        XCTAssertEqual(env.settings.previewPaneWidth, dragged, accuracy: 1, "collapsing never stores a smaller width")
+    }
+
+    /// Drags the preview divider the way a user does: real mouse events through NSSplitView's tracking loop.
+    private func dragPreviewDivider(_ split: BrowserSplitViewController, toWidth width: CGFloat) throws {
+        let window = try XCTUnwrap(split.view.window)
+        let splitView = split.splitView
+        let thickness = splitView.dividerThickness
+        let paneWidth = split.previewPane.view.frame.width
+        let y = splitView.bounds.midY
+        func point(_ w: CGFloat) -> NSPoint {
+            splitView.convert(NSPoint(x: splitView.bounds.width - w - thickness / 2, y: y), to: nil)
+        }
+        func event(_ type: NSEvent.EventType, _ location: NSPoint) throws -> NSEvent {
+            try XCTUnwrap(NSEvent.mouseEvent(with: type, location: location, modifierFlags: [],
+                                             timestamp: ProcessInfo.processInfo.systemUptime,
+                                             windowNumber: window.windowNumber, context: nil, eventNumber: 0,
+                                             clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1))
+        }
+        NSApp.postEvent(try event(.leftMouseDragged, point((paneWidth + width) / 2)), atStart: false)
+        NSApp.postEvent(try event(.leftMouseDragged, point(width)), atStart: false)
+        NSApp.postEvent(try event(.leftMouseUp, point(width)), atStart: false)
+        splitView.mouseDown(with: try event(.leftMouseDown, point(paneWidth)))
+    }
+
+    // QA round 2: showing the pane in a window too narrow for the stored width must not overwrite it with the
+    // clamped width; neither may a later window resize. Only a divider drag stores a width.
+    func testToggleInNarrowWindowKeepsStoredWidth() async throws {
+        try requireGUISession()
+        env.settings.previewPaneWidth = 400
+        let window = BrowserWindowController(context: context, initialURL: sandbox.root)
+        window.showWindow(nil)
+        defer { window.close() }
+        window.window?.setContentSize(NSSize(width: 1004, height: 640))
+        let split = try XCTUnwrap(window.splitController)
+        XCTAssertTrue(split.previewItem.isCollapsed)
+        split.togglePreviewPane()
+        await waitUntil("shown") { !split.previewItem.isCollapsed && !split.isAnimatingPreview }
+        try? await Task.sleep(for: .milliseconds(300))
+        XCTAssertLessThan(split.previewPane.view.frame.width, 399, "precondition: the window is too narrow for 400")
+        XCTAssertEqual(env.settings.previewPaneWidth, 400, "the toggle's clamped width is not stored")
+        window.window?.setContentSize(NSSize(width: 900, height: 640))
+        split.view.layoutSubtreeIfNeeded()
+        XCTAssertEqual(env.settings.previewPaneWidth, 400, "a window resize is not stored")
+        window.window?.setContentSize(NSSize(width: 1400, height: 700))
+        split.setPreviewWidth(env.settings.previewPaneWidth)
+        XCTAssertEqual(split.previewPane.view.frame.width, 400, accuracy: 2, "the stored width shows once it fits")
+        try dragPreviewDivider(split, toWidth: 300)
+        await waitUntil("drag persisted") { abs(self.env.settings.previewPaneWidth - 300) < 12 }
+        XCTAssertEqual(env.settings.previewPaneWidth, Double(split.previewPane.view.frame.width), accuracy: 1)
     }
 
     func testTogglePreviewPaneCommandRunsThroughTheHandler() async throws {
