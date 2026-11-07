@@ -46,6 +46,21 @@ final class PreviewMetadataTests: XCTestCase {
         XCTAssertEqual(p.pixelHeight, 64)
     }
 
+    // QA polish: SVG previews through Quick Look and shows its dimensions.
+    func testSVGDimensions() async throws {
+        try sandbox.createFile("a.svg", contents: Data("""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!-- a comment with width="1" -->
+            <svg xmlns="http://www.w3.org/2000/svg" width="120px" height="80" viewBox="0 0 10 10"><rect/></svg>
+            """.utf8))
+        try sandbox.createFile("b.svg", contents: Data("<svg viewBox='0 0 300.5 150' xmlns='http://www.w3.org/2000/svg'/>".utf8))
+        try sandbox.createFile("c.svg", contents: Data("<svg width='100%' height='100%'/>".utf8))
+        let a = await load("a.svg"); XCTAssertEqual(a.pixelWidth, 120); XCTAssertEqual(a.pixelHeight, 80)
+        let b = await load("b.svg"); XCTAssertEqual(b.pixelWidth, 301); XCTAssertEqual(b.pixelHeight, 150)
+        let c = await load("c.svg"); XCTAssertNil(c.pixelWidth, "relative sizes have no dimensions")
+        XCTAssertEqual(PreviewMetadata.svgSize(Array("<svg width='3em' height='2'>".utf8))?.width, nil)
+    }
+
     func testAudioDuration() async throws {
         try sandbox.createFile("tone.wav", contents: wav())
         let a = await load("tone.wav")

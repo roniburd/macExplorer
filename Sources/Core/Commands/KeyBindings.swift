@@ -122,6 +122,14 @@ public struct KeyBindings: Sendable, Equatable {
         }
     }
 
+    /// `validate` for `command`'s own slot: a command's built-in primary is always accepted there, even a typing
+    /// chord like ⌥P (QA polish: rebinding Show Preview Pane away and back to ⌥P must work). It still collides
+    /// with text editing (`collidesWithTextEditing`), so the field editor keeps the key while typing.
+    public static func validate(_ trigger: Trigger, as slot: Slot, for command: Command) -> BindingRejection? {
+        if slot == .primary, case .key(let chord) = trigger, chord == KeyMap.primary(command) { return nil }
+        return validate(trigger, as: slot)
+    }
+
     public static func validate(_ trigger: Trigger, as slot: Slot) -> BindingRejection? {
         switch (trigger, slot) {
         case (.mouse, .mouse): return nil

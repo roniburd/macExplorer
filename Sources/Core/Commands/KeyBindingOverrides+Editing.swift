@@ -11,7 +11,7 @@ extension KeyBindingOverrides {
     }
 
     public mutating func setPrimary(_ chord: KeyChord?, for command: Command) {
-        if let chord, KeyBindings.validate(.key(chord), as: .primary) != nil { return }
+        if let chord, KeyBindings.validate(.key(chord), as: .primary, for: command) != nil { return }
         update(command) { $0.primary = chord }
     }
 
@@ -26,7 +26,7 @@ extension KeyBindingOverrides {
     /// Gives `trigger` to `command`'s `slot`, first removing it from every other slot that holds it (including the
     /// same command's other slot).
     public mutating func reassign(_ trigger: Trigger, to command: Command, as slot: KeyBindings.Slot) {
-        guard !KeyBindings.fixedCommands.contains(command), KeyBindings.validate(trigger, as: slot) == nil else { return }
+        guard !KeyBindings.fixedCommands.contains(command), KeyBindings.validate(trigger, as: slot, for: command) == nil else { return }
         for use in KeyBindings(overrides: self).uses(of: trigger) where use != KeyBindings.Use(command: command, slot: slot) {
             remove(trigger, from: use)
         }

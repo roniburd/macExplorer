@@ -391,4 +391,90 @@ final class PreviewPaneTests: XCTestCase {
         await waitUntil("binary log") { p.displayState == .binary(self.sandbox.url("d/nul-in-utf8.log")) }
         XCTAssertNil(host.shownURL)
     }
+
+    // QA polish: an empty file shows an explicit state, not a blank text area.
+    func testEmptyFileShowsEmptyState() async throws {
+        try sandbox.createFile("d/empty.txt", contents: Data())
+        try sandbox.createFile("d/empty.zzqq", contents: Data())
+        let m = await folder("d")
+        let p = pane()
+        p.bind(m)
+        for name in ["empty.txt", "empty.zzqq"] {
+            select(m, [name])
+            await waitUntil("empty \(name)") { p.displayState == .empty(self.sandbox.url("d/\(name)")) }
+            XCTAssertEqual(p.probeState, "empty")
+            XCTAssertEqual(p.messageTitle, L10n.string("preview.empty"))
+            XCTAssertNil(host.shownURL)
+        }
+    }
+
+    // QA polish: Quick Look kept showing the old content after the previewed file changed on disk.
+    func testQuickLookReloadsWhenTheFileChanges() async throws {
+        try sandbox.writePNG("d/p.png", pixels: 16)
+        let m = await folder("d")
+        let p = pane()
+        p.bind(m)
+        select(m, ["p.png"])
+        await waitUntil("quick look") { p.displayState == .quickLook(self.sandbox.url("d/p.png")) }
+        XCTAssertEqual(host.refreshes, 0)
+        let bigger = try XCTUnwrap(Sandbox.pngData(pixels: 64, red: 0.9, green: 0.1, blue: 0.1))
+        try sandbox.overwrite("d/p.png", contents: bigger)               // a new size and modification date on disk
+        await waitUntil("reloaded after the on-disk change", timeout: 10) { self.host.refreshes >= 1 }
+        XCTAssertEqual(host.shownURL, sandbox.url("d/p.png"))
+        let before = host.refreshes
+        // An in-app change for the item (ChangeBus), even when size and date look the same, reloads it too.
+        env.changeBus.post([LocalChange(directory: sandbox.url("d"), modified: ["p.png"])])
+        await waitUntil("reloaded after the ChangeBus change") { self.host.refreshes > before }
+        let settled = host.refreshes
+        env.changeBus.post([LocalChange(directory: sandbox.url("d"), modified: ["other.png"])])
+        try? await Task.sleep(for: .milliseconds(150))
+        XCTAssertEqual(host.refreshes, settled, "a change to another item does not reload")
+    }
+
+    // QA polish: messages sat under the toolbar, their symbol half hidden: they are centred in the visible area.
+    func testMessageIsCentredInTheSafeArea() async throws {
+        let p = pane()
+        p.view.frame = NSRect(x: 0, y: 0, width: 300, height: 600)
+        p.view.additionalSafeAreaInsets = NSEdgeInsets(top: 52, left: 0, bottom: 0, right: 0)
+        p.bind(nil)
+        await waitUntil("nothing") { p.displayState == .nothing }
+        p.view.layoutSubtreeIfNeeded()
+        let safe = p.view.safeAreaRect
+        let content = p.messageContentFrame
+        XCTAssertFalse(content.isEmpty)
+        XCTAssertTrue(safe.contains(content), "\(content) inside \(safe)")
+        XCTAssertEqual(content.midY, safe.midY, accuracy: 30, "vertically centred in the visible area")
+        XCTAssertEqual(content.midX, safe.midX, accuracy: 2)
+    }
+
+    // QA polish: the menu title and Download for Preview read the global setting; each window has its own pane.
+    func testPreviewPaneStateIsPerWindow() async throws {
+        try requireGUISession()
+        try sandbox.createFile("c.txt")
+        let a = BrowserWindowController(context: context, initialURL: sandbox.root)
+        let b = BrowserWindowController(context: context, initialURL: sandbox.root)
+        a.showWindow(nil); b.showWindow(nil)
+        defer { a.close(); b.close() }
+        let splitA = try XCTUnwrap(a.splitController), splitB = try XCTUnwrap(b.splitController)
+        splitA.togglePreviewPane()
+        await waitUntil("A shown") { !splitA.previewItem.isCollapsed && !splitA.isAnimatingPreview }
+        XCTAssertTrue(env.settings.previewPaneVisible)
+        XCTAssertTrue(splitB.previewItem.isCollapsed, "B keeps its own pane hidden")
+        let item = NSMenuItem(title: "", action: Selector(Command.togglePreviewPane.selectorName), keyEquivalent: "")
+        let contentA = try XCTUnwrap(a.contentPane as? ContentViewController)
+        let contentB = try XCTUnwrap(b.contentPane as? ContentViewController)
+        _ = contentA.validateMenuItem(item)
+        XCTAssertEqual(item.title, L10n.string("Hide Preview Pane"))
+        _ = contentB.validateMenuItem(item)
+        XCTAssertEqual(item.title, MainMenuTitles.title(.togglePreviewPane))
+        for content in [contentA, contentB] {
+            let m = content.session.folder
+            await waitUntil("loaded") { m.state == .complete }
+            m.select(.names(["c.txt"]))
+        }
+        let handlerA = try XCTUnwrap(contentA.handler), handlerB = try XCTUnwrap(contentB.handler)
+        XCTAssertTrue(handlerA.canPerform(.downloadForPreview, target: try XCTUnwrap(contentA.commandTarget)))
+        XCTAssertFalse(handlerB.canPerform(.downloadForPreview, target: try XCTUnwrap(contentB.commandTarget)),
+                       "B's pane is hidden, whatever the setting says")
+    }
 }

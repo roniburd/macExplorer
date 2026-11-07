@@ -421,9 +421,7 @@ final class ContentViewController: CommandHandlingViewController {
             if let searchController, let state = MenuValidation.searchState(command, scope: searchController.scope, mode: searchController.mode) {
                 menuItem.state = state
             }
-            if command == .togglePreviewPane {
-                menuItem.title = MenuValidation.previewPaneTitle(visible: context.environment.settings.previewPaneVisible)
-            }
+            MenuValidation.updateTitle(of: menuItem, command: command, window: view.window)
         }
         return super.validateMenuItem(menuItem)
     }
@@ -558,7 +556,8 @@ final class ContentViewController: CommandHandlingViewController {
     }
 
     func updateCommandBar(shiftHeld: Bool = NSEvent.modifierFlags.contains(.shift)) {
-        let state = CommandStateBuilder.state(for: commandTarget, session: session, environment: context.environment)
+        let state = CommandStateBuilder.state(for: commandTarget, session: session, environment: context.environment,
+                                              previewPaneVisible: MenuValidation.previewPaneVisible(in: view.window))
         commandBar.update(state: state, focus: .content, shiftHeld: shiftHeld)
     }
 

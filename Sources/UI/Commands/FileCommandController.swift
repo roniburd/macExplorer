@@ -61,6 +61,7 @@ final class FileCommandController: CommandHandler {
             if effective == .makeAlias || effective == .makeSymlink, Self.commonParent(of: results) == nil { return false }
         }
         var state = CommandStateBuilder.state(for: target, session: session, environment: environment,
+                                              previewPaneVisible: window?.splitController?.isPreviewPaneVisible ?? false,
                                               needsFolderCount: effective == .openInNewTab)
         if effective == .quickLook { state.quickLookVisible = window?.quickLook.isVisible ?? false }
         return CommandAvailability.isEnabled(effective, focus: focus, state: state,

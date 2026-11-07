@@ -27,9 +27,19 @@ import MacxFS
 
     /// Validation-time title updates for items whose title depends on the window (Close Tab / Close Window).
     static func updateTitle(of item: NSMenuItem, command: Command, window: NSWindow?) {
-        guard command == .closeWindow else { return }
-        let title = closeTitle(for: window)
+        let title: String
+        switch command {
+        case .closeWindow: title = closeTitle(for: window)
+        case .togglePreviewPane: title = previewPaneTitle(visible: previewPaneVisible(in: window))
+        default: return
+        }
         if item.title != title { item.title = title }
+    }
+
+    /// Whether `window` (a browser window or tab) shows its own preview pane. Each window has one; the setting is
+    /// only what new windows start with (QA polish).
+    static func previewPaneVisible(in window: NSWindow?) -> Bool {
+        (window?.windowController as? BrowserWindowController)?.splitController?.isPreviewPaneVisible ?? false
     }
 
     /// The checkmark of a Group By ▸ item for a folder's view state; nil for other commands (P2-10).
@@ -57,7 +67,7 @@ import MacxFS
         return on ? .on : .off
     }
 
-    /// View › Show / Hide Preview Pane, from `Settings.previewPaneVisible`.
+    /// View › Show / Hide Preview Pane, from the window's own pane (`previewPaneVisible(in:)`).
     static func previewPaneTitle(visible: Bool) -> String {
         visible ? L10n.string("Hide Preview Pane") : MainMenuTitles.title(.togglePreviewPane)
     }

@@ -54,6 +54,9 @@ final class BrowserSplitViewController: NSSplitViewController {
         splitViewItems.lazy.compactMap { $0.viewController as? ContentViewController }.first
     }
 
+    /// This window's pane is shown (or showing): true from the moment a toggle starts to show it.
+    var isPreviewPaneVisible: Bool { previewPane.isActive }
+
     private func installPreviewItem() {
         let item = NSSplitViewItem(inspectorWithViewController: previewPane)
         item.minimumThickness = Self.previewMinimumWidth

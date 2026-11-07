@@ -54,6 +54,22 @@ final class ShortcutsModelTests: XCTestCase {
         XCTAssertEqual(s.keyBindings.primary(.togglePreviewPane), chord("opt+p"))
     }
 
+    // QA polish: ⌥P (a typing chord, so not allowed as a user primary) can be recorded again for Show Preview Pane,
+    // whose default it is; other commands still can't take it as their primary.
+    func testRecordingACommandsOwnTypingDefaultRestoresIt() {
+        let s = settings()
+        let m = ShortcutsModel(settings: s)
+        XCTAssertEqual(m.apply(.key(chord("ctrl+cmd+p")), to: .togglePreviewPane, as: .primary, reassigning: false), .saved)
+        XCTAssertEqual(m.apply(.key(chord("opt+p")), to: .togglePreviewPane, as: .primary, reassigning: false), .saved)
+        XCTAssertEqual(s.keyBindings.primary(.togglePreviewPane), chord("opt+p"))
+        XCTAssertFalse(m.isModified(.togglePreviewPane), "recording the default stores no override")
+        XCTAssertTrue(s.keyBindings.collidesWithTextEditing.contains(.togglePreviewPane), "the field-editor guard still applies")
+        XCTAssertEqual(m.apply(.key(chord("opt+p")), to: .saveSearch, as: .primary, reassigning: false), .rejected(.editsTextAsPrimary))
+        XCTAssertEqual(m.apply(.key(chord("opt+q")), to: .togglePreviewPane, as: .primary, reassigning: false), .rejected(.editsTextAsPrimary))
+        XCTAssertNil(KeyBindings.validate(.key(chord("opt+p")), as: .primary, for: .togglePreviewPane))
+        XCTAssertEqual(KeyBindings.validate(.key(chord("opt+p")), as: .primary, for: .saveSearch), .editsTextAsPrimary)
+    }
+
     func testSearchMatchesTitleGlyphTextAndMouse() {
         let m = ShortcutsModel(settings: settings())
         XCTAssertEqual(m.groups(matching: "").flatMap(\.commands).count, Command.allCases.count)

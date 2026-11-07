@@ -10,8 +10,12 @@ final class PreviewMessageView: NSView {
     private let spinner = NSProgressIndicator()
     let button = NSButton(title: "", target: nil, action: nil)
     var onButton: (() -> Void)?
+    private let stack: NSStackView
+    /// The icon, labels and button, in this view's coordinates.
+    var contentFrame: NSRect { stack.frame }
 
     override init(frame frameRect: NSRect) {
+        stack = NSStackView()
         super.init(frame: frameRect)
         translatesAutoresizingMaskIntoConstraints = false
         setAccessibilityElement(true)
@@ -34,7 +38,7 @@ final class PreviewMessageView: NSView {
         button.action = #selector(buttonPressed(_:))
         button.setAccessibilityIdentifier(AXID.previewDownload)
 
-        let stack = NSStackView(views: [image, titleLabel, detailLabel, spinner, button])
+        for v in [image, titleLabel, detailLabel, spinner, button] { stack.addArrangedSubview(v) }
         stack.orientation = .vertical
         stack.alignment = .centerX
         stack.spacing = 8
@@ -43,7 +47,9 @@ final class PreviewMessageView: NSView {
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
             stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
-            stack.topAnchor.constraint(equalTo: topAnchor, constant: 24),
+            // Centred in the pane's visible area (the pane lays this view out in its safe area), never clipped.
+            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            stack.topAnchor.constraint(greaterThanOrEqualTo: topAnchor, constant: 12),
             stack.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -12),
             titleLabel.widthAnchor.constraint(lessThanOrEqualTo: stack.widthAnchor),
             detailLabel.widthAnchor.constraint(lessThanOrEqualTo: stack.widthAnchor),

@@ -92,10 +92,41 @@ public enum PreviewMetadata {
                     details.pixelHeight = props[kCGImagePropertyPixelHeight] as? Int
                 }
             }
+            if details.pixelWidth == nil, type.conforms(to: .svg),
+               case .success(let prefix) = PreviewProbe.read(path, count: 8_192), let size = svgSize(prefix) {
+                details.pixelWidth = size.width
+                details.pixelHeight = size.height
+            }
             if details.pageCount == nil, type.conforms(to: .pdf), let doc = CGPDFDocument(fileURL) {
                 details.pageCount = doc.numberOfPages
             }
         }
         return Gathered(details: details, dataless: dataless, isDirectory: isDir, isRegular: isRegular)
+    }
+
+    /// An SVG's intrinsic size from its root element: absolute `width` / `height` (unitless or px), else the
+    /// `viewBox` size; nil when neither gives one (relative units like %, em). Rounded to whole pixels.
+    static func svgSize(_ bytes: [UInt8]) -> (width: Int, height: Int)? {
+        let text = String(decoding: bytes, as: UTF8.self)
+        guard let open = text.range(of: #"<svg[\s>]"#, options: .regularExpression),
+              let close = text[open.lowerBound...].firstIndex(of: ">") else { return nil }
+        let tag = text[open.lowerBound..<close]
+        func attribute(_ name: String) -> String? {
+            guard let r = tag.range(of: #"\s\#(name)\s*=\s*("[^"]*"|'[^']*')"#, options: .regularExpression) else { return nil }
+            let value = tag[r].drop { $0 != "\"" && $0 != "'" }
+            return String(value.dropFirst().dropLast()).trimmingCharacters(in: .whitespaces)
+        }
+        func length(_ s: String?) -> Double? {
+            guard var s else { return nil }
+            if s.hasSuffix("px") { s.removeLast(2) }
+            guard let v = Double(s.trimmingCharacters(in: .whitespaces)), v > 0, v.isFinite else { return nil }
+            return v
+        }
+        if let w = length(attribute("width")), let h = length(attribute("height")) {
+            return (Int(w.rounded()), Int(h.rounded()))
+        }
+        let box = attribute("viewBox")?.split { $0 == " " || $0 == "," }.compactMap { Double($0) } ?? []
+        guard box.count == 4, box[2] > 0, box[3] > 0, box[2].isFinite, box[3].isFinite else { return nil }
+        return (Int(box[2].rounded()), Int(box[3].rounded()))
     }
 }

@@ -29,7 +29,11 @@ final class PreviewPlannerTests: XCTestCase {
         XCTAssertEqual(PreviewPlanner.classify(.plainText), .text)
         XCTAssertEqual(PreviewPlanner.classify(.swiftSource), .text)
         XCTAssertEqual(PreviewPlanner.classify(.json), .text)
-        XCTAssertEqual(PreviewPlanner.classify(.html), .text)
+        XCTAssertEqual(PreviewPlanner.classify(.html), .quickLook, "QA polish: rendered, not shown as source")
+        XCTAssertEqual(PreviewPlanner.classify(.svg), .quickLook, "QA polish: public.svg-image conforms to public.xml")
+        XCTAssertEqual(PreviewPlanner.classify(UTType(filenameExtension: "svg")!), .quickLook)
+        XCTAssertEqual(PreviewPlanner.classify(UTType(filenameExtension: "htm")!), .quickLook)
+        XCTAssertEqual(PreviewPlanner.classify(.xml), .text)
         XCTAssertEqual(PreviewPlanner.classify(UTType("public.yaml")!), .text)
         XCTAssertEqual(PreviewPlanner.classify(.shellScript), .text)
         XCTAssertEqual(PreviewPlanner.classify(.rtf), .quickLook)
@@ -78,6 +82,18 @@ final class PreviewPlannerTests: XCTestCase {
         let rtf = await resolve(subject("big.rtf"));     XCTAssertEqual(rtf, .unavailable(sandbox.url("big.rtf"), code: EFBIG))
         let plist = await resolve(subject("big.plist")); XCTAssertEqual(plist, .unavailable(sandbox.url("big.plist"), code: EFBIG))
         let png = await resolve(subject("big.png"));     XCTAssertEqual(png, .quickLook(sandbox.url("big.png")), "not a Text-generator type")
+    }
+
+    // QA polish: an unreadable image or PDF was handed to Quick Look, which showed a generic icon.
+    func testUnreadableQuickLookTypesAreUnavailable() async throws {
+        try sandbox.writePNG("locked.png")
+        try sandbox.createFile("locked.pdf", contents: Data("%PDF-1.4\n%%EOF\n".utf8))
+        try sandbox.createFile("locked.svg", contents: Data("<svg xmlns='http://www.w3.org/2000/svg'/>".utf8))
+        for name in ["locked.png", "locked.pdf", "locked.svg"] { try sandbox.setMode(name, 0o000) }
+        for name in ["locked.png", "locked.pdf", "locked.svg"] {
+            let content = await resolve(subject(name))
+            XCTAssertEqual(content, .unavailable(sandbox.url(name), code: EACCES), name)
+        }
     }
 
     func testDatalessIsCloudPlaceholderAndNeverRead() async {

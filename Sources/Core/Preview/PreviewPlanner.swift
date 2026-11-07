@@ -64,7 +64,8 @@ public enum PreviewPlanner {
     }
 
     public static func classify(_ type: UTType) -> PreviewClass {
-        if [UTType.rtf, .rtfd, .flatRTFD, .pdf].contains(where: { type.conforms(to: $0) }) { return .quickLook }
+        // Images (SVG conforms to public.xml) and HTML (public.text) are rendered, not shown as source (QA polish).
+        if [UTType.rtf, .rtfd, .flatRTFD, .pdf, .image, .html].contains(where: { type.conforms(to: $0) }) { return .quickLook }
         if type.conforms(to: .propertyList) { return .sniff }
         let textRoots: [UTType] = [.text, .sourceCode, .script, .json, .xml] + [UTType("public.yaml")].compactMap { $0 }
         if textRoots.contains(where: { type.conforms(to: $0) }) { return .text }
@@ -126,7 +127,10 @@ public enum PreviewPlanner {
         let type = types.type(at: typeIndex)
         switch classify(type) {
         case .text: return .text(contentURL)
-        case .quickLook: return quickLook(contentURL, type: type, size: st.size)
+        case .quickLook:
+            // Quick Look shows a generic icon for a file it can't read: check here, as text loads do (QA polish).
+            if case .failure(let e) = probe.readPrefix(readPath, 0) { return .unavailable(url, code: e.code) }
+            return quickLook(contentURL, type: type, size: st.size)
         case .sniff:
             switch probe.readPrefix(readPath, sniffSize) {
             case .failure(let e): return .unavailable(url, code: e.code)

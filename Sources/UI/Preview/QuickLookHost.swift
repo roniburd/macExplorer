@@ -6,6 +6,8 @@ import QuickLookUI
     var view: NSView { get }
     var shownURL: URL? { get }
     func show(_ url: URL?)
+    /// Reloads the shown item (its content changed on disk).
+    func refresh()
     func close()
 }
 
@@ -28,6 +30,11 @@ import QuickLookUI
         preview.previewItem = url as NSURL?
     }
 
+    func refresh() {
+        guard shownURL != nil else { return }
+        preview.refreshPreviewItem()
+    }
+
     func close() {
         shownURL = nil
         preview.previewItem = nil
@@ -40,6 +47,8 @@ import QuickLookUI
     let view = NSView()
     private(set) var shownURL: URL?
     private(set) var history: [URL?] = []
+    private(set) var refreshes = 0
     func show(_ url: URL?) { shownURL = url; history.append(url) }
+    func refresh() { if shownURL != nil { refreshes += 1 } }
     func close() { shownURL = nil }
 }

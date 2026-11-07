@@ -7,8 +7,9 @@ enum CommandStateBuilder {
     /// `needsFolderCount`: scan a content selection for folders (CommandState.selectedFolderCount). Only Open in New
     /// Tab reads it, and validation runs once per menu item / toolbar item / command-bar button, so callers ask for
     /// it only when validating that command; otherwise a content selection reports 0.
+    /// `previewPaneVisible`: the target window's own pane (`MenuValidation.previewPaneVisible(in:)`), not the setting.
     static func state(for target: CommandTarget?, session: BrowserSession, environment: CoreEnvironment,
-                      needsFolderCount: Bool = false) -> CommandState {
+                      previewPaneVisible: Bool, needsFolderCount: Bool = false) -> CommandState {
         var state = CommandState()
         state.canPaste = environment.clipboard.canPaste
         state.canUndo = environment.undo.canUndo
@@ -21,7 +22,7 @@ enum CommandStateBuilder {
         // Search (P3-10): Save Search… and Stop Search work from any focus in the window.
         state.hasSearchQuery = session.searchSpec != nil
         state.showingResults = session.results != nil
-        state.previewPaneVisible = environment.settings.previewPaneVisible       // Download for Preview (P3-12)
+        state.previewPaneVisible = previewPaneVisible                            // Download for Preview (P3-12)
         if case .searching? = session.results?.state { state.isSearching = true }
         switch target {
         case .contentSelection(let folder):

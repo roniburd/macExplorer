@@ -15,6 +15,8 @@ final class PreviewPaneController: NSViewController {
         case multiple(Int, Int64)
         case text(String, truncated: Bool)
         case quickLook(URL), folder(URL), cloud(URL), downloading(URL), downloadFailed(URL), broken(URL)
+        /// A text file with no content: a message, not a blank text area (QA polish).
+        case empty(URL)
         case unavailable(URL, Int32)
         /// Text by type but not by content (NUL or control bytes): a message, never Quick Look (QA round 1).
         case binary(URL)
@@ -33,7 +35,7 @@ final class PreviewPaneController: NSViewController {
     private enum SelectionKey: Equatable {
         case empty
         case multiple(Int, Int64)
-        case single(URL, kind: Kind, size: Int64, mtime: Int64, flags: UInt32)
+        case single(URL, kind: Kind, size: Int64, mtime: Int64, flags: UInt32, fileID: UInt64)
     }
 
     private let context: UIContext
@@ -47,6 +49,9 @@ final class PreviewPaneController: NSViewController {
     private let stack = NSStackView()
     private weak var source: (any RowSource)?
     private var sourceToken: ObserverToken?
+    private var busToken: ObserverToken?
+    /// A forced update is waiting: a later unforced event (debounced over it) must not drop the force.
+    private var pendingForce = false
     private var pending: Task<Void, Never>?
     private var detailsTask: Task<Void, Never>?
     private var downloadTask: Task<Void, Never>?
@@ -84,6 +89,18 @@ final class PreviewPaneController: NSViewController {
     required init?(coder: NSCoder) { fatalError("PreviewPaneController is created in code") }
 
     override func loadView() {
+        let container = NSView()
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(stack)
+        // The inspector runs under the window toolbar: lay out in the visible area (QA polish: messages sat under
+        // the toolbar with their symbol half hidden behind the view-mode buttons).
+        let safe = container.safeAreaLayoutGuide
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: safe.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: safe.bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: safe.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: safe.trailingAnchor),
+        ])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.distribution = .fill
@@ -96,7 +113,7 @@ final class PreviewPaneController: NSViewController {
             v.isHidden = true
             v.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -16).isActive = true
         }
-        for v in [hostView, textView] {
+        for v in [hostView, textView, messageView] {
             v.setContentHuggingPriority(.defaultLow, for: .vertical)
             v.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
             v.heightAnchor.constraint(greaterThanOrEqualToConstant: 120).isActive = true
@@ -108,7 +125,7 @@ final class PreviewPaneController: NSViewController {
         stack.setAccessibilityIdentifier(AXID.previewPane)
         stack.setAccessibilityLabel(L10n.string("preview.pane"))
         messageView.onButton = { [weak self] in self?.performDownload() }
-        view = stack
+        view = container
         render(displayState)
     }
 
@@ -130,6 +147,9 @@ final class PreviewPaneController: NSViewController {
     }
 
     private func observeSource() {
+        busToken?.cancel()
+        // An in-app change to the previewed item reloads it even when its size and date look the same (QA polish).
+        busToken = context.environment.changeBus.observeAll { [weak self] change in self?.localChange(change) }
         sourceToken?.cancel()
         sourceToken = source?.observeRows { [weak self] event in
             switch event {
@@ -139,8 +159,19 @@ final class PreviewPaneController: NSViewController {
         }
     }
 
+    private func localChange(_ change: LocalChange) {
+        guard case .single(let url, _, _, _, _, _)? = lastKey,
+              ChangeBus.key(for: change.directory) == ChangeBus.key(for: url.deletingLastPathComponent()) else { return }
+        let name = url.lastPathComponent
+        if change.modified.contains(name) || change.added.contains(name) || change.renamed.contains(where: { $0.to == name }) {
+            scheduleUpdate(immediate: false, force: true)
+        }
+    }
+
     private func deactivate() {
         pending?.cancel(); pending = nil
+        pendingForce = false
+        busToken?.cancel(); busToken = nil
         detailsTask?.cancel(); detailsTask = nil
         downloadTask?.cancel(); downloadTask = nil
         sourceToken?.cancel()
@@ -156,10 +187,13 @@ final class PreviewPaneController: NSViewController {
         guard isActive else { return }
         pending?.cancel()
         let wait = immediate ? Duration.zero : debounce
+        pendingForce = pendingForce || force
         pending = Task { [weak self] in
             if wait > .zero { try? await Task.sleep(for: wait) }
-            guard !Task.isCancelled else { return }
-            await self?.update(force: force)
+            guard !Task.isCancelled, let self else { return }
+            let force = self.pendingForce
+            self.pendingForce = false
+            await self.update(force: force)
         }
     }
 
@@ -167,7 +201,7 @@ final class PreviewPaneController: NSViewController {
         if rows.isEmpty { return .empty }
         if rows.count > 1 { return .multiple(rows.count, source.selectionSummary.bytes) }
         let e = source.entry(atRow: rows[0])
-        return .single(source.url(atRow: rows[0]), kind: e.kind, size: e.size, mtime: e.mtime, flags: e.flags.rawValue)
+        return .single(source.url(atRow: rows[0]), kind: e.kind, size: e.size, mtime: e.mtime, flags: e.flags.rawValue, fileID: e.fileID)
     }
 
     private func update(force: Bool) async {
@@ -221,7 +255,11 @@ final class PreviewPaneController: NSViewController {
         case .nothingSelected: host.show(nil); render(.nothing)
         case .multiple(let n, let bytes): host.show(nil); render(.multiple(n, bytes))
         case .folder(let url): host.show(nil); render(.folder(url))
-        case .quickLook(let url): host.show(url); render(.quickLook(url))
+        case .quickLook(let url):
+            // Same item, new content (its size, date or inode changed, or an in-app change named it): QLPreviewView
+            // keeps showing what it loaded unless asked to reload (QA polish).
+            if host.shownURL == url { host.refresh() } else { host.show(url) }
+            render(.quickLook(url))
         case .cloudPlaceholder(let url): host.show(nil); render(.cloud(url))
         case .brokenLink(let url): host.show(nil); render(.broken(url))
         case .unavailable(let url, let code): host.show(nil); render(.unavailable(url, code))
@@ -233,7 +271,7 @@ final class PreviewPaneController: NSViewController {
                 let preview = try await TextPreviewLoader.load(url, lanes: env.lanes, volume: volume)
                 guard gen == generation else { return }
                 host.show(nil)
-                render(.text(preview.text, truncated: preview.truncated))
+                render(preview.text.isEmpty && !preview.truncated ? .empty(url) : .text(preview.text, truncated: preview.truncated))
             } catch {
                 guard gen == generation else { return }
                 switch error {
@@ -317,6 +355,8 @@ final class PreviewPaneController: NSViewController {
             message(symbol: "exclamationmark.icloud", title: L10n.string("preview.downloadFailed"), button: L10n.string("preview.tryAgain"))
         case .broken:
             message(symbol: "questionmark.folder", title: L10n.string("preview.broken"))
+        case .empty:
+            message(symbol: "doc", title: L10n.string("preview.empty"))
         case .binary:
             message(symbol: "doc", title: L10n.string("preview.binary"), detail: L10n.string("preview.binary.detail"))
         case .unavailable(_, let code):
@@ -335,7 +375,7 @@ final class PreviewPaneController: NSViewController {
     }
 
     /// Scenario probe text: "hidden", "nothing", "loading", "multiple:2", "text", "quickLook", "folder", "cloud",
-    /// "downloading", "downloadFailed", "broken", "unavailable", "binary".
+    /// "downloading", "downloadFailed", "broken", "unavailable", "binary", "empty".
     var probeState: String {
         switch displayState {
         case .hidden: "hidden"
@@ -351,7 +391,14 @@ final class PreviewPaneController: NSViewController {
         case .broken: "broken"
         case .unavailable: "unavailable"
         case .binary: "binary"
+        case .empty: "empty"
         }
+    }
+
+    /// The message's icon, title and detail, in the pane view's coordinates (tests: centred in the safe area).
+    var messageContentFrame: NSRect {
+        guard isViewLoaded, !messageView.isHidden else { return .zero }
+        return messageView.convert(messageView.contentFrame, to: view)
     }
 
     var probeText: String? { if case .text(let t, _) = displayState { String(t.prefix(200)) } else { nil } }

@@ -58,11 +58,11 @@ final class FileCommandTests: XCTestCase {
         let w = try await world { try $0.file("a.txt"); try $0.dir("sub") }
         w.select(["a.txt", "sub"])
         let env = w.h.environment, session = w.browser.session
-        XCTAssertEqual(CommandStateBuilder.state(for: w.selection, session: session, environment: env).selectedFolderCount, 0)
-        XCTAssertEqual(CommandStateBuilder.state(for: w.selection, session: session, environment: env,
+        XCTAssertEqual(CommandStateBuilder.state(for: w.selection, session: session, environment: env, previewPaneVisible: false).selectedFolderCount, 0)
+        XCTAssertEqual(CommandStateBuilder.state(for: w.selection, session: session, environment: env, previewPaneVisible: false,
                                                  needsFolderCount: true).selectedFolderCount, 1)
         w.select(["a.txt"])
-        XCTAssertEqual(CommandStateBuilder.state(for: w.selection, session: session, environment: env,
+        XCTAssertEqual(CommandStateBuilder.state(for: w.selection, session: session, environment: env, previewPaneVisible: false,
                                                  needsFolderCount: true).selectedFolderCount, 0)
         XCTAssertFalse(w.commands.canPerform(.openInNewTab, target: w.selection))
     }

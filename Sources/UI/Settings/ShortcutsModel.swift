@@ -90,7 +90,7 @@ enum ShortcutApply: Equatable {
 
     /// Validates, then saves unless another slot holds `trigger` and `reassigning` is false.
     func apply(_ trigger: Trigger, to command: Command, as slot: KeyBindings.Slot, reassigning: Bool) -> ShortcutApply {
-        if let rejection = KeyBindings.validate(trigger, as: slot) { return .rejected(rejection) }
+        if let rejection = KeyBindings.validate(trigger, as: slot, for: command) { return .rejected(rejection) }
         let others = bindings.uses(of: trigger).filter { $0 != KeyBindings.Use(command: command, slot: slot) }
         if !others.isEmpty, !reassigning { return .conflict(others) }
         settings.keyBindingOverrides.reassign(trigger, to: command, as: slot)
