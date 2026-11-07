@@ -314,4 +314,26 @@ final class PreviewPaneTests: XCTestCase {
         XCTAssertEqual(q.messageTitle, L10n.string("preview.unavailable"))
         XCTAssertNil(q.messageButtonTitle)
     }
+
+    // QA round 1: a text-typed file whose bytes are not text (NULs) shows a message, never Quick Look (whose Text
+    // bundle laid out a 2 GB sparse .txt on the main thread).
+    func testTextTypedBinaryContentShowsAMessageNotQuickLook() async throws {
+        try sandbox.createSparseFile("d/huge.txt", size: 64 << 20)
+        let h = try FileHandle(forWritingTo: sandbox.url("d/huge.txt"))
+        try h.write(contentsOf: Data("nineteen bytes text".utf8))
+        try h.close()
+        try sandbox.createFile("d/nul-in-utf8.log", contents: Data("line one\nline\u{0}two\n".utf8))
+        let m = await folder("d")
+        let p = pane()
+        p.bind(m)
+        select(m, ["huge.txt"])
+        await waitUntil("binary") { p.displayState == .binary(self.sandbox.url("d/huge.txt")) }
+        XCTAssertEqual(p.probeState, "binary")
+        XCTAssertEqual(p.messageTitle, L10n.string("preview.binary"))
+        XCTAssertNil(host.shownURL, "Quick Look is never handed a text-typed file that failed the content check")
+        await waitUntil("details") { p.details?.size == 64 << 20 }
+        select(m, ["nul-in-utf8.log"])
+        await waitUntil("binary log") { p.displayState == .binary(self.sandbox.url("d/nul-in-utf8.log")) }
+        XCTAssertNil(host.shownURL)
+    }
 }

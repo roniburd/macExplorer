@@ -50,6 +50,39 @@ final class BrowserSessionSearchTests: XCTestCase {
         XCTAssertEqual(session.searchSpec, spec("tax"))
     }
 
+    // QA round 1: toggling Show Hidden Files re-runs shown (and parked) crawler results with the new setting.
+    func testShowHiddenToggleRerunsShownResults() async throws {
+        try sandbox.createFile("work/.tax-dot.txt")
+        try sandbox.createFile("work/.dotdir/tax-under-dot.txt")
+        env.settings.showHidden = false
+        await session.search(spec("tax"))
+        let results = try XCTUnwrap(session.results)
+        await waitUntil("complete") { complete(results) }
+        XCTAssertEqual(names(results), ["Taxes", "tax-2025.pdf", "tax-old.pdf"])
+        env.settings.showHidden = true
+        await waitUntil("hidden rows appear") { complete(results) && names(results).contains(".tax-dot.txt") }
+        XCTAssertEqual(Set(names(results)), ["Taxes", "tax-2025.pdf", "tax-old.pdf", ".tax-dot.txt", "tax-under-dot.txt"])
+        XCTAssertTrue(session.results === results)
+        env.settings.showHidden = false
+        await waitUntil("hidden rows go") { complete(results) && !names(results).contains(".tax-dot.txt") }
+        XCTAssertEqual(names(results), ["Taxes", "tax-2025.pdf", "tax-old.pdf"])
+    }
+
+    func testParkedResultsFollowShowHiddenWhenShownAgain() async throws {
+        try sandbox.createFile("work/.tax-dot.txt")
+        env.settings.showHidden = false
+        await session.search(spec("tax"))
+        let results = try XCTUnwrap(session.results)
+        await waitUntil("complete") { complete(results) }
+        session.navigate(to: work.appending(path: "Taxes"))
+        XCTAssertNil(session.results)
+        env.settings.showHidden = true
+        try await Task.sleep(for: .milliseconds(50))
+        session.goBack()
+        XCTAssertTrue(session.results === results)
+        await waitUntil("hidden row appears") { complete(results) && names(results).contains(".tax-dot.txt") }
+    }
+
     // Review Focus 5
     func testRetypingReplacesResultsModelAndHistoryEntry() async throws {
         await session.search(spec("ta"))

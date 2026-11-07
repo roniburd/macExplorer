@@ -42,6 +42,8 @@ public final class SearchResultsModel: RowSource {
     private var pendingCompletion: SearchSummary?        // applied at the end of the pump round that reached it
     private var closed = false
     private var startedAt = ContinuousClock.now
+    /// Settings.showHidden the engine of the current generation runs with (crawler includeHidden, Spotlight post-filter).
+    public private(set) var includesHidden = false
     private var directoriesScanned = 0
     private var parentKeys = SortKeyColumn()             // ResultSorter.parentKey per results.parents entry
     private var parentLookupKeys: [String] = []          // SearchResultStore.key per results.parents entry (append-only)
@@ -105,6 +107,7 @@ public final class SearchResultsModel: RowSource {
         generation = generation.next()
         let gen = generation
         startedAt = .now
+        includesHidden = context.settings.showHidden
         directoriesScanned = 0
         pendingCompletion = nil
         // Ops the previous engine queued before this restart: its completion would finish the new run (and its
@@ -154,6 +157,16 @@ public final class SearchResultsModel: RowSource {
         emitRows(.changes(.reset))
         emitRows(.selection(selection))
         start()
+    }
+
+    /// Settings.showHidden changed since this crawler or Spotlight search started (QA round 1): searches again so
+    /// hidden items join or leave the results like they do in the folder listing. Externally built streams (no
+    /// plan) and models never started are left alone. Returns whether it re-ran.
+    @discardableResult
+    public func followShowHidden() -> Bool {
+        guard !closed, plan != nil, generation != .initial, includesHidden != context.settings.showHidden else { return false }
+        rerun()
+        return true
     }
 
     /// A model released without close() still cancels its engine: a live Spotlight query can stay silent

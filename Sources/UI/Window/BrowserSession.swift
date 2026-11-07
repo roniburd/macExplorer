@@ -443,6 +443,7 @@ final class BrowserSession {
             lastPlan = model.plan
             if let spec = model.spec { observers.send(.searchTextChanged(spec.text)) }
             observers.send(.resultsChanged(model))
+            model.followShowHidden()
             return
         }
         if let spec = SearchSpec(url: url) {
@@ -801,6 +802,7 @@ final class BrowserSession {
             query.showAllExtensions = settings.showAllExtensions
             model.setQuery(query)
         }
+        results?.followShowHidden()          // shown results search again; parked ones when shown (QA round 1)
     }
 
     private func showBanner(_ text: String?) {

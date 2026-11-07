@@ -67,6 +67,19 @@ final class PreviewPlannerTests: XCTestCase {
         let res11 = await resolve(subject("gone.txt"));         XCTAssertEqual(res11, .unavailable(sandbox.url("gone.txt"), code: ENOENT))
     }
 
+    // QA round 1: Quick Look's Text generator lays out the whole file on the main thread, so text-like types it
+    // would render (RTF, property lists) go to Quick Look only below a size cap.
+    func testLargeTextGeneratorTypesAreNotQuickLooked() async throws {
+        try sandbox.createFile("small.rtf", contents: Data("{\\rtf1 hi}".utf8))
+        try sandbox.createSparseFile("big.rtf", size: Int64(PreviewPlanner.quickLookTextLimit) + 1)
+        try sandbox.createSparseFile("big.plist", size: Int64(PreviewPlanner.quickLookTextLimit) + 1)
+        try sandbox.createSparseFile("big.png", size: Int64(PreviewPlanner.quickLookTextLimit) + 1)
+        let small = await resolve(subject("small.rtf")); XCTAssertEqual(small, .quickLook(sandbox.url("small.rtf")))
+        let rtf = await resolve(subject("big.rtf"));     XCTAssertEqual(rtf, .unavailable(sandbox.url("big.rtf"), code: EFBIG))
+        let plist = await resolve(subject("big.plist")); XCTAssertEqual(plist, .unavailable(sandbox.url("big.plist"), code: EFBIG))
+        let png = await resolve(subject("big.png"));     XCTAssertEqual(png, .quickLook(sandbox.url("big.png")), "not a Text-generator type")
+    }
+
     func testDatalessIsCloudPlaceholderAndNeverRead() async {
         let reads = LockedCounter()
         let probe = PreviewProbe(

@@ -16,6 +16,8 @@ final class PreviewPaneController: NSViewController {
         case text(String, truncated: Bool)
         case quickLook(URL), folder(URL), cloud(URL), downloading(URL), downloadFailed(URL), broken(URL)
         case unavailable(URL, Int32)
+        /// Text by type but not by content (NUL or control bytes): a message, never Quick Look (QA round 1).
+        case binary(URL)
     }
 
     /// PreviewPlanner on the read lanes: the main thread never stats, opens or sniffs the item (§4.4).
@@ -235,7 +237,9 @@ final class PreviewPaneController: NSViewController {
             } catch {
                 guard gen == generation else { return }
                 switch error {
-                case .binary: host.show(url); render(.quickLook(url))     // text by type but not by content: Quick Look
+                // Text by type but not by content: never Quick Look, whose Text generator would lay out the whole
+                // file on the main thread (QA round 1: a 2 GB sparse .txt hung the app and grew it to 1.75 GB).
+                case .binary: host.show(nil); render(.binary(url))
                 case .posix(let code): host.show(nil); render(.unavailable(url, code))
                 }
             }
@@ -313,6 +317,8 @@ final class PreviewPaneController: NSViewController {
             message(symbol: "exclamationmark.icloud", title: L10n.string("preview.downloadFailed"), button: L10n.string("preview.tryAgain"))
         case .broken:
             message(symbol: "questionmark.folder", title: L10n.string("preview.broken"))
+        case .binary:
+            message(symbol: "doc", title: L10n.string("preview.binary"), detail: L10n.string("preview.binary.detail"))
         case .unavailable(_, let code):
             message(symbol: "eye.trianglebadge.exclamationmark", title: L10n.string("preview.unavailable"),
                     detail: POSIXErrorCode(rawValue: code).map { String(cString: strerror($0.rawValue)) })
@@ -329,7 +335,7 @@ final class PreviewPaneController: NSViewController {
     }
 
     /// Scenario probe text: "hidden", "nothing", "loading", "multiple:2", "text", "quickLook", "folder", "cloud",
-    /// "downloading", "downloadFailed", "broken", "unavailable".
+    /// "downloading", "downloadFailed", "broken", "unavailable", "binary".
     var probeState: String {
         switch displayState {
         case .hidden: "hidden"
@@ -344,6 +350,7 @@ final class PreviewPaneController: NSViewController {
         case .downloadFailed: "downloadFailed"
         case .broken: "broken"
         case .unavailable: "unavailable"
+        case .binary: "binary"
         }
     }
 

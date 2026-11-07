@@ -5826,6 +5826,28 @@
         }
       }
     },
+    "preview.binary" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No preview available"
+          }
+        }
+      }
+    },
+    "preview.binary.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The contents of this file are not text."
+          }
+        }
+      }
+    },
     "preview.broken" : {
       "extractionState" : "manual",
       "localizations" : {

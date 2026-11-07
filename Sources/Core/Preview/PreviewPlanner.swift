@@ -3,7 +3,9 @@ import Darwin
 import UniformTypeIdentifiers
 import MacxFS
 
-struct ProbeStat: Sendable, Equatable { var mode: mode_t; var flags: UInt32 }
+struct ProbeStat: Sendable, Equatable {
+    var mode: mode_t; var flags: UInt32; var size: Int64 = 0
+}
 struct ProbeError: Error, Sendable, Equatable { var code: Int32 }
 
 /// `stat` (following links) or `lstat`. Lane only; callers wrap it in withNoMaterialization.
@@ -11,7 +13,7 @@ struct ProbeError: Error, Sendable, Equatable { var code: Int32 }
 private func systemStat(_ path: String, follow: Bool) -> Result<ProbeStat, ProbeError> {
     var st = stat()
     let rc = follow ? stat(path, &st) : lstat(path, &st)
-    return rc == 0 ? .success(ProbeStat(mode: st.st_mode, flags: st.st_flags)) : .failure(ProbeError(code: errno))
+    return rc == 0 ? .success(ProbeStat(mode: st.st_mode, flags: st.st_flags, size: Int64(st.st_size))) : .failure(ProbeError(code: errno))
 }
 
 /// nil for a regular file; ENOTSUP for a FIFO, socket or device; the fstat errno otherwise.
@@ -51,6 +53,15 @@ struct PreviewProbe: Sendable {
 
 public enum PreviewPlanner {
     static let sniffSize = 4_096
+    /// Largest file Quick Look gets when its in-process Text generator would render it (RTF, property lists, text
+    /// types): that generator lays out the whole file on the main thread (QA round 1: a 2 GB .txt hung the app).
+    public static let quickLookTextLimit: Int64 = 8 << 20
+
+    /// Quick Look for `url`, or EFBIG ("File too large") when the Text generator would lay out more than the cap.
+    static func quickLook(_ url: URL, type: UTType, size: Int64) -> PreviewContent {
+        let textGenerated = [UTType.text, .propertyList, .flatRTFD].contains { type.conforms(to: $0) }
+        return textGenerated && size > quickLookTextLimit ? .unavailable(url, code: EFBIG) : .quickLook(url)
+    }
 
     public static func classify(_ type: UTType) -> PreviewClass {
         if [UTType.rtf, .rtfd, .flatRTFD, .pdf].contains(where: { type.conforms(to: $0) }) { return .quickLook }
@@ -112,15 +123,17 @@ public enum PreviewPlanner {
             return dataless ? .cloudPlaceholder(contentURL) : .quickLook(contentURL)
         }
         if dataless { return .cloudPlaceholder(contentURL) }
-        switch classify(types.type(at: typeIndex)) {
+        let type = types.type(at: typeIndex)
+        switch classify(type) {
         case .text: return .text(contentURL)
-        case .quickLook: return .quickLook(contentURL)
+        case .quickLook: return quickLook(contentURL, type: type, size: st.size)
         case .sniff:
             switch probe.readPrefix(readPath, sniffSize) {
             case .failure(let e): return .unavailable(url, code: e.code)
             case .success(let bytes):
                 if bytes.isEmpty { return .text(contentURL) }
-                return TextPreviewLoader.decode(bytes, truncated: bytes.count == sniffSize) != nil ? .text(contentURL) : .quickLook(contentURL)
+                return TextPreviewLoader.decode(bytes, truncated: bytes.count == sniffSize) != nil
+                    ? .text(contentURL) : quickLook(contentURL, type: type, size: st.size)
             }
         }
     }

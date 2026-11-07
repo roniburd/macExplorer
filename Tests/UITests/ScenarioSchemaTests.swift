@@ -303,7 +303,7 @@ final class ScenarioSchemaTests: XCTestCase {
         for n in ["search-this-folder-instant", "search-subfolders-crawl", "search-syntax-filters", "search-open-containing-folder",
                   "search-folder-result-back", "search-stop", "search-saved-sidebar", "search-saved-del-keeps-files",
                   "search-results-trash", "search-contents-not-indexed", "search-this-mac-fake-spotlight",
-                  "preview-text", "preview-folder-multiple", "preview-optp-in-field"] {
+                  "preview-text", "preview-folder-multiple", "preview-optp-in-field", "search-hidden-toggle", "preview-binary-text"] {
             XCTAssertTrue(names.contains(n + ".json"), n)
             if names.contains(n + ".json") {
                 XCTAssertNoThrow(try ScenarioFile.load(Data(contentsOf: dir.appending(path: n + ".json"))), n)
