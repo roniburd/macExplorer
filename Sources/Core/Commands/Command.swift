@@ -32,6 +32,10 @@ public enum Command: String, Sendable, Codable, CaseIterable {
     case toggleFolderSizes, applyViewToAllFolders
     // Phase 2: copy-path variants
     case copyPathTilde, copyPathFileURL, copyName, copyPathShellQuoted
+    // Phase 3: preview pane, search, saved searches
+    case togglePreviewPane, openContainingFolder, saveSearch, stopSearch
+    case searchScopeThisFolder, searchScopeSubfolders, searchScopeThisMac, searchModeName, searchModeContents
+    case renameSavedSearch, removeSavedSearch, downloadForPreview
 
     /// "cut:", "copy:", "paste:", "selectAll:", "undo:", "redo:", "cancelOperation:" for the standard ones;
     /// AppKit's NSWindow tab actions ("newWindowForTab:", "selectNextTab:", "selectPreviousTab:", "toggleTabBar:",
@@ -77,7 +81,10 @@ public enum Command: String, Sendable, Codable, CaseIterable {
              .openInNewTab, .quickLook, .viewAsColumns,
              .groupByNone, .groupByKind, .groupByDateModified, .groupBySize, .groupByName,
              .toggleFolderSizes, .applyViewToAllFolders, .useViewAsDefault, .resetFolderView,
-             .copyPathTilde, .copyPathFileURL, .copyName, .copyPathShellQuoted:
+             .copyPathTilde, .copyPathFileURL, .copyName, .copyPathShellQuoted,
+             .togglePreviewPane, .openContainingFolder, .saveSearch, .stopSearch,
+             .searchScopeThisFolder, .searchScopeSubfolders, .searchScopeThisMac, .searchModeName, .searchModeContents,
+             .renameSavedSearch, .removeSavedSearch, .downloadForPreview:
             false
         }
     }

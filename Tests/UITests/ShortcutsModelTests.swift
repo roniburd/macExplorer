@@ -29,6 +29,31 @@ final class ShortcutsModelTests: XCTestCase {
         XCTAssertEqual(Set(listed), Set(Command.allCases))
     }
 
+    /// P3-07: the Phase 3 commands are listed (so they can be rebound) and found by title and key.
+    func testPhase3CommandsAreRebindable() {
+        func group(of c: Command) -> String? { ShortcutsModel.groups.first { $0.commands.contains(c) }?.id }
+        XCTAssertEqual(group(of: .togglePreviewPane), "view")
+        XCTAssertEqual(group(of: .downloadForPreview), "view")
+        XCTAssertEqual(group(of: .openContainingFolder), "navigation")
+        for c: Command in [.saveSearch, .stopSearch, .searchScopeThisFolder, .searchScopeSubfolders, .searchScopeThisMac,
+                           .searchModeName, .searchModeContents] {
+            XCTAssertEqual(group(of: c), "search", "\(c)")
+        }
+        XCTAssertEqual(group(of: .renameSavedSearch), "sidebar")
+        XCTAssertEqual(group(of: .removeSavedSearch), "sidebar")
+        let s = settings()
+        let m = ShortcutsModel(settings: s)
+        XCTAssertEqual(m.groups(matching: "⌥P").flatMap(\.commands), [.togglePreviewPane])
+        XCTAssertEqual(m.groups(matching: "opt+cmd+r").flatMap(\.commands), [.openContainingFolder])
+        XCTAssertTrue(m.groups(matching: "preview pane").flatMap(\.commands).contains(.togglePreviewPane))
+        XCTAssertEqual(m.apply(.key(chord("ctrl+cmd+p")), to: .togglePreviewPane, as: .primary, reassigning: false), .saved)
+        XCTAssertEqual(s.keyBindings.primary(.togglePreviewPane), chord("ctrl+cmd+p"))
+        XCTAssertEqual(m.apply(.key(chord("ctrl+cmd+g")), to: .saveSearch, as: .primary, reassigning: false), .saved)
+        XCTAssertEqual(s.keyBindings.primary(.saveSearch), chord("ctrl+cmd+g"))
+        m.reset(.togglePreviewPane)
+        XCTAssertEqual(s.keyBindings.primary(.togglePreviewPane), chord("opt+p"))
+    }
+
     func testSearchMatchesTitleGlyphTextAndMouse() {
         let m = ShortcutsModel(settings: settings())
         XCTAssertEqual(m.groups(matching: "").flatMap(\.commands).count, Command.allCases.count)

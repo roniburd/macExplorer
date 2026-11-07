@@ -6,7 +6,7 @@ import XCTest
 @MainActor
 final class SettingsV2Tests: XCTestCase {
     func testSchemaVersionIsTwo() {
-        XCTAssertEqual(Settings.schemaVersion, 2)
+        XCTAssertGreaterThanOrEqual(Settings.schemaVersion, 2, "schema versions only move forward (P3-07: 3)")
     }
 
     func testMigrateColumnsAppendsMissingIDsInvisibleAndKeepsOrder() {
@@ -41,7 +41,7 @@ final class SettingsV2Tests: XCTestCase {
         XCTAssertTrue(reloaded.showThumbnails)
         XCTAssertEqual(reloaded.columnWidth, 220)
         let version = try XCTUnwrap(storage.data(forKey: Settings.schemaVersionKey))
-        XCTAssertEqual(try JSONDecoder().decode(Int.self, from: version), 2, "version 2 written back once")
+        XCTAssertEqual(try JSONDecoder().decode(Int.self, from: version), Settings.schemaVersion, "current version written back once")
     }
 
     func testFreshInstallColumnsArePhaseOneDefaultsThenNewIDsInvisible() {

@@ -10,8 +10,8 @@ enum NewTabGesture: Equatable { case middleClick, commandClick }
 enum MiddleClickRouter {
     static func shouldOpenTab(_ gesture: NewTabGesture, in focus: FocusContext) -> Bool {
         switch focus {
-        case .content: return gesture == .middleClick
-        case .sidebarFavorites, .sidebarLocations, .sidebarFolders, .sidebarVolumeRoot: return true
+        case .content, .searchResults: return gesture == .middleClick
+        case .sidebarFavorites, .sidebarSavedSearch, .sidebarLocations, .sidebarFolders, .sidebarVolumeRoot: return true
         case .addressBar, .fieldEditor: return false
         }
     }

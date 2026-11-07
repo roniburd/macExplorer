@@ -79,4 +79,17 @@ extension CommandHandlingViewController {
     @objc func macx_copyPathFileURL(_ sender: Any?) { run(.copyPathFileURL, sender: sender) }
     @objc func macx_copyName(_ sender: Any?) { run(.copyName, sender: sender) }
     @objc func macx_copyPathShellQuoted(_ sender: Any?) { run(.copyPathShellQuoted, sender: sender) }
+    // Phase 3
+    @objc func macx_togglePreviewPane(_ sender: Any?) { run(.togglePreviewPane, sender: sender) }
+    @objc func macx_openContainingFolder(_ sender: Any?) { run(.openContainingFolder, sender: sender) }
+    @objc func macx_saveSearch(_ sender: Any?) { run(.saveSearch, sender: sender) }
+    @objc func macx_stopSearch(_ sender: Any?) { run(.stopSearch, sender: sender) }
+    @objc func macx_searchScopeThisFolder(_ sender: Any?) { run(.searchScopeThisFolder, sender: sender) }
+    @objc func macx_searchScopeSubfolders(_ sender: Any?) { run(.searchScopeSubfolders, sender: sender) }
+    @objc func macx_searchScopeThisMac(_ sender: Any?) { run(.searchScopeThisMac, sender: sender) }
+    @objc func macx_searchModeName(_ sender: Any?) { run(.searchModeName, sender: sender) }
+    @objc func macx_searchModeContents(_ sender: Any?) { run(.searchModeContents, sender: sender) }
+    @objc func macx_renameSavedSearch(_ sender: Any?) { run(.renameSavedSearch, sender: sender) }
+    @objc func macx_removeSavedSearch(_ sender: Any?) { run(.removeSavedSearch, sender: sender) }
+    @objc func macx_downloadForPreview(_ sender: Any?) { run(.downloadForPreview, sender: sender) }
 }

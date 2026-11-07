@@ -121,9 +121,9 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
         switch target {
         case .addressBar:
             focusAddressBar?()
-        case .content:
+        case .content, .searchResults:
             makeFirstResponder(in: contentPane)
-        case .sidebarFavorites, .sidebarLocations, .sidebarFolders, .sidebarVolumeRoot:
+        case .sidebarFavorites, .sidebarSavedSearch, .sidebarLocations, .sidebarFolders, .sidebarVolumeRoot:
             makeFirstResponder(in: sidebarPane)
         case .fieldEditor:
             break

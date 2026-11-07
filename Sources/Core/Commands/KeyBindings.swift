@@ -86,7 +86,12 @@ public struct KeyBindings: Sendable, Equatable {
         self.mouseLists = mouseLists
         self.alternateTable = alternateTable
         self.mouseTable = mouseTable
-        self.collidesWithTextEditing = Set(primaries.compactMap { KeyMap.textEditingChords.contains($0.value) ? $0.key : nil })
+        // A primary collides when it is a text-system chord, or a chord that types (only a default can be one, e.g.
+        // ⌥P → "π": `validate` rejects typing chords as user primaries).
+        self.collidesWithTextEditing = Set(primaries.compactMap { command, chord in
+            KeyMap.textEditingChords.contains(chord) || Self.validate(.key(chord), as: .primary) == .editsTextAsPrimary
+                ? command : nil
+        })
     }
 
     public static func == (a: KeyBindings, b: KeyBindings) -> Bool { a.overrides == b.overrides }

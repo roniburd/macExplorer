@@ -20,7 +20,7 @@ final class SettingsTypesTests: XCTestCase {
     func testRawValuesAreStable() {
         XCTAssertEqual(ViewMode.allCases.map(\.rawValue), ["details", "icons", "columns"])
         XCTAssertEqual(DefaultFavorite.allCases.map(\.rawValue), ["home", "desktop", "documents", "downloads", "applications"])
-        XCTAssertEqual(SidebarSection.allCases.map(\.rawValue), ["favorites", "locations", "folders"])
+        XCTAssertEqual(SidebarSection.allCases.map(\.rawValue), ["favorites", "searches", "locations", "folders"])   // P3-07 adds searches
         XCTAssertEqual(TCCOutcome.granted.rawValue, "granted")
     }
 
@@ -124,7 +124,7 @@ final class SettingsTests: XCTestCase {
     private let home = URL(filePath: "/tmp/macx-tests-home", directoryHint: .isDirectory)
 
     func testSchemaVersionKeyIsStable() {
-        XCTAssertEqual(Settings.schemaVersion, 2, "P2-01: schema v2 (SettingsV2Tests)")
+        XCTAssertGreaterThanOrEqual(Settings.schemaVersion, 2, "P2-01: schema v2; only moves forward (P3-07: 3)")
         XCTAssertEqual(Settings.schemaVersionKey, "schemaVersion")
         XCTAssertFalse(Settings.schemaVersionKey.isEmpty)
     }

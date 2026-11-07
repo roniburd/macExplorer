@@ -81,6 +81,7 @@ public final class SearchResultsModel: RowSource {
         case .crawler(let root, let criteria):
             var options = CrawlOptions()
             options.includeHidden = context.settings.showHidden
+            options.includePackages = context.settings.searchIncludesPackages
             options.showAllExtensions = context.settings.showAllExtensions
             options.maxResults = resultLimit
             return SubtreeCrawler.crawl(root: root, criteria: criteria, options: options, permissions: context.crawlPermissions(),

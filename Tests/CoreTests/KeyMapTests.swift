@@ -124,6 +124,8 @@ final class KeyMapTests: XCTestCase {
             // Phase 2 (P2-02)
             .newTab: "cmd+t", .nextTab: "ctrl+tab", .previousTab: "ctrl+shift+tab", .showAllTabs: "cmd+shift+\\",
             .viewAsDetails: "cmd+1", .viewAsIcons: "cmd+2", .viewAsColumns: "cmd+3",
+            // Phase 3 (P3-07)
+            .togglePreviewPane: "opt+p", .openContainingFolder: "cmd+opt+r",
         ]
         for c in Command.allCases {
             if let text = expected[c] {
@@ -147,7 +149,7 @@ final class KeyMapTests: XCTestCase {
     func testPrimariesAvoidLaterPhaseChords() {
         let owners: [String: Command?] = [
             "cmd+t": .newTab, "cmd+1": .viewAsDetails, "cmd+2": .viewAsIcons, "cmd+3": .viewAsColumns, "ctrl+tab": .nextTab,
-            "opt+p": nil, "cmd+opt+r": nil,
+            "opt+p": .togglePreviewPane, "cmd+opt+r": .openContainingFolder,
         ]
         for c in Command.allCases {
             guard let p = KeyMap.primary(c), let owner = owners.first(where: { chord($0.key) == p })?.value else { continue }

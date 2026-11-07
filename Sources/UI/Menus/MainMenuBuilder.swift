@@ -7,7 +7,13 @@ import Core
 /// Shortcuts; System Settings › Keyboard › App Shortcuts still overrides it). Titles are matched in English by the scenario runner (`menu` steps).
 @MainActor public enum MainMenuBuilder {
     /// Commands with no main-menu item. Esc (cancelOperation) is a key, not a menu command.
-    static let notInMenu: Set<Command> = [.cancelOperation]
+    /// Phase 3 commands are listed until their menu items land (P3-10: search, Save Search…, Open Containing Folder,
+    /// Show Preview Pane; P3-11/P3-12: the saved-search and download items live in context menus and the preview pane).
+    static let notInMenu: Set<Command> = Set<Command>([.cancelOperation]).union(phase3NotYetInMenu)
+    static let phase3NotYetInMenu: Set<Command> = [   // P3-10
+        .togglePreviewPane, .openContainingFolder, .saveSearch, .stopSearch, .searchScopeThisFolder, .searchScopeSubfolders,
+        .searchScopeThisMac, .searchModeName, .searchModeContents, .renameSavedSearch, .removeSavedSearch, .downloadForPreview,
+    ]
 
     public static func build() -> NSMenu {
         // Tabs come only from MacExplorer's own commands (⌘T, "+", Open in New Tab); AppKit must not add its

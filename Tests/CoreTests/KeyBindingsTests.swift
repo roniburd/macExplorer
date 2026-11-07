@@ -99,7 +99,8 @@ final class KeyBindingsTests: XCTestCase {
 
     func testCollisionFollowsTheChord() {
         XCTAssertEqual(KeyBindings.defaults.collidesWithTextEditing,
-                       [.open, .up, .moveToTrash, .deletePermanently, .back, .forward, .rename, .duplicate])
+                       [.open, .up, .moveToTrash, .deletePermanently, .back, .forward, .rename, .duplicate,
+                        .togglePreviewPane])   // ⌥P types "π" (P3-07)
         var o = KeyBindingOverrides.empty
         o.setPrimary(chord("opt+cmd+d"), for: .duplicate)
         o.setPrimary(chord("cmd+d"), for: .newFolder)

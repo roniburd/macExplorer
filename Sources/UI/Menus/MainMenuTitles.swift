@@ -86,6 +86,19 @@ import Core
         case .copyPathFileURL: L10n.string("File URL")
         case .copyName: L10n.string("Name")
         case .copyPathShellQuoted: L10n.string("Quoted for Shell")
+        // Phase 3 (menu items land in P3-10 / P3-12; Settings › Shortcuts lists them now).
+        case .togglePreviewPane: L10n.string("Show Preview Pane")
+        case .openContainingFolder: L10n.string("Open Containing Folder")
+        case .saveSearch: L10n.string("Save Search…")
+        case .stopSearch: L10n.string("Stop Search")
+        case .searchScopeThisFolder: L10n.string("This Folder")
+        case .searchScopeSubfolders: L10n.string("Subfolders")
+        case .searchScopeThisMac: L10n.string("This Mac")
+        case .searchModeName: L10n.string("Search Names")
+        case .searchModeContents: L10n.string("Search Contents")
+        case .renameSavedSearch: L10n.string("Rename Saved Search")
+        case .removeSavedSearch: L10n.string("Remove Saved Search")
+        case .downloadForPreview: L10n.string("Download for Preview")
         }
     }
 }

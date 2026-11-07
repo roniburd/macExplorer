@@ -6,7 +6,7 @@ import Observation
 /// defaults are never written, so a later schema can change them. Values that fail to decode fall back to the default.
 @MainActor @Observable
 public final class Settings {
-    public static let schemaVersion: Int = 2
+    public static let schemaVersion: Int = 3
     public static let schemaVersionKey = "schemaVersion"
     public static let recentLocationsLimit = 20
     public static let lastReportedCrashesLimit = 20
@@ -70,6 +70,18 @@ public final class Settings {
     public var keyBindings: KeyBindings { KeyBindings(overrides: keyBindingOverrides) }
     /// `.ips` file names already offered (newest first, ≤ 20), so one crash prompts once.
     public private(set) var lastReportedCrashes: [String] { didSet { save(lastReportedCrashes, Key.lastReportedCrashes) } }
+    // Phase 3 (schema v3): saved searches, preview pane, search defaults, results columns.
+    /// SEARCHES section rows, in display order.
+    public var savedSearches: [SavedSearch] { didSet { save(savedSearches, Key.savedSearches) } }
+    public var previewPaneVisible: Bool { didSet { save(previewPaneVisible, Key.previewPaneVisible) } }
+    public var previewPaneWidth: Double { didSet { save(previewPaneWidth, Key.previewPaneWidth) } }
+    /// The scope and mode a new search starts with (the last ones the user picked).
+    public var searchScope: SearchScope { didSet { save(searchScope, Key.searchScope) } }
+    public var searchMode: SearchMode { didSet { save(searchMode, Key.searchMode) } }
+    /// Subfolders (crawler) search descends into packages (.app, .bundle…). Off by default.
+    public var searchIncludesPackages: Bool { didSet { save(searchIncludesPackages, Key.searchIncludesPackages) } }
+    /// Details columns for search results (display order); separate from folder columns.
+    public var resultsColumns: [ColumnSetting] { didSet { save(resultsColumns, Key.resultsColumns) } }
     public var onboardingCompleted: Bool { didSet { save(onboardingCompleted, Key.onboardingCompleted) } }
     /// Set once the toolbar has been given the Send Feedback item (or already had it). A restored toolbar
     /// configuration never gains new default items; this one-time flag lets the first window of this build add it
@@ -122,6 +134,14 @@ public final class Settings {
         confirmBeforeTrash = Self.load(Bool.self, Key.confirmBeforeTrash, from: storage) ?? false
         showFullPathInTitle = Self.load(Bool.self, Key.showFullPathInTitle, from: storage) ?? false
         onboardingCompleted = Self.load(Bool.self, Key.onboardingCompleted, from: storage) ?? false
+        savedSearches = Self.load([SavedSearch].self, Key.savedSearches, from: storage) ?? []
+        previewPaneVisible = Self.load(Bool.self, Key.previewPaneVisible, from: storage) ?? false
+        previewPaneWidth = Self.load(Double.self, Key.previewPaneWidth, from: storage) ?? 320
+        searchScope = Self.load(SearchScope.self, Key.searchScope, from: storage) ?? .thisFolder
+        searchMode = Self.load(SearchMode.self, Key.searchMode, from: storage) ?? .name
+        searchIncludesPackages = Self.load(Bool.self, Key.searchIncludesPackages, from: storage) ?? false
+        let storedResultsColumns = Self.load([ColumnSetting].self, Key.resultsColumns, from: storage) ?? []
+        resultsColumns = storedResultsColumns.isEmpty ? Self.defaultResultsColumns : Self.migrateColumns(storedResultsColumns)
         toolbarFeedbackItemOffered = Self.load(Bool.self, Key.toolbarFeedbackItemOffered, from: storage) ?? false
         toolbarNewTabItemOffered = Self.load(Bool.self, Key.toolbarNewTabItemOffered, from: storage) ?? false
         lastLocation = Self.load(URL.self, Key.lastLocation, from: storage)
@@ -166,6 +186,14 @@ public final class Settings {
         tccOutcomes[location] = outcome
     }
 
+    /// Schema v3 results-columns default: Name 260, Path 260, Date Modified 150, Size 80, Kind 140 visible, then every
+    /// other ColumnID hidden at its default width.
+    public static var defaultResultsColumns: [ColumnSetting] {
+        migrateColumns([ColumnSetting(id: .name, width: 260, visible: true), ColumnSetting(id: .path, width: 260, visible: true),
+                        ColumnSetting(id: .dateModified, width: 150, visible: true), ColumnSetting(id: .size, width: 80, visible: true),
+                        ColumnSetting(id: .kind, width: 140, visible: true)])
+    }
+
     /// Schema v2 column migration, applied on every load (idempotent): duplicates dropped (first wins), then every
     /// missing ColumnID appended invisible at its default width, so a Phase 1 store gains the Phase 2 columns hidden.
     public static func migrateColumns(_ stored: [ColumnSetting]) -> [ColumnSetting] {
@@ -199,6 +227,9 @@ public final class Settings {
         static let offerToReportCrashes = "offerToReportCrashes", lastReportedCrashes = "lastReportedCrashes"
         static let keyBindings = "keyBindings", finderViewsIgnoredBefore = "finderViewsIgnoredBefore"
         static let builtInFolderViewsOff = "builtInFolderViewsOff"
+        static let savedSearches = "savedSearches", previewPaneVisible = "previewPaneVisible", previewPaneWidth = "previewPaneWidth"
+        static let searchScope = "searchScope", searchMode = "searchMode", searchIncludesPackages = "searchIncludesPackages"
+        static let resultsColumns = "resultsColumns"
     }
 
     private struct TCCRecord: Codable {
@@ -240,5 +271,46 @@ extension Settings {
         if iconSize != state.iconSize { iconSize = state.iconSize }
         if density != state.density { density = state.density }
         if groupBy != state.groupBy { groupBy = state.groupBy }
+    }
+}
+
+// MARK: saved searches (P3-07)
+
+extension Settings {
+    /// Appends a search named `name`, else its text, else its folder's name (made unique, case-insensitively).
+    @discardableResult
+    public func addSavedSearch(name: String, spec: SearchSpec) -> SavedSearch {
+        let existing = savedSearches.map(\.name)
+        let chosen = SavedSearchNaming.uniqueName(name, existing: existing)
+            ?? SavedSearchNaming.uniqueName(spec.text, existing: existing)
+            ?? SavedSearchNaming.uniqueName(spec.root.lastPathComponent, existing: existing)
+            ?? spec.root.path(percentEncoded: false)
+        let saved = SavedSearch(name: chosen, spec: spec)
+        savedSearches.append(saved)
+        return saved
+    }
+
+    /// Unique among the other searches. False for a blank name or an unknown id.
+    @discardableResult
+    public func renameSavedSearch(_ id: UUID, to name: String) -> Bool {
+        guard let i = savedSearches.firstIndex(where: { $0.id == id }) else { return false }
+        let others = savedSearches.enumerated().filter { $0.offset != i }.map(\.element.name)
+        guard let unique = SavedSearchNaming.uniqueName(name, existing: others) else { return false }
+        if savedSearches[i].name != unique { savedSearches[i].name = unique }
+        return true
+    }
+
+    public func removeSavedSearch(_ id: UUID) {
+        guard savedSearches.contains(where: { $0.id == id }) else { return }
+        savedSearches.removeAll { $0.id == id }
+    }
+
+    /// Removes at `from`, then inserts at `min(to, count)`: `to` counts positions after the removal.
+    public func moveSavedSearch(from: Int, to: Int) {
+        guard savedSearches.indices.contains(from) else { return }
+        var list = savedSearches
+        let item = list.remove(at: from)
+        list.insert(item, at: min(max(0, to), list.count))
+        savedSearches = list
     }
 }

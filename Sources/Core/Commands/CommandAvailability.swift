@@ -20,11 +20,20 @@ public struct CommandState: Sendable, Equatable {
     public var quickLookVisible: Bool
     /// The command target's view mode (Group by and folder sizes are Details-only).
     public var viewMode: ViewMode
+    /// Phase 3: a crawler or Spotlight search is running (Stop Search).
+    public var isSearching: Bool
+    /// Phase 3: the window has a search query to save (Save Search…).
+    public var hasSearchQuery: Bool
+    /// Phase 3: the content view shows search results (Open Containing Folder).
+    public var showingResults: Bool
+    /// Phase 3: the preview pane is open (Download for Preview).
+    public var previewPaneVisible: Bool
     public init(selectionCount: Int = 0, singleFolderSelected: Bool = false, canPaste: Bool = false,
                 canUndo: Bool = false, canRedo: Bool = false, canGoBack: Bool = false, canGoForward: Bool = false,
                 canGoUp: Bool = false, targetIsEjectable: Bool = false, targetIsPackage: Bool = false,
                 folderIsReadOnly: Bool = false, selectedFolderCount: Int = 0, quickLookVisible: Bool = false,
-                viewMode: ViewMode = .details) {
+                viewMode: ViewMode = .details, isSearching: Bool = false, hasSearchQuery: Bool = false,
+                showingResults: Bool = false, previewPaneVisible: Bool = false) {
         self.selectionCount = selectionCount
         self.singleFolderSelected = singleFolderSelected
         self.canPaste = canPaste
@@ -39,6 +48,10 @@ public struct CommandState: Sendable, Equatable {
         self.selectedFolderCount = selectedFolderCount
         self.quickLookVisible = quickLookVisible
         self.viewMode = viewMode
+        self.isSearching = isSearching
+        self.hasSearchQuery = hasSearchQuery
+        self.showingResults = showingResults
+        self.previewPaneVisible = previewPaneVisible
     }
 }
 
@@ -53,11 +66,35 @@ public enum CommandAvailability {
     /// because the field editor validates them itself.
     public static func isEnabled(_ command: Command, focus: FocusContext, state: CommandState,
                                  collidesWithTextEditing: Set<Command> = KeyBindings.defaults.collidesWithTextEditing) -> Bool {
-        let section = Section(focus)
-        if section == .fieldEditor {
+        if focus == .fieldEditor {
             if collidesWithTextEditing.contains(command) { return false }
             if fieldEditorOwned.contains(command) { return true }
         }
+        // Phase 3 commands (projections over a few commands; the exhaustive switch below stays default-free).
+        switch command {
+        case .togglePreviewPane, .searchScopeThisFolder, .searchScopeSubfolders, .searchScopeThisMac,
+             .searchModeName, .searchModeContents:
+            return true
+        case .openContainingFolder:
+            return state.showingResults && state.selectionCount >= 1 && (focus == .searchResults || focus == .content)
+        case .saveSearch: return state.hasSearchQuery
+        case .stopSearch: return state.isSearching
+        case .renameSavedSearch, .removeSavedSearch: return focus == .sidebarSavedSearch
+        case .downloadForPreview: return state.previewPaneVisible && state.selectionCount == 1
+        default: break
+        }
+        switch focus {
+        case .searchResults:
+            // No single destination folder, and Columns view can't show results.
+            if searchResultsDenied.contains(command) { return false }
+            return isEnabled(command, focus: .content, state: state, collidesWithTextEditing: collidesWithTextEditing)
+        case .sidebarSavedSearch:
+            if [.open, .openInNewWindow, .openInNewTab].contains(command) { return state.selectionCount >= 1 }
+            if savedSearchDenied.contains(command) { return false }
+            return isEnabled(command, focus: .sidebarFavorites, state: state, collidesWithTextEditing: collidesWithTextEditing)
+        default: break
+        }
+        let section = Section(focus)
         if section.isSidebarPointer, sidebarPointerDisabled.contains(command) { return false }
 
         let selected = state.selectionCount > 0
@@ -94,8 +131,9 @@ public enum CommandAvailability {
         case .openInNewTab:
             switch focus {
             case .content: return state.selectedFolderCount > 0
-            case .sidebarFavorites, .sidebarLocations, .sidebarFolders, .sidebarVolumeRoot: return true
+            case .sidebarFavorites, .sidebarLocations, .sidebarFolders, .sidebarVolumeRoot, .sidebarSavedSearch: return true
             case .addressBar, .fieldEditor: return false
+            case .searchResults: return state.selectedFolderCount > 0   // handled above via .content
             }
         case .groupByNone, .groupByKind, .groupByDateModified, .groupBySize, .groupByName, .toggleFolderSizes:
             return state.viewMode == .details && (focus == .content || focus.isSidebar)
@@ -104,14 +142,43 @@ public enum CommandAvailability {
             return true   // the tab commands are validated again by NSWindow
         case .copyPathTilde, .copyPathFileURL, .copyName, .copyPathShellQuoted:
             return isEnabled(.copyAsPath, focus: focus, state: state)
+        case .togglePreviewPane, .openContainingFolder, .saveSearch, .stopSearch,
+             .searchScopeThisFolder, .searchScopeSubfolders, .searchScopeThisMac, .searchModeName, .searchModeContents,
+             .renameSavedSearch, .removeSavedSearch, .downloadForPreview:
+            return false   // decided above
         }
     }
 
-    /// Sidebar remaps (Favorites: moveToTrash → removeFromFavorites). Identity elsewhere. Idempotent.
+    /// Sidebar remaps (Favorites: moveToTrash → removeFromFavorites; Searches: moveToTrash → removeSavedSearch,
+    /// rename → renameSavedSearch, deletePermanently → nil, so Del never deletes files from SEARCHES).
+    /// `.searchResults` remaps like `.content`. Identity elsewhere. Idempotent.
     public static func effectiveCommand(_ command: Command, focus: FocusContext) -> Command? {
-        if focus == .sidebarFavorites, command == .moveToTrash { return .removeFromFavorites }
-        return command
+        switch focus {
+        case .sidebarFavorites:
+            return command == .moveToTrash ? .removeFromFavorites : command
+        case .sidebarSavedSearch:
+            switch command {
+            case .moveToTrash: return .removeSavedSearch
+            case .rename: return .renameSavedSearch
+            case .deletePermanently: return nil
+            default: return command
+            }
+        case .searchResults:
+            return effectiveCommand(command, focus: .content)
+        case .content, .sidebarLocations, .sidebarFolders, .sidebarVolumeRoot, .addressBar, .fieldEditor:
+            return command
+        }
     }
+
+    /// In search results there is no single destination folder (paste, new items) and Columns view can't show them.
+    static let searchResultsDenied: Set<Command> = [.paste, .moveItemHere, .newFolder, .newTextFile, .newEmptyFile, .viewAsColumns]
+
+    /// A SEARCHES row is a query, not an item: every item-level file command is off there.
+    static let savedSearchDenied: Set<Command> = [
+        .cut, .copy, .paste, .moveItemHere, .duplicate, .makeAlias, .makeSymlink, .moveToTrash, .deletePermanently, .rename,
+        .eject, .removeFromFavorites, .showPackageContents, .openInTerminal, .revealInFinder, .copyAsPath, .properties, .share,
+        .newFolder, .newTextFile, .newEmptyFile, .copyPathTilde, .copyPathFileURL, .copyName, .copyPathShellQuoted,
+    ]
 
     /// Favorites and Locations rows point at a folder or volume; they are not items to edit (§5.4).
     /// Favorites never trash their target: Del there is remapped to removeFromFavorites by `effectiveCommand`.
@@ -128,8 +195,8 @@ public enum CommandAvailability {
 
         init(_ focus: FocusContext) {
             switch focus {
-            case .content: self = .content
-            case .sidebarFavorites: self = .favorites
+            case .content, .searchResults: self = .content
+            case .sidebarFavorites, .sidebarSavedSearch: self = .favorites
             case .sidebarLocations, .sidebarVolumeRoot: self = .locations
             case .sidebarFolders: self = .folders
             case .addressBar: self = .addressBar

@@ -1742,6 +1742,17 @@
         }
       }
     },
+    "Download for Preview" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download for Preview"
+          }
+        }
+      }
+    },
     "Downloading MacExplorer %@…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3326,6 +3337,17 @@
         }
       }
     },
+    "Open Containing Folder" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Containing Folder"
+          }
+        }
+      }
+    },
     "Open Keyboard Settings" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3800,6 +3822,17 @@
         }
       }
     },
+    "Remove Saved Search" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove Saved Search"
+          }
+        }
+      }
+    },
     "Remove from Favorites" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3840,6 +3873,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Rename"
+          }
+        }
+      }
+    },
+    "Rename Saved Search" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rename Saved Search"
           }
         }
       }
@@ -4086,6 +4130,50 @@
         }
       }
     },
+    "Save Search…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save Search…"
+          }
+        }
+      }
+    },
+    "Search" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search"
+          }
+        }
+      }
+    },
+    "Search Contents" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search Contents"
+          }
+        }
+      }
+    },
+    "Search Names" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search Names"
+          }
+        }
+      }
+    },
     "Search commands…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4280,6 +4368,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Show Package Contents"
+          }
+        }
+      }
+    },
+    "Show Preview Pane" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Preview Pane"
           }
         }
       }
@@ -4515,6 +4614,17 @@
         }
       }
     },
+    "Stop Search" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop Search"
+          }
+        }
+      }
+    },
     "Stop and Quit" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4533,6 +4643,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stop and Quit cancels them safely: each finishes its current item and removes incomplete copies."
+          }
+        }
+      }
+    },
+    "Subfolders" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Subfolders"
           }
         }
       }
@@ -4753,6 +4874,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "There isn't enough space on '%@'"
+          }
+        }
+      }
+    },
+    "This Folder" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This Folder"
+          }
+        }
+      }
+    },
+    "This Mac" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This Mac"
           }
         }
       }

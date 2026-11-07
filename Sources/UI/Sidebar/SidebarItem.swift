@@ -28,9 +28,11 @@ enum SidebarItem: Hashable {
     case trash(URL)
     case folder(FolderTreeNode)
 
-    static func header(_ section: SidebarSection) -> SidebarItem {
+    /// nil for SEARCHES until P3-11 adds its header row (`Settings.savedSearches` exists from P3-07).
+    static func header(_ section: SidebarSection) -> SidebarItem? {
         switch section {
         case .favorites: .favoritesHeader
+        case .searches: nil   // P3-11
         case .locations: .locationsHeader
         case .folders: .foldersHeader
         }

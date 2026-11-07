@@ -16,9 +16,10 @@ final class SidebarTests: XCTestCase {
         XCTAssertEqual(h.sidebar.sectionHeaders, [.favorites, .locations, .folders])
         let headers = (0..<h.outline.numberOfRows).compactMap { h.sidebar.item(atRow: $0) }.filter(\.isHeader)
         XCTAssertEqual(headers.map(\.section), [.favorites, .locations, .folders])
-        for section in SidebarSection.allCases {
-            XCTAssertTrue(h.outline.isItemExpanded(h.sidebar.box(.header(section))), "\(section)")
-            XCTAssertTrue(h.sidebar.outlineView(h.outline, isGroupItem: h.sidebar.box(.header(section))))
+        for section in h.sidebar.sectionHeaders {
+            let header = try XCTUnwrap(SidebarItem.header(section))
+            XCTAssertTrue(h.outline.isItemExpanded(h.sidebar.box(header)), "\(section)")
+            XCTAssertTrue(h.sidebar.outlineView(h.outline, isGroupItem: h.sidebar.box(header)))
         }
         XCTAssertEqual(h.sidebar.view.accessibilityIdentifier(), AXID.sidebar)
         XCTAssertTrue(h.outline.acceptsFirstResponder)

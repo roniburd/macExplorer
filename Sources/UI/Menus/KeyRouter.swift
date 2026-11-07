@@ -60,9 +60,9 @@ enum FocusCycle {
     static func next(after focus: FocusContext, forward: Bool) -> FocusContext {
         let order: [FocusContext] = [.sidebarFavorites, .addressBar, .content]
         let index = switch focus {
-        case .sidebarFavorites, .sidebarLocations, .sidebarFolders, .sidebarVolumeRoot: 0
+        case .sidebarFavorites, .sidebarSavedSearch, .sidebarLocations, .sidebarFolders, .sidebarVolumeRoot: 0
         case .addressBar: 1
-        case .content, .fieldEditor: 2
+        case .content, .searchResults, .fieldEditor: 2
         }
         return order[(index + (forward ? 1 : order.count - 1)) % order.count]
     }

@@ -13,7 +13,15 @@ final class FileCommandController: CommandHandler {
     var beginSidebarRename: ((URL) -> Void)?
     /// Commands whose UI arrives in a later Phase 2 task (disabled, never performed). The NSWindow tab commands are
     /// here too: NSWindow and BrowserWindowController handle them, so they never reach a pane's handler.
-    static let pendingCommands: Set<Command> = Command.windowTabCommands
+    /// Window tab commands (NSWindow handles them) and the Phase 3 commands whose actions land in later tasks:
+    /// search and Open Containing Folder (P3-10), saved searches (P3-11), preview pane (P3-12). Disabled until then.
+    static let pendingCommands: Set<Command> = Command.windowTabCommands.union(phase3Pending)
+    static let phase3Pending: Set<Command> = [
+        .openContainingFolder, .saveSearch, .stopSearch, .searchScopeThisFolder, .searchScopeSubfolders, .searchScopeThisMac,
+        .searchModeName, .searchModeContents,                       // P3-10
+        .renameSavedSearch, .removeSavedSearch,                     // P3-11
+        .togglePreviewPane, .downloadForPreview,                    // P3-12
+    ]
 
     var environment: CoreEnvironment { context.environment }
     var session: BrowserSession? { window?.session }
@@ -97,7 +105,11 @@ final class FileCommandController: CommandHandler {
             // Esc closes Quick Look first (Finder parity); otherwise it clears a pending cut.
             if window?.quickLook.hideIfVisible() != true { environment.clipboard.clearCut() }
         case .quickLook: window?.quickLook.toggle()
-        case .newTab, .nextTab, .previousTab, .showTabBar, .showAllTabs, .moveTabToNewWindow, .mergeAllWindows:
+        case .newTab, .nextTab, .previousTab, .showTabBar, .showAllTabs, .moveTabToNewWindow, .mergeAllWindows,
+             // P3-10 / P3-11 / P3-12
+             .togglePreviewPane, .openContainingFolder, .saveSearch, .stopSearch,
+             .searchScopeThisFolder, .searchScopeSubfolders, .searchScopeThisMac, .searchModeName, .searchModeContents,
+             .renameSavedSearch, .removeSavedSearch, .downloadForPreview:
             break   // pendingCommands: canPerform is false, so perform beeps above
         }
     }

@@ -1,15 +1,17 @@
 import Foundation
 
 /// Which kind of responder has keyboard focus. Sidebar rows differ by section (§5.4); Folders-tree volume roots
-/// behave like Locations rows.
+/// behave like Locations rows. Phase 3: `.searchResults` is the content view showing search results (keys as in
+/// `.content`); `.sidebarSavedSearch` is a SEARCHES row (keys as in `.sidebarFavorites`).
 public enum FocusContext: Sendable, Hashable {
     case content, sidebarFavorites, sidebarLocations, sidebarFolders, sidebarVolumeRoot, addressBar, fieldEditor
+    case searchResults, sidebarSavedSearch
 
-    /// The four sidebar foci (Favorites, Locations, Folders tree, Folders-tree volume roots).
+    /// The sidebar foci (Favorites, Searches, Locations, Folders tree, Folders-tree volume roots).
     public var isSidebar: Bool {
         switch self {
-        case .sidebarFavorites, .sidebarLocations, .sidebarFolders, .sidebarVolumeRoot: true
-        case .content, .addressBar, .fieldEditor: false
+        case .sidebarFavorites, .sidebarSavedSearch, .sidebarLocations, .sidebarFolders, .sidebarVolumeRoot: true
+        case .content, .searchResults, .addressBar, .fieldEditor: false
         }
     }
 }
@@ -29,18 +31,25 @@ public struct KeyDispatcher: Sendable {
     /// Space (Quick Look) is content-only. Any ⌃Tab chord is nil in every focus: it is the Show Next/Previous Tab
     /// menu key, never focus cycling.
     /// Return opens (navigates) in every sidebar section; in the content view it follows Settings › Return key.
-    /// Sidebar remaps (Favorites: Del → removeFromFavorites) go through `CommandAvailability.effectiveCommand`.
+    /// Sidebar remaps (Favorites: Del → removeFromFavorites; Searches: Del → removeSavedSearch, ⇧⌘R →
+    /// renameSavedSearch, ⇧Del → nothing) go through `CommandAvailability.effectiveCommand`.
+    /// `.searchResults` uses the `.content` alternates, `.sidebarSavedSearch` the `.sidebarFavorites` ones.
     public func command(for chord: KeyChord, in focus: FocusContext) -> Command? {
+        let keys: FocusContext
         switch focus {
         case .fieldEditor, .addressBar:
             return nil
+        case .searchResults:
+            keys = .content
+        case .sidebarSavedSearch:
+            keys = .sidebarFavorites
         case .content, .sidebarFavorites, .sidebarLocations, .sidebarFolders, .sidebarVolumeRoot:
-            break
+            keys = focus
         }
         if chord.key == .tab, chord.modifiers.contains(.control) { return nil }
         guard var command = bindings.alternateCommand(for: chord) else { return nil }
-        if command == .quickLook, focus != .content { return nil }
-        if command == .open, chord == KeyChord(.returnKey), focus == .content, returnKey == .rename {
+        if command == .quickLook, keys != .content { return nil }
+        if command == .open, chord == KeyChord(.returnKey), keys == .content, returnKey == .rename {
             command = .rename
         }
         return CommandAvailability.effectiveCommand(command, focus: focus)

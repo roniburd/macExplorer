@@ -189,8 +189,8 @@ final class SidebarViewController: CommandHandlingViewController {
 
     // MARK: rows
 
-    /// The headers in the outline, in order (Phase 1: always all three).
-    var sectionHeaders: [SidebarSection] { SidebarSection.allCases }
+    /// The headers in the outline, in order (Phase 1: always all three; SEARCHES arrives with P3-11).
+    var sectionHeaders: [SidebarSection] { SidebarSection.allCases.filter { SidebarItem.header($0) != nil } }
 
     var selectedItem: SidebarItem? { item(atRow: outlineView.selectedRow) }
 
@@ -209,7 +209,7 @@ final class SidebarViewController: CommandHandlingViewController {
     }
 
     func children(of item: SidebarItem?) -> [SidebarItem] {
-        guard let item else { return sectionHeaders.map(SidebarItem.header) }
+        guard let item else { return sectionHeaders.compactMap(SidebarItem.header) }
         switch item {
         case .favoritesHeader: return favorites.rows.map(SidebarItem.favorite)
         case .locationsHeader: return locationItems
@@ -494,7 +494,8 @@ final class SidebarViewController: CommandHandlingViewController {
         isSyncing = true
         defer { isSyncing = false }
         for section in sectionHeaders {
-            let header = box(.header(section))
+            guard let item = SidebarItem.header(section) else { continue }
+            let header = box(item)
             if settings.collapsedSections.contains(section) {
                 if outlineView.isItemExpanded(header) { outlineView.collapseItem(header) }
             } else if !outlineView.isItemExpanded(header) {

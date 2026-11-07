@@ -39,6 +39,10 @@ public enum KeyMap {
         case .viewAsDetails: cmd("1")
         case .viewAsIcons: cmd("2")
         case .viewAsColumns: cmd("3")
+        // Phase 3. ⌥P types "π" on US layouts: it is a typing chord, so it collides with text editing (see
+        // `KeyBindings.collidesWithTextEditing`) and Settings › Shortcuts would not accept it as a new primary.
+        case .togglePreviewPane: KeyChord(.character("p"), .option)
+        case .openContainingFolder: KeyChord(.character("r"), [.command, .option])
         case .openInNewWindow, .showPackageContents, .openInTerminal, .revealInFinder,
              .selectNone, .invertSelection, .makeAlias, .makeSymlink, .newTextFile, .newEmptyFile, .share,
              .cycleFocusForward, .cycleFocusBackward, .showOperations,
@@ -50,7 +54,9 @@ public enum KeyMap {
              .showTabBar, .moveTabToNewWindow, .mergeAllWindows, .openInNewTab, .quickLook,
              .groupByNone, .groupByKind, .groupByDateModified, .groupBySize, .groupByName,
              .toggleFolderSizes, .applyViewToAllFolders, .useViewAsDefault, .resetFolderView,
-             .copyPathTilde, .copyPathFileURL, .copyName, .copyPathShellQuoted:
+             .copyPathTilde, .copyPathFileURL, .copyName, .copyPathShellQuoted,
+             .saveSearch, .stopSearch, .searchScopeThisFolder, .searchScopeSubfolders, .searchScopeThisMac,
+             .searchModeName, .searchModeContents, .renameSavedSearch, .removeSavedSearch, .downloadForPreview:
             nil
         }
     }
@@ -92,7 +98,10 @@ public enum KeyMap {
              .openInNewTab, .viewAsColumns,
              .groupByNone, .groupByKind, .groupByDateModified, .groupBySize, .groupByName,
              .toggleFolderSizes, .applyViewToAllFolders, .useViewAsDefault, .resetFolderView,
-             .copyPathTilde, .copyPathFileURL, .copyName, .copyPathShellQuoted:
+             .copyPathTilde, .copyPathFileURL, .copyName, .copyPathShellQuoted,
+             .togglePreviewPane, .openContainingFolder, .saveSearch, .stopSearch,
+             .searchScopeThisFolder, .searchScopeSubfolders, .searchScopeThisMac, .searchModeName, .searchModeContents,
+             .renameSavedSearch, .removeSavedSearch, .downloadForPreview:
             []
         }
     }
@@ -131,6 +140,10 @@ public enum KeyMap {
         }
         return chords
     }()
+
+    /// The default bindings' commands whose primary belongs to a text field being edited (by default ⌘↑, ⌘↓, ⌘⌫, ⌥⌘⌫,
+    /// ⌘[, ⌘], F2, ⌘D and the typing chord ⌥P). Same as `KeyBindings.defaults.collidesWithTextEditing`.
+    public static var collidesWithTextEditing: Set<Command> { KeyBindings.defaults.collidesWithTextEditing }
 
     private static func cmd(_ c: String) -> KeyChord { KeyChord(.character(c), .command) }
     private static func ctrl(_ c: String) -> KeyChord { KeyChord(.character(c), .control) }

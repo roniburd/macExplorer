@@ -74,7 +74,9 @@ final class MenuValidationTests: XCTestCase {
             XCTAssertEqual(item.identifier?.rawValue, "macx.menu.\(command.rawValue)")
             XCTAssertFalse(item.title.isEmpty)
         }
-        XCTAssertEqual(MainMenuBuilder.notInMenu, [.cancelOperation], "Esc is a key, not a menu command")
+        // P3-10 removes phase3NotYetInMenu as it adds the Phase 3 items.
+        XCTAssertEqual(MainMenuBuilder.notInMenu, Set<Command>([.cancelOperation]).union(MainMenuBuilder.phase3NotYetInMenu),
+                       "Esc is a key, not a menu command")
     }
 
     func testPhase2MenuItemsExistWithKeys() throws {
