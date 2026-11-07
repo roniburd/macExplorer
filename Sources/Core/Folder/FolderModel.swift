@@ -472,6 +472,12 @@ public final class FolderModel {
         }
     }
 
+    /// Waits for the store-mutating work queued so far (tests: a finished extended-sort load enqueues its re-sort,
+    /// which lands only after this).
+    func drainQueuedWork() async {
+        await opTail?.value
+    }
+
     /// A fresh load drops every item read in flight (their epoch is stale and they never claim).
     func resetItemReads() {
         latestItemRead = [:]

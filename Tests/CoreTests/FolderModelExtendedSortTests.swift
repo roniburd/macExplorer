@@ -166,6 +166,7 @@ final class FolderModelExtendedSortTests: XCTestCase {
         try await wait { model.state == .complete && model.rowCount == rows }
         model.setQuery(ViewQuery(sort: SortDescriptor(field: field, ascending: true)))
         try await wait { model.extendedSortTask == nil && model.sortColumn?.count == rows }
+        await model.drainQueuedWork()                    // the load's re-sort is queued after extendedSortTask clears
         return model
     }
 
