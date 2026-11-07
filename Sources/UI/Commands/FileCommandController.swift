@@ -13,12 +13,8 @@ final class FileCommandController: CommandHandler {
     var beginSidebarRename: ((URL) -> Void)?
     /// Commands whose UI arrives in a later Phase 2 task (disabled, never performed). The NSWindow tab commands are
     /// here too: NSWindow and BrowserWindowController handle them, so they never reach a pane's handler.
-    /// Window tab commands (NSWindow handles them) and the Phase 3 commands whose actions land in later tasks:
-    /// preview pane (P3-12). Disabled until then.
-    static let pendingCommands: Set<Command> = Command.windowTabCommands.union(phase3Pending)
-    static let phase3Pending: Set<Command> = [
-        .togglePreviewPane, .downloadForPreview,                    // P3-12
-    ]
+    /// Every Phase 3 command has its action now (the preview pane, P3-12, was the last).
+    static let pendingCommands: Set<Command> = Command.windowTabCommands
     /// What a SEARCHES row (a query, not a file) takes besides the window/view commands of
     /// `SidebarViewController.rowIndependent`: Open, Open in New Window/Tab, Rename, Remove and the window's search
     /// commands (P3-11). Every file command is off, so no FileOpQueue job ever starts from it.
@@ -135,9 +131,9 @@ final class FileCommandController: CommandHandler {
         case .searchScopeThisMac: window?.searchController.scope = .thisMac
         case .searchModeName: window?.searchController.mode = .name
         case .searchModeContents: window?.searchController.mode = .contents
-        case .newTab, .nextTab, .previousTab, .showTabBar, .showAllTabs, .moveTabToNewWindow, .mergeAllWindows,
-             // P3-12
-             .togglePreviewPane, .downloadForPreview:
+        case .togglePreviewPane: window?.splitController?.togglePreviewPane()
+        case .downloadForPreview: window?.splitController?.previewPane.performDownload()
+        case .newTab, .nextTab, .previousTab, .showTabBar, .showAllTabs, .moveTabToNewWindow, .mergeAllWindows:
             break   // pendingCommands: canPerform is false, so perform beeps above
         }
     }

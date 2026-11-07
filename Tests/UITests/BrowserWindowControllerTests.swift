@@ -76,7 +76,7 @@ final class BrowserWindowControllerTests: XCTestCase {
         let window = try XCTUnwrap(controller.window)
         XCTAssertNotNil(window.toolbar)
         let split = try XCTUnwrap(window.contentViewController as? BrowserSplitViewController)
-        XCTAssertEqual(split.splitViewItems.count, 2)
+        XCTAssertEqual(split.splitViewItems.count, 3, "sidebar, content, preview inspector (P3-12)")
         XCTAssertEqual(split.splitViewItems[0].behavior, .sidebar)
         XCTAssertEqual(split.splitViewItems[0].viewController.view.accessibilityIdentifier(), AXID.sidebar)
         XCTAssertNil(split.splitView.autosaveName, "no autosave names in sandbox mode")

@@ -21,6 +21,7 @@ enum CommandStateBuilder {
         // Search (P3-10): Save Search… and Stop Search work from any focus in the window.
         state.hasSearchQuery = session.searchSpec != nil
         state.showingResults = session.results != nil
+        state.previewPaneVisible = environment.settings.previewPaneVisible       // Download for Preview (P3-12)
         if case .searching? = session.results?.state { state.isSearching = true }
         switch target {
         case .contentSelection(let folder):

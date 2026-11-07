@@ -1,0 +1,317 @@
+// Tests/UITests/PreviewPaneTests.swift
+import XCTest
+import AppKit
+@testable import UI
+@testable import Core
+@testable import MacxFS
+import MacxFixtures
+
+/// P3-12: the preview pane. Every file lives in the test's own sandbox; Quick Look is the fake host (no previewer
+/// ever reads a file) and downloads use FakeUbiquitousDownloader (never startDownloadingUbiquitousItem).
+@MainActor
+final class PreviewPaneTests: XCTestCase {
+    /// Main-actor state the (Sendable) resolver closures read and write.
+    @MainActor final class Box<T> {
+        var value: T
+        init(_ value: T) { self.value = value }
+    }
+
+    var sandbox: Sandbox!
+    var context: UIContext!
+    var env: CoreEnvironment { context.environment }
+    var host: FakeQuickLookHost!
+
+    override func setUp() async throws {
+        sandbox = try Sandbox()
+        let s = sandbox!
+        addTeardownBlock { s.destroy() }
+        var options = LaunchOptions()
+        options.root = sandbox.root
+        options.stateDirectory = try sandbox.createDirectory("state")
+        context = UIContext(environment: CoreEnvironment.sandboxed(root: sandbox.root), options: options)
+        host = FakeQuickLookHost()
+    }
+
+    override func tearDown() async throws {
+        host = nil
+        context = nil
+    }
+
+    private func waitUntil(_ what: String, timeout: TimeInterval = 5, _ condition: () -> Bool) async {
+        let end = Date().addingTimeInterval(timeout)
+        while Date() < end {
+            if condition() { return }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        if condition() { return }
+        XCTFail("timed out: \(what)")
+    }
+
+    private func pane(resolve: PreviewPaneController.Resolver? = nil) -> PreviewPaneController {
+        let host = self.host!
+        let p = PreviewPaneController(context: context, makeHost: { host }, debounce: .milliseconds(20),
+                                      resolve: resolve ?? PreviewPaneController.defaultResolve(context.environment))
+        _ = p.view
+        p.isActive = true
+        addTeardownBlock { @MainActor in p.close() }
+        return p
+    }
+
+    private func folder(_ rel: String) async -> FolderModel {
+        let m = env.makeFolderModel(sandbox.url(rel))
+        addTeardownBlock { @MainActor in m.close() }
+        m.start()
+        await waitUntil("loaded") { m.state == .complete }
+        return m
+    }
+    private func select(_ m: FolderModel, _ names: [String]) { m.select(.names(names)) }
+
+    func testNothingTextAndTruncation() async throws {
+        try sandbox.createFile("d/big.txt", contents: Data(repeating: UInt8(ascii: "a"), count: 300_000))
+        try sandbox.createFile("d/small.txt", contents: Data("hello".utf8))
+        let m = await folder("d")
+        let p = pane()
+        p.bind(m)
+        await waitUntil("nothing") { p.displayState == .nothing }
+        XCTAssertEqual(p.probeState, "nothing")
+        select(m, ["big.txt"])
+        await waitUntil("text") { if case .text(_, true) = p.displayState { true } else { false } }
+        if case .text(let text, _) = p.displayState { XCTAssertEqual(text.utf8.count, 262_144) }
+        XCTAssertFalse(p.truncationFooterHidden)
+        select(m, ["small.txt"])
+        await waitUntil("small") { p.displayState == .text("hello", truncated: false) }
+        XCTAssertTrue(p.truncationFooterHidden)
+        XCTAssertEqual(p.probeText, "hello")
+        XCTAssertNil(host.shownURL)
+        await waitUntil("details") { p.details?.size == 5 }
+    }
+
+    func testQuickLookFolderMultipleAndBrokenLink() async throws {
+        try sandbox.writePNG("d/p.png")
+        try sandbox.createDirectory("d/sub")
+        try sandbox.createFile("d/a.txt", contents: Data("12".utf8))
+        try sandbox.createSymlink("d/broken", target: "nowhere")
+        let m = await folder("d")
+        let p = pane()
+        p.bind(m)
+        select(m, ["p.png"])
+        await waitUntil("quick look") { p.displayState == .quickLook(self.sandbox.url("d/p.png")) }
+        XCTAssertEqual(host.shownURL?.lastPathComponent, "p.png")
+        await waitUntil("details") { p.details?.pixelWidth == 64 }
+        select(m, ["sub"])
+        await waitUntil("folder") { if case .folder = p.displayState { true } else { false } }
+        XCTAssertNil(host.shownURL, "Quick Look is cleared when not used")
+        select(m, ["a.txt", "p.png"])
+        await waitUntil("multiple") { if case .multiple(2, _) = p.displayState { true } else { false } }
+        XCTAssertEqual(p.probeState, "multiple:2")
+        XCTAssertNil(p.details)
+        select(m, ["broken"])
+        await waitUntil("broken") { if case .broken = p.displayState { true } else { false } }
+        XCTAssertNil(p.details, "a broken link has no details")
+    }
+
+    func testRapidSelectionResolvesOnlyTheLast() async throws {
+        for n in ["1.txt", "2.txt", "3.txt", "4.txt"] { try sandbox.createFile("d/\(n)") }
+        let m = await folder("d")
+        let resolved = Box<[String]>([])
+        let base = PreviewPaneController.defaultResolve(env)
+        let p = pane(resolve: { subject in resolved.value.append(subject.url.lastPathComponent); return await base(subject) })
+        p.bind(m)
+        for n in ["1.txt", "2.txt", "3.txt", "4.txt"] { select(m, [n]) }
+        await waitUntil("last shown") { if case .text = p.displayState { true } else { false } }
+        try? await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(resolved.value, ["4.txt"])
+    }
+
+    func testCloudPlaceholderLoadsNothingUntilDownload() async throws {
+        try sandbox.createFile("d/cloud.txt", contents: Data("now local".utf8))
+        let m = await folder("d")
+        let downloaded = Box(false)
+        let base = PreviewPaneController.defaultResolve(env)
+        let p = pane(resolve: { subject in downloaded.value ? await base(subject) : .cloudPlaceholder(subject.url) })
+        let fake = FakeUbiquitousDownloader(datalessPolls: 1)
+        p.downloader = fake
+        p.downloadPollInterval = .milliseconds(10)
+        p.bind(m)
+        select(m, ["cloud.txt"])
+        await waitUntil("cloud") { p.displayState == .cloud(self.sandbox.url("d/cloud.txt")) }
+        XCTAssertNil(host.shownURL)
+        XCTAssertEqual(p.textLoads, 0, "a dataless item is never read")
+        XCTAssertEqual(fake.started(), [])
+        downloaded.value = true
+        p.performDownload()
+        await waitUntil("downloaded and shown") { p.displayState == .text("now local", truncated: false) }
+        XCTAssertEqual(fake.started(), [sandbox.url("d/cloud.txt")])
+    }
+
+    func testFailedDownloadOffersTryAgain() async throws {
+        try sandbox.createFile("d/cloud.txt")
+        let m = await folder("d")
+        let p = pane(resolve: { .cloudPlaceholder($0.url) })
+        let fake = FakeUbiquitousDownloader(failStart: true)
+        p.downloader = fake
+        p.bind(m)
+        select(m, ["cloud.txt"])
+        await waitUntil("cloud") { if case .cloud = p.displayState { true } else { false } }
+        p.performDownload()
+        await waitUntil("failed") { p.displayState == .downloadFailed(self.sandbox.url("d/cloud.txt")) }
+        p.performDownload()                                         // "Try Again"
+        await waitUntil("retried") { fake.started().count == 2 }
+    }
+
+    func testSelectionChangeCancelsADownloadInProgress() async throws {
+        try sandbox.createFile("d/cloud.txt")
+        try sandbox.createFile("d/b.txt", contents: Data("b".utf8))
+        let m = await folder("d")
+        let base = PreviewPaneController.defaultResolve(env)
+        let p = pane(resolve: { $0.url.lastPathComponent == "cloud.txt" ? .cloudPlaceholder($0.url) : await base($0) })
+        p.downloader = FakeUbiquitousDownloader(datalessPolls: 1_000_000)
+        p.downloadPollInterval = .milliseconds(5)
+        p.bind(m)
+        select(m, ["cloud.txt"])
+        await waitUntil("cloud") { if case .cloud = p.displayState { true } else { false } }
+        p.performDownload()
+        await waitUntil("downloading") { if case .downloading = p.displayState { true } else { false } }
+        select(m, ["b.txt"])
+        await waitUntil("b shown") { p.displayState == .text("b", truncated: false) }
+        try? await Task.sleep(for: .milliseconds(60))
+        XCTAssertEqual(p.displayState, .text("b", truncated: false), "the old download never repaints the pane")
+    }
+
+    func testInactivePaneDoesNoWork() async throws {
+        try sandbox.createFile("d/a.txt")
+        let m = await folder("d")
+        let calls = Box(0)
+        let p = pane(resolve: { _ in calls.value += 1; return .nothingSelected })
+        p.isActive = false
+        p.bind(m)
+        select(m, ["a.txt"])
+        try? await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(calls.value, 0)
+        XCTAssertEqual(p.displayState, .hidden)
+        XCTAssertEqual(p.probeState, "hidden")
+        p.isActive = true
+        await waitUntil("works when shown") { calls.value == 1 }
+        p.isActive = false
+        XCTAssertNil(host.shownURL)
+        XCTAssertEqual(p.displayState, .hidden)
+    }
+
+    func testTogglePersistsVisibilityAndWidth() async throws {
+        try requireGUISession()
+        let window = BrowserWindowController(context: context, initialURL: sandbox.root)
+        window.showWindow(nil)
+        defer { window.close() }
+        // Wide enough for sidebar + the content's minimum fitting width + a 400-point pane.
+        window.window?.setContentSize(NSSize(width: 1400, height: 700))
+        let split = try XCTUnwrap(window.splitController)
+        XCTAssertEqual(split.splitViewItems.count, 3)
+        XCTAssertEqual(split.splitViewItems[2].behavior, .inspector)
+        XCTAssertTrue(window.contentPane is ContentViewController, "the content pane is still found with the inspector")
+        XCTAssertTrue(split.previewItem.isCollapsed)
+        XCTAssertFalse(split.previewPane.isActive)
+        split.togglePreviewPane()
+        await waitUntil("shown") { !split.previewItem.isCollapsed && !split.isAnimatingPreview }
+        XCTAssertTrue(env.settings.previewPaneVisible)
+        XCTAssertTrue(split.previewPane.isActive)
+        split.setPreviewWidth(400)
+        await waitUntil("width persisted") { abs(self.env.settings.previewPaneWidth - 400) < 2 }
+        split.togglePreviewPane()
+        await waitUntil("hidden") { split.previewItem.isCollapsed && !split.isAnimatingPreview }
+        XCTAssertFalse(env.settings.previewPaneVisible)
+        XCTAssertFalse(split.previewPane.isActive)
+        XCTAssertEqual(env.settings.previewPaneWidth, 400, accuracy: 2, "collapsing never stores a smaller width")
+    }
+
+    func testTogglePreviewPaneCommandRunsThroughTheHandler() async throws {
+        try requireGUISession()
+        let window = BrowserWindowController(context: context, initialURL: sandbox.root)
+        window.showWindow(nil)
+        defer { window.close() }
+        let split = try XCTUnwrap(window.splitController)
+        let content = try XCTUnwrap(window.contentPane as? ContentViewController)
+        let handler = try XCTUnwrap(content.handler)
+        let target = try XCTUnwrap(content.commandTarget)
+        XCTAssertTrue(handler.canPerform(.togglePreviewPane, target: target))
+        handler.perform(.togglePreviewPane, target: target, sender: nil)
+        await waitUntil("shown") { !split.previewItem.isCollapsed }
+        XCTAssertTrue(env.settings.previewPaneVisible)
+    }
+
+    // Review Focus 2: ⌥P types "π" in a text field instead of toggling the pane.
+    func testOptionPReachesFieldEditorWhileEditing() async throws {
+        try requireGUISession()
+        let previousMenu = NSApp.mainMenu
+        NSApp.mainMenu = MainMenuBuilder.build()
+        defer { NSApp.mainMenu = previousMenu }
+        let window = BrowserWindowController(context: context, initialURL: sandbox.root)
+        window.showWindow(nil)
+        defer { window.close() }
+        let nsWindow = try XCTUnwrap(window.window)
+        let action = Selector(Command.togglePreviewPane.selectorName)
+        let item = try XCTUnwrap(NSApp.mainMenu?.items.lazy.compactMap { $0.submenu?.items.first { $0.action == action } }.first)
+        XCTAssertEqual(item.keyEquivalent, "p")
+        XCTAssertEqual(item.keyEquivalentModifierMask, [.option])
+        let validator = try XCTUnwrap(window.contentPane)
+        window.focus(.content)
+        XCTAssertTrue(validator.validateMenuItem(item), "control: ⌥P toggles the pane from the list")
+
+        window.focus(.addressBar)
+        await waitUntil("editing") { (nsWindow.firstResponder as? NSTextView)?.isFieldEditor == true }
+        let editor = try XCTUnwrap(nsWindow.firstResponder as? NSTextView)
+        editor.string = ""
+        // While a field editor is first responder the item is disabled (togglePreviewPane ∈ collidesWithTextEditing),
+        // so the menu never consumes the key equivalent.
+        XCTAssertFalse(validator.validateMenuItem(item), "⌥P is not consumed by the menu while typing")
+        let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [.option], timestamp: 0,
+                                                   windowNumber: nsWindow.windowNumber, context: nil,
+                                                   characters: "π", charactersIgnoringModifiers: "p", isARepeat: false, keyCode: 35))
+        XCTAssertFalse(nsWindow.performKeyEquivalent(with: event))
+        // The path NSApplication takes for the key window: key equivalents (window, then menu), then the first responder.
+        MacxApplication.deliver(event, toPinned: nsWindow, menu: NSApp.mainMenu)
+        if NSApp.keyWindow === nsWindow {
+            await waitUntil("typed") { editor.string == "π" }
+        } else {
+            // xctest is not the active app, so the text input system ignores keyDown (FieldEditorKeyRoutingTests says
+            // the same); the UI scenario preview-optp-in-field (P3-13) checks the typed character end to end.
+            XCTAssertTrue(nsWindow.firstResponder === editor, "the key went to the field editor, focus unchanged")
+        }
+        XCTAssertFalse(env.settings.previewPaneVisible, "⌥P must not toggle the pane while typing")
+        XCTAssertTrue(try XCTUnwrap(window.splitController).previewItem.isCollapsed)
+    }
+
+    func testDetailsHideAbsentRowsAndFormatValues() {
+        let d = PreviewDetails(size: 1_500, created: nil, modified: Date(timeIntervalSince1970: 0), pixelWidth: 640, pixelHeight: 480,
+                               duration: 65, pageCount: nil, kindDescription: "PNG image")
+        let v = PreviewDetailsView.values(d)
+        XCTAssertEqual(v[.kind], "PNG image")
+        XCTAssertEqual(v[.size], Formatters.bytes(1_500))
+        XCTAssertNil(v[.created])
+        XCTAssertNotNil(v[.modified])
+        XCTAssertEqual(v[.dimensions], "640 × 480")
+        XCTAssertEqual(v[.duration], "1:05")
+        XCTAssertNil(v[.pages])
+        XCTAssertEqual(PreviewDetailsView.duration(5), "0:05")
+        XCTAssertEqual(PreviewDetailsView.duration(3_723), "1:02:03")
+        XCTAssertNil(PreviewDetailsView.duration(.nan))
+        let view = PreviewDetailsView()
+        view.show(d)
+        XCTAssertEqual(view.visibleValues.count, 5)
+    }
+
+    func testMessagesForCloudAndUnavailable() async throws {
+        try sandbox.createFile("d/x.txt")
+        let m = await folder("d")
+        let p = pane(resolve: { .cloudPlaceholder($0.url) })
+        p.bind(m)
+        select(m, ["x.txt"])
+        await waitUntil("cloud") { if case .cloud = p.displayState { true } else { false } }
+        XCTAssertEqual(p.messageTitle, L10n.string("preview.cloud"))
+        XCTAssertEqual(p.messageButtonTitle, L10n.string("preview.download"))
+        let q = pane(resolve: { .unavailable($0.url, code: EACCES) })
+        q.bind(m)
+        await waitUntil("unavailable") { if case .unavailable(_, EACCES) = q.displayState { true } else { false } }
+        XCTAssertEqual(q.messageTitle, L10n.string("preview.unavailable"))
+        XCTAssertNil(q.messageButtonTitle)
+    }
+}

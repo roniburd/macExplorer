@@ -32,5 +32,11 @@ final class AXIDTests: XCTestCase {
         XCTAssertEqual(AXID.offerCrashReports, "macx.settings.offerCrashReports")
         XCTAssertEqual(AXID.sidebarSavedSearch("Taxes"), "macx.sidebar.search.Taxes")
         XCTAssertEqual(AXID.namePromptField, "macx.namePromptField")
+        XCTAssertEqual(AXID.previewPane, "macx.preview")
+        XCTAssertEqual(AXID.previewText, "macx.preview.text")
+        XCTAssertEqual(AXID.previewTruncation, "macx.preview.truncation")
+        XCTAssertEqual(AXID.previewMessage, "macx.preview.message")
+        XCTAssertEqual(AXID.previewDownload, "macx.preview.download")
+        XCTAssertEqual(AXID.previewDetails, "macx.preview.details")
     }
 }

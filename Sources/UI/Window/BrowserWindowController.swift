@@ -65,6 +65,7 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
         installNewTabHooks()
         installQuickLook()
         sessionToken = session.observe { [weak self] event in self?.handle(event) }
+        splitViewController.previewPane.bind(session.results ?? session.folder)
         folderDidChange()
         titleLoop = ObservationLoop({ [weak self] in _ = self?.context.environment.settings.showFullPathInTitle },
                                     onChange: { [weak self] in self?.updateTitle() })
@@ -119,10 +120,13 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
         field.onFocusChange = { [weak content] focused in content?.searchFieldFocused = focused }
     }
 
-    /// The content split item's controller (ContentViewController).
+    /// The content split item's controller (ContentViewController; the preview inspector item follows it).
     var contentPane: CommandHandlingViewController? {
-        splitViewController.splitViewItems.last?.viewController as? CommandHandlingViewController
+        splitViewController.contentController
     }
+
+    /// The window's split view: sidebar, content and the preview pane (P3-12).
+    var splitController: BrowserSplitViewController? { splitViewController }
 
     /// The sidebar split item's controller (P1-26 placeholder, P1-28 SidebarViewController).
     var sidebarPane: CommandHandlingViewController? {
@@ -172,10 +176,14 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
     private func handle(_ event: SessionEvent) {
         switch event {
         case .folderChanged:
-            if session.results == nil { quickLook.bind(session.folder) }
+            if session.results == nil {
+                quickLook.bind(session.folder)
+                splitViewController.previewPane.bind(session.folder)
+            }
             folderDidChange()
         case .resultsChanged(let results):
             quickLook.bind(results ?? session.folder)
+            splitViewController.previewPane.bind(results ?? session.folder)
             updateTitle()
         case .historyChanged, .viewModeChanged, .viewStateChanged, .banner, .columnsChanged, .searchTextChanged, .searchChanged: break
         }
@@ -239,6 +247,7 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
 
     public func windowWillClose(_ notification: Notification) {
         quickLook.bind(nil)
+        splitViewController.previewPane.close()
         searchController.cancelPending()
         sessionToken = nil
         titleLoop?.cancel()

@@ -117,6 +117,7 @@ final class SidebarViewController: CommandHandlingViewController {
         .viewAsColumns, .groupByNone, .groupByKind, .groupByDateModified, .groupBySize, .groupByName,
         .toggleFolderSizes, .applyViewToAllFolders,
         .useViewAsDefault, .resetFolderView,
+        .togglePreviewPane,                                  // the window's preview pane (P3-12)
     ]
 
     // MARK: view
