@@ -14,6 +14,13 @@ private func systemStat(_ path: String, follow: Bool) -> Result<ProbeStat, Probe
     return rc == 0 ? .success(ProbeStat(mode: st.st_mode, flags: st.st_flags)) : .failure(ProbeError(code: errno))
 }
 
+/// nil for a regular file; ENOTSUP for a FIFO, socket or device; the fstat errno otherwise.
+private func refuseNonRegular(_ fd: Int32) -> ProbeError? {
+    var st = stat()
+    guard fstat(fd, &st) == 0 else { return ProbeError(code: errno) }
+    return (st.st_mode & S_IFMT) == S_IFREG ? nil : ProbeError(code: ENOTSUP)
+}
+
 /// File-system calls used by `PreviewPlanner.resolve`. Tests substitute `stat` to simulate dataless files.
 struct PreviewProbe: Sendable {
     var stat: @Sendable (_ path: String, _ follow: Bool) -> Result<ProbeStat, ProbeError>
@@ -23,11 +30,13 @@ struct PreviewProbe: Sendable {
         stat: { path, follow in systemStat(path, follow: follow) },
         readPrefix: { path, count in PreviewProbe.read(path, count: count) })
 
-    /// Reads up to `count` bytes. Lane only; callers wrap it in withNoMaterialization.
+    /// Reads up to `count` bytes of a regular file (anything else is ENOTSUP). Lane only; callers wrap it in
+    /// withNoMaterialization. O_NONBLOCK so a FIFO with no writer (or a device) cannot block the lane in open().
     static func read(_ path: String, count: Int) -> Result<[UInt8], ProbeError> {
-        let fd = open(path, O_RDONLY | O_CLOEXEC)
+        let fd = open(path, O_RDONLY | O_CLOEXEC | O_NONBLOCK)
         guard fd >= 0 else { return .failure(ProbeError(code: errno)) }
         defer { close(fd) }
+        if let refused = refuseNonRegular(fd) { return .failure(refused) }
         var buffer = [UInt8](repeating: 0, count: count)
         var filled = 0
         while filled < count {
@@ -78,6 +87,7 @@ public enum PreviewPlanner {
         }
         var typeIndex = subject.typeIndex
         var readPath = path
+        var contentURL = url          // what P3-12 loads (text, Quick Look, metadata, download): an alias's target
         if (st.mode & S_IFMT) == S_IFLNK {
             guard case .success(let target) = probe.stat(path, true) else { return .brokenLink(url) }
             st = target
@@ -90,23 +100,27 @@ public enum PreviewPlanner {
             st = target
             readPath = resolved.path(percentEncoded: false)
             typeIndex = types.index(forExtension: Substring(resolved.pathExtension), isDirectory: (st.mode & S_IFMT) == S_IFDIR)
+            contentURL = resolved
         }
+        // FIFOs, sockets and devices (also behind a link or alias) are never opened: open() on a FIFO with no
+        // writer blocks the lane forever, and QL / ImageIO would do the same.
+        guard (st.mode & S_IFMT) == S_IFREG || (st.mode & S_IFMT) == S_IFDIR else { return .unavailable(url, code: ENOTSUP) }
         let dataless = st.flags & UInt32(SF_DATALESS) != 0
         if (st.mode & S_IFMT) == S_IFDIR {
-            guard subject.kind == .package || types.isPackage(typeIndex) else { return .folder(url) }
+            guard subject.kind == .package || types.isPackage(typeIndex) else { return .folder(contentURL) }
             // An evicted package (.pages, .rtfd, .app) would be materialized by QLPreviewView (spec §11).
-            return dataless ? .cloudPlaceholder(url) : .quickLook(url)
+            return dataless ? .cloudPlaceholder(contentURL) : .quickLook(contentURL)
         }
-        if dataless { return .cloudPlaceholder(url) }
+        if dataless { return .cloudPlaceholder(contentURL) }
         switch classify(types.type(at: typeIndex)) {
-        case .text: return .text(url)
-        case .quickLook: return .quickLook(url)
+        case .text: return .text(contentURL)
+        case .quickLook: return .quickLook(contentURL)
         case .sniff:
             switch probe.readPrefix(readPath, sniffSize) {
             case .failure(let e): return .unavailable(url, code: e.code)
             case .success(let bytes):
-                if bytes.isEmpty { return .text(url) }
-                return TextPreviewLoader.decode(bytes, truncated: bytes.count == sniffSize) != nil ? .text(url) : .quickLook(url)
+                if bytes.isEmpty { return .text(contentURL) }
+                return TextPreviewLoader.decode(bytes, truncated: bytes.count == sniffSize) != nil ? .text(contentURL) : .quickLook(contentURL)
             }
         }
     }

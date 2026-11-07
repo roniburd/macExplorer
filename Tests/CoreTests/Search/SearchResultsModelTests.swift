@@ -158,6 +158,34 @@ final class SearchResultsModelTests: XCTestCase {
         await waitUntil("engine terminated") { script.terminated.contains(gen) }
     }
 
+    /// A model released without close() still cancels its engine (a live Spotlight query can stay silent forever).
+    func testReleasingTheModelWithoutCloseTerminatesTheEngine() async {
+        let script = ScriptedSearchEvents()
+        var gen = Generation.initial
+        do {
+            let m = SearchResultsModel(title: "test", events: script.factory, context: env.searchContext())
+            m.start()
+            gen = m.generation
+        }
+        await waitUntil("engine terminated on release") { script.terminated.contains(gen) }
+    }
+
+    /// Identical states are not re-emitted while open.
+    func testIdenticalStateIsNotReemitted() async {
+        let script = ScriptedSearchEvents()
+        let m = makeModel(script)
+        var states: [SearchState] = []
+        let token = m.observe { if case .state(let s) = $0 { states.append(s) } }
+        defer { token.cancel() }
+        m.start()
+        let gen = m.generation
+        let progress = SearchEvent.progress(SearchProgress(resultCount: 0))
+        for _ in 0..<3 { script.continuations[gen]!.yield(progress) }
+        script.continuations[gen]!.yield(.completed(SearchSummary()))
+        await waitUntil("complete") { if case .complete = m.state { true } else { false } }
+        for (a, b) in zip(states, states.dropFirst()) { XCTAssertNotEqual(a, b, "\(states)") }
+    }
+
     // Review Focus 3
     func testLocalChangesRemoveAndRenameResults() async throws {
         let script = ScriptedSearchEvents()

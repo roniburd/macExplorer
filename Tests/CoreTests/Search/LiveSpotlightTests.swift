@@ -102,4 +102,28 @@ final class SystemMetadataQueryConfinementTests: XCTestCase {
             XCTAssertEqual(queue, "com.macexplorer.spotlight", label)
         }
     }
+
+    /// An empty kinds / extensions set reaches NSMetadataQuery as an always-false metadata comparison, never as
+    /// FALSEPREDICATE (which raises NSInvalidArgumentException and kills the process). Sandbox-scoped only.
+    func testEmptyKindsAndExtensionsDoNotCrashTheQuery() async throws {
+        let sandbox = try Sandbox()
+        defer { sandbox.destroy() }
+        _ = try sandbox.createFile("a.pdf")
+        for criteria in [SearchCriteria(kinds: []), SearchCriteria(nameTerms: [NameTerm("a")], kinds: [.image], extensions: [])] {
+            let request = SpotlightRequest(criteria: criteria, contentTerms: [], scope: .folders([sandbox.root]))
+            let collector = Task { () -> [MetadataQueryEvent] in
+                var out: [MetadataQueryEvent] = []
+                for await e in SystemMetadataQuery().run(request) {
+                    out.append(e)
+                    if case .gatheringFinished = e { break }
+                    if case .failed = e { break }
+                }
+                return out
+            }
+            let timer = Task { try await Task.sleep(for: .seconds(30)); collector.cancel() }
+            let events = await collector.value
+            timer.cancel()
+            for e in events { if case .added(let items) = e { XCTFail("unexpected results \(items)") } }
+        }
+    }
 }

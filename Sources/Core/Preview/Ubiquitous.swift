@@ -17,11 +17,12 @@ public struct SystemUbiquitousDownloader: UbiquitousDownloading {
     public func startDownloading(_ url: URL) async throws {
         try await lanes.perform(on: .unknown) { _ in try FileManager.default.startDownloadingUbiquitousItem(at: url) }
     }
-    /// lstat only: reading SF_DATALESS never materializes.
+    /// stat (following links, like PreviewPlanner, which describes a symlink by its target): reading SF_DATALESS
+    /// never materializes.
     public func isDataless(_ url: URL) async -> Bool {
         (try? await lanes.perform(on: .unknown) { _ in
             var st = stat()
-            guard lstat(url.path(percentEncoded: false), &st) == 0 else { return false }
+            guard stat(url.path(percentEncoded: false), &st) == 0 else { return false }
             return st.st_flags & UInt32(SF_DATALESS) != 0
         }) ?? false
     }

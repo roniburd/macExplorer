@@ -54,7 +54,10 @@ public final class CoreEnvironment {
                             pasteboard: any PasteboardBackend, launchServices: any LaunchServicesProviding,
                             ejector: any Ejecting, trash: any TrashService, fileOpTuning: FileOpTuning = FileOpTuning(),
                             home: URL = FileManager.default.homeDirectoryForCurrentUser,
-                            searchServices: SearchServices? = nil) {
+                            searchServices: SearchServices) {
+        // `searchServices` has no default (review P3-05..08): every caller chooses real or fake explicitly, so no
+        // test harness gets real Spotlight ("This Mac"), mdutil or iCloud downloads by omission. The app passes
+        // SearchServices.forLaunch(_:lanes:); tests pass .fake().
         // `home` (additive, consistency pass): the app passes its --root in sandbox mode (P1-26 AppBootstrap) so
         // default favorites and "go home" fallbacks never leave the sandbox.
         self.init(statePaths: statePaths, lanes: lanes, settingsStorage: settingsStorage, volumeScanner: volumeScanner,
@@ -67,10 +70,10 @@ public final class CoreEnvironment {
          volumeScanner: any VolumeScanning, volumeEvents: (any VolumeEventSource)?,
          pasteboard: any PasteboardBackend, launchServices provider: any LaunchServicesProviding,
          ejector: any Ejecting, trash: any TrashService, fileOpTuning: FileOpTuning,
-         home: URL, interactionTarget: (any FileOpInteraction)?, searchServices: SearchServices? = nil) {
+         home: URL, interactionTarget: (any FileOpInteraction)?, searchServices: SearchServices) {
         self.statePaths = statePaths
         self.lanes = lanes
-        self.searchServices = searchServices ?? .system(lanes: lanes)
+        self.searchServices = searchServices
         self.types = .shared
         let volumes = Volumes(lanes: lanes, scanner: volumeScanner, events: volumeEvents)
         self.volumes = volumes

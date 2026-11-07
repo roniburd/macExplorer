@@ -177,7 +177,7 @@ final class AppLifecycleTests: XCTestCase {
             pasteboard: InMemoryPasteboard(), launchServices: FakeLaunchServices(),
             ejector: SandboxEjector(root: sandbox.root, lanes: lanes),
             trash: SandboxTrash(directory: sandbox.root.appending(path: ".trash", directoryHint: .isDirectory)),
-            fileOpTuning: tuning, home: sandbox.root)
+            fileOpTuning: tuning, home: sandbox.root, searchServices: .fake())
         environment.interaction.setTarget(ScriptedInteraction())
         _ = await environment.start()
         var options = LaunchOptions()

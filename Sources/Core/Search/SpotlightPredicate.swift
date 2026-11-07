@@ -2,6 +2,16 @@ import Foundation
 import MacxFS
 
 public enum SpotlightPredicate {
+    /// True when the criteria can match nothing (an empty kinds or extensions set, e.g. `kind:pdf` typed with the
+    /// Kind filter set to Image). SpotlightSearch short-circuits these without starting a query.
+    public static func matchesNothing(_ c: SearchCriteria) -> Bool {
+        c.kinds?.isEmpty == true || c.extensions?.isEmpty == true
+    }
+
+    /// Never a value predicate: NSMetadataQuery raises NSInvalidArgumentException on FALSEPREDICATE/TRUEPREDICATE
+    /// (even nested in a compound). No file has an empty name, so this comparison is always false.
+    static var nothing: NSPredicate { NSPredicate(format: "%K == %@", "kMDItemFSName", "") }
+
     public static func make(_ request: SpotlightRequest) -> NSPredicate {
         let c = request.criteria
         var clauses: [NSPredicate] = []
@@ -46,7 +56,7 @@ public enum SpotlightPredicate {
 
     static func or(_ ps: [NSPredicate]) -> NSPredicate {
         switch ps.count {
-        case 0: return NSPredicate(value: false)
+        case 0: return nothing
         case 1: return ps[0]
         default: return NSCompoundPredicate(orPredicateWithSubpredicates: ps)
         }

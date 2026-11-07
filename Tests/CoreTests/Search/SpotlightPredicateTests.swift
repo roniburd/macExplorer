@@ -30,8 +30,30 @@ final class SpotlightPredicateTests: XCTestCase {
     }
 
     func testEmptySetsMatchNothingAndEmptyRequestMatchesAll() {
-        XCTAssertEqual(format(SearchCriteria(kinds: [])), NSPredicate(value: false).predicateFormat)
+        // NSMetadataQuery raises on value predicates (FALSEPREDICATE/TRUEPREDICATE), so "nothing" is an always-false
+        // metadata comparison: no file has an empty name.
+        XCTAssertEqual(format(SearchCriteria(kinds: [])), expected("kMDItemFSName == %@", ""))
+        XCTAssertEqual(format(SearchCriteria(extensions: [])), expected("kMDItemFSName == %@", ""))
         XCTAssertEqual(format(SearchCriteria()), expected("kMDItemFSName LIKE %@", "*"))
+        XCTAssertTrue(SpotlightPredicate.matchesNothing(SearchCriteria(kinds: [])))
+        XCTAssertTrue(SpotlightPredicate.matchesNothing(SearchCriteria(extensions: [])))
+        XCTAssertFalse(SpotlightPredicate.matchesNothing(SearchCriteria(kinds: [.pdf], extensions: ["pdf"])))
+        XCTAssertFalse(SpotlightPredicate.matchesNothing(SearchCriteria()))
+    }
+
+    func testNeverEmitsValuePredicates() {
+        let all = Set(KindFilter.allCases)
+        let cases: [SearchCriteria] = [
+            SearchCriteria(), SearchCriteria(kinds: []), SearchCriteria(extensions: []),
+            SearchCriteria(nameTerms: [NameTerm("a")], kinds: [], extensions: []),
+            SearchCriteria(kinds: all), SearchCriteria(kinds: [.folder], extensions: ["x"]),
+        ]
+        for c in cases {
+            for contents in [[], ["invoice"]] {
+                let f = format(c, contents: contents)
+                XCTAssertFalse(f.contains("TRUEPREDICATE") || f.contains("FALSEPREDICATE"), f)
+            }
+        }
     }
 
     func testDatesUseContentChangeAndCreation() {

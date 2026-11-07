@@ -308,7 +308,7 @@ final class EnvironmentTests: FileOpsTestCase {
                                   settingsStorage: InMemorySettingsStorage(), volumeScanner: SystemVolumeScanner(),
                                   volumeEvents: nil, pasteboard: InMemoryPasteboard(), launchServices: FakeLaunchServices(),
                                   ejector: SandboxEjector(root: w.root, lanes: lanes),
-                                  trash: SandboxTrash(directory: w.trashDir), fileOpTuning: tuning)
+                                  trash: SandboxTrash(directory: w.trashDir), fileOpTuning: tuning, searchServices: .fake())
         _ = await env.start()
         await env.volumes.refresh()
         let volume = try XCTUnwrap(env.volumes.volume(for: mnt))
@@ -343,7 +343,7 @@ final class EnvironmentTests: FileOpsTestCase {
                                   settingsStorage: InMemorySettingsStorage(), volumeScanner: SystemVolumeScanner(),
                                   volumeEvents: nil, pasteboard: InMemoryPasteboard(), launchServices: FakeLaunchServices(),
                                   ejector: SandboxEjector(root: w.root, lanes: lanes),
-                                  trash: SandboxTrash(directory: w.trashDir), fileOpTuning: tuning)
+                                  trash: SandboxTrash(directory: w.trashDir), fileOpTuning: tuning, searchServices: .fake())
         _ = await env.start()
         await env.volumes.refresh()
         let volume = try XCTUnwrap(env.volumes.volume(for: mnt))

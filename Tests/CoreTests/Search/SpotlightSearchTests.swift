@@ -113,6 +113,18 @@ final class SpotlightSearchTests: XCTestCase {
         XCTAssertEqual(limited.summary?.truncated, true)
     }
 
+    /// `kind:pdf` with the Kind filter set to Image merges to an empty set: complete with 0 and never start a query.
+    func testEmptyKindsOrExtensionsCompleteWithoutQuerying() async {
+        for criteria in [SearchCriteria(kinds: []), SearchCriteria(nameTerms: [NameTerm("a")], extensions: [])] {
+            let fake = FakeMetadataQuery(items: [item("/r/a.pdf")])
+            let seen = await run(SpotlightRequest(criteria: criteria, contentTerms: ["x"], scope: .localComputer), fake)
+            XCTAssertEqual(seen.summary?.resultCount, 0)
+            XCTAssertTrue(seen.batches.isEmpty)
+            XCTAssertNil(seen.failure)
+            XCTAssertEqual(fake.requests(), [])
+        }
+    }
+
     func testEntryConversion() {
         let folder = SpotlightSearch.entry(for: item("/r/Docs", tree: ["public.folder", "public.directory", "public.item"]), types: types)
         XCTAssertEqual(folder.entry.kind, .directory)

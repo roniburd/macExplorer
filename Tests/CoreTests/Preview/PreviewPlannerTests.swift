@@ -93,6 +93,41 @@ final class PreviewPlannerTests: XCTestCase {
         let folderContent = await PreviewPlanner.resolve(folder, lanes: LanePool(), volume: .unknown, types: types, probe: probe)
         XCTAssertEqual(folderContent, .folder(folder.url))
     }
+
+    /// A named pipe (or a link to one / to a device) is neither a regular file nor a folder: never opened, never
+    /// read (open() on a FIFO with no writer blocks the lane forever). Sandbox-only FIFOs.
+    func testFIFOAndLinksToItAreUnavailableWithoutOpening() async throws {
+        for name in ["pipe.zzqq", "pipe.txt", "pipe.png"] {
+            XCTAssertEqual(mkfifo(sandbox.url(name).path(percentEncoded: false), 0o644), 0)
+        }
+        try sandbox.createSymlink("pipelink.txt", target: "pipe.txt")
+        let clock = ContinuousClock(), start = clock.now
+        for (rel, kind) in [("pipe.zzqq", Kind.file), ("pipe.txt", .file), ("pipe.png", .file), ("pipelink.txt", .symlink)] {
+            let content = await resolve(subject(rel, kind))
+            XCTAssertEqual(content, .unavailable(sandbox.url(rel), code: ENOTSUP), rel)
+        }
+        XCTAssertLessThan(clock.now - start, .seconds(5))
+    }
+
+    /// An alias resolves to its target for text and Quick Look, so P3-12 loads the target, not the bookmark bytes.
+    func testAliasCarriesTheResolvedTarget() async throws {
+        try sandbox.createFile("a.txt", contents: Data("hello".utf8))
+        try sandbox.writePNG("p.png")
+        try sandbox.createAlias("a alias", to: "a.txt")
+        try sandbox.createAlias("p alias", to: "p.png")
+        func path(_ c: PreviewContent) -> String? {
+            switch c {
+            case .text(let u), .quickLook(let u): return u.resolvingSymlinksInPath().path(percentEncoded: false)
+            default: return nil
+            }
+        }
+        let text = await resolve(subject("a alias", .alias))
+        guard case .text = text else { return XCTFail("\(text)") }
+        XCTAssertEqual(path(text), sandbox.url("a.txt").resolvingSymlinksInPath().path(percentEncoded: false))
+        let ql = await resolve(subject("p alias", .alias))
+        guard case .quickLook = ql else { return XCTFail("\(ql)") }
+        XCTAssertEqual(path(ql), sandbox.url("p.png").resolvingSymlinksInPath().path(percentEncoded: false))
+    }
 }
 
 final class LockedCounter: Sendable {

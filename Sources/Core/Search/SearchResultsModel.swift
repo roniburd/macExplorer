@@ -156,6 +156,13 @@ public final class SearchResultsModel: RowSource {
         start()
     }
 
+    /// A model released without close() still cancels its engine: a live Spotlight query can stay silent
+    /// indefinitely, and the engine task (which only checks `self` when an event arrives) would keep it alive.
+    isolated deinit {
+        engineTask?.cancel()
+        changeToken?.cancel()
+    }
+
     /// Cancels the engine and the change-bus observer; emits nothing afterwards.
     public func close() {
         guard !closed else { return }
@@ -451,7 +458,7 @@ public final class SearchResultsModel: RowSource {
     // MARK: emit
 
     private func setState(_ s: SearchState) {
-        guard s != state || closed == false else { return }
+        guard s != state, !closed else { return }
         state = s
         emit(.state(s))
     }

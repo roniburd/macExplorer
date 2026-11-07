@@ -108,7 +108,7 @@ final class SidebarHarness {
             lanes: lanes, settingsStorage: InMemorySettingsStorage(), volumeScanner: scanner, volumeEvents: nil,
             pasteboard: InMemoryPasteboard(), launchServices: FakeLaunchServices(), ejector: ejector,
             trash: SandboxTrash(directory: sandbox.root.appending(path: ".trash", directoryHint: .isDirectory)),
-            home: home)
+            home: home, searchServices: .fake())
         environment.settings.hiddenDefaultFavorites = [.applications]
         var options = LaunchOptions()
         // No --root: the tree's roots are the (sandbox) volumes; SidebarSandboxRootTests covers --root.

@@ -80,4 +80,18 @@ final class PreviewMetadataTests: XCTestCase {
         let p = await load("doc.pdf")
         XCTAssertEqual(p.pageCount, 2)
     }
+
+    /// ImageIO / CGPDFDocument / AVFoundation never open a FIFO (it would block). Sandbox-only FIFOs.
+    func testFIFONamedLikeMediaReturnsPromptly() async throws {
+        for name in ["pipe.png", "pipe.pdf", "pipe.wav"] {
+            XCTAssertEqual(mkfifo(sandbox.url(name).path(percentEncoded: false), 0o644), 0)
+        }
+        let clock = ContinuousClock(), start = clock.now
+        for name in ["pipe.png", "pipe.pdf", "pipe.wav"] {
+            let d = await load(name)
+            XCTAssertNil(d.pixelWidth); XCTAssertNil(d.pageCount); XCTAssertNil(d.duration)
+        }
+        XCTAssertLessThan(clock.now - start, .seconds(5))
+        XCTAssertFalse(PreviewMetadata.isMaterializedFile(sandbox.url("pipe.wav").path(percentEncoded: false)))
+    }
 }

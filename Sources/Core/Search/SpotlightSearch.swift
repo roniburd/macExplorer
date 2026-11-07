@@ -12,6 +12,11 @@ public enum SpotlightSearch {
     static func events(_ request: SpotlightRequest, query: any MetadataQuerying, includeHidden: Bool,
                        generation: Generation, types: TypeRegistry, limit: Int) -> AsyncStream<SearchEvent> {
         let (stream, out) = AsyncStream.makeStream(of: SearchEvent.self, bufferingPolicy: .unbounded)
+        if SpotlightPredicate.matchesNothing(request.criteria) {         // never start a query that cannot match
+            out.yield(.completed(SearchSummary(resultCount: 0, elapsed: .zero)))
+            out.finish()
+            return stream
+        }
         let task = Task {
             let clock = ContinuousClock()
             let start = clock.now

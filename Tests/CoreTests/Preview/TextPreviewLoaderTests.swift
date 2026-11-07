@@ -59,4 +59,13 @@ final class TextPreviewLoaderTests: XCTestCase {
         do { _ = try await TextPreviewLoader.load(sandbox.url("missing.txt"), lanes: LanePool(), volume: .unknown); XCTFail() }
         catch { XCTAssertEqual(error, .posix(ENOENT)) }
     }
+
+    /// open() on a FIFO with no writer would block the lane forever: refuse non-regular files promptly.
+    func testLoadRefusesAFIFOPromptly() async throws {
+        XCTAssertEqual(mkfifo(sandbox.url("pipe.txt").path(percentEncoded: false), 0o644), 0)
+        let clock = ContinuousClock(), start = clock.now
+        do { _ = try await TextPreviewLoader.load(sandbox.url("pipe.txt"), lanes: LanePool(), volume: .unknown); XCTFail() }
+        catch { XCTAssertEqual(error, .posix(ENOTSUP)) }
+        XCTAssertLessThan(clock.now - start, .seconds(5))
+    }
 }
