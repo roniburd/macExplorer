@@ -13,6 +13,13 @@ public struct SearchServices: Sendable {
         SearchServices(metadataQuery: SystemMetadataQuery(), indexStatus: MdutilIndexStatus(lanes: lanes),
                        downloader: SystemUbiquitousDownloader(lanes: lanes))
     }
+    /// The services an app launch uses: fakes for every sandboxed, rooted or scenario run (UI tests, scenarios,
+    /// exploratory QA), so they never query Spotlight over real files ("This Mac") and never start an iCloud
+    /// download; the system services otherwise. P3-13 passes the `--index-status` value to `.fake(indexing:)`.
+    public static func forLaunch(_ options: LaunchOptions, lanes: LanePool) -> SearchServices {
+        options.isSandboxed || options.root != nil || options.scenario != nil ? .fake() : .system(lanes: lanes)
+    }
+
     /// Sandboxed runs and tests: no Spotlight index access, no real downloads.
     public static func fake(items: [MetadataItem] = [], indexing: IndexingStatus = .disabled) -> SearchServices {
         SearchServices(metadataQuery: FakeMetadataQuery(items: items), indexStatus: FixedIndexStatus(indexing),

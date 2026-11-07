@@ -39,17 +39,34 @@ public enum PreviewMetadata {
             return PreviewDetails(kindDescription: kind)
         }
         var details = gathered.details
-        if details.duration == nil, !gathered.dataless, !gathered.isDirectory, type.conforms(to: .audiovisualContent),
-           let time = try? await AVURLAsset(url: url).load(.duration), time.isNumeric {
+        // AVFoundation runs outside the lane and outside withNoMaterialization, and follows links: re-check that the
+        // target is still materialized right before it opens the file (it could have been evicted since `gather`).
+        guard details.duration == nil, !gathered.dataless, !gathered.isDirectory, type.conforms(to: .audiovisualContent) else {
+            return details
+        }
+        let materialized = (try? await lanes.perform(on: volume) { _ in withNoMaterialization { isMaterializedFile(path) } }) ?? false
+        if materialized, let time = try? await AVURLAsset(url: url).load(.duration), time.isNumeric {
             details.duration = time.seconds
         }
         return details
+    }
+
+    /// The link target (or the file itself) exists, is not a folder and is not dataless. Lane only.
+    static func isMaterializedFile(_ path: String) -> Bool {
+        var st = stat()
+        guard stat(path, &st) == 0 else { return false }
+        return (st.st_mode & S_IFMT) != S_IFDIR && st.st_flags & UInt32(SF_DATALESS) == 0
     }
 
     static func gather(_ path: String, type: UTType, kindDescription: String) -> Gathered {
         var details = PreviewDetails(kindDescription: kindDescription)
         var st = stat()
         guard lstat(path, &st) == 0 else { return Gathered(details: details, dataless: false, isDirectory: false) }
+        // A symlink is described by its target, as PreviewPlanner classifies it (a broken link keeps its own stat).
+        if (st.st_mode & S_IFMT) == S_IFLNK {
+            var target = stat()
+            if stat(path, &target) == 0 { st = target }
+        }
         let isDir = (st.st_mode & S_IFMT) == S_IFDIR
         let dataless = st.st_flags & UInt32(SF_DATALESS) != 0
         func date(_ t: timespec) -> Date { Date(timeIntervalSince1970: Double(t.tv_sec) + Double(t.tv_nsec) / 1e9) }

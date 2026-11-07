@@ -7,11 +7,14 @@
 import Foundation
 
 public final class SystemMetadataQuery: MetadataQuerying {
-    public init() {}
+    /// Test hook: called on the query's queue at `begin` and at every notification (tests check it is never main).
+    let onQueue: (@Sendable (String) -> Void)?
+    public init() { onQueue = nil }
+    init(onQueue: @escaping @Sendable (String) -> Void) { self.onQueue = onQueue }
 
     public func run(_ request: SpotlightRequest) -> AsyncStream<MetadataQueryEvent> {
         let (stream, continuation) = AsyncStream.makeStream(of: MetadataQueryEvent.self, bufferingPolicy: .unbounded)
-        let run = QueryRun(request: request, continuation: continuation)
+        let run = QueryRun(request: request, continuation: continuation, onQueue: onQueue)
         continuation.onTermination = { _ in run.stop() }
         run.start()
         return stream
@@ -27,10 +30,13 @@ final class QueryRun: @unchecked Sendable {
     private var delivered = 0
     private var paths: [ObjectIdentifier: String] = [:]
     private var stopped = false
+    private let onQueue: (@Sendable (String) -> Void)?
 
-    init(request: SpotlightRequest, continuation: AsyncStream<MetadataQueryEvent>.Continuation) {
+    init(request: SpotlightRequest, continuation: AsyncStream<MetadataQueryEvent>.Continuation,
+         onQueue: (@Sendable (String) -> Void)? = nil) {
         self.request = request
         self.continuation = continuation
+        self.onQueue = onQueue
         queue.maxConcurrentOperationCount = 1
         queue.qualityOfService = .userInitiated
         queue.name = "com.macexplorer.spotlight"
@@ -41,6 +47,7 @@ final class QueryRun: @unchecked Sendable {
 
     private func begin() {
         guard !stopped else { return }
+        onQueue?("begin")
         let q = NSMetadataQuery()
         q.operationQueue = queue
         q.predicate = SpotlightPredicate.make(request)
@@ -51,12 +58,19 @@ final class QueryRun: @unchecked Sendable {
         q.notificationBatchingInterval = 0.1
         let center = NotificationCenter.default
         observers = [
-            center.addObserver(forName: .NSMetadataQueryGatheringProgress, object: q, queue: queue) { _ in self.drainGathered() },
+            center.addObserver(forName: .NSMetadataQueryGatheringProgress, object: q, queue: queue) { _ in
+                self.onQueue?("progress")
+                self.drainGathered()
+            },
             center.addObserver(forName: .NSMetadataQueryDidFinishGathering, object: q, queue: queue) { _ in
+                self.onQueue?("finished")
                 self.drainGathered()
                 self.continuation.yield(.gatheringFinished)
             },
-            center.addObserver(forName: .NSMetadataQueryDidUpdate, object: q, queue: queue) { note in self.update(note.userInfo) },
+            center.addObserver(forName: .NSMetadataQueryDidUpdate, object: q, queue: queue) { note in
+                self.onQueue?("update")
+                self.update(note.userInfo)
+            },
         ]
         query = q
         if !q.start() {

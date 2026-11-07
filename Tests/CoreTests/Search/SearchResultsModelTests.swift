@@ -108,6 +108,35 @@ final class SearchResultsModelTests: XCTestCase {
         await waitUntil("old engine stopped") { script.terminated.contains(old) }
     }
 
+    /// A completion (and batches) the old engine queued before start() is called again must not finish the new run.
+    func testRestartDropsQueuedCompletionOfThePreviousRun() async {
+        let script = ScriptedSearchEvents()
+        let pacer = ManualFramePacer()
+        var context = env.searchContext()
+        context.pacer = pacer
+        let m = SearchResultsModel(title: "test", events: script.factory, context: context)
+        addTeardownBlock { @MainActor in m.close() }
+        m.start()
+        let old = m.generation
+        script.continuations[old]!.yield(batch("/", ["old.txt"], gen: old))
+        await waitUntil("pump waiting") { pacer.waiting == 1 }
+        script.continuations[old]!.yield(.completed(SearchSummary(resultCount: 1)))
+        try? await Task.sleep(for: .milliseconds(50))         // the old engine's completion is queued, no frame yet
+        m.start()
+        let new = m.generation
+        pacer.tick()
+        try? await Task.sleep(for: .milliseconds(50))         // the pump ran its frame (and idles: nothing left)
+        guard case .searching = m.state else { return XCTFail("restarted run completed early: \(m.state)") }
+        XCTAssertEqual(names(m), [])
+        script.continuations[new]!.yield(batch("/", ["new.txt"], gen: new))
+        script.continuations[new]!.yield(.completed(SearchSummary(resultCount: 1)))
+        for _ in 0..<20 where { if case .complete = m.state { false } else { true } }() {
+            pacer.tick(); try? await Task.sleep(for: .milliseconds(10))
+        }
+        await waitUntil("new run complete") { if case .complete = m.state { true } else { false } }
+        XCTAssertEqual(names(m), ["new.txt"])
+    }
+
     // Review Focus 5
     func testCloseStopsEngineAndEmitsNothing() async {
         let script = ScriptedSearchEvents()
@@ -242,6 +271,20 @@ final class SearchResultsModelTests: XCTestCase {
         m.start()
         await waitUntil("complete") { if case .complete = m.state { true } else { false } }
         XCTAssertEqual(m.notices, [.mayNotBeIndexed])
+    }
+
+    /// AppBootstrap's choice: any sandboxed, rooted or scenario launch gets the fakes (never real Spotlight or iCloud).
+    func testSandboxedLaunchOptionsUseFakeSearchServices() throws {
+        let lanes = LanePool()
+        for args in [["--root", "/tmp/macx-x", "--state-dir", "/tmp/macx-x/state"],
+                     ["--state-dir", "/tmp/macx-x/state"]] {
+            let services = SearchServices.forLaunch(try LaunchOptions.parse(["macExplorer"] + args), lanes: lanes)
+            XCTAssertTrue(services.metadataQuery is FakeMetadataQuery, "\(args)")
+            XCTAssertTrue(services.downloader is FakeUbiquitousDownloader, "\(args)")
+            XCTAssertTrue(services.indexStatus is FixedIndexStatus, "\(args)")
+        }
+        let live = SearchServices.forLaunch(try LaunchOptions.parse(["macExplorer"]), lanes: lanes)
+        XCTAssertTrue(live.metadataQuery is SystemMetadataQuery)        // constructing it starts no query
     }
 
     func testSandboxedEnvironmentUsesFakeSearchServices() {

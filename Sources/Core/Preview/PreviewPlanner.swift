@@ -91,10 +91,13 @@ public enum PreviewPlanner {
             readPath = resolved.path(percentEncoded: false)
             typeIndex = types.index(forExtension: Substring(resolved.pathExtension), isDirectory: (st.mode & S_IFMT) == S_IFDIR)
         }
+        let dataless = st.flags & UInt32(SF_DATALESS) != 0
         if (st.mode & S_IFMT) == S_IFDIR {
-            return subject.kind == .package || types.isPackage(typeIndex) ? .quickLook(url) : .folder(url)
+            guard subject.kind == .package || types.isPackage(typeIndex) else { return .folder(url) }
+            // An evicted package (.pages, .rtfd, .app) would be materialized by QLPreviewView (spec §11).
+            return dataless ? .cloudPlaceholder(url) : .quickLook(url)
         }
-        if st.flags & UInt32(SF_DATALESS) != 0 { return .cloudPlaceholder(url) }
+        if dataless { return .cloudPlaceholder(url) }
         switch classify(types.type(at: typeIndex)) {
         case .text: return .text(url)
         case .quickLook: return .quickLook(url)

@@ -78,6 +78,21 @@ final class PreviewPlannerTests: XCTestCase {
         XCTAssertEqual(content, .cloudPlaceholder(s.url))
         XCTAssertEqual(reads.value, 0)
     }
+
+    /// An evicted package (.pages, .rtfd, .app) must not reach QLPreviewView, which would materialize it (spec §11).
+    func testDatalessPackageIsCloudPlaceholderAndDatalessFolderStaysFolder() async {
+        let probe = PreviewProbe(
+            stat: { _, _ in .success(ProbeStat(mode: S_IFDIR | 0o755, flags: UInt32(SF_DATALESS))) },
+            readPrefix: { _, _ in .success([]) })
+        let pkg = PreviewSubject(url: URL(filePath: "/tmp/macx-tests-none/doc.rtfd"), kind: .package,
+                                 typeIndex: types.index(forExtension: "rtfd", isDirectory: true), flags: [.dataless], size: 0)
+        let content = await PreviewPlanner.resolve(pkg, lanes: LanePool(), volume: .unknown, types: types, probe: probe)
+        XCTAssertEqual(content, .cloudPlaceholder(pkg.url))
+        let folder = PreviewSubject(url: URL(filePath: "/tmp/macx-tests-none/Folder"), kind: .directory,
+                                    typeIndex: TypeRegistry.folderIndex, flags: [.dataless], size: 0)
+        let folderContent = await PreviewPlanner.resolve(folder, lanes: LanePool(), volume: .unknown, types: types, probe: probe)
+        XCTAssertEqual(folderContent, .folder(folder.url))
+    }
 }
 
 final class LockedCounter: Sendable {

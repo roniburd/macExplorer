@@ -52,6 +52,25 @@ final class PreviewMetadataTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(a.duration), 1.0, accuracy: 0.02)
     }
 
+    /// A symlink describes its target (like PreviewPlanner): size, folder-ness and dataless come from `stat`.
+    func testSymlinkReportsTheTarget() async throws {
+        let data = wav()
+        try sandbox.createFile("tone.wav", contents: data)
+        try sandbox.createSymlink("song.wav", target: "tone.wav")
+        let a = await load("song.wav")
+        XCTAssertEqual(a.size, Int64(data.count))
+        XCTAssertEqual(try XCTUnwrap(a.duration), 1.0, accuracy: 0.02)
+        try sandbox.createDirectory("d")
+        try sandbox.createSymlink("dlink", target: "d")
+        let gathered = PreviewMetadata.gather(sandbox.url("dlink").path(percentEncoded: false), type: .symbolicLink, kindDescription: "x")
+        XCTAssertTrue(gathered.isDirectory)
+        XCTAssertNil(gathered.details.size)
+        try sandbox.createSymlink("broken.wav", target: "missing.wav")
+        let broken = await load("broken.wav")
+        XCTAssertEqual(broken.size, Int64("missing.wav".utf8.count))   // the link itself
+        XCTAssertNil(broken.duration)
+    }
+
     func testPDFPageCount() async throws {
         let url = sandbox.url("doc.pdf")
         var box = CGRect(x: 0, y: 0, width: 200, height: 200)

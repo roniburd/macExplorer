@@ -30,7 +30,8 @@ enum AppBootstrap {
         let environment = CoreEnvironment(
             statePaths: statePaths, lanes: lanes, settingsStorage: settings, volumeScanner: SystemVolumeScanner(),
             volumeEvents: WorkspaceVolumeEvents(), pasteboard: makePasteboard(options: options),
-            launchServices: launchServices, ejector: ejector, trash: trash, home: home)
+            launchServices: launchServices, ejector: ejector, trash: trash, home: home,
+            searchServices: SearchServices.forLaunch(options, lanes: lanes))
         environment.undoActionName = { UndoActionNames.name(for: $0) }
         return environment
     }

@@ -54,6 +54,9 @@ public enum SpotlightSearch {
         return stream
     }
 
+    /// Path checks compare folded keys (CrawlPermissions.fold: NFC, lowercased, "/private/var|tmp|etc" folded):
+    /// Spotlight reports the real path (/private/var/..., the on-disk case) while the planner keeps the caller's
+    /// spelling (contract note 15). Symlinked roots are not resolved here (the planner is lexical only).
     struct PostFilter {
         let request: SpotlightRequest
         let includeHidden: Bool
@@ -65,24 +68,32 @@ public enum SpotlightSearch {
         init(request: SpotlightRequest, includeHidden: Bool, types: TypeRegistry) {
             self.request = request; self.includeHidden = includeHidden; self.types = types
             matcher = CriteriaMatcher(request.criteria, types: types)
-            within = request.within.map { CrawlRun.standardized($0) }
-            parent = request.directChildrenOf.map { CrawlRun.standardized($0) }
-            if case .folders(let urls) = request.scope { scopeRoots = urls.map { CrawlRun.standardized($0) } } else { scopeRoots = [] }
+            within = request.within.map { CrawlPermissions.fold(CrawlRun.standardized($0)) }
+            parent = request.directChildrenOf.map { CrawlPermissions.fold(CrawlRun.standardized($0)) }
+            if case .folders(let urls) = request.scope {
+                scopeRoots = urls.map { CrawlPermissions.fold(CrawlRun.standardized($0)) }
+            } else { scopeRoots = [] }
         }
         mutating func accepts(_ item: MetadataItem) -> Bool {
-            if let within, !item.path.hasPrefix(within == "/" ? "/" : within + "/") { return false }
-            if let parent, (item.path as NSString).deletingLastPathComponent != parent { return false }
-            if !includeHidden && (item.isInvisible || hasHiddenComponent(item.path)) { return false }
+            let key = CrawlPermissions.fold(item.path)
+            if let within, !Self.isBelow(key, within) { return false }
+            if let parent, LexicalPath.parent(of: key) != parent { return false }
+            if !includeHidden && (item.isInvisible || hasHiddenComponent(key)) { return false }
             let (entry, name) = SpotlightSearch.entry(for: item, types: types)
             return SortKeys.searchFold(name).withUnsafeBytes { matcher.matches(entry, foldedName: $0) }
         }
 
+        /// Strictly below `base` (both folded).
+        static func isBelow(_ key: String, _ base: String) -> Bool {
+            base == "/" ? key.count > 1 : key.hasPrefix(base + "/")
+        }
+
         /// A "." component below the search root (the user may already be looking inside a hidden folder, like
-        /// the crawler, which only skips hidden items it meets below its root).
-        func hasHiddenComponent(_ path: String) -> Bool {
-            let base = parent ?? within ?? scopeRoots.first { path.hasPrefix($0 == "/" ? "/" : $0 + "/") }
-            var rest = Substring(path)
-            if let base { rest = rest.dropFirst(base == "/" ? 1 : base.count + 1) }
+        /// the crawler, which only skips hidden items it meets below its root). `key` is the folded item path.
+        func hasHiddenComponent(_ key: String) -> Bool {
+            let base = parent ?? within ?? scopeRoots.first { Self.isBelow(key, $0) }
+            var rest = Substring(key)
+            if let base, base == "/" || rest.hasPrefix(base + "/") { rest = rest.dropFirst(base == "/" ? 1 : base.count + 1) }
             return rest.split(separator: "/").contains { $0.hasPrefix(".") }
         }
     }

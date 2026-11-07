@@ -44,6 +44,7 @@ public final class SearchResultsModel: RowSource {
     private var startedAt = ContinuousClock.now
     private var directoriesScanned = 0
     private var parentKeys = SortKeyColumn()             // ResultSorter.parentKey per results.parents entry
+    private var parentLookupKeys: [String] = []          // SearchResultStore.key per results.parents entry (append-only)
     private let rowObservers = Observers<RowSourceEvent>()
     private let observers = Observers<SearchModelEvent>()
     private var changeToken: ObserverToken?
@@ -106,6 +107,15 @@ public final class SearchResultsModel: RowSource {
         startedAt = .now
         directoriesScanned = 0
         pendingCompletion = nil
+        // Ops the previous engine queued before this restart: its completion would finish the new run (and its
+        // batches carry the old generation). Removals and local changes still apply to the rows kept.
+        pending.removeAll { op in
+            switch op {
+            case .complete: true
+            case .batch(let b): b.batch.generation != gen
+            case .removed, .local: false
+            }
+        }
         setState(.searching(SearchProgress(resultCount: results.count)))
         let stream = makeEvents(gen)
         engineTask = Task { [weak self] in
@@ -136,6 +146,7 @@ public final class SearchResultsModel: RowSource {
         needsFullSort = false
         results = SearchResultStore()
         parentKeys = SortKeyColumn()
+        parentLookupKeys = []
         selection = .empty
         scrollAnchor = nil
         notices = baseNotices
@@ -228,6 +239,11 @@ public final class SearchResultsModel: RowSource {
     /// modified names never join the results (contract note 12).
     private func applyLocal(_ change: LocalChange) {
         let dir = SearchResultStore.standardizedParent(change.directory)
+        // Fast reject (observeAll sees every local change in the app): nothing to do unless the changed folder
+        // holds results directly or is an ancestor of a results folder.
+        let dirKey = SearchResultStore.key(dir)
+        let keys = foldedParentKeys()
+        guard keys.contains(where: { $0 == dirKey || LexicalPath.isSelfOrDescendant($0, of: dirKey) }) else { return }
         var exact: [String] = []
         var under: [String] = []
         for name in change.removed {
@@ -255,13 +271,23 @@ public final class SearchResultsModel: RowSource {
         guard !folders.isEmpty else { return }
         let keys = folders.map(SearchResultStore.key)
         var stale = Set<UInt32>()
-        for (i, parent) in results.parents.enumerated() {
-            let k = SearchResultStore.key(parent)
+        for (i, k) in foldedParentKeys().enumerated() {
             if keys.contains(where: { k == $0 || k.hasPrefix($0 == "/" ? "/" : $0 + "/") }) { stale.insert(UInt32(i)) }
         }
         guard !stale.isEmpty else { return }
         let paths = (0..<UInt32(results.count)).filter { stale.contains(results.parentIndex($0)) }.map { results.path($0) }
         results.remove(paths: paths)
+    }
+
+    /// `SearchResultStore.key` of every results parent, folded once per parent (`results.parents` only grows
+    /// until `rerun` replaces the store).
+    private func foldedParentKeys() -> [String] {
+        let parents = results.parents
+        if parentLookupKeys.count > parents.count { parentLookupKeys = [] }
+        if parentLookupKeys.count < parents.count {
+            parentLookupKeys += parents[parentLookupKeys.count...].map(SearchResultStore.key)
+        }
+        return parentLookupKeys
     }
 
     // MARK: pump

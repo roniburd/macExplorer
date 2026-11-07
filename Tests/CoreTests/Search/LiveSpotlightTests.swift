@@ -1,4 +1,5 @@
 import XCTest
+import Synchronization
 @testable import Core
 @testable import MacxFS
 import MacxFixtures
@@ -61,5 +62,44 @@ final class LiveSpotlightTests: XCTestCase {
         }
         guard !found.isEmpty else { throw XCTSkip("Spotlight does not index the test sandbox ($TMPDIR)") }
         XCTAssertEqual(found, ["\(token).txt"])
+    }
+}
+
+/// SystemMetadataQuery's confinement (P3-05): the query is built, started and its notifications delivered on the
+/// private queue, never on main. Scoped ONLY to a fresh sandbox; it does not need the sandbox to be indexed (an
+/// unindexed scope still gathers, with zero results), so unlike LiveSpotlightTests it runs on every machine.
+final class SystemMetadataQueryConfinementTests: XCTestCase {
+    func testQueryRunsOffMainOnItsPrivateQueue() async throws {
+        let sandbox = try Sandbox()
+        defer { sandbox.destroy() }
+        _ = try sandbox.createFile("a.txt")
+        let seen = Mutex<[(String, Bool, String?)]>([])
+        let query = SystemMetadataQuery { label in
+            seen.withLock { $0.append((label, Thread.isMainThread, OperationQueue.current?.name)) }
+        }
+        let request = SpotlightRequest(criteria: SearchCriteria(nameTerms: [NameTerm("macx-none-\(UUID().uuidString)")]),
+                                       contentTerms: [], scope: .folders([sandbox.root]))
+        let collector = Task { () -> [MetadataQueryEvent] in
+            var out: [MetadataQueryEvent] = []
+            for await e in query.run(request) {
+                out.append(e)
+                if case .gatheringFinished = e { break }
+                if case .failed = e { break }
+            }
+            return out
+        }
+        let timer = Task { try await Task.sleep(for: .seconds(30)); collector.cancel() }
+        defer { timer.cancel() }
+        let events = await collector.value
+        if events.contains(where: { if case .failed = $0 { true } else { false } }) {
+            throw XCTSkip("NSMetadataQuery could not start (Spotlight unavailable)")
+        }
+        let labels = seen.withLock { $0 }
+        XCTAssertEqual(labels.first?.0, "begin")
+        XCTAssertTrue(labels.contains { $0.0 == "finished" }, "\(labels.map(\.0)) \(events)")
+        for (label, onMain, queue) in labels {
+            XCTAssertFalse(onMain, "\(label) ran on the main thread")
+            XCTAssertEqual(queue, "com.macexplorer.spotlight", label)
+        }
     }
 }

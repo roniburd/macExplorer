@@ -58,6 +58,37 @@ final class SpotlightSearchTests: XCTestCase {
         XCTAssertEqual(seen.batches.flatMap(\.1), ["a.txt"])
     }
 
+    /// Spotlight reports the real path (/private/var/..., the on-disk case); the request may carry any spelling.
+    func testPostFilterFoldsPrivatePrefixAndCase() async {
+        let fake = FakeMetadataQuery(items: [
+            item("/private/var/x/a.pdf"), item("/private/var/x/sub/b.pdf"), item("/private/var/x/.h/c.pdf"),
+            item("/private/var/xy/out.pdf"),
+            item("/Users/Me/Docs/d.pdf"), item("/Users/Me/Docs/sub/e.pdf"),
+        ])
+        let pdf = SearchCriteria(nameTerms: [NameTerm("*.pdf")])
+        let varRoot = URL(filePath: "/var/x", directoryHint: .isDirectory)
+        let below = await run(SpotlightRequest(criteria: pdf, contentTerms: [], scope: .folders([varRoot]), within: varRoot), fake)
+        XCTAssertEqual(below.batches.flatMap(\.1), ["a.pdf", "b.pdf"])          // .h is hidden below the root
+        let direct = await run(SpotlightRequest(criteria: pdf, contentTerms: [], scope: .folders([varRoot]),
+                                                directChildrenOf: varRoot), fake)
+        XCTAssertEqual(direct.batches.flatMap(\.1), ["a.pdf"])
+        let tmpRoot = URL(filePath: "/tmp/q", directoryHint: .isDirectory)
+        let tmpFake = FakeMetadataQuery(items: [item("/private/tmp/q/t.pdf"), item("/private/tmp/q/.hid/u.pdf")])
+        let tmp = await run(SpotlightRequest(criteria: pdf, contentTerms: [], scope: .folders([tmpRoot]), within: tmpRoot), tmpFake)
+        XCTAssertEqual(tmp.batches.flatMap(\.1), ["t.pdf"])
+        let mixed = URL(filePath: "/users/me/DOCS", directoryHint: .isDirectory)
+        let cased = await run(SpotlightRequest(criteria: pdf, contentTerms: [], scope: .folders([mixed]), within: mixed), fake)
+        XCTAssertEqual(cased.batches.flatMap(\.1), ["d.pdf", "e.pdf"])
+        let casedDirect = await run(SpotlightRequest(criteria: pdf, contentTerms: [], scope: .folders([mixed]),
+                                                     directChildrenOf: mixed), fake)
+        XCTAssertEqual(casedDirect.batches.flatMap(\.1), ["d.pdf"])
+        // Scope roots alone (Contents over several folders): the hidden check strips the matched root in any spelling.
+        let hiddenRoot = FakeMetadataQuery(items: [item("/private/var/.box/f.pdf"), item("/private/var/.box/.g/h.pdf")])
+        let box = URL(filePath: "/var/.box", directoryHint: .isDirectory)
+        let scoped = await run(SpotlightRequest(criteria: pdf, contentTerms: [], scope: .folders([box])), hiddenRoot)
+        XCTAssertEqual(scoped.batches.flatMap(\.1), ["f.pdf"])
+    }
+
     func testUpdatesAndRemovalsAreForwardedAfterCompletion() async {
         let renamed = MetadataItem(path: "/r/a.doc", name: "a.doc", size: 1, modified: nil, created: nil, contentTypeTree: [], isInvisible: false)
         let fake = FakeMetadataQuery(runs: [[

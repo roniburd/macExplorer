@@ -250,3 +250,13 @@ Run before every release, on Apple Silicon, from a clean checkout of the release
 17. Columns view keyboard pass (⌘3) on a sandbox tree: ↓/↑ select in a column and open folders in the next one,
     → enters the child column, ← returns, holding ↓ over many folders leaves one child column on the last folder,
     Space opens Quick Look, middle-click opens a folder in a new tab, and Tab moves focus out of the columns.
+18. Live Spotlight (P3-05): `LiveSpotlightTests` query only a sandbox the test creates under `$TMPDIR`, never
+    "This Mac" or a real folder (a deviation from the plan's read-only `/System/Applications` test). Spotlight
+    practically never indexes `$TMPDIR`, so both tests normally skip. `SystemMetadataQueryConfinementTests` still
+    runs a real sandbox-scoped `NSMetadataQuery` and checks that it starts and delivers its notifications off the
+    main thread, on its private queue. To see real Spotlight results once, create a folder of your own in an
+    indexed location (for example `~/macx-spotlight-check`) with a file `macxprobe.txt` containing "macxprobe",
+    wait until `mdfind -onlyin ~/macx-spotlight-check macxprobe` finds it, then in a normal (non-sandboxed)
+    launch open that folder and search `macxprobe` with Subfolders + Contents (never This Mac): the file appears
+    with its Path. Sandboxed (`--state-dir`) runs always use the fake Spotlight and iCloud services. Delete the
+    folder afterwards.
