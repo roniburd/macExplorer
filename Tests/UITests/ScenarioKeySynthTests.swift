@@ -34,6 +34,17 @@ final class ScenarioKeySynthTests: XCTestCase {
         XCTAssertEqual(try spec("shift+tab").characters, "\u{19}")
     }
 
+    /// P3-13: ⌥ chords keep the layout's composed characters (⌥P types "π" into a field; ⌥⌘R matches its menu item);
+    /// ⌃ chords and plain/⌘ chords keep the base character.
+    func testOptionChordsUseLayoutCharacters() throws {
+        XCTAssertTrue(try spec("opt+p").layoutCharacters)
+        XCTAssertTrue(try spec("opt+cmd+r").layoutCharacters)
+        XCTAssertFalse(try spec("ctrl+opt+p").layoutCharacters)
+        XCTAssertFalse(try spec("cmd+r").layoutCharacters)
+        XCTAssertFalse(try spec("p").layoutCharacters)
+        XCTAssertEqual(try spec("opt+p").charactersIgnoringModifiers, "p")
+    }
+
     func testUnsupportedCharacterHasNoSpec() {
         XCTAssertNil(KeySynth.spec(for: KeyChord(.character("é"))))
     }

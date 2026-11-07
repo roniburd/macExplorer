@@ -1,0 +1,10 @@
+{"name": "search-contents-not-indexed",
+ "indexStatus": "disabled",
+ "fixture": {"files": ["invoice-2024.pdf", "sub/invoice-old.txt"], "dirs": [], "contents": {"notes.txt": "see the invoice"}},
+ "steps": [
+  {"key": "cmd+f"}, {"waitFor": {"focus": "fieldEditor"}},
+  {"command": "searchModeContents"}, {"setSearchScope": "subfolders"},
+  {"type": "invoice"},
+  {"waitFor": {"searchState": "complete", "notices": ["contentsNotIndexed"], "resultCount": 2}, "timeoutMs": 5000},
+  {"expect": {"rowsContain": ["invoice-2024.pdf", "invoice-old.txt"], "rowPaths": ["", "sub"]}}
+ ]}

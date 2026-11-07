@@ -1,0 +1,12 @@
+{"name": "search-open-containing-folder",
+ "fixture": {"files": ["a/b/needle.txt", "a/other.txt", "needle-top.txt"], "dirs": []},
+ "steps": [
+  {"key": "cmd+f"}, {"waitFor": {"focus": "fieldEditor"}},
+  {"type": "needle"}, {"setSearchScope": "subfolders"},
+  {"waitFor": {"searchState": "complete", "resultCount": 2}, "timeoutMs": 5000},
+  {"click": "needle.txt"}, {"expect": {"selection": ["needle.txt"]}},
+  {"key": "opt+cmd+r"},
+  {"waitFor": {"folder": "a/b", "searchState": "none", "selection": ["needle.txt"]}, "timeoutMs": 3000},
+  {"key": "cmd+["},
+  {"waitFor": {"searchState": "complete", "resultCount": 2, "rowsContain": ["needle.txt", "needle-top.txt"]}, "timeoutMs": 3000}
+ ]}

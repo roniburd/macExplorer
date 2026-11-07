@@ -13,13 +13,21 @@ final class CatalogTests: XCTestCase {
 
     func testEveryFamilyIsPresent() {
         let families = Set(Catalog.all.map { String($0.name.split(separator: ".")[0]) })
-        XCTAssertEqual(families, ["browse", "ops", "conflict", "clip", "undo", "watch", "xvol", "crash"])
+        XCTAssertEqual(families, ["browse", "ops", "conflict", "clip", "undo", "watch", "xvol", "crash", "search"])
     }
 
     func testEveryJobKindIsExercised() {
         for needle in ["copy", "move", "trash", "delete", "duplicate", "newItems", "rename", "alias", "symlink", "chmod", "setAttributes"] {
             XCTAssertTrue(Catalog.all.contains { $0.name.lowercased().contains(needle.lowercased()) }, needle)
         }
+    }
+
+    /// P3-13: the search family covers the crawler rules, filters, Stop, file operations and saved searches.
+    func testSearchFamilyIsComplete() {
+        let names = Set(Catalog.select("search.").map(\.name))
+        XCTAssertEqual(names, ["search.crawlFindsNested", "search.crawlSkipsPackagesAndHidden", "search.crawlSymlinkLoopTerminates",
+                               "search.crawlUnreadableContinues", "search.syntaxAndFilters", "search.cancelStopsCrawl",
+                               "search.resultsFollowFileOps", "search.savedSearchRoundTrip", "search.crawlDoesNotCrossImage"])
     }
 
     func testFilterSelectsBySubstring() {
@@ -32,5 +40,6 @@ final class CatalogTests: XCTestCase {
     func testRequirementsAreDeclared() {
         for s in Catalog.all where s.name.hasPrefix("xvol.") { XCTAssertEqual(s.requires, .diskImages, s.name) }
         for s in Catalog.all where s.name.hasPrefix("crash.") { XCTAssertEqual(s.requires, .helperProcess, s.name) }
+        XCTAssertEqual(Catalog.all.first { $0.name == "search.crawlDoesNotCrossImage" }?.requires, .diskImages)
     }
 }

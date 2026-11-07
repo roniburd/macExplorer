@@ -49,6 +49,14 @@ import MacxFS
     var probeSort: MacxFS.SortDescriptor { get }
     var probeGrouping: GroupBy { get }
     var probeIconSize: IconSize { get }
+    // Phase 3 (plan P3-13)
+    var probeSearchState: String? { get }          // nil while no results show, else "searching" | "complete" | …
+    var probeResultCount: Int? { get }             // rows of the shown results; nil while none show
+    var probeRowPaths: [String] { get }            // each row's parent folder, absolute POSIX path, display order
+    var probeSearchNotices: [String] { get }       // "diagnostic:<token>" first, then the plan/results notice kinds
+    var probePreviewState: String? { get }         // nil while the preview pane is collapsed
+    var probePreviewText: String? { get }          // the text preview's first 200 characters
+    var probeSidebarSearches: [String] { get }     // SEARCHES rows, in order
     /// Scenario-only drop entry point (drag sessions can't be synthesized in-process). Runs the same
     /// DropPolicy + DropMenu + job path as a real drop onto `targetName` ("" = current folder).
     func probePerformDrop(sources: [URL], onto targetName: String, modifiers: DragModifiers, secondary: Bool, menuChoice: DragOperation?) async

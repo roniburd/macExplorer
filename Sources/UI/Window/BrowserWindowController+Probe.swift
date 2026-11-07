@@ -71,6 +71,60 @@ extension BrowserWindowController {
     var probeGrouping: GroupBy { session.viewState.groupBy }
     var probeIconSize: IconSize { session.viewState.iconSize }
 
+    // MARK: Phase 3 (P3-13)
+
+    var probeSearchState: String? {
+        guard let results = session.results else { return nil }
+        return switch results.state {
+        case .searching: "searching"
+        case .complete: "complete"
+        case .stopped: "stopped"
+        case .failed: "failed"
+        }
+    }
+
+    var probeResultCount: Int? { session.results?.rowCount }
+
+    var probeRowPaths: [String] {
+        let source: any RowSource = session.results ?? session.folder
+        return (0..<source.rowCount).map {
+            var path = source.parentURL(atRow: $0).path(percentEncoded: false)
+            while path.count > 1, path.hasSuffix("/") { path.removeLast() }
+            return path
+        }
+    }
+
+    var probeSearchNotices: [String] {
+        // As the scope bar shows them: the field's syntax diagnostics, then the plan's or the results' notices.
+        let diagnostics = searchController.diagnostics.map { "diagnostic:" + $0.token }
+        let notices = session.results?.notices ?? session.lastPlan?.notices ?? []
+        return diagnostics + notices.map(Self.noticeKind)
+    }
+
+    static func noticeKind(_ notice: SearchNotice) -> String {
+        switch notice {
+        case .contentsNotIndexed: "contentsNotIndexed"
+        case .spotlightOff: "spotlightOff"
+        case .truncated: "truncated"
+        case .skippedLocations: "skippedLocations"
+        case .mayNotBeIndexed: "mayNotBeIndexed"
+        }
+    }
+
+    var probePreviewState: String? {
+        guard let split = splitController, !split.previewItem.isCollapsed else { return nil }
+        return split.previewPane.probeState
+    }
+
+    var probePreviewText: String? { splitController?.previewPane.probeText }
+
+    /// The SEARCHES rows the sidebar shows (it mirrors `Settings.savedSearches`).
+    var probeSidebarSearches: [String] {
+        (splitController?.sidebarController?.savedSearchItems ?? []).compactMap {
+            if case .savedSearch(let saved) = $0 { saved.name } else { nil }
+        }
+    }
+
     func probePerformDrop(sources: [URL], onto targetName: String, modifiers: DragModifiers, secondary: Bool,
                           menuChoice: DragOperation?) async {
         await scenarioHooks.performDrop?(sources, targetName, modifiers, secondary, menuChoice)

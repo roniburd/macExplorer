@@ -1,0 +1,13 @@
+{"name": "search-this-folder-instant",
+ "fixture": {"files": ["tax-2024.pdf", "tax-notes.txt", "Taxonomy.pdf", "report.pdf", "notes.txt"], "dirs": ["sub"]},
+ "steps": [
+  {"key": "cmd+f"}, {"waitFor": {"focus": "fieldEditor"}},
+  {"type": "tax"},
+  {"waitFor": {"rowCount": 3, "rowsContain": ["tax-2024.pdf", "tax-notes.txt", "Taxonomy.pdf"]}, "timeoutMs": 2000},
+  {"expect": {"searchState": "none", "folder": "", "notices": []}},
+  {"key": "esc"}, {"waitFor": {"rowCount": 6}},
+  {"type": "*.pdf"},
+  {"waitFor": {"rowCount": 3, "rowsContain": ["tax-2024.pdf", "Taxonomy.pdf", "report.pdf"]}, "timeoutMs": 2000},
+  {"key": "esc"}, {"waitFor": {"rowCount": 6, "rowsContain": ["sub", "notes.txt"]}},
+  {"expect": {"searchState": "none", "folder": ""}}
+ ]}

@@ -1,5 +1,6 @@
 import XCTest
 @testable import Core
+import MacxFS
 
 final class LaunchOptionsTests: XCTestCase {
     private func dir(_ path: String) -> URL { URL(filePath: path, directoryHint: .isDirectory) }
@@ -193,5 +194,31 @@ final class LaunchOptionsTests: XCTestCase {
         let o = LaunchOptions()
         let check: @Sendable () -> LaunchOptions = { o }
         XCTAssertEqual(check(), o)
+    }
+    func testIndexStatusOption() throws {
+        let o = try LaunchOptions.parse(["macExplorer", "--root", "/tmp/macx-scenario-x", "--state-dir", "/tmp/macx-scenario-x/state",
+                                         "--index-status", "enabled"])
+        XCTAssertEqual(o.indexStatus, .enabled)
+        XCTAssertNil(try LaunchOptions.parse(["macExplorer"]).indexStatus)
+        XCTAssertThrowsError(try LaunchOptions.parse(["macExplorer", "--index-status", "maybe"])) {
+            XCTAssertEqual($0 as? LaunchOptionsError, .invalidValue(option: "--index-status", value: "maybe"))
+        }
+        XCTAssertThrowsError(try LaunchOptions.parse(["macExplorer", "--index-status"])) {
+            XCTAssertEqual($0 as? LaunchOptionsError, .missingValue("--index-status"))
+        }
+    }
+
+    /// A sandboxed launch's fake index reports --index-status (default disabled); it never asks mdutil.
+    func testIndexStatusReachesTheFakeSearchServices() async throws {
+        let lanes = LanePool()
+        let slash = URL(filePath: "/", directoryHint: .isDirectory)
+        for (args, expected) in [([], IndexingStatus.disabled), (["--index-status", "enabled"], .enabled),
+                                 (["--index-status", "unknown"], .unknown)] {
+            let o = try LaunchOptions.parse(["macExplorer", "--state-dir", "/tmp/macx-scenario-x/state"] + args)
+            let services = SearchServices.forLaunch(o, lanes: lanes)
+            XCTAssertTrue(services.indexStatus is FixedIndexStatus, "\(args)")
+            let status = await services.indexStatus.status(ofVolumeAt: slash)
+            XCTAssertEqual(status, expected, "\(args)")
+        }
     }
 }

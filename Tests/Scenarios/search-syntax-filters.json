@@ -1,0 +1,15 @@
+{"name": "search-syntax-filters",
+ "fixture": {"files": ["big.pdf", "small.pdf", "big.txt", "sub/deep.pdf"], "dirs": [],
+             "sizes": {"big.pdf": 5000, "small.pdf": 10, "big.txt": 5000, "sub/deep.pdf": 5000}},
+ "steps": [
+  {"key": "cmd+f"}, {"waitFor": {"focus": "fieldEditor"}},
+  {"type": "kind:pdf size:>1KB"},
+  {"waitFor": {"rows": ["big.pdf"], "notices": []}, "timeoutMs": 2000},
+  {"setSearchScope": "subfolders"},
+  {"waitFor": {"searchState": "complete", "rows": ["big.pdf", "deep.pdf"], "rowPaths": ["", "sub"]}, "timeoutMs": 5000},
+  {"setSearchScope": "thisFolder"},
+  {"waitFor": {"searchState": "none", "rows": ["big.pdf"]}, "timeoutMs": 3000},
+  {"key": "esc"}, {"waitFor": {"rowCount": 4}},
+  {"type": "size:big"},
+  {"waitFor": {"notices": ["diagnostic:size:big"]}, "timeoutMs": 2000}
+ ]}

@@ -12,6 +12,9 @@ public struct LaunchOptions: Sendable, Equatable {
     public var scenario: URL?              // --scenario <file.json>
     public var scenarioOutput: URL?        // --scenario-output <file.json>
     public var smokeExitAfter: Duration?   // --smoke-exit-after <seconds>: write <state-dir>/smoke.json then exit 0
+    /// --index-status enabled|disabled|unknown (P3-13): what the fake index-status provider of a sandboxed run reports
+    /// (nil = disabled). Sandboxed runs never ask the real Spotlight index.
+    public var indexStatus: IndexingStatus? = nil
 
     public init() {
         fakeLaunchServices = false
@@ -51,6 +54,10 @@ public struct LaunchOptions: Sendable, Equatable {
                     throw .missingValue(argument)
                 }
                 options.smokeExitAfter = .milliseconds(Int64((seconds * 1000).rounded()))
+            case "--index-status":
+                let raw = try value(for: argument)
+                guard let status = IndexingStatus(rawValue: raw) else { throw .invalidValue(option: argument, value: raw) }
+                options.indexStatus = status
             default:
                 if argument.hasPrefix("-psn_") { break }
                 if isAppKitDefault(argument) {
@@ -95,4 +102,5 @@ public enum LaunchOptionsError: Error, Sendable, Equatable {
     case unknownOption(String)
     case stateDirectoryRequired            // --root or --scenario without --state-dir → exit 64
     case notADirectory(String)
+    case invalidValue(option: String, value: String)   // e.g. --index-status maybe
 }

@@ -33,6 +33,10 @@ struct SandboxHandle: Sendable {
             return root
         }
     }
+    /// P3-13: FixtureTree.deep — `depth` levels, `breadth` folders "d<n>" and `filesPerDir` files "f<n>.txt" per folder.
+    @discardableResult func deep(_ relative: String, depth: Int, breadth: Int, filesPerDir: Int) -> URL {
+        fixtureWrite(relative) { try FixtureTree.deep(in: sandbox, at: relative, depth: depth, breadth: breadth, filesPerDir: filesPerDir) }
+    }
     /// P2-20: Finder tags through the guarded fixture writer (refuses paths outside the sandbox).
     func finderTags(_ tags: [String], on relative: String) {
         fixtureWrite(relative) { try sandbox.setFinderTags(tags, on: relative) }

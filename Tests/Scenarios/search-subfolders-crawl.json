@@ -1,0 +1,10 @@
+{"name": "search-subfolders-crawl",
+ "fixture": {"files": ["needle-top.txt", "a/needle-a.txt", "a/b/needle-deep.txt", "a/other.txt", "c/x.txt"], "dirs": []},
+ "steps": [
+  {"key": "cmd+f"}, {"waitFor": {"focus": "fieldEditor"}},
+  {"type": "needle"}, {"waitFor": {"rows": ["needle-top.txt"]}},
+  {"setSearchScope": "subfolders"},
+  {"waitFor": {"searchState": "complete", "resultCount": 3}, "timeoutMs": 5000},
+  {"expect": {"rows": ["needle-a.txt", "needle-deep.txt", "needle-top.txt"], "rowPaths": ["a", "a/b", ""],
+              "visibleColumnsContain": ["name", "path"], "folder": ""}}
+ ]}

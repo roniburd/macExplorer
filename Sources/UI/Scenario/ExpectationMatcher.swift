@@ -37,6 +37,14 @@ struct ProbeSnapshot: Equatable {
     var thumbnails: [String]?                // ScenarioHooks.thumbnailNames
     var iconsVisible: [String]?              // ScenarioHooks.iconsVisibleNames
     var pasteboardText: String?              // clipboard backend readString() (P2-04), "" = no text
+    // Phase 3 (P3-13)
+    var searchState = "none"                 // "none" while no results show
+    var resultCount: Int?                    // nil while no results show
+    var rowPaths: [String] = []              // relative to --root ("" = root); outside it "<outside root: path>"
+    var notices: [String] = []
+    var previewState = "hidden"
+    var previewText: String?
+    var sidebarSearches: [String] = []
 }
 
 enum ScenarioStrings {
@@ -89,6 +97,9 @@ extension ScenarioFile.Expectation {
         e.thumbnailsContain = thumbnailsContain?.map(sub)
         e.iconsVisibleContain = iconsVisibleContain?.map(sub)
         e.pasteboardText = pasteboardText.map(sub)
+        e.notices = notices?.map(sub)
+        e.previewTextPrefix = previewTextPrefix.map(sub)
+        e.sidebarSearches = sidebarSearches?.map(sub)
         return e
     }
 }
@@ -104,8 +115,15 @@ enum ExpectationMatcher {
         if let size = e.iconSize, IconSize(rawValue: size) == nil { return "unknown iconSize '\(size)'" }
         if let group = e.groupBy, GroupBy(rawValue: group) == nil { return "unknown groupBy '\(group)'" }
         if let mode = e.viewMode, ViewMode(rawValue: mode) == nil { return "unknown viewMode '\(mode)'" }
+        if let state = e.searchState, !searchStates.contains(state) { return "unknown searchState '\(state)'" }
+        for notice in e.notices ?? [] where !noticeKinds.contains(notice) && !(notice.hasPrefix("diagnostic:") && notice.count > 11) {
+            return "unknown notice '\(notice)'"
+        }
         return nil
     }
+
+    static let searchStates: Set<String> = ["none", "searching", "complete", "stopped", "failed"]
+    static let noticeKinds: Set<String> = ["contentsNotIndexed", "spotlightOff", "truncated", "skippedLocations", "mayNotBeIndexed"]
 
     static func mismatches(_ e: ScenarioFile.Expectation, _ s: ProbeSnapshot) -> [String] {
         var m: [String] = []
@@ -140,6 +158,7 @@ enum ExpectationMatcher {
             m.append("fileSizes: '\(path)' expected \(size) bytes, got \(s.fileSizes[path].map { String($0) } ?? "missing")")
         }
         phase2Mismatches(e, s, into: &m)
+        phase3Mismatches(e, s, into: &m)
         return m
     }
 }
@@ -193,5 +212,24 @@ extension ExpectationMatcher {
         if let want = e.pasteboardText, want != s.pasteboardText {
             m.append("pasteboardText: expected '\(want)', got \(s.pasteboardText.map { "'\($0)'" } ?? "no snapshot")")
         }
+    }
+}
+
+extension ExpectationMatcher {
+    static func phase3Mismatches(_ e: ScenarioFile.Expectation, _ s: ProbeSnapshot, into m: inout [String]) {
+        func check<T: Equatable>(_ label: String, _ expected: T?, _ actual: T) {
+            if let expected, expected != actual { m.append("\(label): expected \(expected), got \(actual)") }
+        }
+        check("searchState", e.searchState, s.searchState)
+        if let want = e.resultCount {
+            if let count = s.resultCount { check("resultCount", want, count) } else { m.append("resultCount: no search results are shown") }
+        }
+        check("rowPaths", e.rowPaths, s.rowPaths)
+        check("notices", e.notices, s.notices)
+        check("previewState", e.previewState, s.previewState)
+        if let want = e.previewTextPrefix, !(s.previewText?.hasPrefix(want) ?? false) {
+            m.append("previewTextPrefix: expected '\(want)', got \(s.previewText.map { "'\($0)'" } ?? "no text preview")")
+        }
+        check("sidebarSearches", e.sidebarSearches, s.sidebarSearches)
     }
 }

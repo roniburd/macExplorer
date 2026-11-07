@@ -105,6 +105,17 @@ new_case ql-in-coretests;  put ql-in-coretests Tests/CoreTests/Bad.swift '    le
 new_case ql-panel-in-bench; put ql-panel-in-bench Tests/BenchTests/Bad.swift '    QLPreviewPanel.shared()?.reloadData()'
 new_case ql-uitests-ok;    put ql-uitests-ok Tests/UITests/QuickLookTests.swift $'    _ = QLPreviewPanel.shared()\n    _ = QLThumbnailGenerator.shared'
 
+# Phase 3 (P3-13)
+new_case mdquery-in-ui;    put mdquery-in-ui Sources/UI/Search/Bad.swift '    let q = NSMetadataQuery()'
+new_case mdquery-ok;       put mdquery-ok Sources/Core/Search/SystemMetadataQuery.swift $'    let q = NSMetadataQuery()\n    // NSMetadataQuery in a comment elsewhere is fine'
+new_case download-in-test; put download-in-test Tests/UITests/Bad.swift '    try FileManager.default.startDownloadingUbiquitousItem(at: u)'
+new_case download-ok;      put download-ok Sources/Core/Preview/Ubiquitous.swift '    try FileManager.default.startDownloadingUbiquitousItem(at: url)'
+new_case system-query-in-test; put system-query-in-test Tests/CoreTests/Bad.swift '    let q = SystemMetadataQuery()'
+new_case live-spotlight-ok; put live-spotlight-ok Tests/CoreTests/Search/LiveSpotlightTests.swift '    let q = SystemMetadataQuery()'
+new_case mdimport-script;  put mdimport-script scripts/bad.sh 'mdimport "$DIR"'
+new_case mdutil-index;     put mdutil-index Sources/Core/Search/Bad.swift '    p.arguments = ["mdutil", "-i", "off", "/"]'
+new_case mdutil-status-ok; put mdutil-status-ok Sources/Core/Search/IndexStatus.swift '    p.arguments = ["-s", path]  // /usr/bin/mdutil -s'
+
 run_case appkit-in-core 1 appkit-in-core
 run_case swiftui-in-fs 1 appkit-in-core
 run_case class-import 1 appkit-in-core
@@ -138,6 +149,15 @@ run_case quicklook-platform-ok 0
 run_case ql-in-coretests 1 quicklook-in-tests
 run_case ql-panel-in-bench 1 quicklook-in-tests
 run_case ql-uitests-ok 0
+run_case mdquery-in-ui 1 metadata-query-confined
+run_case mdquery-ok 0
+run_case download-in-test 1 ubiquitous-download
+run_case download-ok 0
+run_case system-query-in-test 1 search-fakes-in-tests
+run_case live-spotlight-ok 0
+run_case mdimport-script 1 spotlight-index-state
+run_case mdutil-index 1 spotlight-index-state
+run_case mdutil-status-ok 0
 
 if [ "$fails" -gt 0 ]; then echo "test-check-layering: $fails case(s) failed"; exit 1; fi
 echo "test-check-layering: all cases passed"

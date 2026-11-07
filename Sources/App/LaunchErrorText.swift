@@ -8,6 +8,7 @@ enum LaunchErrorText {
         case .unknownOption(let option): "unknown option \(option)"
         case .stateDirectoryRequired: "--root, --scenario and --smoke-exit-after require --state-dir <dir>"
         case .notADirectory(let path): "not a directory: \(path)"
+        case .invalidValue(let option, let value): "invalid value '\(value)' for \(option)"
         }
     }
 }

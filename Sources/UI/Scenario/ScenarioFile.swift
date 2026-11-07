@@ -5,8 +5,17 @@ import Foundation
 /// (Contract note C6): Fixture.modes, Step.command, Step.answerAlert, Step.mouse, Expectation.rowCount/editingAddress/
 /// viewMode/sheetPresent/propertiesWindows/windowCount/fileSizes. Phase 2 (plan §2.4, P2-03) adds the fixture
 /// metadata fields, the middleClick/selectTab/fsWrite/fsTags actions, prefixed click targets and the view/tab
-/// expectations.
+/// expectations. Phase 3 (plan P3-13) adds `indexStatus`, the contents/binary/bulk/spotlight fixtures, the
+/// clickSidebar/setSearchScope steps and the search/preview expectations.
 struct ScenarioFile: Codable {
+    /// An item the fake Spotlight returns for every query (P3-13). `path` is relative to --root; kind "file" (default),
+    /// "folder" or "app"; size in bytes (default 1). Nothing is created on disk for it.
+    struct SpotlightFixture: Codable, Equatable {
+        var path: String
+        var kind: String?
+        var size: Int?
+        static let kinds: Set<String> = ["file", "folder", "app"]
+    }
     struct Fixture: Codable {
         var files: [String]
         var dirs: [String]
@@ -19,12 +28,18 @@ struct ScenarioFile: Codable {
         var tags: [String: [String]]?         // Finder tags xattr
         var comments: [String: String]?       // Finder comment xattr
         var lastOpenedDays: [String: Int]?    // com.apple.lastuseddate#PS at noon N days from today
+        // Phase 3 (P3-13)
+        var contents: [String: String]?       // file → UTF-8 text (parents made)
+        var binary: [String: Int]?            // file → N deterministic bytes that are never valid text
+        var bulk: [String: Int]?              // dir → N empty files "file-000001.txt"… (FixtureTree.flat naming)
+        var spotlight: [SpotlightFixture]?    // what the fake Spotlight returns (not created on disk)
 
         /// Every relative path the fixture names (validated before anything is created).
         var allPaths: [String] {
             files + dirs + (hidden ?? []) + (images ?? []) + Array((sizes ?? [:]).keys) + Array((modes ?? [:]).keys)
                 + Array((mtimeDays ?? [:]).keys) + Array((tags ?? [:]).keys) + Array((comments ?? [:]).keys)
-                + Array((lastOpenedDays ?? [:]).keys)
+                + Array((lastOpenedDays ?? [:]).keys) + Array((contents ?? [:]).keys) + Array((binary ?? [:]).keys)
+                + Array((bulk ?? [:]).keys) + (spotlight ?? []).map(\.path)
         }
     }
     struct FSWrite: Codable { var path: String; var bytes: Int }
@@ -53,6 +68,9 @@ struct ScenarioFile: Codable {
         var fsWrite: FSWrite?                 // {path, bytes}: writes inside --root (guarded), simulating another app
         var fsTags: FSTags?                   // {path, tags}: rewrites the tags xattr inside --root (guarded)
         var mouse: String?                    // additive: "mouse4" = buttonNumber 3, via MacxApplication.sendEvent
+        // Phase 3 (P3-13)
+        var clickSidebar: String?             // "searches:<saved search name>" (only SEARCHES rows: never real folders)
+        var setSearchScope: String?           // "thisFolder" | "subfolders" | "thisMac", via the View › Search menu item
 
         var actions: [String] {
             let named: [(String, Bool)] = [
@@ -61,7 +79,7 @@ struct ScenarioFile: Codable {
                 ("chooseMenuItem", chooseMenuItem != nil), ("drop", drop != nil), ("answerConflict", answerConflict != nil),
                 ("answerAlert", answerAlert != nil), ("waitFor", waitFor != nil), ("expect", expect != nil), ("sleepMs", sleepMs != nil),
                 ("middleClick", middleClick != nil), ("selectTab", selectTab != nil), ("fsWrite", fsWrite != nil),
-                ("fsTags", fsTags != nil),
+                ("fsTags", fsTags != nil), ("clickSidebar", clickSidebar != nil), ("setSearchScope", setSearchScope != nil),
             ]
             return named.filter { $0.1 }.map { $0.0 }
         }
@@ -110,8 +128,18 @@ struct ScenarioFile: Codable {
         var thumbnailsContain: [String]?      // subset
         var iconsVisibleContain: [String]?    // Icons items in the visible rect (geometry, no thumbnails needed), subset
         var pasteboardText: String?
+        // Phase 3 (P3-13)
+        var searchState: String?              // "none" | "searching" | "complete" | "stopped" | "failed"
+        var resultCount: Int?                 // rows of the shown results (fails while no results show)
+        var rowPaths: [String]?               // per row, its parent folder relative to --root ("" = root), display order
+        var notices: [String]?                // exact: "contentsNotIndexed", "spotlightOff", "truncated",
+                                              //   "skippedLocations", "mayNotBeIndexed", "diagnostic:<token>"
+        var previewState: String?             // PreviewPaneController.probeState; "hidden" = pane collapsed
+        var previewTextPrefix: String?
+        var sidebarSearches: [String]?        // SEARCHES rows, in order
     }
     var name: String
+    var indexStatus: String?                  // P3-13: --index-status for this file ("enabled" | "disabled" | "unknown")
     var fixture: Fixture
     var steps: [Step]
 
@@ -130,6 +158,10 @@ struct ScenarioFile: Codable {
         case badExpectation(step: Int, String)
         case badSize(step: Int, Int)
         case badMouse(step: Int, String)
+        case badIndexStatus(String)
+        case badFixture(String)
+        case badSidebarTarget(step: Int, String)
+        case badSearchScope(step: Int, String)
         var description: String {
             switch self {
             case .actionCount(let s, let a): "step \(s): exactly one action required, found \(a)"
@@ -146,6 +178,10 @@ struct ScenarioFile: Codable {
             case .badExpectation(let s, let what): "step \(s): \(what)"
             case .badSize(let s, let n): "step \(s): fsWrite bytes \(n) must be in 0...\(ScenarioFile.maxWriteBytes)"
             case .badMouse(let s, let m): "step \(s): mouse button '\(m)' must be mouse4…mouse9"
+            case .badIndexStatus(let v): "indexStatus '\(v)' must be enabled, disabled or unknown"
+            case .badFixture(let what): "fixture: \(what)"
+            case .badSidebarTarget(let s, let t): "step \(s): clickSidebar '\(t)' must be 'searches:<name>' (scenarios never open real folders from the sidebar)"
+            case .badSearchScope(let s, let v): "step \(s): setSearchScope '\(v)' must be thisFolder, subfolders or thisMac"
             }
         }
     }
@@ -153,10 +189,28 @@ struct ScenarioFile: Codable {
     static let modifierNames: Set<String> = ["cmd", "shift", "opt", "ctrl"]
     static let dropChoices: Set<String> = ["copy", "move", "alias", "cancel"]
     static let maxWriteBytes = 64 << 20
+    static let maxBulkFiles = 100_000
+    static let searchScopes: Set<String> = ["thisFolder", "subfolders", "thisMac"]
+    static let sidebarSections: Set<String> = ["searches"]
+
+    /// "searches:Taxes" → ("searches", "Taxes"); nil unless the section is allowed and the name is not empty.
+    static func sidebarTarget(_ raw: String) -> (section: String, name: String)? {
+        guard let colon = raw.firstIndex(of: ":") else { return nil }
+        let section = String(raw[..<colon]), name = String(raw[raw.index(after: colon)...])
+        guard sidebarSections.contains(section), !name.isEmpty else { return nil }
+        return (section, name)
+    }
 
     func validate() throws(ValidationError) {
         for path in fixture.allPaths where !ScenarioPath.isSafeRelative(path) { throw .unsafePath(path) }
         for (path, mode) in fixture.modes ?? [:] where mode.count > 4 || UInt16(mode, radix: 8) == nil { throw .badMode(path, mode) }
+        if let status = indexStatus, IndexingStatus(rawValue: status) == nil { throw .badIndexStatus(status) }
+        for (path, n) in fixture.binary ?? [:] where !(1...Self.maxWriteBytes).contains(n) { throw .badFixture("binary '\(path)' size \(n)") }
+        for (path, n) in fixture.bulk ?? [:] where !(1...Self.maxBulkFiles).contains(n) { throw .badFixture("bulk '\(path)' count \(n)") }
+        for item in fixture.spotlight ?? [] {
+            if let kind = item.kind, !SpotlightFixture.kinds.contains(kind) { throw .badFixture("spotlight '\(item.path)' kind '\(kind)'") }
+            if let size = item.size, size < 0 { throw .badFixture("spotlight '\(item.path)' size \(size)") }
+        }
         for (index, step) in steps.enumerated() {
             let actions = step.actions
             guard actions.count == 1 else { throw .actionCount(step: index, actions: actions) }
@@ -173,6 +227,8 @@ struct ScenarioFile: Codable {
             }
             if let target = step.doubleClick, ScenarioTarget(parsing: target) != .row(target) { throw .badTarget(step: index, target) }
             if let bytes = step.fsWrite?.bytes, !(0...Self.maxWriteBytes).contains(bytes) { throw .badSize(step: index, bytes) }
+            if let target = step.clickSidebar, Self.sidebarTarget(target) == nil { throw .badSidebarTarget(step: index, target) }
+            if let scope = step.setSearchScope, !Self.searchScopes.contains(scope) { throw .badSearchScope(step: index, scope) }
             for expectation in [step.waitFor, step.expect].compactMap({ $0 }) {
                 if let problem = ExpectationMatcher.formatProblem(expectation) { throw .badExpectation(step: index, problem) }
             }
@@ -181,7 +237,8 @@ struct ScenarioFile: Codable {
             let paths = dropPaths + fsPaths + (step.waitFor.map(ExpectationMatcher.requestedPaths) ?? [])
                 + (step.expect.map(ExpectationMatcher.requestedPaths) ?? [])
             for path in paths where !ScenarioPath.isSafeRelative(path) { throw .unsafePath(path) }
-            let folderPaths = [step.waitFor, step.expect].compactMap { $0 }.flatMap { ($0.tabs ?? []) + ($0.columnsChain ?? []) }
+            let folderPaths = [step.waitFor, step.expect].compactMap { $0 }
+                .flatMap { ($0.tabs ?? []) + ($0.columnsChain ?? []) + ($0.rowPaths ?? []) }
             for path in folderPaths where !path.isEmpty && !ScenarioPath.isSafeRelative(path) { throw .unsafePath(path) }
         }
     }

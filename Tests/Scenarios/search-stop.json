@@ -1,0 +1,16 @@
+{"name": "search-stop",
+ "fixture": {"files": [], "dirs": [],
+             "bulk": {"d00": 2000, "d01": 2000, "d02": 2000, "d03": 2000, "d04": 2000, "d05": 2000, "d06": 2000, "d07": 2000,
+                      "d08": 2000, "d09": 2000, "d10": 2000, "d11": 2000, "d12": 2000, "d13": 2000, "d14": 2000, "d15": 2000,
+                      "d16": 2000, "d17": 2000, "d18": 2000, "d19": 2000, "d20": 2000, "d21": 2000, "d22": 2000, "d23": 2000,
+                      "d24": 2000, "d25": 2000, "d26": 2000, "d27": 2000, "d28": 2000, "d29": 2000, "d30": 2000, "d31": 2000,
+                      "d32": 2000, "d33": 2000, "d34": 2000, "d35": 2000, "d36": 2000, "d37": 2000, "d38": 2000, "d39": 2000}},
+ "steps": [
+  {"key": "cmd+f"}, {"waitFor": {"focus": "fieldEditor"}},
+  {"type": "file"}, {"setSearchScope": "subfolders"},
+  {"waitFor": {"searchState": "searching"}, "timeoutMs": 3000},
+  {"command": "stopSearch"},
+  {"waitFor": {"searchState": "stopped"}, "timeoutMs": 3000},
+  {"sleepMs": 300},
+  {"expect": {"searchState": "stopped", "folder": ""}}
+ ]}

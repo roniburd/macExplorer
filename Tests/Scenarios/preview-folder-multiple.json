@@ -1,0 +1,9 @@
+{"name": "preview-folder-multiple",
+ "fixture": {"files": ["a.txt", "b.txt", "folder/inside.txt"], "dirs": ["folder"], "binary": {"blob.zzq": 4096}},
+ "steps": [
+  {"key": "opt+p"}, {"waitFor": {"previewState": "nothing"}, "timeoutMs": 2000},
+  {"click": "folder"}, {"waitFor": {"previewState": "folder"}, "timeoutMs": 3000},
+  {"click": "a.txt"}, {"click": "b.txt", "modifiers": ["cmd"]},
+  {"waitFor": {"selection": ["a.txt", "b.txt"], "previewState": "multiple:2"}, "timeoutMs": 3000},
+  {"click": "blob.zzq"}, {"waitFor": {"previewState": "quickLook"}, "timeoutMs": 3000}
+ ]}

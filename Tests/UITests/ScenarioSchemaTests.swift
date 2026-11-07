@@ -184,4 +184,134 @@ final class ScenarioSchemaTests: XCTestCase {
         XCTAssertEqual(AXID.newTabItem, "macx.newTab")
         XCTAssertEqual(AXID.tabBarDrop, "macx.tabBarDrop")
     }
+    // MARK: Phase 3 (P3-13)
+
+    func testPhase3SchemaDecodes() throws {
+        let json = #"""
+        {"name": "x", "indexStatus": "enabled",
+         "fixture": {"files": [], "dirs": [], "contents": {"a.txt": "hi"}, "binary": {"b.bin": 64}, "bulk": {"many": 10},
+                     "spotlight": [{"path": "a.txt"}, {"path": "Apps/X.app", "kind": "app"}]},
+         "steps": [{"clickSidebar": "searches:Taxes"}, {"setSearchScope": "subfolders"},
+                   {"expect": {"searchState": "complete", "resultCount": 2, "rowPaths": ["", "sub"], "notices": ["spotlightOff"],
+                               "previewState": "text", "previewTextPrefix": "hi", "sidebarSearches": ["Taxes"]}}]}
+        """#
+        let file = try JSONDecoder().decode(ScenarioFile.self, from: Data(json.utf8))
+        XCTAssertEqual(file.indexStatus, "enabled")
+        XCTAssertEqual(file.fixture.spotlight?.count, 2)
+        XCTAssertEqual(file.fixture.contents, ["a.txt": "hi"])
+        XCTAssertEqual(file.fixture.binary, ["b.bin": 64])
+        XCTAssertEqual(file.fixture.bulk, ["many": 10])
+        XCTAssertEqual(file.steps[0].clickSidebar, "searches:Taxes")
+        XCTAssertEqual(file.steps[1].setSearchScope, "subfolders")
+        XCTAssertEqual(file.steps[2].expect?.rowPaths, ["", "sub"])
+        XCTAssertEqual(file.steps[2].expect?.previewTextPrefix, "hi")
+        XCTAssertTrue(ScenarioDriver.validateSteps(file.steps).isEmpty)
+        XCTAssertNoThrow(try file.validate())      // exactly one action per step (P1-41 validator) and the new checks
+    }
+
+    func testPhase3ValuesAreValidated() throws {
+        func load(_ step: String, fixture: String = #""files":[],"dirs":[]"#, indexStatus: String? = nil) -> ScenarioFile.ValidationError? {
+            let status = indexStatus.map { #""indexStatus":""# + $0 + #"","# } ?? ""
+            let json = #"{"name":"x","# + status + #""fixture":{"# + fixture + #"},"steps":["# + step + "]}"
+            do { _ = try ScenarioFile.load(Data(json.utf8)); return nil } catch { return error as? ScenarioFile.ValidationError }
+        }
+        let ok = #"{"sleepMs":1}"#
+        XCTAssertNil(load(ok))
+        XCTAssertEqual(load(ok, indexStatus: "maybe"), .badIndexStatus("maybe"))
+        XCTAssertEqual(load(#"{"clickSidebar":"favorites:Home"}"#), .badSidebarTarget(step: 0, "favorites:Home"))
+        XCTAssertEqual(load(#"{"clickSidebar":"searches:"}"#), .badSidebarTarget(step: 0, "searches:"))
+        XCTAssertEqual(load(#"{"setSearchScope":"everywhere"}"#), .badSearchScope(step: 0, "everywhere"))
+        XCTAssertEqual(load(#"{"clickSidebar":"searches:A","setSearchScope":"thisMac"}"#),
+                       .actionCount(step: 0, actions: ["clickSidebar", "setSearchScope"]))
+        XCTAssertEqual(load(ok, fixture: #""files":[],"dirs":[],"contents":{"../x.txt":"hi"}"#), .unsafePath("../x.txt"))
+        XCTAssertEqual(load(ok, fixture: #""files":[],"dirs":[],"spotlight":[{"path":"/etc/hosts"}]"#), .unsafePath("/etc/hosts"))
+        XCTAssertEqual(load(ok, fixture: #""files":[],"dirs":[],"spotlight":[{"path":"a","kind":"volume"}]"#), .badFixture("spotlight 'a' kind 'volume'"))
+        XCTAssertEqual(load(ok, fixture: #""files":[],"dirs":[],"bulk":{"d":0}"#), .badFixture("bulk 'd' count 0"))
+        XCTAssertEqual(load(#"{"expect":{"rowPaths":["../up"]}}"#), .unsafePath("../up"))
+        XCTAssertEqual(load(#"{"expect":{"searchState":"done"}}"#), .badExpectation(step: 0, "unknown searchState 'done'"))
+        XCTAssertEqual(load(#"{"expect":{"notices":["oops"]}}"#), .badExpectation(step: 0, "unknown notice 'oops'"))
+        XCTAssertNil(load(#"{"expect":{"notices":["diagnostic:size:big","contentsNotIndexed"],"rowPaths":["","a/b"]}}"#))
+    }
+
+    func testPhase3ExpectationsMatch() {
+        var s = ProbeSnapshot()
+        s.searchState = "complete"
+        s.resultCount = 2
+        s.rowPaths = ["", "a"]
+        s.notices = ["diagnostic:size:big", "skippedLocations"]
+        s.previewState = "text"
+        s.previewText = "hello world"
+        s.sidebarSearches = ["Taxes"]
+        var e = ScenarioFile.Expectation()
+        e.searchState = "complete"; e.resultCount = 2; e.rowPaths = ["", "a"]; e.notices = ["diagnostic:size:big", "skippedLocations"]
+        e.previewState = "text"; e.previewTextPrefix = "hello"; e.sidebarSearches = ["Taxes"]
+        XCTAssertEqual(ExpectationMatcher.mismatches(e, s), [])
+
+        e.searchState = "stopped"; e.resultCount = 3; e.rowPaths = ["a", ""]; e.notices = ["skippedLocations"]
+        e.previewState = "hidden"; e.previewTextPrefix = "world"; e.sidebarSearches = []
+        XCTAssertEqual(ExpectationMatcher.mismatches(e, s).count, 7, ExpectationMatcher.mismatches(e, s).joined(separator: "\n"))
+
+        var none = ProbeSnapshot()                     // folder shown: no results, pane collapsed
+        none.previewText = nil
+        var want = ScenarioFile.Expectation()
+        want.searchState = "none"; want.previewState = "hidden"
+        XCTAssertEqual(ExpectationMatcher.mismatches(want, none), [])
+        want.resultCount = 0; want.previewTextPrefix = ""
+        let m = ExpectationMatcher.mismatches(want, none)
+        XCTAssertEqual(m.count, 2, m.joined(separator: "\n"))
+        XCTAssertTrue(m.contains { $0.contains("no search results are shown") })
+        XCTAssertTrue(m.contains { $0.contains("no text preview") })
+    }
+
+    func testPhase3FixturesAreCreatedInsideTheRoot() throws {
+        let base = FileManager.default.temporaryDirectory.appending(path: "macx-tests-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let root = base.appending(path: "macx-scenario-root", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: base) }
+        let json = #"""
+        {"name":"x","fixture":{"files":["top.txt"],"dirs":[],"contents":{"n/a.txt":"héllo"},"binary":{"b.zzq":300},"bulk":{"many":12},
+                               "spotlight":[{"path":"n/a.txt"},{"path":"X.app","kind":"app","size":5}]},"steps":[]}
+        """#
+        let file = try ScenarioFile.load(Data(json.utf8))
+        let resolved = root.resolvingSymlinksInPath()
+        try ScenarioFixtures.create(file.fixture, in: resolved)
+        XCTAssertEqual(try String(contentsOf: resolved.appending(path: "n/a.txt"), encoding: .utf8), "héllo")
+        let bytes = try Data(contentsOf: resolved.appending(path: "b.zzq"))
+        XCTAssertEqual(bytes.count, 300)
+        XCTAssertEqual(bytes.first, 0)
+        XCTAssertNil(String(data: bytes, encoding: .utf8), "binary fixtures are never valid UTF-8")
+        XCTAssertEqual(bytes, ScenarioFixtures.binaryData(300), "deterministic")
+        let many = try FileManager.default.contentsOfDirectory(atPath: resolved.appending(path: "many").path).sorted()
+        XCTAssertEqual(many.count, 12)
+        XCTAssertEqual(many.first, "file-000001.txt")
+        XCTAssertEqual(ScenarioFixtures.topLevelVisibleNames(file.fixture), ["top.txt", "n", "b.zzq", "many"])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: resolved.appending(path: "X.app").path), "spotlight items are not created")
+
+        let items = ScenarioFixtures.metadataItems(file.fixture.spotlight ?? [], root: resolved)
+        XCTAssertEqual(items.map(\.name), ["a.txt", "X.app"])
+        XCTAssertEqual(items[0].path, resolved.standardizedFileURL.path(percentEncoded: false).trimmingSuffix("/") + "/n/a.txt")
+        XCTAssertTrue(items[0].contentTypeTree.contains("public.plain-text"), "\(items[0].contentTypeTree)")
+        XCTAssertTrue(items[0].contentTypeTree.contains("public.data"))
+        XCTAssertEqual(items[1].contentTypeTree.first, "com.apple.application-bundle")
+        XCTAssertEqual(items[1].size, 5)
+        XCTAssertEqual(items[0].size, 1)
+    }
+
+    func testEveryPhase3ScenarioFileExists() throws {
+        let dir = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent().appending(path: "Scenarios")
+        let names = Set(try FileManager.default.contentsOfDirectory(atPath: dir.path(percentEncoded: false)))
+        for n in ["search-this-folder-instant", "search-subfolders-crawl", "search-syntax-filters", "search-open-containing-folder",
+                  "search-folder-result-back", "search-stop", "search-saved-sidebar", "search-saved-del-keeps-files",
+                  "search-results-trash", "search-contents-not-indexed", "search-this-mac-fake-spotlight",
+                  "preview-text", "preview-folder-multiple", "preview-optp-in-field"] {
+            XCTAssertTrue(names.contains(n + ".json"), n)
+            if names.contains(n + ".json") {
+                XCTAssertNoThrow(try ScenarioFile.load(Data(contentsOf: dir.appending(path: n + ".json"))), n)
+            }
+        }
+    }
+}
+
+private extension String {
+    func trimmingSuffix(_ suffix: String) -> String { hasSuffix(suffix) && count > 1 ? String(dropLast(suffix.count)) : self }
 }

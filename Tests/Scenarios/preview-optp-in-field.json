@@ -1,0 +1,11 @@
+{"name": "preview-optp-in-field",
+ "fixture": {"files": ["a.txt"], "dirs": []},
+ "steps": [
+   {"expect": {"previewState": "hidden"}},
+   {"key": "cmd+l"}, {"waitFor": {"focus": "addressBar"}},
+   {"key": "opt+p"},
+   {"expect": {"fieldEditorText": "π"}},
+   {"expect": {"previewState": "hidden"}},
+   {"key": "esc"}, {"click": "a.txt"}, {"key": "opt+p"},
+   {"waitFor": {"previewState": "text"}, "timeoutMs": 2000}
+ ]}

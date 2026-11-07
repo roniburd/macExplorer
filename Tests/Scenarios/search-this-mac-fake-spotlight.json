@@ -1,0 +1,12 @@
+{"name": "search-this-mac-fake-spotlight",
+ "indexStatus": "enabled",
+ "fixture": {"files": ["docs/annual report.pdf", "notes/summary.txt"], "dirs": ["Apps/Report Maker.app"],
+             "spotlight": [{"path": "docs/annual report.pdf", "size": 2048}, {"path": "Apps/Report Maker.app", "kind": "app"},
+                           {"path": "notes/summary.txt"}]},
+ "steps": [
+  {"key": "cmd+f"}, {"waitFor": {"focus": "fieldEditor"}},
+  {"setSearchScope": "thisMac"},
+  {"type": "report"},
+  {"waitFor": {"searchState": "complete", "resultCount": 2}, "timeoutMs": 5000},
+  {"expect": {"rows": ["annual report.pdf", "Report Maker.app"], "rowPaths": ["docs", "Apps"], "notices": [], "folder": ""}}
+ ]}

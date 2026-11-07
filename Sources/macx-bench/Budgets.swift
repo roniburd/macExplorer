@@ -42,6 +42,9 @@ enum Budgets {
             Budget(metric: "folderViews.save", sizes: nil, limit: 2, unit: "ms",
                    spec: "§4.4 no main-thread hang > 100 ms: saving one folder's view into a full store"),
         ]
+        // P3-13: the This folder search filter is a re-sort with criteria (§4.4 re-sort 100k < 30 ms).
+        t.append(Budget(metric: "search-filter-100k", sizes: [100_000], limit: 30, unit: "ms",
+                        spec: "§4.4 re-sort 100k < 30 ms: This folder search (glob + size criteria) over 100k entries"))
         t += SortField.entryFields.map {
             Budget(metric: "resort.\($0.rawValue)", sizes: [100_000], limit: 30, unit: "ms", spec: "§4.4 re-sort 100k by any column < 30 ms")
         }

@@ -153,6 +153,14 @@ final class ScenarioDriver {
             return (resolved, canonical)
         }
         rootReal = real
+        // Scenario runs never reach the real Spotlight index (SearchServices.forLaunch gives sandboxed runs the fake);
+        // fixture items are what the fake returns for every query (P3-13).
+        guard let spotlight = context.environment.searchServices.metadataQuery as? FakeMetadataQuery else {
+            throw DriverError("refusing: the app is not using the fake Spotlight query")
+        }
+        if let items = fixture.spotlight {
+            spotlight.setRuns([[.init(.added(ScenarioFixtures.metadataItems(items, root: real))), .init(.gatheringFinished)]])
+        }
         rootPrefixes = [given.standardizedFileURL.path, real.standardizedFileURL.path]
         if let canonical, !rootPrefixes.contains(canonical) { rootPrefixes.append(canonical) }
         installRouting()
@@ -321,6 +329,8 @@ final class ScenarioDriver {
         else if let index = step.selectTab { try selectTab(index); await fence() }
         else if let write = step.fsWrite { try await fsWrite(write) }
         else if let tags = step.fsTags { try await fsTags(tags) }
+        else if let target = step.clickSidebar { try await clickSidebar(target); await fence() }
+        else if let scope = step.setSearchScope { try setSearchScope(scope); await fence() }
         else if let title = step.chooseMenuItem { try chooseMenuItem(title); await fence() }
         else if let drop = step.drop { try await performDrop(drop, modifiers: step.modifiers ?? []) }
         else if let action = step.answerConflict {
@@ -352,8 +362,24 @@ final class ScenarioDriver {
 
     private func sendKey(_ text: String) async throws {
         guard let chord = KeyChord(parsing: text), let key = KeySynth.spec(for: chord) else { throw DriverError("cannot synthesize '\(text)'") }
-        try post([key])
-        await fence()
+        try await toSheetIfPresent {
+            try post([key])
+            await fence()
+        }
+    }
+
+    /// Keys and typing go to a sheet attached to the pinned window (P3-13: the Save Search… name prompt), with its
+    /// initial first responder focused, as a real sheet takes the keyboard; the pin returns to the window afterwards.
+    private func toSheetIfPresent(_ body: () async throws -> Void) async throws {
+        guard let pinned = MacxApplication.scenarioKeyWindow, let sheet = pinned.attachedSheet, sheet.isVisible else {
+            return try await body()
+        }
+        if !((sheet.firstResponder as? NSText)?.isFieldEditor ?? false), let initial = sheet.initialFirstResponder {
+            sheet.makeFirstResponder(initial)
+        }
+        MacxApplication.scenarioKeyWindow = sheet
+        defer { if MacxApplication.scenarioKeyWindow === sheet { MacxApplication.scenarioKeyWindow = pinned } }
+        try await body()
     }
 
     /// An extra mouse button press, delivered synchronously through MacxApplication.sendEvent (MouseRouter) to the
@@ -368,8 +394,10 @@ final class ScenarioDriver {
     }
 
     private func typeText(_ text: String) async throws {
-        try post(KeySynth.typingSpecs(text))
-        await fence()
+        try await toSheetIfPresent {
+            try post(KeySynth.typingSpecs(text))
+            await fence()
+        }
     }
 
     private func invoke(_ item: NSMenuItem, in menu: NSMenu) throws {
@@ -442,8 +470,39 @@ final class ScenarioDriver {
                 ? .extend(to: row, excluding: (contentController(in: controller)?.activeList as? DetailsViewController)?
                     .mapping.hiddenModelRows ?? [])
             : .set(IndexSet(integer: row), cursor: row)
-        controller.session.folder.select(command)
+        // The rows the content shows: the search results while they show (P3-13), else the folder.
+        let source: any RowSource = controller.session.results ?? controller.session.folder
+        source.select(command)
         focusList(in: controller)
+    }
+
+    /// A SEARCHES row (P3-11 `activateRow`, after selecting it like a click). Only saved searches: a scenario never
+    /// opens a Favorites or Locations row (they point at real folders outside --root).
+    private func clickSidebar(_ raw: String) async throws {
+        guard let (section, name) = ScenarioFile.sidebarTarget(raw), section == "searches" else {
+            throw DriverError("clickSidebar '\(raw)': only 'searches:<name>' is supported")
+        }
+        let controller = try browserWindow()
+        guard let sidebar = controller.splitController?.sidebarController else { throw DriverError("no sidebar") }
+        guard let item = sidebar.savedSearchItems.first(where: { if case .savedSearch(let s) = $0 { s.name == name } else { false } })
+        else {
+            throw DriverError("no saved search '\(name)' in SEARCHES \(controller.probeSidebarSearches)")
+        }
+        let row = sidebar.row(of: item)
+        guard row >= 0 else { throw DriverError("saved search '\(name)' has no sidebar row (section collapsed?)") }
+        sidebar.activateRow(row, newTab: false)     // selects the row, then runs the search
+        controller.window?.makeFirstResponder(sidebar.outlineView)
+    }
+
+    /// View › Search › This Folder / Subfolders / This Mac: the real main-menu item (found by its command's action).
+    private func setSearchScope(_ raw: String) throws {
+        let command: Command = switch raw {
+        case "thisFolder": .searchScopeThisFolder
+        case "subfolders": .searchScopeSubfolders
+        case "thisMac": .searchScopeThisMac
+        default: throw DriverError("unknown search scope '\(raw)'")
+        }
+        try performCommand(command.rawValue)
     }
 
     private func doubleClick(_ name: String) async throws {
@@ -660,6 +719,17 @@ final class ScenarioDriver {
         s.pasteboardText = context.environment.clipboard.backend.readString() ?? ""
     }
 
+    /// Phase 3 values (P3-13).
+    private func addPhase3(to s: inout ProbeSnapshot, from w: BrowserWindowController) {
+        s.searchState = w.probeSearchState ?? "none"
+        s.resultCount = w.probeResultCount
+        s.rowPaths = w.probeRowPaths.map { Self.relativePath($0, roots: rootPrefixes) ?? "<outside root: \($0)>" }
+        s.notices = w.probeSearchNotices
+        s.previewState = w.probePreviewState ?? "hidden"
+        s.previewText = w.probePreviewText
+        s.sidebarSearches = w.probeSidebarSearches
+    }
+
     private func snapshot(for expectation: ScenarioFile.Expectation) async throws -> ProbeSnapshot {
         let w = try browserWindow()
         var s = ProbeSnapshot()
@@ -681,6 +751,7 @@ final class ScenarioDriver {
         }.count
         s.windowCount = context.windows.windows.count
         addPhase2(to: &s, from: w, for: expectation)
+        addPhase3(to: &s, from: w)
         let paths = ExpectationMatcher.requestedPaths(expectation).filter(ScenarioPath.isSafeRelative)
         if !paths.isEmpty, let root = rootReal {
             s.fileSizes = try await lanes.perform(on: .unknown) { _ in

@@ -66,6 +66,17 @@ final class BudgetsTests: XCTestCase {
         XCTAssertTrue(checks.isEmpty)
     }
 
+    /// P3-13: the This folder search filter is gated at 30 ms for 100k; the other search metrics are reported only.
+    func testSearchFilterBudget() {
+        let checks = Budgets.evaluate([MetricResult(name: "search-filter-100k", size: 100_000, samples: [31]),
+                                       MetricResult(name: "search-parse-10k", size: 10_000, samples: [900]),
+                                       MetricResult(name: "search-crawl-complete", size: 11_700, samples: [900]),
+                                       MetricResult(name: "search-results-ingest-100k", size: 100_000, samples: [900])])
+        XCTAssertEqual(checks.map(\.metric), ["search-filter-100k"])
+        XCTAssertEqual(checks.map(\.passed), [false])
+        XCTAssertEqual(checks.first?.limit, 30)
+    }
+
     func testMemoryBudgetUsesMegabytes() {
         let checks = Budgets.evaluate([MetricResult(name: "memory.steady", size: 100_000, unit: "MB", samples: [25])])
         XCTAssertEqual(checks.first?.passed, false)

@@ -1,3 +1,4 @@
+import Core
 import CoreGraphics
 import Darwin
 import Foundation
@@ -66,6 +67,28 @@ enum ScenarioFixtures {
             if hidden.contains(path), chflags(url.path, UInt32(UF_HIDDEN)) != 0 { throw .io(path, errno) }
             noteCreated(path)
         }
+        // Phase 3 (P3-13): text files, never-text binary files and bulk folders.
+        func write(_ path: String, _ data: Data) throws(ScenarioFixtureError) {
+            let url = try target(path)
+            do { try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true) } catch {
+                throw .io(path, Int32((error as NSError).code))
+            }
+            guard fm.createFile(atPath: url.path, contents: data) else { throw .io(path, errno) }
+            noteCreated(path)
+        }
+        for (path, text) in (fixture.contents ?? [:]).sorted(by: { $0.key < $1.key }) { try write(path, Data(text.utf8)) }
+        for (path, count) in (fixture.binary ?? [:]).sorted(by: { $0.key < $1.key }) { try write(path, binaryData(count)) }
+        for (dir, count) in (fixture.bulk ?? [:]).sorted(by: { $0.key < $1.key }) {
+            let url = try target(dir)
+            do { try fm.createDirectory(at: url, withIntermediateDirectories: true) } catch { throw .io(dir, Int32((error as NSError).code)) }
+            noteCreated(dir)
+            let base = url.path
+            for i in 1...max(1, count) {
+                let fd = open(base + "/" + bulkName(i), O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o644)
+                guard fd >= 0 else { throw .io(dir + "/" + bulkName(i), errno) }
+                close(fd)
+            }
+        }
         for path in fixture.images ?? [] {
             let url = try target(path)
             do { try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true) } catch {
@@ -103,6 +126,61 @@ enum ScenarioFixtures {
             let url = try target(path)
             guard let bits = UInt16(mode, radix: 8) else { throw .badMode(path) }
             if chmod(url.path, mode_t(bits)) != 0 { throw .io(path, errno) }
+        }
+    }
+
+    // MARK: Phase 3 fixtures (P3-13)
+
+    /// FixtureTree.flat's names: "file-" + the 1-based index zero-padded to 6 digits + ".txt".
+    static func bulkName(_ i: Int) -> String {
+        let n = String(i)
+        return "file-" + String(repeating: "0", count: max(0, 6 - n.count)) + n + ".txt"
+    }
+
+    /// `count` deterministic bytes (SplitMix64, seed 0x6D6163) with the high bit set and byte 0 = 0x00, so the
+    /// data is never valid text (the text sniffer sees a NUL and invalid UTF-8).
+    static func binaryData(_ count: Int) -> Data {
+        var seed: UInt64 = 0x6D6163
+        func next() -> UInt64 {
+            seed &+= 0x9E37_79B9_7F4A_7C15
+            var z = seed
+            z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+            z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+            return z ^ (z >> 31)
+        }
+        var bytes = (0..<count).map { _ in UInt8(truncatingIfNeeded: next()) | 0x80 }
+        if !bytes.isEmpty { bytes[0] = 0 }
+        return Data(bytes)
+    }
+
+    /// The fake Spotlight's items for `items` (paths under `root`, which the caller has resolved). Content type trees
+    /// as Spotlight reports them: files `public.data` + the extension's type and its supertypes, folders
+    /// `public.folder`, apps the application bundle tree.
+    static func metadataItems(_ items: [ScenarioFile.SpotlightFixture], root: URL, now: Date = Date()) -> [MetadataItem] {
+        var base = root.standardizedFileURL.path(percentEncoded: false)
+        while base.count > 1, base.hasSuffix("/") { base.removeLast() }
+        return items.map { item in
+            let name = String(item.path.split(separator: "/").last ?? Substring(item.path))
+            let tree: [String]
+            switch item.kind ?? "file" {
+            case "folder": tree = ["public.folder", "public.directory", "public.item"]
+            case "app": tree = ["com.apple.application-bundle", "com.apple.application", "com.apple.package", "public.directory", "public.item"]
+            default:
+                let ext = (name as NSString).pathExtension
+                var types: [String] = []
+                if !ext.isEmpty, let type = UTType(filenameExtension: ext) {
+                    var queue = [type]
+                    while let t = queue.first {
+                        queue.removeFirst()
+                        if types.contains(t.identifier) { continue }
+                        types.append(t.identifier)
+                        queue += t.supertypes.sorted { $0.identifier < $1.identifier }
+                    }
+                }
+                tree = types.contains("public.data") ? types : types + ["public.data", "public.item"]
+            }
+            return MetadataItem(path: base + "/" + item.path, name: name, size: Int64(item.size ?? 1), modified: now, created: now,
+                                contentTypeTree: tree, isInvisible: false)
         }
     }
 
@@ -223,7 +301,8 @@ enum ScenarioFixtures {
     /// Names the browser should list in --root once the fixture exists (Show Hidden off).
     static func topLevelVisibleNames(_ fixture: ScenarioFile.Fixture) -> Set<String> {
         let hidden = Set(fixture.hidden ?? [])
-        return Set((fixture.files + fixture.dirs + (fixture.images ?? [])).filter { !hidden.contains($0) }
+        let phase3 = Array((fixture.contents ?? [:]).keys) + Array((fixture.binary ?? [:]).keys) + Array((fixture.bulk ?? [:]).keys)
+        return Set((fixture.files + fixture.dirs + (fixture.images ?? []) + phase3).filter { !hidden.contains($0) }
             .compactMap { $0.split(separator: "/").first.map(String.init) }
             .filter { !$0.hasPrefix(".") })
     }

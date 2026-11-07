@@ -6,6 +6,10 @@ struct SynthKey: Equatable, Sendable {
     var characters: String
     var charactersIgnoringModifiers: String
     var flags: NSEvent.ModifierFlags
+    /// ⌥ + a character, without ⌃ (P3-13): keep the characters the keyboard layout produces ("π" for ⌥P, "®" for
+    /// ⌥⌘R on US), as a real keyboard does: a focused text field receives the composed character, and menu key
+    /// equivalents such as ⌥⌘R match the hardware event (an overridden string does not match them).
+    var layoutCharacters = false
 }
 
 /// KeyChord → the NSEvent fields a real keyboard would produce (ANSI layout key codes, so
@@ -43,7 +47,8 @@ enum KeySynth {
         case .character(let c):
             guard c.count == 1, let ch = c.first, let code = ansiKeyCodes[ch] else { return nil }
             let shown = chord.modifiers.contains(.shift) && !chord.modifiers.contains(.command) ? c.uppercased() : c
-            return SynthKey(keyCode: code, characters: shown, charactersIgnoringModifiers: c, flags: base)
+            let composed = chord.modifiers.contains(.option) && !chord.modifiers.contains(.control)
+            return SynthKey(keyCode: code, characters: shown, charactersIgnoringModifiers: c, flags: base, layoutCharacters: composed)
         case .up: return function(NSUpArrowFunctionKey, 126, numericPad: true)
         case .down: return function(NSDownArrowFunctionKey, 125, numericPad: true)
         case .left: return function(NSLeftArrowFunctionKey, 123, numericPad: true)
@@ -88,7 +93,9 @@ enum KeySynth {
             cg.flags = cgFlags(key.flags)
             cg.timestamp = CGEventTimestamp(ProcessInfo.processInfo.systemUptime * 1_000_000_000)
             if let field = windowNumberField { cg.setIntegerValueField(field, value: Int64(windowNumber)) }
-            if let event = NSEvent(cgEvent: cg), event.characters == key.characters { return event }
+            if let event = NSEvent(cgEvent: cg), event.characters == key.characters || (key.layoutCharacters && event.characters?.isEmpty == false) {
+                return event
+            }
             let utf16 = Array(key.characters.utf16)
             utf16.withUnsafeBufferPointer { cg.keyboardSetUnicodeString(stringLength: $0.count, unicodeString: $0.baseAddress) }
             return NSEvent(cgEvent: cg)

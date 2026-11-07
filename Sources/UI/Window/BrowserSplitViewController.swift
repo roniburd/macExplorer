@@ -40,6 +40,11 @@ final class BrowserSplitViewController: NSSplitViewController {
         installPreviewItem()
     }
 
+    /// The sidebar split item's controller.
+    var sidebarController: SidebarViewController? {
+        splitViewItems.lazy.compactMap { $0.viewController as? SidebarViewController }.first
+    }
+
     /// The content split item's controller (the inspector comes after it).
     var contentController: ContentViewController? {
         splitViewItems.lazy.compactMap { $0.viewController as? ContentViewController }.first

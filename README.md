@@ -49,6 +49,7 @@ rm -rf "$SB"                              # afterwards
 | `--skip-onboarding` | no first-launch sheet |
 | `--scenario <file.json>` / `--scenario-output <file>` | run one UI scenario and exit (used by `scripts/ui-scenarios.sh`) |
 | `--smoke-exit-after <seconds>` | write `<state-dir>/smoke.json` and exit 0 |
+| `--index-status enabled\|disabled\|unknown` | what the fake Spotlight index reports in a sandboxed run (default `disabled`); sandboxed runs never query the real index or download from iCloud |
 
 `scripts/make-fixtures.sh` builds a larger fixture tree (NFD names, emoji, symlinks, packages, locked files…)
 under a fresh `${TMPDIR}/macx-fixtures-<UUID>` and prints its path.
@@ -86,6 +87,58 @@ under a fresh `${TMPDIR}/macx-fixtures-<UUID>` and prints its path.
   placeholders); scrolling away cancels the request, and a 64 MB cache keeps recent ones.
 - **Columns view** (⌘3, View › as Columns): one column per folder level. Selecting a folder opens the next column,
   → / ← move into and out of columns, and each column's trailing handle resizes it (double-click fits the names).
+
+## Search & Preview (Phase 3)
+
+- **Search field** (⌘F). Type to search; Esc clears it and returns to the folder. The scope bar under the toolbar
+  has the scope chips **This Folder / Subfolders / This Mac**, a **Name / Contents** toggle, filters, progress,
+  **Stop** and **Save**; the same choices are in View › Search. Which engine runs:
+
+  | Scope | Name | Contents |
+  |---|---|---|
+  | This Folder | instant in-memory filter of the listed folder (every keystroke) | Spotlight, direct children only; a volume that isn't indexed falls back to the name filter with a notice |
+  | Subfolders | our own crawler (parallel directory reads, packages and hidden folders skipped by default, symlinks never followed, other volumes never entered) | Spotlight inside the folder; not indexed → the crawler by name, with a notice |
+  | This Mac | Spotlight over the whole Mac ("Spotlight is turned off" when indexing is off) | Spotlight |
+
+  Every search other than the instant filter is debounced (250 ms) and shows its results in Details with a
+  **Path** column. Retyping or changing the scope cancels the running search; its late results never appear.
+- **Syntax** (close to Explorer's Advanced Query Syntax; terms are ANDed):
+
+  | Token | Meaning |
+  |---|---|
+  | `word`, `"two words"` | a name term (Name mode) or content term (Contents mode); `*` and `?` make it a whole-name glob (`*.pdf`, `report?.doc`, `IMG_*`), case- and accent-insensitive |
+  | `name:x`, `name:"a b"` | a name term in both modes |
+  | `kind:` / `type:` + `folder document text pdf image movie audio archive app code` (plurals and synonyms work, comma-separated) | OR within one token and across repeated `kind:` tokens |
+  | `ext:` / `extension:` + `pdf`, `.pdf`, `*.pdf`, `jpg,png` | OR |
+  | `size:` + `>10MB` `>=1.5GB` `<1KB` `<=100` `=0` `1MB..10MB` `10MB` (±0.5 unit) `empty tiny small medium large huge gigantic` | repeated `size:` tokens intersect |
+  | `modified:` / `date:`, `created:` + `today yesterday thisweek lastweek thismonth lastmonth thisyear lastyear last7days last30days`, `2026-01-31`, `>2026-01-31`, `>=`, `<`, `<=`, `2026-01-01..2026-01-31` | repeated tokens intersect |
+  | unknown key (`foo:bar`), quoted `"kind:image"` | a literal term |
+  | a known key with a bad value (`size:big`, `kind:spaceship`) | ignored, with "Didn't understand 'size:big'" under the field |
+
+  Sizes are decimal like the sizes the app shows (`KB` = 1,000 bytes, `MB`, `GB`, `TB`); `KiB`, `MiB`, `GiB`, `TiB`
+  are binary. Size words: empty < 1 B, tiny < 16 KB, small < 1 MB, medium < 128 MB, large < 1 GB, huge < 4 GB,
+  gigantic ≥ 4 GB.
+- **Filters** (the scope bar's Filters button): kind, date modified and created ranges, size range and extension,
+  combined with the typed query.
+- **Saved searches.** File › Save Search… (or Save in the scope bar) adds the search to the sidebar's **SEARCHES**
+  section. Click one to run it again; rename, reorder (drag) or remove it from its context menu. Del on a saved
+  search removes only the saved search, never a file.
+- **Working with results.** Results follow file operations without re-running: trashed and moved items disappear,
+  renamed ones show their new names. Double-click a folder result to open it and ⌘[ to return to the same results.
+  Go › **Open Containing Folder** (⌥⌘R) opens the item's folder with the item selected. View › Search › **Stop
+  Search** cancels a running search. A search stops at **100,000 results** and says "Showing the first 100,000
+  results. Refine your search."
+- **Preview pane** (View › Show Preview Pane, ⌥P, like Explorer). It shows the selection: text and code as a fast
+  preview of the first 256 KB (with a note when the file is longer), other types in Quick Look, folders and
+  multiple items as a summary, and a details grid underneath (size, dates, dimensions or duration). An iCloud
+  file that is not downloaded is never read: the pane offers a **Download** button instead. ⌥P typed while a text
+  field has focus types "π" and leaves the pane alone. The pane's visibility and width are remembered.
+- **Spotlight notes.** Contents and This Mac need Spotlight indexing (`mdutil -s /` shows the state; macExplorer
+  only ever runs `mdutil -s`). Volumes that aren't indexed fall back to name search with a notice. Protected
+  folders (Desktop, Documents, Downloads, iCloud Drive without a recorded grant, and app data under `~/Library`)
+  are skipped by Subfolders search without asking for access, and counted in "N folders were skipped".
+- All new commands (preview pane, Open Containing Folder, the search scopes and modes, Stop, Save Search) can be
+  rebound in Settings › Shortcuts.
 
 ## Install
 
@@ -140,11 +193,11 @@ pasteboard or your default apps. Each runner prints the sandbox roots it used an
 | Command | What it checks |
 |---|---|
 | `swift test --parallel` | unit and integration tests (`FSKitTests`, `CoreTests`, `UITests`, `MacxFixturesTests`, `BenchTests`, `ScenarioRunnerTests`); GUI and `hdiutil` tests skip with a reason when unavailable |
-| `scripts/run-scenarios.sh [debug\|release]` | headless end-to-end Core scenarios: every file operation, conflicts, undo, watcher bursts, cross-volume moves on disk images, crash/kill recovery |
-| `scripts/ui-scenarios.sh` | the 40 scripted UI scenarios in `Tests/Scenarios/` (Phase 1 plus the `p2-*` ones) driven inside the bundled app (needs a logged-in GUI session) |
+| `scripts/run-scenarios.sh [debug\|release]` | headless end-to-end Core scenarios: every file operation, conflicts, undo, watcher bursts, cross-volume moves on disk images, crash/kill recovery, and the `search.*` family (crawler rules, filters, Stop, results following file operations, saved searches) |
+| `scripts/ui-scenarios.sh` | the scripted UI scenarios in `Tests/Scenarios/` (Phase 1, the `p2-*` ones and the Phase 3 `search-*` / `preview-*` ones) driven inside the bundled app (needs a logged-in GUI session); a file's `indexStatus` is passed as `--index-status`, and Spotlight results come from the file's fake `spotlight` items |
 | `scripts/ui-ax-smoke.sh` | optional Accessibility smoke through System Events; skips when the terminal lacks Accessibility permission |
-| `swift run -c release macx-bench` | 1k/10k/100k benchmarks (model level, plus `listSorted.busyMain` with the main actor as busy as in the app, re-sorts with Group by on as `resort.grouped.*`, and the non-gated `folderSize.scan` of 10k files and `extattrs.read` of 2,000 files), median and p90 as JSON; `--check-budgets` gates §4.4 on Apple Silicon, `--compare baseline.json` applies the CI relative gate |
-| `scripts/check-layering.sh` | `MacxFS`/`Core` never import AppKit or the Quick Look frameworks (except `Sources/Core/Platform`), layers only import downwards, fixtures never ship, tests never use global user state, Quick Look is exercised only from `UITests` |
+| `swift run -c release macx-bench` | 1k/10k/100k benchmarks (model level, plus `listSorted.busyMain` with the main actor as busy as in the app, re-sorts with Group by on as `resort.grouped.*`, and the non-gated `folderSize.scan` of 10k files and `extattrs.read` of 2,000 files, and the Phase 3 `search-*` metrics: `--metrics search-` selects them, `search-filter-100k` is gated at 30 ms), median and p90 as JSON; `--check-budgets` gates §4.4 on Apple Silicon, `--compare baseline.json` applies the CI relative gate |
+| `scripts/check-layering.sh` | `MacxFS`/`Core` never import AppKit or the Quick Look frameworks (except `Sources/Core/Platform`), layers only import downwards, fixtures never ship, tests never use global user state, Quick Look is exercised only from `UITests`, `NSMetadataQuery` and real iCloud downloads stay in their one file, tests use the fake Spotlight, nothing runs `mdimport` or changes the Spotlight index |
 | `scripts/verify-phase1.sh` | every gate above in one run, then checks that nothing was left behind |
 
 UI scenarios run in a separate bundle (`com.macexplorer.app.scenarios`, `.build/macExplorer-scenarios.app`), so
@@ -260,3 +313,11 @@ Run before every release, on Apple Silicon, from a clean checkout of the release
     launch open that folder and search `macxprobe` with Subfolders + Contents (never This Mac): the file appears
     with its Path. Sandboxed (`--state-dir`) runs always use the fake Spotlight and iCloud services. Delete the
     folder afterwards.
+19. Search & Preview by hand (Phase 3; automated tests never do these, because they read or change real files):
+    - In a real iCloud Drive folder with a not-downloaded file, select it with the preview pane open: the pane
+      shows "Download" and Activity Monitor › Network shows no download until you click it; clicking downloads the
+      file and then previews it.
+    - A This Mac search against the real index finds a known app by name and a known document by content.
+    - Quick Look renders an image, a PDF, a movie and a Pages file in the preview pane.
+    - VoiceOver reads the scope chips, the Name/Contents toggle, Stop, the notices and the preview pane's states.
+    - A Subfolders search of `~` shows the "folders were skipped" notice and no macOS privacy prompt appears.

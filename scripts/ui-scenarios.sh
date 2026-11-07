@@ -123,7 +123,10 @@ LOGS="$REPO/.build/ui-scenario-logs/$(basename "$RUN")"
 passed=0; failed=0; entries=""
 for n in "${names[@]}"; do
   dir="$RUN/$n"
-  launch "$dir" "$RUN/$n.log" --scenario "$SCEN_DIR/$n.json" --scenario-output "$dir/result.json"
+  # P3-13: the fake Spotlight index state for this file (the app never asks the real index in sandbox runs).
+  status="$(/usr/bin/plutil -extract indexStatus raw -o - "$SCEN_DIR/$n.json" 2>/dev/null || echo disabled)"
+  case "$status" in enabled|disabled|unknown) ;; *) status=disabled ;; esac
+  launch "$dir" "$RUN/$n.log" --scenario "$SCEN_DIR/$n.json" --scenario-output "$dir/result.json" --index-status "$status"
   await_app "$TIMEOUT"
   out="$dir/result.json"
   ms=0; act=false

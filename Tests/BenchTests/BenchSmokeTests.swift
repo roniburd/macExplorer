@@ -15,9 +15,10 @@ final class BenchSmokeTests: XCTestCase {
         expected.formUnion(["memory.extendedSort.tags", "memory.extendedSort.owner"])   // P2-16 review fix: §4.4 memory
         for g in GroupBy.allCases where g != .none { expected.insert("resort.grouped.\(g.rawValue)") }   // P2-20
         expected.formUnion(["folderSize.scan", "extattrs.read"])                            // P2-20, reported only
+        expected.formUnion(Self.searchMetrics.keys)                                          // P3-13
         XCTAssertEqual(Set(report.metrics.map(\.name)), expected)
         XCTAssertTrue(report.metrics.allSatisfy { $0.samples.count == 1 })
-        let fixedSizes = ["folderSize.scan": 10_000, "extattrs.read": 2_000]
+        let fixedSizes = ["folderSize.scan": 10_000, "extattrs.read": 2_000].merging(Self.searchMetrics) { a, _ in a }
         XCTAssertTrue(report.metrics.allSatisfy {
             $0.size == ($0.name.hasPrefix("folderViews.") ? FolderViewStore.capacity : fixedSizes[$0.name] ?? 300)
         })
@@ -27,6 +28,20 @@ final class BenchSmokeTests: XCTestCase {
         XCTAssertTrue(URL(filePath: report.sandbox).lastPathComponent.hasPrefix("macx-bench-"))
         XCTAssertTrue(report.sandboxRemoved)
         XCTAssertFalse(FileManager.default.fileExists(atPath: report.sandbox))
+    }
+
+    /// P3-13: the search metrics and their fixed sizes (100k store, 10k queries, the 11,700-file crawl tree).
+    static let searchMetrics = ["search-filter-100k": 100_000, "search-parse-10k": 10_000, "search-crawl-first-result": 11_700,
+                                "search-crawl-complete": 11_700, "search-results-ingest-100k": 100_000]
+
+    /// P3-13: `--metrics search-` runs exactly the five search metrics (and no folder-size metric).
+    func testSearchMetricsRunOnTheirOwn() async throws {
+        let report = try await Bench.run(BenchOptions(sizes: [50], warmups: 0, iterations: 1, metrics: ["search-"]))
+        XCTAssertEqual(Set(report.metrics.map(\.name)), Set(Self.searchMetrics.keys))
+        for metric in report.metrics { XCTAssertEqual(metric.size, Self.searchMetrics[metric.name], metric.name) }
+        XCTAssertTrue(report.sandboxRemoved)
+        let crawl = try await Bench.run(BenchOptions(sizes: [50], warmups: 0, iterations: 1, metrics: ["search-crawl-complete"]))
+        XCTAssertEqual(crawl.metrics.map(\.name), ["search-crawl-complete"])
     }
 
     func testMetricFilterRunsOnlyRequestedFamilies() async throws {

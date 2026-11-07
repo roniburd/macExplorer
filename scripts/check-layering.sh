@@ -139,8 +139,29 @@ report quicklook-in-core < <(scan "${IMPORT}(Quartz|QuickLookThumbnailing|QuickL
 # 11. Quick Look is exercised only from UITests (Phase 2 plan P2-20; previews and thumbnails stay on sandbox files).
 report quicklook-in-tests < <(scan 'QLPreviewPanel|QLThumbnailGenerator' Tests | grep -v '^Tests/UITests/')
 
+# 12. NSMetadataQuery lives only in Core/Search/SystemMetadataQuery.swift, confined to its private OperationQueue
+#     (Phase 3 plan Global Constraints): nothing else, the main thread included, ever touches one.
+report metadata-query-confined < <(scan 'NSMetadataQuery([^A-Za-z0-9_]|$)' Sources | grep -v '^Sources/Core/Search/SystemMetadataQuery.swift:')
+
+# 13. Real iCloud downloads only through SystemUbiquitousDownloader (Core/Preview/Ubiquitous.swift); tests never
+#     call startDownloadingUbiquitousItem (they use FakeUbiquitousDownloader).
+report ubiquitous-download < <(scan 'startDownloadingUbiquitousItem' Sources Tests | grep -v '^Sources/Core/Preview/Ubiquitous.swift:')
+
+# 14. Tests use the fake Spotlight and downloader. Exceptions: LiveSpotlightTests (queries scoped to its own sandbox
+#     only) and the SearchServices.forLaunch type check in SearchResultsModelTests (constructing it runs no query).
+report search-fakes-in-tests < <(scan 'SystemUbiquitousDownloader|SystemMetadataQuery' Tests \
+  | grep -v '^Tests/CoreTests/Search/LiveSpotlightTests.swift:' \
+  | grep -vE '^Tests/CoreTests/Search/SearchResultsModelTests.swift:[0-9]+:.*is SystemMetadataQuery')
+
+# 15. Nothing changes Spotlight index state: no mdimport, no mdutil -i/-E/-X/-L… (only `mdutil -s` is allowed).
+report spotlight-index-state < <(
+  for p in Sources Tests scripts; do
+    [ -d "$p" ] && find "$p" -type f \( -name '*.swift' -o -name '*.sh' \) ! -name 'check-layering.sh' ! -name 'test-check-layering.sh' \
+      -exec grep -nHE 'mdimport|mdutil' {} + 2>/dev/null
+  done | grep -E 'mdimport|mdutil[^"]*[[:space:]]-[iEXLap]([^A-Za-z]|$)|"-[iEX]"')
+
 if [ "$violations" -gt 0 ]; then
   echo "check-layering: $violations violation(s)"
   exit 1
 fi
-echo "check-layering: OK (11 rules)"
+echo "check-layering: OK (15 rules)"
