@@ -222,10 +222,10 @@ extension Sorter {
     /// directions, name order breaking ties: the column is the primary key of the one Phase 1 sort.
     public static func permutation(_ store: EntryStore, nameKeys: SortKeyColumn, searchKeys: SortKeyColumn?,
                                    query: ViewQuery, kindRanks: [UInt16], extensionKeys: SortKeyColumn? = nil,
-                                   extras: SortExtras) -> [UInt32] {
+                                   extras: SortExtras, types: TypeRegistry = .shared) -> [UInt32] {
         let column = query.sort.field.isExtended ? extras.column : nil
         var order = sortedRun(store, range: 0..<store.count, nameKeys: nameKeys, searchKeys: searchKeys, query: query,
-                              kindRanks: kindRanks, extensionKeys: extensionKeys, column: column)
+                              kindRanks: kindRanks, extensionKeys: extensionKeys, column: column, types: types)
         applyExtras(&order, store: store, query: query, extras: extras)
         return order
     }

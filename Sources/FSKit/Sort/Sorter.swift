@@ -10,11 +10,13 @@ public enum Sorter {
     /// then name; extension: folded extension then name). Size sort orders folders by name (their size is
     /// "--"). Descending reverses within each folders/files group; folders stay first.
     /// `extensionKeys` (SortKeys.extensionKeys, one per storage index) is used by fileExtension sorts; nil
-    /// computes it for the whole store on each call.
+    /// computes it for the whole store on each call. `query.criteria` (Phase 3) also excludes rows it doesn't
+    /// match (CriteriaMatcher; `types` resolves kind filters); searchKeys nil folds display names on the fly.
     public static func permutation(_ store: EntryStore, nameKeys: SortKeyColumn, searchKeys: SortKeyColumn?,
-                                   query: ViewQuery, kindRanks: [UInt16], extensionKeys: SortKeyColumn? = nil) -> [UInt32] {
+                                   query: ViewQuery, kindRanks: [UInt16], extensionKeys: SortKeyColumn? = nil,
+                                   types: TypeRegistry = .shared) -> [UInt32] {
         sortedRun(store, range: 0..<store.count, nameKeys: nameKeys, searchKeys: searchKeys, query: query, kindRanks: kindRanks,
-                  extensionKeys: extensionKeys)
+                  extensionKeys: extensionKeys, types: types)
     }
 
     /// Like `permutation`, restricted to storage indices in `range` (the loading path sorts each new batch
@@ -22,7 +24,7 @@ public enum Sorter {
     /// `column` (P2-16): an extended field's values by storage index, the primary key when sorting by that field.
     public static func sortedRun(_ store: EntryStore, range: Range<Int>, nameKeys: SortKeyColumn, searchKeys: SortKeyColumn?,
                                  query: ViewQuery, kindRanks: [UInt16], extensionKeys: SortKeyColumn? = nil,
-                                 column: ExtraSortValues? = nil) -> [UInt32] {
+                                 column: ExtraSortValues? = nil, types: TypeRegistry = .shared) -> [UInt32] {
         precondition(nameKeys.count >= range.upperBound, "Sorter: nameKeys must cover every storage index")
         let filter = query.filter.isEmpty ? nil : SortKeys.searchFold(query.filter)
         let ordering = Ordering(store: store, nameKeys: nameKeys, query: query, kindRanks: kindRanks, extensionKeys: extensionKeys,
@@ -30,11 +32,14 @@ public enum Sorter {
         @Sendable func sortedItems(_ part: Range<Int>) -> [Item] {
             var items: [Item] = []
             items.reserveCapacity(part.count)
+            var matcher = query.criteria.map { CriteriaMatcher($0, types: types) }   // one per chunk (kind cache)
             for i in part {
                 let index = UInt32(i)
                 let entry = store.entry(index)
                 if !query.showHidden && entry.flags.isHidden { continue }
                 if let filter, !matches(index, store: store, searchKeys: searchKeys, filter: filter, showAllExtensions: query.showAllExtensions) { continue }
+                if matcher != nil, !matches(index, store: store, searchKeys: searchKeys, matcher: &matcher!,
+                                            showAllExtensions: query.showAllExtensions) { continue }
                 items.append(ordering.item(index))
             }
             ordering.sort(&items)
@@ -70,8 +75,10 @@ public enum Sorter {
     }
 
     /// Loading path: merge an already-sorted run of new indices into a sorted permutation.
+    /// Merging never filters (both runs are already filtered); `types` is accepted for symmetry with `permutation`.
     public static func merge(_ sorted: [UInt32], _ run: [UInt32], store: EntryStore, nameKeys: SortKeyColumn,
-                             query: ViewQuery, kindRanks: [UInt16], extensionKeys: SortKeyColumn? = nil) -> [UInt32] {
+                             query: ViewQuery, kindRanks: [UInt16], extensionKeys: SortKeyColumn? = nil,
+                             types: TypeRegistry = .shared) -> [UInt32] {
         if run.isEmpty { return sorted }
         if sorted.isEmpty { return run }
         let ordering = Ordering(store: store, nameKeys: nameKeys, query: query, kindRanks: kindRanks, extensionKeys: extensionKeys)
@@ -85,6 +92,22 @@ public enum Sorter {
         }
         let folded = SortKeys.searchFold(store.displayName(index, showAllExtensions: showAllExtensions))
         return folded.withUnsafeBytes { contains($0, filter) }
+    }
+
+    /// Phase 3 criteria test of one storage index. Name terms see the display name (searchKeys when present) and,
+    /// when the display name can differ from the on-disk name, the on-disk name too (so "*.pdf" and ext:pdf find a
+    /// PDF whose extension Finder hides).
+    static func matches(_ index: UInt32, store: EntryStore, searchKeys: SortKeyColumn?, matcher: inout CriteriaMatcher,
+                        showAllExtensions: Bool) -> Bool {
+        let entry = store.entry(index)
+        let differs = (store.hasLocalizedStems && store.localizedStem(index) != nil)
+            || (!showAllExtensions && (entry.kind == .package || entry.flags.contains(.extensionHidden)))
+        func run(_ display: UnsafeRawBufferPointer) -> Bool {
+            guard differs else { return matcher.matches(entry, foldedName: display) }
+            return SortKeys.searchFold(store.name(index)).withUnsafeBytes { matcher.matches(entry, foldedName: display, foldedFileName: $0) }
+        }
+        if let searchKeys, Int(index) < searchKeys.count { return searchKeys.withKey(Int(index)) { run($0) } }
+        return SortKeys.searchFold(store.displayName(index, showAllExtensions: showAllExtensions)).withUnsafeBytes { run($0) }
     }
 
     private static func contains(_ haystack: UnsafeRawBufferPointer, _ needle: [UInt8]) -> Bool {

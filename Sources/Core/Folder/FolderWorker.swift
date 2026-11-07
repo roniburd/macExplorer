@@ -122,7 +122,7 @@ actor FolderWorker {
         building!.keys.append(batch)
         let b = building!
         let run = Sorter.sortedRun(b.store, range: lower..<b.store.count, nameKeys: b.keys.name, searchKeys: nil,
-                                   query: b.query, kindRanks: types.kindRanks().ranks, extensionKeys: b.keys.ext)
+                                   query: b.query, kindRanks: types.kindRanks().ranks, extensionKeys: b.keys.ext, types: types)
         building!.runs.append(run)
         building!.dirty = true
         return true
@@ -191,7 +191,7 @@ actor FolderWorker {
                 values: SortValues = .none) -> Ordered {
         sync(store, storeTag)
         keys.follow(query, store: store)
-        if !query.filter.isEmpty && keys.search == nil { keys.search = SortKeys.searchKeys(store, showAllExtensions: keys.showAllExtensions) }
+        if (!query.filter.isEmpty || query.criteria != nil) && keys.search == nil { keys.search = SortKeys.searchKeys(store, showAllExtensions: keys.showAllExtensions) }
         let (order, runs) = partition(store, sorted: permutation(store, keys, query, values), by: group.groupBy, buckets: group.buckets)
         return Ordered(order: order, runs: runs, revision: group.revision)
     }
@@ -332,9 +332,9 @@ actor FolderWorker {
 
     private func permutation(_ store: EntryStore, _ keys: Keys, _ query: ViewQuery, _ values: SortValues = .none,
                              _ mapped: SortExtras? = nil) -> [UInt32] {
-        Sorter.permutation(store, nameKeys: keys.name, searchKeys: query.filter.isEmpty ? nil : keys.search, query: query,
-                           kindRanks: types.kindRanks().ranks, extensionKeys: keys.ext,
-                           extras: mapped ?? (values.isEmpty ? .none : values.extras(for: query, in: store)))
+        Sorter.permutation(store, nameKeys: keys.name, searchKeys: query.filter.isEmpty && query.criteria == nil ? nil : keys.search,
+                           query: query, kindRanks: types.kindRanks().ranks, extensionKeys: keys.ext,
+                           extras: mapped ?? (values.isEmpty ? .none : values.extras(for: query, in: store)), types: types)
     }
 
     /// An order built by the loading merge, reordered for the size sort's folder sizes (P2-14), or re-sorted with

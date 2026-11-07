@@ -28,10 +28,14 @@ public struct ViewQuery: Sendable, Hashable {
     public var filter: String                             // "" = no filter
     /// Display names keep every extension (Settings "Show all filename extensions"); sort/search keys follow.
     public var showAllExtensions: Bool
-    public init(sort: SortDescriptor = .default, showHidden: Bool = false, filter: String = "", showAllExtensions: Bool = false) {
+    /// Phase 3 search criteria (kind/size/date/extension filters, name globs): nil = none; applied with `filter`.
+    public var criteria: SearchCriteria?
+    public init(sort: SortDescriptor = .default, showHidden: Bool = false, filter: String = "", showAllExtensions: Bool = false,
+                criteria: SearchCriteria? = nil) {
         self.sort = sort
         self.showHidden = showHidden
         self.filter = filter
         self.showAllExtensions = showAllExtensions
+        self.criteria = criteria
     }
 }

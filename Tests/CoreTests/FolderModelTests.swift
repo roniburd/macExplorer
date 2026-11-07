@@ -100,6 +100,24 @@ final class FolderModelTests: XCTestCase {
         try await w.waitUntil("unfiltered") { m.rowCount == 3 }
     }
 
+    /// P3-01: ViewQuery.criteria (kind/extension filters, name globs) filters the folder in memory.
+    func testCriteriaQuery() async throws {
+        let w = try await FolderTestWorld.make(self)
+        try w.dir("c")
+        for name in ["IMG_0001.png", "IMG_0002.jpg", "notes.txt", "report.pdf"] { try w.file("c/" + name) }
+        try w.dir("c/Images")
+        let m = try await w.open("c")
+        m.setQuery(ViewQuery(criteria: SearchCriteria(kinds: [.image])))
+        try await w.waitUntil("images") { m.rowCount == 2 }
+        XCTAssertEqual(m.rowNames, ["IMG_0001.png", "IMG_0002.jpg"])
+        m.setQuery(ViewQuery(criteria: SearchCriteria(nameTerms: [NameTerm("img_*.PNG")])))
+        try await w.waitUntil("glob") { m.rowNames == ["IMG_0001.png"] }
+        m.setQuery(ViewQuery(filter: "o", criteria: SearchCriteria(extensions: ["pdf", "txt"])))
+        try await w.waitUntil("extensions and filter") { m.rowNames == ["notes.txt", "report.pdf"] }
+        m.setQuery(ViewQuery())
+        try await w.waitUntil("cleared") { m.rowCount == 5 }
+    }
+
     // MARK: Review Focus 2
 
     /// Overview Review Focus 2: the duplicate check uses the whole EntryStore, hidden rows included.
