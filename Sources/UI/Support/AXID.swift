@@ -8,6 +8,7 @@ enum AXID {
     static func breadcrumbSegment(_ index: Int) -> String { "macx.breadcrumb.\(index)" }
     static let search = "macx.search"
     static let detailsTable = "macx.details"
+    static let pathCell = "macx.pathCell"
     static let iconsGrid = "macx.icons"
     static let sidebar = "macx.sidebar"
     static func commandBarItem(_ c: Command) -> String { "macx.commandBar.\(c.rawValue)" }

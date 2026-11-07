@@ -176,7 +176,8 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
     let layout = FileGridLayout()
     let collectionView = FileCollectionView()
     let scrollView = NSScrollView()
-    private(set) var folder: FolderModel?
+    /// What the grid draws (P3-09): a folder or search results. Folder-only features use `folder`.
+    private(set) var source: (any RowSource)?
     /// The folder's icon size, from its view state (P2-08). `setIconSize` changes it.
     private(set) lazy var iconSize: IconSize = settings.iconSize
     private var isRestoringScroll = false
@@ -272,51 +273,51 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
 
     // MARK: FileListView
 
-    func bind(_ folder: FolderModel?) {
+    func bind(_ source: (any RowSource)?) {
         renameController?.cancel()
         renameController = nil
-        self.folder = folder
+        self.source = source
         thumbnailFolder = nil
         pendingScrollAnchor = nil
-        layout.itemCount = folder?.rowCount ?? 0
+        layout.itemCount = source?.rowCount ?? 0
         collectionView.reloadData()
-        if let folder { restoreScroll(anchor: folder.scrollAnchor) }
+        if let source { restoreScroll(anchor: source.scrollAnchor) }
         reloadSelectionDrawing()
         thumbnails.cancelAll()
         scheduleThumbnailRefresh()
     }
 
     func apply(_ changes: ChangeSet) {
-        guard let folder else { return }
-        layout.itemCount = folder.rowCount
+        guard let source else { return }
+        layout.itemCount = source.rowCount
         switch GridChangePolicy.plan(changes) {
         case .nothing: break
         case .reloadItems(let rows):
-            collectionView.reloadItems(at: Set(rows.filteredIndexSet { $0 < folder.rowCount }.map { IndexPath(item: $0, section: 0) }))
+            collectionView.reloadItems(at: Set(rows.filteredIndexSet { $0 < source.rowCount }.map { IndexPath(item: $0, section: 0) }))
         case .reloadAll:
-            let anchor = folder.scrollAnchor
+            let anchor = source.scrollAnchor
             collectionView.reloadData()
             restoreScroll(anchor: anchor)
         }
         renameController?.relayout()
         reloadSelectionDrawing()
-        context.icons.cancelFileIcons(notIn: Set(visibleRows().filter { $0 < folder.rowCount }.map { folder.identity(atRow: $0) }))
+        context.icons.cancelFileIcons(notIn: Set(visibleRows().filter { $0 < source.rowCount }.map { source.identity(atRow: $0) }))
         scheduleThumbnailRefresh()
     }
 
     func reloadSelectionDrawing() {
-        guard let folder else { return }
+        guard let source else { return }
         let emphasized = isEmphasized
         for case let item as IconItem in collectionView.visibleItems() {
-            guard let index = collectionView.indexPath(for: item)?.item, index < folder.rowCount else { continue }
-            item.applyState(isCut: folder.isCut(row: index), isSelected: folder.selection.rows.contains(index), emphasized: emphasized)
+            guard let index = collectionView.indexPath(for: item)?.item, index < source.rowCount else { continue }
+            item.applyState(isCut: source.isCut(row: index), isSelected: source.selection.rows.contains(index), emphasized: emphasized)
         }
     }
 
     func beginInlineRename(row: Int) {
-        guard let folder else { return }
+        guard let source else { return }
         renameController?.cancel()
-        let controller = InlineRenameController(list: self, folder: folder, environment: context.environment)
+        let controller = InlineRenameController(list: self, source: source, environment: context.environment)
         controller.origin = view.window.map { OriginID(raw: $0.windowNumber) }
         controller.onEnd = { [weak self] in
             guard let self, let window = self.view.window, window.firstResponder === window else { return }
@@ -354,7 +355,7 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
     // MARK: scroll anchor (§4.3)
 
     private func restoreScroll(anchor: RowID?) {
-        guard let folder else { return }
+        guard let source else { return }
         guard scrollView.contentSize.width > 0 else {
             pendingScrollAnchor = .some(anchor)     // no geometry yet: viewDidLayout restores it
             return
@@ -362,7 +363,7 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
         pendingScrollAnchor = nil
         isRestoringScroll = true
         defer { isRestoringScroll = false }
-        let row = anchor.flatMap { folder.row(of: $0) } ?? 0
+        let row = anchor.flatMap { source.row(of: $0) } ?? 0
         let y = row > 0 && row < layout.itemCount ? layout.frame(forItem: row).minY - layout.metrics.insets.top : 0
         scrollView.contentView.scroll(to: NSPoint(x: 0, y: y - scrollView.contentView.contentInsets.top))
         scrollView.reflectScrolledClipView(scrollView.contentView)
@@ -370,8 +371,8 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
 
     @objc private func clipBoundsChanged(_ note: Notification) {
         scheduleThumbnailRefresh()
-        guard !isRestoringScroll, pendingScrollAnchor == nil, let folder else { return }
-        if let top = topVisibleRow(), top > 0 { folder.scrollAnchor = folder.identity(atRow: top) } else { folder.scrollAnchor = nil }
+        guard !isRestoringScroll, pendingScrollAnchor == nil, let source else { return }
+        if let top = topVisibleRow(), top > 0 { source.scrollAnchor = source.identity(atRow: top) } else { source.scrollAnchor = nil }
     }
 
     // MARK: input
@@ -381,27 +382,27 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
     }
 
     func handleKeyDown(_ event: NSEvent) -> Bool {
-        if KeyRouter.handle(event, focus: .content, returnKey: settings.returnKey, from: collectionView,
+        if KeyRouter.handle(event, focus: source is SearchResultsModel ? .searchResults : .content, returnKey: settings.returnKey, from: collectionView,
                             typeSelectActive: typeSelect.isCollecting(in: folder)) {
             typeSelect.reset()
             return true
         }
-        guard let folder else { return false }
+        guard let source else { return false }
         // Settle a pending layout pass first (no-op when none): a vertical scroller that appears with the rows takes
         // width and so a column, and arrows must move over the grid as it will be drawn.
         view.layoutSubtreeIfNeeded()
         let page = max(1, visibleRows().count - layout.columns)
         defer { reloadSelectionDrawing() }   // mirror at once, also when hosted without ContentViewController
-        return ListKeys.handle(event, folder: folder, list: self, pageSize: page,
+        return ListKeys.handle(event, source: source, list: self, pageSize: page,
                                navigate: SelectionController.gridNavigator(layout), typeSelect: typeSelect)
     }
 
     func handleMouseDown(_ event: NSEvent) {
-        guard let folder else { return }
+        guard let source else { return }
         view.window?.makeFirstResponder(collectionView)
         let point = collectionView.convert(event.locationInWindow, from: nil)
         if let index = layout.itemIndex(at: point) {
-            mouse.mouseDown(row: index, event: event, folder: folder, from: collectionView)
+            mouse.mouseDown(row: index, event: event, source: source, from: collectionView)
             reloadSelectionDrawing()
             return
         }
@@ -410,8 +411,8 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
     }
 
     func handleMouseUp(_ event: NSEvent) {
-        guard let folder else { return }
-        mouse.mouseUp(folder: folder)
+        guard let source else { return }
+        mouse.mouseUp(source: source)
         reloadSelectionDrawing()
     }
 
@@ -426,10 +427,10 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
     }
 
     private func trackRubberBand(from start: NSPoint, event: NSEvent) {
-        guard let folder, let window = collectionView.window else { return }
+        guard let source, let window = collectionView.window else { return }
         let mode = RubberBand.mode(for: event.modifierFlags)
-        let base = mode == .replace ? IndexSet() : folder.selection.rows
-        if mode == .replace { folder.select(.none) }
+        let base = mode == .replace ? IndexSet() : source.selection.rows
+        if mode == .replace { source.select(.none) }
         let overlay = RubberBandView(frame: NSRect(origin: start, size: .zero))
         collectionView.addSubview(overlay)
         window.trackEvents(matching: [.leftMouseDragged, .leftMouseUp], timeout: .infinity, mode: .eventTracking) { [weak self] next, stop in
@@ -443,16 +444,16 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
     }
 
     func applyRubberBand(rect: NSRect, mode: RubberBand.Mode, base: IndexSet) {
-        guard let folder else { return }
+        guard let source else { return }
         let hits = RubberBand.hits(in: rect, layout: layout)
-        folder.select(.set(RubberBand.selection(base: base, hits: hits, mode: mode), cursor: hits.last))
+        source.select(.set(RubberBand.selection(base: base, hits: hits, mode: mode), cursor: hits.last))
     }
 
     /// The folder's view state (P2-08): relayout keeping the scroll anchor.
     func setIconSize(_ size: IconSize) {
         iconSize = size
         guard isViewLoaded, layout.iconSize != size else { return }
-        let anchor = folder?.scrollAnchor
+        let anchor = source?.scrollAnchor
         layout.iconSize = size
         collectionView.reloadData()
         restoreScroll(anchor: anchor)
@@ -476,32 +477,38 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
 
     /// Hands the visible eligible items to the scheduler, or cancels everything when thumbnails are off.
     func refreshThumbnails() {
-        guard settings.showThumbnails, let folder, isViewLoaded, view.window != nil else {
+        guard settings.showThumbnails, let source, isViewLoaded, view.window != nil else {
             thumbnails.cancelAll()
             return
         }
         let scale = view.window?.backingScaleFactor ?? 2
         var candidates: [ThumbnailCandidate] = []
-        for row in layout.indexes(in: collectionView.visibleRect) where row < folder.rowCount {
+        for row in layout.indexes(in: collectionView.visibleRect) where row < source.rowCount {
             guard let key = thumbnailKey(row: row, scale: scale) else { continue }
-            candidates.append(ThumbnailCandidate(key: key, url: folder.url(atRow: row)))
+            candidates.append(ThumbnailCandidate(key: key, url: source.url(atRow: row)))
         }
         thumbnails.updateVisible(candidates, pointSize: CGFloat(points), scale: scale)
     }
 
     /// The key for row `row`'s thumbnail, nil when the item never gets one. In memory only.
     func thumbnailKey(row: Int, scale: CGFloat) -> ThumbnailKey? {
-        guard let folder, row < folder.rowCount else { return nil }
-        let entry = folder.entry(atRow: row)
+        guard let source, row < source.rowCount else { return nil }
+        let entry = source.entry(atRow: row)
         guard ThumbnailScheduler.isEligible(entry, types: context.environment.types) else { return nil }
-        let place = thumbnailFolder ?? (folder.volume?.id ?? .unknown, folder.directory.standardizedFileURL.path(percentEncoded: false))
-        thumbnailFolder = place
-        return ThumbnailKey(volume: place.volume, id: folder.identity(atRow: row), directory: place.directory,
+        let place: (volume: VolumeID, directory: String)
+        if let folder {
+            place = thumbnailFolder ?? (folder.volume?.id ?? .unknown, folder.directory.standardizedFileURL.path(percentEncoded: false))
+            thumbnailFolder = place
+        } else {   // search results span folders: each row's own parent (lexical, no file-system call)
+            let parent = source.parentURL(atRow: row)
+            place = (context.environment.volumes.volume(for: parent)?.id ?? .unknown, PathCellView.text(parent: parent, home: settings.home).full)
+        }
+        return ThumbnailKey(volume: place.volume, id: source.identity(atRow: row), directory: place.directory,
                             mtime: entry.mtime, size: entry.size, pixels: Int((CGFloat(points) * scale).rounded()))
     }
 
     private func thumbnailArrived(_ key: ThumbnailKey) {
-        guard let folder, let row = folder.row(of: key.id),
+        guard let source, let row = source.row(of: key.id),
               let item = collectionView.item(at: IndexPath(item: row, section: 0)) as? IconItem,
               item.rowID == key.id, let image = context.thumbnails.image(key),
               thumbnailKey(row: row, scale: view.window?.backingScaleFactor ?? 2) == key else { return }
@@ -509,17 +516,17 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
     }
 
     private func showThumbnailsChanged() {
-        guard let folder else { return }
+        guard let source else { return }
         if settings.showThumbnails {
             scheduleThumbnailRefresh()
             for case let item as IconItem in collectionView.visibleItems() {   // cached thumbnails show at once
-                guard let row = collectionView.indexPath(for: item)?.item, row < folder.rowCount else { continue }
+                guard let row = collectionView.indexPath(for: item)?.item, row < source.rowCount else { continue }
                 configure(item, row: row)
             }
         } else {
             thumbnails.cancelAll()
             for case let item as IconItem in collectionView.visibleItems() where item.thumbnailKey != nil {
-                guard let row = collectionView.indexPath(for: item)?.item, row < folder.rowCount else { continue }
+                guard let row = collectionView.indexPath(for: item)?.item, row < source.rowCount else { continue }
                 configure(item, row: row)
             }
         }
@@ -527,23 +534,23 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
 
     /// Scenario hook `thumbnailNames`: the visible items whose cell shows a cached thumbnail, in grid order.
     func thumbnailNames() -> [String] {
-        guard let folder else { return [] }
+        guard let source else { return [] }
         return collectionView.visibleItems().compactMap { item -> (Int, String)? in
             guard let item = item as? IconItem, let key = item.thumbnailKey, context.thumbnails.image(key) != nil,
-                  let row = collectionView.indexPath(for: item)?.item, row < folder.rowCount else { return nil }
-            return (row, folder.name(atRow: row))
+                  let row = collectionView.indexPath(for: item)?.item, row < source.rowCount else { return nil }
+            return (row, source.name(atRow: row))
         }.sorted { $0.0 < $1.0 }.map(\.1)
     }
 
     /// Scenario hook `iconsVisibleNames`: the items in the visible rect, in grid order (geometry only).
     func visibleNames() -> [String] {
-        guard let folder else { return [] }
-        return visibleRows().filter { $0 < folder.rowCount }.map { folder.name(atRow: $0) }
+        guard let source else { return [] }
+        return visibleRows().filter { $0 < source.rowCount }.map { source.name(atRow: $0) }
     }
 
     // MARK: data source
 
-    func collectionView(_ collectionView: NSCollectionView, numberOfItemsInSection section: Int) -> Int { folder?.rowCount ?? 0 }
+    func collectionView(_ collectionView: NSCollectionView, numberOfItemsInSection section: Int) -> Int { source?.rowCount ?? 0 }
 
     func collectionView(_ collectionView: NSCollectionView, itemForRepresentedObjectAt indexPath: IndexPath) -> NSCollectionViewItem {
         let item = collectionView.makeItem(withIdentifier: IconItem.reuseID, for: indexPath) as? IconItem ?? IconItem()
@@ -552,21 +559,21 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
     }
 
     private func configure(_ item: IconItem, row: Int) {
-        guard let folder, row < folder.rowCount else { return }
-        let entry = folder.entry(atRow: row)
-        let name = folder.name(atRow: row)
+        guard let source, row < source.rowCount else { return }
+        let entry = source.entry(atRow: row)
+        let name = source.name(atRow: row)
         let scale = Double(view.window?.backingScaleFactor ?? 2)
-        let rowID = folder.identity(atRow: row)
+        let rowID = source.identity(atRow: row)
         let points = self.points
-        item.configure(name: folder.displayName(atRow: row), icon: context.icons.typeIcon(entry.typeIndex, points: points, scale: scale), points: points,
-                       labelWidth: Double(layout.metrics.itemSize.width - 8), isCut: folder.isCut(row: row),
-                       isSelected: folder.selection.rows.contains(row), emphasized: isEmphasized,
+        item.configure(name: source.displayName(atRow: row), icon: context.icons.typeIcon(entry.typeIndex, points: points, scale: scale), points: points,
+                       labelWidth: Double(layout.metrics.itemSize.width - 8), isCut: source.isCut(row: row),
+                       isSelected: source.selection.rows.contains(row), emphasized: isEmphasized,
                        isDataless: entry.flags.contains(.dataless), rowID: rowID)
         if settings.showThumbnails, let key = thumbnailKey(row: row, scale: CGFloat(scale)), let image = context.thumbnails.image(key) {
             item.setThumbnail(image, key: key, points: points)
             return   // the thumbnail replaces tiers 0/1
         }
-        let url = folder.url(atRow: row)
+        let url = source.url(atRow: row)
         let isVolumeRoot = entry.kind == .directory
             && context.environment.volumes.mountTable.volumes.contains { $0.mountPoint.standardizedFileURL == url.standardizedFileURL }
         guard context.icons.needsFileIcon(entry, name: name, isVolumeRoot: isVolumeRoot) else { return }

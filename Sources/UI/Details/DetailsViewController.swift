@@ -125,12 +125,12 @@ final class FileTableView: NSTableView, @MainActor NSServicesMenuRequestor, NSSp
 
     // Services ▸ (§5.6): the selection as file URLs.
     override func validRequestor(forSendType sendType: NSPasteboard.PasteboardType?, returnType: NSPasteboard.PasteboardType?) -> Any? {
-        if returnType == nil, sendType == .fileURL || sendType == .string, owner?.folder?.selection.isEmpty == false { return self }
+        if returnType == nil, sendType == .fileURL || sendType == .string, owner?.source?.selection.isEmpty == false { return self }
         return super.validRequestor(forSendType: sendType, returnType: returnType)
     }
 
     func writeSelection(to pboard: NSPasteboard, types: [NSPasteboard.PasteboardType]) -> Bool {
-        guard let urls = owner?.folder?.selectedURLs, !urls.isEmpty else { return false }
+        guard let urls = owner?.source?.selectedURLs, !urls.isEmpty else { return false }
         pboard.clearContents()
         return pboard.writeObjects(urls.map { $0 as NSURL })
     }
@@ -141,13 +141,14 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     let context: UIContext
     let tableView = FileTableView()
     let scrollView = NSScrollView()
-    private(set) var folder: FolderModel?
+    /// What the table draws (P3-09): a folder or search results. Folder-only features use `folder`.
+    private(set) var source: (any RowSource)?
     private var settingsLoop: ObservationLoop?
     private var isRebuildingColumns = false
     private var isSyncingSelection = false
     private var isRestoringScroll = false
     private var didPaintFirstRows = false
-    private var lastCutNames: Set<String> = []
+    private var lastCutSignature = 0
     let mouse = ListMouseHandler()
     let typeSelect = TypeSelect()
     private(set) var renameController: InlineRenameController?
@@ -163,12 +164,16 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     var onVisibleRowsChanged: ((IndexSet) -> Void)?
     private var visibleRowsReportPending = false
     private var attributeRequestPending = false
-    /// The listing spans folders (Phase 3 search results): the Path column is offered. Folder listings: false.
-    var isMultiFolder = false {
+    /// The listing spans folders (search results, `RowSource.showsPathColumn`): the Path column is offered and the
+    /// columns are `Settings.resultsColumns`. Folder listings: false. `bind(_:)` sets it.
+    private(set) var isMultiFolder = false {
         didSet { if oldValue != isMultiFolder, isViewLoaded { rebuildColumns() } }
     }
     /// The folder's columns (order, widths, visibility), from its view state (P2-08). `apply(columns:)` sets them.
-    private(set) lazy var columns: [ColumnSetting] = DetailsColumns.normalized(settings.columns)
+    private(set) lazy var folderColumns: [ColumnSetting] = DetailsColumns.normalized(settings.columns)
+    /// The columns the table shows: the results column set for search results (moves, resizes and the chooser
+    /// write back to it, never to a folder's columns), else the folder's.
+    var columns: [ColumnSetting] { isMultiFolder ? DetailsColumns.normalized(settings.resultsColumns) : folderColumns }
     /// Installed by ContentViewController (P2-08): the user resized, moved, showed or hid a column.
     var onColumnsChanged: (([ColumnSetting]) -> Void)?
     /// Installed by ContentViewController (P2-08): a header click asks for this sort. Without it (a table hosted on
@@ -181,7 +186,7 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     private var collapsed: Set<GroupKey> = []
     private weak var collapsedFolder: FolderModel?
     /// Table row ⇄ model row. Every conversion between the two in Details goes through this.
-    var mapping: RowMapping { groupedRows.map(RowMapping.grouped) ?? .identity(count: folder?.rowCount ?? 0) }
+    var mapping: RowMapping { groupedRows.map(RowMapping.grouped) ?? .identity(count: source?.rowCount ?? 0) }
     /// Model rows of collapsed groups (FileListView): ⌘A and Invert Selection leave them out (QA round 2).
     var hiddenModelRows: IndexSet { mapping.hiddenModelRows }
     lazy var dragSource = DragSourceController(icons: context.icons)
@@ -246,21 +251,23 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
 
     // MARK: FileListView
 
-    func bind(_ folder: FolderModel?) {
+    func bind(_ source: (any RowSource)?) {
         renameController?.cancel()
         renameController = nil
-        self.folder = folder
+        self.source = source
+        let folder = self.folder
         if let folder, folder !== collapsedFolder {
             collapsed = []
             collapsedFolder = folder
         }
         setGroups(folder?.groups ?? [])
         didPaintFirstRows = false
-        lastCutNames = folder?.cutNames ?? []
+        lastCutSignature = cutSignature
+        isMultiFolder = source?.showsPathColumn ?? false     // rebuilds the columns when it changes
         tableView.reloadData()
-        if let folder {
-            updateSortIndicator(folder.query.sort)
-            restoreScroll(anchor: folder.scrollAnchor)
+        if let source {
+            updateSortIndicator(source.sortDescriptor)
+            restoreScroll(anchor: source.scrollAnchor)
         }
         reloadSelectionDrawing()
         reportVisibleRows()
@@ -268,8 +275,8 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     }
 
     func apply(_ changes: ChangeSet) {
-        guard let folder else { return }
-        let anchor = folder.scrollAnchor
+        guard let source else { return }
+        let anchor = source.scrollAnchor
         if let groupedRows {
             // Grouped (P2-10): every structural change arrives as `.groups` + reset; same-order patches are reloads.
             if groupedRows.tableRowCount != tableView.numberOfRows || changes.requiresReloadData
@@ -287,7 +294,7 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
         renameController?.relayout()
         if changes.requiresReloadData { restoreScroll(anchor: anchor) }
         reloadSelectionDrawing()
-        if !didPaintFirstRows, folder.rowCount > 0 {
+        if !didPaintFirstRows, source.rowCount > 0 {
             didPaintFirstRows = true
             PerfSignposts.signposter.emitEvent(PerfSignposts.firstPaint)
         }
@@ -298,22 +305,28 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
 
     /// Mirrors the model's selection into the table highlight (S5-C4) and redraws cut state when it changed.
     func reloadSelectionDrawing() {
-        guard let folder else { return }
-        if revealSelectedHiddenRows(folder) { return }   // regroupTable redraws
+        guard let source else { return }
+        if let folder, revealSelectedHiddenRows(folder) { return }   // regroupTable redraws
         isSyncingSelection = true
-        tableView.selectRowIndexes(mapping.tableRows(forModelRows: folder.selection.rows).filteredIndexSet { $0 < tableView.numberOfRows },
+        tableView.selectRowIndexes(mapping.tableRows(forModelRows: source.selection.rows).filteredIndexSet { $0 < tableView.numberOfRows },
                                    byExtendingSelection: false)
         isSyncingSelection = false
-        if folder.cutNames != lastCutNames {
-            lastCutNames = folder.cutNames
+        let signature = cutSignature
+        if signature != lastCutSignature {
+            lastCutSignature = signature
             reloadVisibleRows()
         }
     }
 
+    /// Changes when the cut set dims different rows: the folder's cut names, or the results' cut URLs.
+    private var cutSignature: Int {
+        folder?.cutNames.hashValue ?? (source as? SearchResultsModel)?.cutURLs.hashValue ?? 0
+    }
+
     func beginInlineRename(row: Int) {
-        guard let folder else { return }
+        guard let source else { return }
         renameController?.cancel()
-        let controller = InlineRenameController(list: self, folder: folder, environment: context.environment)
+        let controller = InlineRenameController(list: self, source: source, environment: context.environment)
         controller.origin = view.window.map { OriginID(raw: $0.windowNumber) }
         controller.onEnd = { [weak self] in
             guard let self, let window = self.view.window, window.firstResponder === window else { return }
@@ -375,15 +388,15 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     }
 
     private func restoreScroll(anchor: RowID?) {
-        guard let folder else { return }
+        guard let source else { return }
         isRestoringScroll = true
         defer { isRestoringScroll = false }
-        if let anchor, let row = folder.row(of: anchor) { scrollRowToTop(row) } else if anchor == nil { scrollRowToTop(0) }
+        if let anchor, let row = source.row(of: anchor) { scrollRowToTop(row) } else if anchor == nil { scrollRowToTop(0) }
     }
 
     @objc private func clipBoundsChanged(_ note: Notification) {
-        guard !isRestoringScroll, let folder else { return }
-        if let top = topVisibleRow(), top > 0 { folder.scrollAnchor = folder.identity(atRow: top) } else { folder.scrollAnchor = nil }
+        guard !isRestoringScroll, let source else { return }
+        if let top = topVisibleRow(), top > 0 { source.scrollAnchor = source.identity(atRow: top) } else { source.scrollAnchor = nil }
         context.icons.cancelFileIcons(notIn: visibleRowIDs())
         reportVisibleRows()
         requestVisibleAttributes()
@@ -472,45 +485,45 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     }
 
     private func visibleRowIDs() -> Set<RowID> {
-        guard let folder else { return [] }
+        guard let source else { return [] }
         let mapping = self.mapping
-        return Set(visibleTableRows().compactMap { mapping.modelRow(forTableRow: $0) }.filter { $0 < folder.rowCount }
-            .map { folder.identity(atRow: $0) })
+        return Set(visibleTableRows().compactMap { mapping.modelRow(forTableRow: $0) }.filter { $0 < source.rowCount }
+            .map { source.identity(atRow: $0) })
     }
 
     // MARK: keys
 
     func handleKeyDown(_ event: NSEvent) -> Bool {
-        if KeyRouter.handle(event, focus: .content, returnKey: settings.returnKey, from: tableView,
-                            typeSelectActive: typeSelect.isCollecting(in: folder)) {
+        if KeyRouter.handle(event, focus: source is SearchResultsModel ? .searchResults : .content, returnKey: settings.returnKey,
+                            from: tableView, typeSelectActive: typeSelect.isCollecting(in: folder)) {
             typeSelect.reset()
             return true
         }
-        guard let folder else { return false }
+        guard let source else { return false }
         defer { reloadSelectionDrawing() }   // mirror at once, also when hosted without ContentViewController
-        if handleGroupKey(event, folder: folder) { return true }
-        return ListKeys.handle(event, folder: folder, list: self, pageSize: max(1, visibleTableRows().count - 1),
-                               navigate: SelectionController.linearNavigator(rowCount: folder.rowCount), typeSelect: typeSelect,
+        if let folder, handleGroupKey(event, folder: folder) { return true }
+        return ListKeys.handle(event, source: source, list: self, pageSize: max(1, visibleTableRows().count - 1),
+                               navigate: SelectionController.linearNavigator(rowCount: source.rowCount), typeSelect: typeSelect,
                                mapping: groupedRows == nil ? nil : mapping)
     }
 
     func handleMouseDown(_ event: NSEvent) {
         view.window?.makeFirstResponder(tableView)
-        guard let folder else { return }
+        guard let source else { return }
         let row = tableView.hitRow(at: tableView.convert(event.locationInWindow, from: nil))
         if let group = mapping.groupIndex(forTableRow: row) {      // a header: toggle, never select (P2-10)
             if event.clickCount == 1 { toggleGroup(group) }
             return
         }
         let mapping = self.mapping
-        mouse.mouseDown(row: mapping.modelRow(forTableRow: row), event: event, folder: folder, from: tableView,
+        mouse.mouseDown(row: mapping.modelRow(forTableRow: row), event: event, source: source, from: tableView,
                         hidden: mapping.hiddenModelRows)
         reloadSelectionDrawing()
     }
 
     func handleMouseUp(_ event: NSEvent) {
-        guard let folder else { return }
-        mouse.mouseUp(folder: folder)
+        guard let source else { return }
+        mouse.mouseUp(source: source)
         reloadSelectionDrawing()
     }
 
@@ -626,12 +639,12 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     /// A plain, ⌘- or ⇧-click on table row `row` (what mouse-down and mouse-up do together): a header toggles its
     /// group, an item row goes to the selection as its model row.
     func clickTableRow(_ row: Int, modifiers: ClickModifiers) {
-        guard let folder else { return }
+        guard let source else { return }
         let mapping = self.mapping
         if let group = mapping.groupIndex(forTableRow: row) { toggleGroup(group); return }
         switch SelectionController.click(row: mapping.modelRow(forTableRow: row), clickCount: 1, modifiers: modifiers,
-                                         selectedRows: folder.selection.rows, hidden: mapping.hiddenModelRows) {
-        case .select(let command), .selectOnMouseUp(let command): folder.select(command)
+                                         selectedRows: source.selection.rows, hidden: mapping.hiddenModelRows) {
+        case .select(let command), .selectOnMouseUp(let command): source.select(command)
         case .open, .nothing: break
         }
         reloadSelectionDrawing()
@@ -660,10 +673,10 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
 
     /// Scenario hook `visibleRowNames`: the names of the table's item rows, in order.
     func visibleRowNames() -> [String] {
-        guard let folder else { return [] }
+        guard let source else { return [] }
         let mapping = self.mapping
-        return (0..<mapping.tableRowCount).compactMap { mapping.modelRow(forTableRow: $0) }.filter { $0 < folder.rowCount }
-            .map { folder.name(atRow: $0) }
+        return (0..<mapping.tableRowCount).compactMap { mapping.modelRow(forTableRow: $0) }.filter { $0 < source.rowCount }
+            .map { source.name(atRow: $0) }
     }
 
     /// Scenario click target "group:<title>": toggles the group with that title.
@@ -693,7 +706,7 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
             tableView.addTableColumn(column)
         }
         tableView.headerView?.menu = headerMenu()
-        updateSortIndicator(folder?.query.sort ?? settings.sort)
+        updateSortIndicator(source?.sortDescriptor ?? settings.sort)
         requestVisibleAttributes()
     }
 
@@ -703,14 +716,15 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     }
 
     /// The folder's view state (P2-08): its columns (rebuilt only when they differ from what the table shows, so a
-    /// resize in progress is never interrupted), the sort indicator and the row density.
+    /// resize in progress is never interrupted), the sort indicator and the row density. While search results are
+    /// shown the folder's columns and sort are stored for later and the table keeps the results' (P3-09).
     func apply(columns new: [ColumnSetting], sort: MacxFS.SortDescriptor, density newDensity: Density? = nil) {
         let normalized = DetailsColumns.normalized(new)
-        if normalized != columns {
-            columns = normalized
-            if isViewLoaded { rebuildColumns() }
+        if normalized != folderColumns {
+            folderColumns = normalized
+            if isViewLoaded, !isMultiFolder { rebuildColumns() }
         }
-        if isViewLoaded { updateSortIndicator(sort) }
+        if isViewLoaded, !isMultiFolder { updateSortIndicator(sort) }
         if let newDensity, newDensity != density {
             density = newDensity
             guard isViewLoaded else { return }
@@ -721,17 +735,26 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
 
     @objc func toggleColumn(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String, let id = ColumnID(rawValue: raw) else { return }
-        columns = DetailsColumns.toggling(merged(DetailsColumns.settings(fromTableColumns: tableView.tableColumns)), id)
+        setColumns(DetailsColumns.toggling(merged(DetailsColumns.settings(fromTableColumns: tableView.tableColumns)), id))
         rebuildColumns()
-        onColumnsChanged?(columns)
     }
 
     @objc private func columnsChanged(_ note: Notification) {
         guard !isRebuildingColumns else { return }
         let next = merged(DetailsColumns.settings(fromTableColumns: tableView.tableColumns))
         guard next != columns else { return }
-        columns = next
-        onColumnsChanged?(next)
+        setColumns(next)
+    }
+
+    /// Writes a column change back to the list the table shows: `Settings.resultsColumns` for search results, the
+    /// folder's view state (through `onColumnsChanged`) otherwise.
+    private func setColumns(_ new: [ColumnSetting]) {
+        if isMultiFolder {
+            settings.resultsColumns = new
+        } else {
+            folderColumns = new
+            onColumnsChanged?(new)
+        }
     }
 
     /// The table only holds the available columns: the others (Path in a folder listing) keep their stored width
@@ -753,29 +776,34 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     }
 
     func tableView(_ tableView: NSTableView, didClick tableColumn: NSTableColumn) {
-        guard let folder, let id = DetailsColumns.columnID(tableColumn.identifier) else { return }
-        let next = DetailsColumns.nextSort(current: folder.query.sort, clicked: id)
-        if let onSortChanged {
+        guard let id = DetailsColumns.columnID(tableColumn.identifier) else { return }
+        sort(by: id)
+    }
+
+    /// A header click on `column`: the sorted column reverses, another sorts ascending. A folder's sort is saved in
+    /// its view state (the session sets the query); search results sort themselves (`.path` included).
+    func sort(by column: ColumnID) {
+        guard let source else { return }
+        let next = DetailsColumns.nextSort(current: source.sortDescriptor, clicked: column)
+        if folder != nil, let onSortChanged {
             onSortChanged(next)          // saved for this folder; the session sets the query
         } else {
-            var query = folder.query
-            query.sort = next
-            folder.setQuery(query)
+            source.setSortDescriptor(next)
         }
         updateSortIndicator(next)
     }
 
     func tableView(_ tableView: NSTableView, sizeToFitWidthOfColumn column: Int) -> CGFloat {
         let tableColumn = tableView.tableColumns[column]
-        guard let folder, let id = DetailsColumns.columnID(tableColumn.identifier) else { return tableColumn.width }
-        let texts = visibleRows().filter { $0 < folder.rowCount }.map { text(for: id, row: $0) } + [tableColumn.title]
+        guard let source, let id = DetailsColumns.columnID(tableColumn.identifier) else { return tableColumn.width }
+        let texts = visibleRows().filter { $0 < source.rowCount }.map { text(for: id, row: $0) } + [tableColumn.title]
         let extra = id == .name ? iconPoints + 30 : 14
         return CGFloat(max(DetailsColumns.minWidth(id), DetailsColumns.fitWidth(texts: texts, font: CellStyle.font, extra: extra)))
     }
 
     // MARK: data source / delegate
 
-    func numberOfRows(in tableView: NSTableView) -> Int { folder == nil ? 0 : mapping.tableRowCount }
+    func numberOfRows(in tableView: NSTableView) -> Int { source == nil ? 0 : mapping.tableRowCount }
 
     func tableView(_ tableView: NSTableView, isGroupRow row: Int) -> Bool { mapping.groupIndex(forTableRow: row) != nil }
 
@@ -785,26 +813,31 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
         if let group = mapping.groupIndex(forTableRow: tableRow) {
             return tableColumn == nil || tableView.tableColumns.first { !$0.isHidden } === tableColumn ? headerView(group) : nil
         }
-        guard let folder, let tableColumn, let id = DetailsColumns.columnID(tableColumn.identifier),
-              let row = mapping.modelRow(forTableRow: tableRow), row < folder.rowCount else {
+        guard let source, let tableColumn, let id = DetailsColumns.columnID(tableColumn.identifier),
+              let row = mapping.modelRow(forTableRow: tableRow), row < source.rowCount else {
             return nil
         }
-        let entry = folder.entry(atRow: row)
-        let isCut = folder.isCut(row: row)
+        let entry = source.entry(atRow: row)
+        let isCut = source.isCut(row: row)
         if id == .name {
             let cell = tableView.makeView(withIdentifier: NameCellView.reuseID, owner: nil) as? NameCellView ?? NameCellView()
-            let name = folder.name(atRow: row)
-            let shown = folder.displayName(atRow: row)
+            let name = source.name(atRow: row)
+            let shown = source.displayName(atRow: row)
             let scale = Double(view.window?.backingScaleFactor ?? 2)
-            let rowID = folder.identity(atRow: row)
+            let rowID = source.identity(atRow: row)
             cell.configure(name: shown, icon: context.icons.typeIcon(entry.typeIndex, points: iconPoints, scale: scale),
                            iconPoints: iconPoints, isCut: isCut, isDataless: entry.flags.contains(.dataless), rowID: rowID)
             requestFileIcon(entry: entry, name: name, row: row, rowID: rowID, cell: cell, scale: scale)
             return cell
         }
+        if id == .path, folder == nil {      // search results: the parent folder (P3-09)
+            let cell = tableView.makeView(withIdentifier: PathCellView.reuseIdentifier, owner: nil) as? PathCellView ?? PathCellView()
+            cell.configure(parent: source.parentURL(atRow: row), home: settings.home, isCut: isCut)
+            return cell
+        }
         let cell = tableView.makeView(withIdentifier: PlainCellView.reuseID, owner: nil) as? PlainCellView ?? PlainCellView()
         let label = id == .size && Self.isSizedFolder(entry)
-            ? FolderSizeText.accessibilityLabel(folder.folderSize(atRow: row), enabled: folder.folderSizesEnabled) : nil
+            ? folder.flatMap { FolderSizeText.accessibilityLabel($0.folderSize(atRow: row), enabled: $0.folderSizesEnabled) } : nil
         cell.configure(text: text(for: id, row: row), alignment: id == .size ? .right : .left,
                        monospacedDigits: id == .size, isCut: isCut, accessibilityLabel: label)
         return cell
@@ -812,7 +845,7 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
 
     /// Only the model's own mirror writes are accepted; built-in proposals never reach the model (S5-C4).
     func tableView(_ tableView: NSTableView, selectionIndexesForProposedSelection proposed: IndexSet) -> IndexSet {
-        isSyncingSelection ? proposed : mapping.tableRows(forModelRows: folder?.selection.rows ?? [])
+        isSyncingSelection ? proposed : mapping.tableRows(forModelRows: source?.selection.rows ?? [])
     }
 
     // MARK: helpers
@@ -834,7 +867,7 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     /// Scenario click target "header:<id>" (P2-16): the same path as a click on that column's header.
     @discardableResult
     func clickHeader(_ raw: String) -> Bool {
-        guard let id = ColumnID(rawValue: raw), folder != nil else { return false }
+        guard let id = ColumnID(rawValue: raw), source != nil else { return false }
         let index = tableView.column(withIdentifier: DetailsColumns.identifier(id))
         guard index >= 0, !tableView.tableColumns[index].isHidden else { return false }
         tableView(tableView, didClick: tableView.tableColumns[index])
@@ -844,32 +877,37 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     /// Scenario hook `cellText` (P2-14): the text the cell of `name`'s row shows in `column` (a ColumnID raw value),
     /// computed with the same formatting the cell uses. nil for an unknown row or column.
     func cellText(rowNamed name: String, column: String) -> String? {
-        guard let folder, let id = ColumnID(rawValue: column), let row = folder.row(named: name), row < folder.rowCount else {
+        guard let source, let id = ColumnID(rawValue: column),
+              let row = folder.map({ $0.row(named: name) }) ?? (0..<source.rowCount).first(where: { source.name(atRow: $0) == name }),
+              row < source.rowCount else {
             return nil
         }
         return text(for: id, row: row)
     }
 
     private func text(for id: ColumnID, row: Int) -> String {
-        guard let folder else { return "" }
-        let entry = folder.entry(atRow: row)
+        guard let source else { return "" }
+        let entry = source.entry(atRow: row)
         switch id {
-        case .name: return folder.displayName(atRow: row)
+        case .name: return source.displayName(atRow: row)
         case .dateModified: return Formatters.date(nanoseconds: entry.mtime, style: settings.dateStyle)
         case .dateCreated: return Formatters.date(nanoseconds: entry.ctime, style: settings.dateStyle)
         case .size:
-            guard Self.isSizedFolder(entry) else { return Formatters.size(of: entry) }
+            guard Self.isSizedFolder(entry), let folder else { return Formatters.size(of: entry) }
             return FolderSizeText.text(folder.folderSize(atRow: row), enabled: folder.folderSizesEnabled)
         case .kind: return context.environment.types.localizedDescription(entry.typeIndex)
-        case .fileExtension: return Formatters.extensionText(name: folder.name(atRow: row), kind: entry.kind)
+        case .fileExtension: return Formatters.extensionText(name: source.name(atRow: row), kind: entry.kind)
         case .tags, .dateLastOpened, .permissions, .owner, .path, .comments:
+            guard let folder else {       // search results: no extended attributes; Path is the parent folder
+                return id == .path ? PathCellView.text(parent: source.parentURL(atRow: row), home: settings.home).shown : ""
+            }
             return ExtendedColumns.text(id, row: row, in: folder, dateStyle: settings.dateStyle, home: settings.home)
         }
     }
 
     private func requestFileIcon(entry: Entry, name: String, row: Int, rowID: RowID, cell: NameCellView, scale: Double) {
-        guard let folder else { return }
-        let url = folder.url(atRow: row)
+        guard let source else { return }
+        let url = source.url(atRow: row)
         let isVolumeRoot = entry.kind == .directory
             && context.environment.volumes.mountTable.volumes.contains { $0.mountPoint.standardizedFileURL == url.standardizedFileURL }
         guard context.icons.needsFileIcon(entry, name: name, isVolumeRoot: isVolumeRoot) else { return }

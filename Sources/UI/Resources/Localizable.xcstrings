@@ -5661,6 +5661,138 @@
         }
       }
     },
+    "search.empty.action.searchAgain" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search Again"
+          }
+        }
+      }
+    },
+    "search.empty.action.searchSubfolders" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search Subfolders"
+          }
+        }
+      }
+    },
+    "search.empty.mayNotBeIndexed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This folder may not be indexed by Spotlight."
+          }
+        }
+      }
+    },
+    "search.empty.noPermission" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You don't have permission to search “%@”"
+          }
+        }
+      }
+    },
+    "search.empty.noResults" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No results for “%@”"
+          }
+        }
+      }
+    },
+    "search.empty.rootGone" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@” is no longer available"
+          }
+        }
+      }
+    },
+    "search.empty.searching" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Searching…"
+          }
+        }
+      }
+    },
+    "search.empty.spotlightFailed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spotlight couldn't complete the search"
+          }
+        }
+      }
+    },
+    "search.empty.spotlightOff" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spotlight is turned off"
+          }
+        }
+      }
+    },
+    "search.empty.spotlightOff.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This Mac can't be searched. Search Subfolders instead."
+          }
+        }
+      }
+    },
+    "search.empty.stopped" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search stopped"
+          }
+        }
+      }
+    },
+    "search.empty.unresponsive" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The disk isn't responding"
+          }
+        }
+      }
+    },
     "waiting for your answer" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,

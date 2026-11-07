@@ -1,12 +1,13 @@
 import AppKit
 import Core
 
-/// Shared by Details and Icons (§5.5). The content controller is the only FolderModel observer and forwards
-/// changes here; views never keep their own selection.
+/// Shared by Details and Icons (§5.5). The content controller is the only row-source observer and forwards
+/// changes here; views never keep their own selection. A row source is a folder (FolderModel) or search results
+/// (SearchResultsModel, P3-09).
 @MainActor protocol FileListView: AnyObject {
     var view: NSView { get }
-    var folder: FolderModel? { get }
-    func bind(_ folder: FolderModel?)                    // nil = unbind
+    var source: (any RowSource)? { get }
+    func bind(_ source: (any RowSource)?)                // nil = unbind
     func apply(_ changes: ChangeSet)                     // insert/remove/move/reload or reloadData (requiresReloadData)
     func reloadSelectionDrawing()
     func beginInlineRename(row: Int)
@@ -19,6 +20,9 @@ import Core
 
 extension FileListView {
     var hiddenModelRows: IndexSet { [] }
+    /// Folder-only features (grouping, folder sizes, extended attributes, per-folder view state) use this; nil while
+    /// the list shows search results.
+    var folder: FolderModel? { source as? FolderModel }
 }
 
 /// Lists that take keyboard focus (Tab cycle, view switches keep focus on the list).

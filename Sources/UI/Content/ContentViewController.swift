@@ -3,7 +3,8 @@ import Core
 import MacxFS
 
 /// Content area of a browser window (§5.3–§5.5): command bar, the active list, empty-state overlay and banner
-/// (P1-33), status bar. The only observer of the session's current FolderModel.
+/// (P1-33), status bar. The only observer of the session's current FolderModel, and of the search results it
+/// shows instead of the folder (P3-09, `display(_:)`).
 @MainActor
 final class ContentViewController: CommandHandlingViewController {
     let context: UIContext
@@ -27,6 +28,10 @@ final class ContentViewController: CommandHandlingViewController {
     private(set) var activeList: FileListView
     private var mountedListView: NSView?
     private var folderToken: ObserverToken?
+    /// The search results shown in place of the session's folder (P3-09); nil while the folder is shown.
+    private(set) var displayedResults: (any RowSource)?
+    private var resultsToken: ObserverToken?
+    private var rowsToken: ObserverToken?
     private var sessionToken: ObserverToken?
     private var volumesToken: ObserverToken?
     private var finishedToken: ObserverToken?
@@ -48,8 +53,12 @@ final class ContentViewController: CommandHandlingViewController {
 
     required init?(coder: NSCoder) { fatalError("ContentViewController is created in code") }
 
-    override var focusContext: FocusContext { .content }
-    override var commandTarget: CommandTarget? { .contentSelection(session.folder) }
+    override var focusContext: FocusContext { displayedResults is SearchResultsModel ? .searchResults : .content }
+    /// Results have no command target until P3-10 (`.resultsSelection`): no command acts on the folder's selection
+    /// while results are shown.
+    override var commandTarget: CommandTarget? { displayedResults == nil ? .contentSelection(session.folder) : nil }
+    /// What the active list shows: the results, else the session's folder.
+    var displayedSource: any RowSource { displayedResults ?? session.folder }
 
     override func loadView() {
         let root = NSView()
@@ -146,7 +155,7 @@ final class ContentViewController: CommandHandlingViewController {
 
     private func handle(_ event: SessionEvent) {
         switch event {
-        case .folderChanged(let model): bind(model)
+        case .folderChanged(let model): display(model)
         case .viewModeChanged(let mode): setViewMode(mode)
         case .viewStateChanged(let state):
             applyViewState(state)
@@ -160,6 +169,51 @@ final class ContentViewController: CommandHandlingViewController {
                 if columns.chain !== session.columnChain { columns.bindChain(session.columnChain) } else { columns.rebuild() }
                 refreshCutNames()
             }
+        }
+    }
+
+    /// Shows `source` in the active list: the session's folder, or search results (P3-10 calls this on
+    /// `SessionEvent.resultsChanged`). Columns cannot show results: they appear in Details without changing the
+    /// stored view mode, and showing the folder again returns to it.
+    func display(_ source: any RowSource) {
+        resultsToken?.cancel(); resultsToken = nil
+        rowsToken?.cancel(); rowsToken = nil
+        if let folder = source as? FolderModel {
+            guard displayedResults != nil else { bind(folder); return }
+            displayedResults = nil
+            setViewMode(session.viewMode)
+            bind(folder)
+            return
+        }
+        folderToken?.cancel(); folderToken = nil      // the folder's events never reach the results list
+        displayedResults = source
+        setViewMode(session.viewMode)
+        activeList.bind(source)
+        rowsToken = source.observeRows { [weak self, weak source] event in
+            guard let self, let source, source === self.displayedResults else { return }
+            self.handleRowEvent(event)
+        }
+        if let results = source as? SearchResultsModel {
+            resultsToken = results.observe { [weak self, weak results] event in
+                guard let self, let results, results === self.displayedResults else { return }
+                switch event {
+                case .state, .notices: self.updateEmptyState(); self.updateStatus()
+                case .rows: break                          // observeRows delivers them
+                }
+            }
+        }
+        refreshCutNames()
+        updateStatus()
+        updateCommandBar()
+        updateEmptyState()
+    }
+
+    /// Row events of the displayed results (the folder's arrive through `handle(_: FolderEvent)`).
+    private func handleRowEvent(_ event: RowSourceEvent) {
+        switch event {
+        case .changes(let changes): activeList.apply(changes); updateStatus(); updateEmptyState()
+        case .selection: activeList.reloadSelectionDrawing(); updateStatus(); updateCommandBar()
+        case .beginRename(let row): activeList.beginInlineRename(row: row)
         }
     }
 
@@ -206,6 +260,15 @@ final class ContentViewController: CommandHandlingViewController {
     func updateEmptyState() {
         let folder = session.folder
         if isShowingColumns { emptyState.show(nil); return }
+        if let displayed = displayedResults {
+            guard let results = displayed as? SearchResultsModel else { emptyState.show(nil); return }
+            // The root's name for "no longer available" / "no permission", the query otherwise.
+            var query = results.title
+            if case .failed(.rootUnreadable) = results.state, let root = results.spec?.root { query = root.lastPathComponent }
+            emptyState.show(EmptyStateContent.make(search: results.state, notices: results.notices, rowCount: results.rowCount,
+                                                   query: query))
+            return
+        }
         emptyState.show(EmptyStateContent.make(state: folder.state, folderName: folder.directory.lastPathComponent,
                                                visibleCount: folder.rowCount, filter: folder.query.filter))
     }
@@ -214,12 +277,17 @@ final class ContentViewController: CommandHandlingViewController {
         if let text { banner.show(text) } else { banner.hide() }
     }
 
+    /// Installed by P3-10: the results empty state's "Search Subfolders" button.
+    var onSearchSubfolders: (() -> Void)?
+
     func performEmptyStateAction(_ action: EmptyStateAction, in model: FolderModel? = nil) {
         let folder = model ?? session.folder
         switch action {
         case .retry: folder.retry()
         case .openPrivacySettings: externalOpener.open(SystemSettingsLinks.privacyAllFiles)
         case .properties: handler?.perform(.properties, target: .currentFolder(folder), sender: emptyState)
+        case .searchAgain: (displayedResults as? SearchResultsModel)?.rerun()
+        case .searchSubfolders: onSearchSubfolders?()   // P3-10 switches the scope to Subfolders
         }
     }
 
@@ -297,6 +365,7 @@ final class ContentViewController: CommandHandlingViewController {
     /// ⌘-click (a selection toggle here) do nothing. The selection is not touched.
     @discardableResult
     func newTabGesture(_ gesture: NewTabGesture, row: Int, in model: FolderModel? = nil) -> Bool {
+        guard model != nil || displayedResults == nil else { return false }   // results: P3-10
         let folder = model ?? session.folder
         guard MiddleClickRouter.shouldOpenTab(gesture, in: .content),
               MiddleClickRouter.folderTarget(row: row, in: folder) != nil,
@@ -309,7 +378,7 @@ final class ContentViewController: CommandHandlingViewController {
 
     /// Right-click rule (§5.6, Review Focus 1). S6's scenario driver calls this for `rightClick` steps.
     func contextMenu(forRow row: Int?) -> NSMenu? {
-        guard let handler else { return nil }
+        guard let handler, displayedResults == nil else { return nil }   // the results menus are P3-10's
         let folder = session.folder
         let rule = ContextMenuBuilder.contextRows(clickedRow: row, selectedRows: folder.selection.rows)
         if let select = rule.select { folder.select(select) }
@@ -322,6 +391,7 @@ final class ContentViewController: CommandHandlingViewController {
         for folder in session.columnChain?.models ?? [session.folder] {    // Columns: every column dims its cut rows
             folder.cutNames = clipboard.cutNames(in: folder.directory)
         }
+        if let results = displayedResults as? SearchResultsModel { results.cutURLs = clipboard.cutURLs }
         if let columns, activeList === columns { columns.reloadAllSelectionDrawing() } else { activeList.reloadSelectionDrawing() }
         updateCommandBar()
     }
@@ -345,14 +415,15 @@ final class ContentViewController: CommandHandlingViewController {
         case .icons: list = iconsController()
         case .columns: list = columnsController()
         }
-        guard list !== activeList || mountedListView !== list.view else { return }
-        if list !== activeList {
+        let shown: FileListView = displayedResults != nil && list is ColumnsViewController ? details : list
+        guard shown !== activeList || mountedListView !== shown.view else { return }
+        if shown !== activeList {
             activeList.bind(nil)
-            activeList = list
+            activeList = shown
         }
-        if let columns = list as? ColumnsViewController { columns.bindChain(session.columnChain) }   // before mount: focus
-        mount(list)
-        list.bind(session.folder)
+        if let columns = shown as? ColumnsViewController { columns.bindChain(session.columnChain) }   // before mount: focus
+        mount(shown)
+        shown.bind(displayedSource)
         updateEmptyState()
     }
 
@@ -410,6 +481,10 @@ final class ContentViewController: CommandHandlingViewController {
     }
 
     func updateStatus() {
+        if let results = displayedResults {     // results: no free space (they span folders and volumes)
+            statusBar.update(itemCount: results.rowCount, selection: results.selectionSummary, available: nil)
+            return
+        }
         let folder = session.folder
         let available = lastVolumeID.flatMap { context.environment.volumes.cachedAvailableCapacity($0) }
         statusBar.update(itemCount: folder.rowCount, selection: folder.selectionSummary, available: available,

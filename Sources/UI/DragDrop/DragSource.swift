@@ -98,11 +98,11 @@ final class DragSourceController: NSObject, NSDraggingSource {
         super.init()
     }
 
-    func begin(event: NSEvent, rows: IndexSet, folder: FolderModel, view: NSView, rowFrame: (Int) -> NSRect, secondary: Bool) {
-        let valid = rows.filteredIndexSet { $0 < folder.rowCount }
+    func begin(event: NSEvent, rows: IndexSet, source: any RowSource, view: NSView, rowFrame: (Int) -> NSRect, secondary: Bool) {
+        let valid = rows.filteredIndexSet { $0 < source.rowCount }
         guard !valid.isEmpty else { return }
         let sample = Array(valid.prefix(5))
-        begin(event: event, urls: valid.map { folder.url(atRow: $0) }, typeIndices: sample.map { folder.entry(atRow: $0).typeIndex },
+        begin(event: event, urls: valid.map { source.url(atRow: $0) }, typeIndices: sample.map { source.entry(atRow: $0).typeIndex },
               view: view, frame: { rowFrame(sample[$0]) }, secondary: secondary)
     }
 

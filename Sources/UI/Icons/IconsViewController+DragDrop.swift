@@ -5,11 +5,11 @@ import MacxFS
 /// Drag source, right-drag and drop destination for the Icons grid (§5.6, P1-36).
 extension IconsViewController {
     func handleMouseDragged(_ event: NSEvent) {
-        guard let folder, let start = mouse.mouseDownWindowPoint, let row = mouse.mouseDownRow, !dragSource.isDragging,
+        guard let source, let start = mouse.mouseDownWindowPoint, let row = mouse.mouseDownRow, !dragSource.isDragging,
               RightDragTracker.exceedsThreshold(from: start, to: event.locationInWindow) else { return }
         mouse.cancelPendingForDrag()
-        let rows = folder.selection.rows.contains(row) ? folder.selection.rows : IndexSet(integer: row)
-        dragSource.begin(event: event, rows: rows, folder: folder, view: collectionView, rowFrame: { [layout] in layout.frame(forItem: $0) },
+        let rows = source.selection.rows.contains(row) ? source.selection.rows : IndexSet(integer: row)
+        dragSource.begin(event: event, rows: rows, source: source, view: collectionView, rowFrame: { [layout] in layout.frame(forItem: $0) },
                          secondary: false)
     }
 
@@ -19,11 +19,11 @@ extension IconsViewController {
     }
 
     func handleRightMouseDragged(_ event: NSEvent) {
-        guard rightDrag.rightMouseDragged(to: event.locationInWindow) == .beginDrag, let folder, let down = rightDownEvent,
-              let row = layout.itemIndex(at: collectionView.convert(down.locationInWindow, from: nil)), row < folder.rowCount else { return }
-        if !folder.selection.rows.contains(row) { folder.select(.set(IndexSet(integer: row), cursor: row)) }
+        guard rightDrag.rightMouseDragged(to: event.locationInWindow) == .beginDrag, let source, let down = rightDownEvent,
+              let row = layout.itemIndex(at: collectionView.convert(down.locationInWindow, from: nil)), row < source.rowCount else { return }
+        if !source.selection.rows.contains(row) { source.select(.set(IndexSet(integer: row), cursor: row)) }
         reloadSelectionDrawing()
-        dragSource.begin(event: event, rows: folder.selection.rows, folder: folder, view: collectionView,
+        dragSource.begin(event: event, rows: source.selection.rows, source: source, view: collectionView,
                          rowFrame: { [layout] in layout.frame(forItem: $0) }, secondary: true)
     }
 
@@ -36,9 +36,9 @@ extension IconsViewController {
     }
 
     func springLoadTarget(_ info: any NSDraggingInfo) -> URL? {
-        guard let folder, let row = layout.itemIndex(at: collectionView.convert(info.draggingLocation, from: nil)),
-              row < folder.rowCount, SpringLoadPolicy.opens(folder.entry(atRow: row).kind) else { return nil }
-        return folder.url(atRow: row)
+        guard let source, let row = layout.itemIndex(at: collectionView.convert(info.draggingLocation, from: nil)),
+              row < source.rowCount, SpringLoadPolicy.opens(source.entry(atRow: row).kind) else { return nil }
+        return source.url(atRow: row)
     }
 
     func collectionView(_ collectionView: NSCollectionView, validateDrop draggingInfo: any NSDraggingInfo,

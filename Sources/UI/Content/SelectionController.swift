@@ -126,13 +126,13 @@ final class ListMouseHandler {
     private(set) var mouseDownRow: Int?
 
     /// `hidden`: model rows in collapsed groups (grouped Details), left out of ⇧-click ranges.
-    func mouseDown(row: Int?, event: NSEvent, folder: FolderModel, from view: NSView, hidden: IndexSet = []) {
+    func mouseDown(row: Int?, event: NSEvent, source: any RowSource, from view: NSView, hidden: IndexSet = []) {
         mouseDownWindowPoint = event.locationInWindow
         mouseDownRow = row
         pendingMouseUp = nil
         switch SelectionController.click(row: row, clickCount: event.clickCount, modifiers: ClickModifiers(event.modifierFlags),
-                                         selectedRows: folder.selection.rows, hidden: hidden) {
-        case .select(let command): folder.select(command)
+                                         selectedRows: source.selection.rows, hidden: hidden) {
+        case .select(let command): source.select(command)
         case .selectOnMouseUp(let command): pendingMouseUp = command
         case .open(let newWindow):
             NSApp.sendAction(Selector((newWindow ? Command.openInNewWindow : Command.open).selectorName), to: nil, from: view)
@@ -140,8 +140,8 @@ final class ListMouseHandler {
         }
     }
 
-    func mouseUp(folder: FolderModel) {
-        if let pendingMouseUp { folder.select(pendingMouseUp) }
+    func mouseUp(source: any RowSource) {
+        if let pendingMouseUp { source.select(pendingMouseUp) }
         pendingMouseUp = nil
         mouseDownWindowPoint = nil
         mouseDownRow = nil
@@ -154,29 +154,30 @@ final class ListMouseHandler {
 /// Navigation keys and type-select for a list (KeyRouter runs first for alternates).
 @MainActor
 enum ListKeys {
-    /// `mapping` (grouped Details, P2-10): navigation and type-select run over visible items only.
-    static func handle(_ event: NSEvent, folder: FolderModel, list: FileListView, pageSize: Int,
+    /// `mapping` (grouped Details, P2-10): navigation and type-select run over visible items only. Type-select is a
+    /// folder feature (it searches the folder's EntryStore): search results only navigate.
+    static func handle(_ event: NSEvent, source: any RowSource, list: FileListView, pageSize: Int,
                        navigate: (Int, NavKey) -> Int?, typeSelect: TypeSelect, mapping: RowMapping? = nil) -> Bool {
         if let key = NavKey(event.specialKey) {
             typeSelect.reset()
             if event.modifierFlags.contains(.command) { return true }   // ⌘-arrows never change the selection (§5.5)
-            let cursor = folder.selection.cursor.flatMap { folder.row(of: $0) }
+            let cursor = source.selection.cursor.flatMap { source.row(of: $0) }
             let extend = event.modifierFlags.contains(.shift)
             let command: SelectionCommand?
             if let mapping, mapping.isGrouped {
                 command = SelectionController.groupedTarget(key, cursorRow: cursor, mapping: mapping, pageSize: pageSize)
                     .map { extend ? .extend(to: $0, excluding: mapping.hiddenModelRows) : .set(IndexSet(integer: $0), cursor: $0) }
             } else {
-                command = SelectionController.arrow(key, extend: extend, cursorRow: cursor, rowCount: folder.rowCount,
+                command = SelectionController.arrow(key, extend: extend, cursorRow: cursor, rowCount: source.rowCount,
                                                     pageSize: pageSize, navigate: navigate)
             }
             if let command {
-                folder.select(command)
+                source.select(command)
                 if let row = SelectionController.targetRow(of: command) { list.scrollToRow(row) }
             }
             return true
         }
-        if TypeSelect.accepts(event, collecting: typeSelect.isCollecting(in: folder)) {
+        if let folder = source as? FolderModel, TypeSelect.accepts(event, collecting: typeSelect.isCollecting(in: folder)) {
             typeSelect.handle(event.characters ?? "", folder: folder, list: list, mapping: mapping)
             return true
         }

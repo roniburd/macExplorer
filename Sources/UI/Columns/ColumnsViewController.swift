@@ -153,16 +153,18 @@ final class ColumnsViewController: NSViewController, FileListView, FocusableList
 
     // MARK: FileListView: forwarded to the active column
 
-    var folder: FolderModel? { chain.flatMap { $0.models.isEmpty ? nil : $0.activeModel } }
+    /// The active column's folder (`folder` is this as a FolderModel). Columns never show search results.
+    var source: (any RowSource)? { chain.flatMap { $0.models.isEmpty ? nil : $0.activeModel } }
     var active: BrowserColumnController? {
         guard let chain, columnControllers.indices.contains(chain.activeIndex) else { return nil }
         return columnControllers[chain.activeIndex]
     }
     var focusView: NSView { active?.tableView ?? view }
 
-    /// Columns bind through `bindChain`; `bind(nil)` (leaving Columns) drops every column.
-    func bind(_ folder: FolderModel?) {
-        if folder == nil { bindChain(nil) }
+    /// Columns bind through `bindChain`; `bind(nil)` (leaving Columns) drops every column. A non-folder source
+    /// (search results) also unbinds: ContentViewController shows results in Details instead (P3-09).
+    func bind(_ source: (any RowSource)?) {
+        if !(source is FolderModel) { bindChain(nil) }
     }
 
     func apply(_ changes: ChangeSet) {}                  // every column observes its own model

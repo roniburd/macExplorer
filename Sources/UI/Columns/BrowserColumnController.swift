@@ -123,7 +123,7 @@ final class BrowserColumnController: NSViewController, FileListView, FocusableLi
     private var middleClick = MiddleClickTracker()
     private var bound = true
 
-    var folder: FolderModel? { bound ? model : nil }
+    var source: (any RowSource)? { bound ? model : nil }
     var focusView: NSView { tableView }
     private var settings: Settings { context.environment.settings }
 
@@ -245,8 +245,8 @@ final class BrowserColumnController: NSViewController, FileListView, FocusableLi
     // MARK: FileListView
 
     /// Columns are bound for their lifetime (the chain owns the model); `bind(nil)` unbinds.
-    func bind(_ folder: FolderModel?) {
-        if folder == nil { unbind() }
+    func bind(_ source: (any RowSource)?) {
+        if source == nil { unbind() }
     }
 
     func apply(_ changes: ChangeSet) {
@@ -275,7 +275,7 @@ final class BrowserColumnController: NSViewController, FileListView, FocusableLi
 
     func beginInlineRename(row: Int) {
         renameController?.cancel()
-        let controller = InlineRenameController(list: self, folder: model, environment: context.environment)
+        let controller = InlineRenameController(list: self, source: model, environment: context.environment)
         controller.origin = view.window.map { OriginID(raw: $0.windowNumber) }
         controller.onEnd = { [weak self] in
             guard let self, let window = self.view.window, window.firstResponder === window else { return }
@@ -366,7 +366,7 @@ final class BrowserColumnController: NSViewController, FileListView, FocusableLi
             return true
         }
         defer { reloadSelectionDrawing() }
-        return ListKeys.handle(event, folder: model, list: self, pageSize: max(1, visibleRows().count - 1),
+        return ListKeys.handle(event, source: model, list: self, pageSize: max(1, visibleRows().count - 1),
                                navigate: SelectionController.linearNavigator(rowCount: model.rowCount), typeSelect: typeSelect)
     }
 
@@ -377,13 +377,13 @@ final class BrowserColumnController: NSViewController, FileListView, FocusableLi
         owner?.activate(self)
         view.window?.makeFirstResponder(tableView)
         let row = tableView.row(at: tableView.convert(event.locationInWindow, from: nil))
-        mouse.mouseDown(row: row >= 0 && row < model.rowCount ? row : nil, event: event, folder: model, from: tableView)
+        mouse.mouseDown(row: row >= 0 && row < model.rowCount ? row : nil, event: event, source: model, from: tableView)
         reloadSelectionDrawing()
     }
 
     func handleMouseUp(_ event: NSEvent) {
         guard bound else { return }
-        mouse.mouseUp(folder: model)
+        mouse.mouseUp(source: model)
         reloadSelectionDrawing()
     }
 
@@ -413,7 +413,7 @@ final class BrowserColumnController: NSViewController, FileListView, FocusableLi
               RightDragTracker.exceedsThreshold(from: start, to: event.locationInWindow) else { return }
         mouse.cancelPendingForDrag()
         let rows = model.selection.rows.contains(row) ? model.selection.rows : IndexSet(integer: row)
-        dragSource.begin(event: event, rows: rows, folder: model, view: tableView, rowFrame: { [tableView] in tableView.rect(ofRow: $0) },
+        dragSource.begin(event: event, rows: rows, source: model, view: tableView, rowFrame: { [tableView] in tableView.rect(ofRow: $0) },
                          secondary: false)
     }
 
@@ -429,7 +429,7 @@ final class BrowserColumnController: NSViewController, FileListView, FocusableLi
         owner?.activate(self)
         if !model.selection.rows.contains(row) { model.select(.set(IndexSet(integer: row), cursor: row)) }
         reloadSelectionDrawing()
-        dragSource.begin(event: event, rows: model.selection.rows, folder: model, view: tableView,
+        dragSource.begin(event: event, rows: model.selection.rows, source: model, view: tableView,
                          rowFrame: { [tableView] in tableView.rect(ofRow: $0) }, secondary: true)
     }
 

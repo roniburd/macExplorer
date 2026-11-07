@@ -6,10 +6,11 @@ import MacxFS
 @MainActor
 enum DetailsColumns {
     static let defaults: [ColumnSetting] = Settings.defaultColumns
-    /// Columns the table holds and the header chooser offers (P2-16): every column, but Path only for listings
-    /// that span folders (Phase 3 search results); every Phase 2 folder listing passes false.
+    /// Columns the table holds and the header chooser offers (P2-16): for a folder listing every column but Path;
+    /// for listings that span folders (search results, P3-09) Path and the Phase 1 columns, not the extended ones
+    /// (their attributes are loaded per folder).
     static func availableColumns(isMultiFolder: Bool) -> [ColumnID] {
-        ColumnID.allCases.filter { $0 != .path || isMultiFolder }
+        ColumnID.allCases.filter { isMultiFolder ? $0 == .path || !$0.sortField.isExtended : $0 != .path }
     }
     private static let prefix = "macx.column."
 

@@ -5,11 +5,11 @@ import MacxFS
 /// Drag source, right-drag and drop destination for the Details list (§5.6, P1-36).
 extension DetailsViewController {
     func handleMouseDragged(_ event: NSEvent) {
-        guard let folder, let start = mouse.mouseDownWindowPoint, let row = mouse.mouseDownRow, !dragSource.isDragging,
+        guard let source, let start = mouse.mouseDownWindowPoint, let row = mouse.mouseDownRow, !dragSource.isDragging,
               RightDragTracker.exceedsThreshold(from: start, to: event.locationInWindow) else { return }
         mouse.cancelPendingForDrag()
-        let rows = folder.selection.rows.contains(row) ? folder.selection.rows : IndexSet(integer: row)
-        dragSource.begin(event: event, rows: rows, folder: folder, view: tableView, rowFrame: modelRowFrame, secondary: false)
+        let rows = source.selection.rows.contains(row) ? source.selection.rows : IndexSet(integer: row)
+        dragSource.begin(event: event, rows: rows, source: source, view: tableView, rowFrame: modelRowFrame, secondary: false)
     }
 
     func handleRightMouseDown(_ event: NSEvent) {
@@ -18,12 +18,12 @@ extension DetailsViewController {
     }
 
     func handleRightMouseDragged(_ event: NSEvent) {
-        guard rightDrag.rightMouseDragged(to: event.locationInWindow) == .beginDrag, let folder, let down = rightDownEvent else { return }
+        guard rightDrag.rightMouseDragged(to: event.locationInWindow) == .beginDrag, let source, let down = rightDownEvent else { return }
         guard let row = mapping.modelRow(forTableRow: tableView.hitRow(at: tableView.convert(down.locationInWindow, from: nil))),
-              row < folder.rowCount else { return }
-        if !folder.selection.rows.contains(row) { folder.select(.set(IndexSet(integer: row), cursor: row)) }
+              row < source.rowCount else { return }
+        if !source.selection.rows.contains(row) { source.select(.set(IndexSet(integer: row), cursor: row)) }
         reloadSelectionDrawing()
-        dragSource.begin(event: event, rows: folder.selection.rows, folder: folder, view: tableView, rowFrame: modelRowFrame,
+        dragSource.begin(event: event, rows: source.selection.rows, source: source, view: tableView, rowFrame: modelRowFrame,
                          secondary: true)
     }
 
@@ -41,10 +41,10 @@ extension DetailsViewController {
     }
 
     func springLoadTarget(_ info: any NSDraggingInfo) -> URL? {
-        guard let folder else { return nil }
+        guard let source else { return nil }
         guard let row = mapping.modelRow(forTableRow: tableView.hitRow(at: tableView.convert(info.draggingLocation, from: nil))),
-              row < folder.rowCount, SpringLoadPolicy.opens(folder.entry(atRow: row).kind) else { return nil }
-        return folder.url(atRow: row)
+              row < source.rowCount, SpringLoadPolicy.opens(source.entry(atRow: row).kind) else { return nil }
+        return source.url(atRow: row)
     }
 
     func tableView(_ tableView: NSTableView, validateDrop info: any NSDraggingInfo, proposedRow row: Int,

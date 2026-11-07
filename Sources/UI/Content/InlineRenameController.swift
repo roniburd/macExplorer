@@ -85,7 +85,7 @@ enum RenamePrompts {
 @MainActor
 final class InlineRenameController: NSObject, NSTextFieldDelegate {
     private weak var list: (any FileListView)?
-    private let folder: FolderModel
+    private let source: any RowSource
     private let environment: CoreEnvironment
     private(set) var field: RenameField?
     private var errorLabel: NSTextField?
@@ -102,37 +102,37 @@ final class InlineRenameController: NSObject, NSTextFieldDelegate {
     var currentText: String? { field?.stringValue }
     var errorText: String? { errorLabel?.stringValue }
 
-    init(list: FileListView, folder: FolderModel, environment: CoreEnvironment) {
+    init(list: FileListView, source: any RowSource, environment: CoreEnvironment) {
         self.list = list
-        self.folder = folder
+        self.source = source
         self.environment = environment
         super.init()
     }
 
     func begin(row: Int) {
-        guard row >= 0, row < folder.rowCount, let host = list as? InlineRenameHost else { return }
+        guard row >= 0, row < source.rowCount, let host = list as? InlineRenameHost else { return }
         if isEditing { finish(notify: false) }
         list?.scrollToRow(row)
         host.renameContainer.layoutSubtreeIfNeeded()
         guard let frame = host.renameFieldFrame(forRow: row) else { return }
-        let name = folder.name(atRow: row)
-        editingID = folder.identity(atRow: row)
+        let name = source.name(atRow: row)
+        editingID = source.identity(atRow: row)
         originalName = name
-        folder.select(.set(IndexSet(integer: row), cursor: row))
+        source.select(.set(IndexSet(integer: row), cursor: row))
         let field = RenameField(frame: frame, multiline: host.renameIsMultiline, font: host.renameFont)
         field.stringValue = name
         field.delegate = self
         host.renameContainer.addSubview(field)
         self.field = field
         field.window?.makeFirstResponder(field)
-        field.currentEditor()?.selectedRange = BaseNameRange.nsRange(of: name, isFolder: folder.entry(atRow: row).kind == .directory)
+        field.currentEditor()?.selectedRange = BaseNameRange.nsRange(of: name, isFolder: source.entry(atRow: row).kind == .directory)
     }
 
     func commit(moveToNext: Bool) { commit(advance: moveToNext ? .next : .none) }
 
     func commit(advance: RenameAdvance, fromBlur: Bool = false) {
         guard let field, let id = editingID, !isCommitting else { return }
-        guard let row = folder.row(of: id) else { finish(); return }
+        guard let row = source.row(of: id) else { finish(); return }
         let proposed = field.stringValue
         let neighbor = neighborID(of: row, advance)
         if proposed == originalName {
@@ -140,14 +140,14 @@ final class InlineRenameController: NSObject, NSTextFieldDelegate {
             beginNext(neighbor)
             return
         }
-        switch folder.validateName(proposed, renamingRow: row) {
+        switch source.validateName(proposed, renamingRow: row) {
         case .invalid(let problem):
             if fromBlur { finish(); return }   // focus moved away: revert, as Explorer does
             showError(ErrorText.renameProblem(problem, name: proposed))
             NSSound.beep()
         case .ok(let warnings):
             isCommitting = true
-            let url = folder.url(atRow: row)
+            let url = source.url(atRow: row)
             Task { await self.confirmAndRename(url: url, to: proposed, warnings: warnings, neighbor: neighbor) }
         }
     }
@@ -157,7 +157,7 @@ final class InlineRenameController: NSObject, NSTextFieldDelegate {
     /// After a ChangeSet: move the field to its item's new row, or close it if the item is gone.
     func relayout() {
         guard isEditing, let id = editingID else { return }
-        guard let row = folder.row(of: id), let host = list as? InlineRenameHost, let frame = host.renameFieldFrame(forRow: row) else {
+        guard let row = source.row(of: id), let host = list as? InlineRenameHost, let frame = host.renameFieldFrame(forRow: row) else {
             cancel()
             return
         }
@@ -170,13 +170,13 @@ final class InlineRenameController: NSObject, NSTextFieldDelegate {
     /// landed): track the current name so a commit never compares against a stale one, and refresh untouched text.
     private func followName(ofRow row: Int) {
         guard let field else { return }
-        let name = folder.name(atRow: row)
+        let name = source.name(atRow: row)
         guard name != originalName else { return }
         let untouched = field.stringValue == originalName
         originalName = name
         guard untouched else { return }
         field.stringValue = name
-        field.currentEditor()?.selectedRange = BaseNameRange.nsRange(of: name, isFolder: folder.entry(atRow: row).kind == .directory)
+        field.currentEditor()?.selectedRange = BaseNameRange.nsRange(of: name, isFolder: source.entry(atRow: row).kind == .directory)
     }
 
     // MARK: NSTextFieldDelegate
@@ -217,6 +217,17 @@ final class InlineRenameController: NSObject, NSTextFieldDelegate {
         }
         finish()
         _ = await environment.operations.perform(JobRequest(.rename(url, to: name), origin: origin))
+        guard let folder = source as? FolderModel else {
+            // Search results (P3-09): the job's LocalChange re-keys the row under its new path (identity
+            // `.name(path)`); select it there once the model lists it, then move on to the neighbor.
+            let renamed = RowID.name(Self.join(url.deletingLastPathComponent().path(percentEncoded: false), name))
+            whenListed(renamed) { [weak self] row in
+                guard let self, !self.isEditing else { return }
+                if let row { self.source.select(.set(IndexSet(integer: row), cursor: row)) }
+                self.beginNext(neighbor)
+            }
+            return
+        }
         guard let neighbor else { return }
         // The job returns once its change is posted, not once the model patched it, and a watcher patch can land
         // first with the old name gone and the new one not yet listed. Opening the neighbor on that listing makes
@@ -230,16 +241,46 @@ final class InlineRenameController: NSObject, NSTextFieldDelegate {
         }
     }
 
+    /// Calls `then` with the row of `id` as soon as the source lists it (checked now, then on each row event), or
+    /// with nil after `timeout`.
+    private func whenListed(_ id: RowID, timeout: Duration = .seconds(2), then: @escaping @MainActor (Int?) -> Void) {
+        if let row = source.row(of: id) { then(row); return }
+        var token: ObserverToken?
+        var done = false
+        let finish: @MainActor (Int?) -> Void = { row in
+            guard !done else { return }
+            done = true
+            token?.cancel()
+            token = nil
+            then(row)
+        }
+        token = source.observeRows { [weak self] _ in
+            guard let self, let row = self.source.row(of: id) else { return }
+            finish(row)
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: timeout)
+            finish(nil)
+        }
+    }
+
+    /// `parent` + "/" + `name`, without a doubled slash ("/" stays the root).
+    static func join(_ parent: String, _ name: String) -> String {
+        var parent = parent
+        while parent.count > 1 && parent.hasSuffix("/") { parent.removeLast() }
+        return parent == "/" ? "/" + name : parent + "/" + name
+    }
+
     private func neighborID(of row: Int, _ advance: RenameAdvance) -> RowID? {
         switch advance {
         case .none: nil
-        case .next: row + 1 < folder.rowCount ? folder.identity(atRow: row + 1) : nil
-        case .previous: row > 0 ? folder.identity(atRow: row - 1) : nil
+        case .next: row + 1 < source.rowCount ? source.identity(atRow: row + 1) : nil
+        case .previous: row > 0 ? source.identity(atRow: row - 1) : nil
         }
     }
 
     private func beginNext(_ id: RowID?) {
-        guard let id, let row = folder.row(of: id) else { return }
+        guard let id, let row = source.row(of: id) else { return }
         begin(row: row)
     }
 

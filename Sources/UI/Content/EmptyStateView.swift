@@ -5,12 +5,15 @@ import Core
 
 enum EmptyStateAction: Equatable, Sendable {
     case openPrivacySettings, properties, retry
+    case searchSubfolders, searchAgain                  // search results (P3-09)
 
     @MainActor var title: String {
         switch self {
         case .openPrivacySettings: L10n.string("Open Privacy Settings")
         case .properties: L10n.string("Properties")
         case .retry: L10n.string("Retry")
+        case .searchSubfolders: L10n.string("search.empty.action.searchSubfolders")
+        case .searchAgain: L10n.string("search.empty.action.searchAgain")
         }
     }
 }
@@ -50,6 +53,42 @@ struct EmptyStateContent: Equatable {
             return EmptyStateContent(title: L10n.string("Location not responding"), action: .retry)
         case .waitingForPermission:
             return EmptyStateContent(title: L10n.string("Waiting for macOS permission…"), showsSpinner: true)
+        }
+    }
+}
+
+extension EmptyStateContent {
+    /// Search results' empty states (P3-09), only while there are no rows. `query` is the search text, or the root
+    /// folder's name for `.rootUnreadable` (ContentViewController passes it).
+    @MainActor
+    static func make(search state: SearchState, notices: [SearchNotice], rowCount: Int, query: String) -> EmptyStateContent? {
+        guard rowCount == 0 else { return nil }
+        func content(_ titleKey: String, _ arg: String? = nil, detail: String? = nil, action: EmptyStateAction? = nil,
+                     spinner: Bool = false) -> EmptyStateContent {
+            let title = arg.map { String(format: L10n.string(titleKey), $0) } ?? L10n.string(titleKey)
+            return EmptyStateContent(title: title, detail: detail.map(L10n.string), action: action, showsSpinner: spinner)
+        }
+        switch state {
+        case .searching:
+            return content("search.empty.searching", spinner: true)
+        case .complete, .stopped:
+            if notices.contains(.spotlightOff) {
+                return content("search.empty.spotlightOff", detail: "search.empty.spotlightOff.detail", action: .searchSubfolders)
+            }
+            if case .stopped = state { return content("search.empty.stopped", action: .searchAgain) }
+            if notices.contains(.mayNotBeIndexed) {
+                return content("search.empty.noResults", query, detail: "search.empty.mayNotBeIndexed", action: .searchSubfolders)
+            }
+            return content("search.empty.noResults", query)
+        case .failed(.rootUnreadable(let reason)):
+            switch reason {
+            case .notFound, .volumeGone: return content("search.empty.rootGone", query, action: .searchAgain)
+            default: return content("search.empty.noPermission", query, action: .searchAgain)
+            }
+        case .failed(.volumeUnresponsive):
+            return content("search.empty.unresponsive", action: .searchAgain)
+        case .failed(.spotlightFailed):
+            return content("search.empty.spotlightFailed", action: .searchAgain)
         }
     }
 }
