@@ -9,6 +9,8 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
     let session: BrowserSession
     let splitViewController: BrowserSplitViewController
     let toolbarController: ToolbarController
+    /// The search field's text, scope, mode and filters → the session's search (P3-10).
+    let searchController: SearchController
     var scenarioHooks = ScenarioHooks()
     /// Installed by the address bar (P1-27): ⌘L / ⌥D / F4 begin editing it.
     var focusAddressBar: (() -> Void)?
@@ -27,7 +29,8 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
         self.context = context
         self.session = BrowserSession(environment: context.environment, initialURL: initialURL)
         self.splitViewController = BrowserSplitViewController(context: context, session: session)
-        self.toolbarController = ToolbarController(context: context, session: session)
+        self.searchController = SearchController(session: session, settings: context.environment.settings)
+        self.toolbarController = ToolbarController(context: context, session: session, searchController: searchController)
         let window = BrowserWindow(contentRect: NSRect(x: 0, y: 0, width: 1000, height: 640),
                                    styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                                    backing: .buffered, defer: false)
@@ -58,6 +61,7 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
         sidebarPane?.handler = fileCommands
 
         installToolbarHooks()
+        installSearch()
         installNewTabHooks()
         installQuickLook()
         sessionToken = session.observe { [weak self] event in self?.handle(event) }
@@ -106,6 +110,15 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
         scenarioHooks.isEditingAddress = { [weak bar] in bar?.isEditing ?? false }
     }
 
+    /// The search field and the content's scope bar share the window's SearchController (P3-10).
+    private func installSearch() {
+        let content = contentPane as? ContentViewController
+        content?.searchController = searchController
+        let field = toolbarController.search
+        field.onEndEditing = { [weak self] in self?.focus(.content) }
+        field.onFocusChange = { [weak content] focused in content?.searchFieldFocused = focused }
+    }
+
     /// The content split item's controller (ContentViewController).
     var contentPane: CommandHandlingViewController? {
         splitViewController.splitViewItems.last?.viewController as? CommandHandlingViewController
@@ -143,9 +156,11 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
         window.makeFirstResponder(responder)
     }
 
-    /// Depth-first: the first view that takes keyboard focus (the table in Details, the grid in Icons).
+    /// Depth-first: the first view that takes keyboard focus (the table in Details, the grid in Icons). Hidden
+    /// subtrees (the collapsed search scope bar) and the scope bar's controls never take it: content focus is the list.
     private static func firstAcceptingView(in view: NSView) -> NSView? {
-        if view.acceptsFirstResponder, !view.isHidden { return view }
+        if view.isHidden || view is SearchScopeBar { return nil }
+        if view.acceptsFirstResponder { return view }
         for subview in view.subviews {
             if let found = firstAcceptingView(in: subview) { return found }
         }
@@ -157,9 +172,12 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
     private func handle(_ event: SessionEvent) {
         switch event {
         case .folderChanged:
-            quickLook.bind(session.folder)
+            if session.results == nil { quickLook.bind(session.folder) }
             folderDidChange()
-        case .historyChanged, .viewModeChanged, .viewStateChanged, .banner, .columnsChanged: break
+        case .resultsChanged(let results):
+            quickLook.bind(results ?? session.folder)
+            updateTitle()
+        case .historyChanged, .viewModeChanged, .viewStateChanged, .banner, .columnsChanged, .searchTextChanged, .searchChanged: break
         }
     }
 
@@ -170,6 +188,13 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
     }
 
     private func updateTitle() {
+        if let results = session.results {          // "Search Results in “X”", like the address bar (P3-10)
+            let title = ToolbarController.resultsTitle(results, folder: session.folder.directory)
+            window?.title = title
+            window?.tab.title = title
+            window?.tab.toolTip = results.spec.map { BreadcrumbPath.posixPath($0.root) }
+            return
+        }
         let folder = session.folder
         let volume = context.environment.volumes.volume(for: folder.directory)
         let isVolumeRoot = volume.map { Self.samePath($0.mountPoint, folder.directory) } ?? false
@@ -214,6 +239,7 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
 
     public func windowWillClose(_ notification: Notification) {
         quickLook.bind(nil)
+        searchController.cancelPending()
         sessionToken = nil
         titleLoop?.cancel()
         titleLoop = nil

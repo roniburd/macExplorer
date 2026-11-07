@@ -74,8 +74,8 @@ final class MenuValidationTests: XCTestCase {
             XCTAssertEqual(item.identifier?.rawValue, "macx.menu.\(command.rawValue)")
             XCTAssertFalse(item.title.isEmpty)
         }
-        // P3-10 removes phase3NotYetInMenu as it adds the Phase 3 items.
-        XCTAssertEqual(MainMenuBuilder.notInMenu, Set<Command>([.cancelOperation]).union(MainMenuBuilder.phase3NotYetInMenu),
+        // P3-10: the saved-search commands are SEARCHES context-menu items, Download is the preview pane's button.
+        XCTAssertEqual(MainMenuBuilder.notInMenu, [.cancelOperation, .renameSavedSearch, .removeSavedSearch, .downloadForPreview],
                        "Esc is a key, not a menu command")
     }
 

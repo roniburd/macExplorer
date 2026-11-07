@@ -6,14 +6,15 @@ import MacxFS
 extension BrowserWindowController {
     var probeFolderURL: URL { session.folder.directory }
 
+    /// The rows the content shows: the folder's, or the search results' while they show (P3-10).
     var probeRowNames: [String] {
-        let folder = session.folder
-        return (0..<folder.rowCount).map { folder.name(atRow: $0) }
+        let source: any RowSource = session.results ?? session.folder
+        return (0..<source.rowCount).map { source.name(atRow: $0) }
     }
 
     var probeSelectedNames: [String] {
-        let folder = session.folder
-        return folder.selection.rows.map { folder.name(atRow: $0) }
+        let source: any RowSource = session.results ?? session.folder
+        return source.selection.rows.filter { $0 < source.rowCount }.map { source.name(atRow: $0) }
     }
 
     var probeCutNames: [String] {

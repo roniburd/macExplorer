@@ -7,6 +7,14 @@ extension FileCommandController {
 
     func open(_ target: CommandTarget, newWindow: Bool) {
         switch target {
+        case .resultsSelection(let results):
+            let items = openItems(rows: Array(results.selection.rows), in: results)
+            guard !items.isEmpty else { return }
+            let lanes = environment.lanes
+            let volumes = environment.volumes
+            Task {
+                await self.execute(await OpenPlanner.plan(items, newWindow: newWindow, lanes: lanes, volumes: volumes))
+            }
         case .contentSelection(let folder):
             // Columns (P2-19): open on the single selected folder whose column is already open moves into it.
             if !newWindow, session?.columnChain?.enterSelectedFolder(of: folder) == true { return }
@@ -31,6 +39,14 @@ extension FileCommandController {
         }
     }
 
+    /// OpenPlanner items for `rows` of a folder or search results.
+    func openItems(rows: [Int], in source: any RowSource) -> [OpenItem] {
+        rows.filter { $0 >= 0 && $0 < source.rowCount }.map { row in
+            let entry = source.entry(atRow: row)
+            return OpenItem(url: source.url(atRow: row), kind: entry.kind, isApplication: environment.types.isApplication(entry.typeIndex))
+        }
+    }
+
     // MARK: open in new tab (P2-06)
 
     /// Open in New Tab (File menu, context menu, command bar): every selected folder or link to one, the first new tab
@@ -40,6 +56,9 @@ extension FileCommandController {
         case .contentSelection(let folder):
             openInNewTab(rows: folder.selection.rows.filter { MiddleClickRouter.folderTarget(row: $0, in: folder) != nil },
                          in: folder, select: true)
+        case .resultsSelection(let results):
+            openInNewTab(rows: results.selection.rows.filter { MiddleClickRouter.folderTarget(row: $0, in: results) != nil },
+                         in: results, select: true)
         case .folder, .favorite, .volume, .location:
             window?.openTabs(subjectURLs(target), select: true)
         case .currentFolder(let folder):
@@ -50,11 +69,8 @@ extension FileCommandController {
     /// Content rows into tabs: OpenPlanner resolves links (newWindow: true, so folders come back as openInNewWindow),
     /// only folder targets open, a broken link shows the Phase 1 alert, and more than 10 folders ask first.
     /// `select: false` (middle-click) opens background tabs.
-    func openInNewTab(rows: [Int], in folder: FolderModel, select: Bool) {
-        let items = rows.filter { $0 >= 0 && $0 < folder.rowCount }.map { row in
-            let entry = folder.entry(atRow: row)
-            return OpenItem(url: folder.url(atRow: row), kind: entry.kind, isApplication: environment.types.isApplication(entry.typeIndex))
-        }
+    func openInNewTab(rows: [Int], in folder: any RowSource, select: Bool) {
+        let items = openItems(rows: rows, in: folder)
         guard !items.isEmpty else { return }
         let lanes = environment.lanes
         let volumes = environment.volumes
@@ -147,15 +163,15 @@ extension FileCommandController {
     }
 
     func showPackageContents(_ target: CommandTarget) {
-        guard case .contentSelection(let folder) = target, let row = folder.selection.rows.first,
+        guard let folder = Self.listSource(target), let row = folder.selection.rows.first, row < folder.rowCount,
               folder.entry(atRow: row).kind == .package else { return }
         window?.navigate(to: folder.url(atRow: row))
     }
 
     func openInTerminal(_ target: CommandTarget) {
         let folderURL: URL
-        if case .contentSelection(let folder) = target, folder.selection.rows.count == 1, let row = folder.selection.rows.first,
-           folder.entry(atRow: row).kind == .directory {
+        if let folder = Self.listSource(target), folder.selection.rows.count == 1, let row = folder.selection.rows.first,
+           row < folder.rowCount, folder.entry(atRow: row).kind == .directory {
             folderURL = folder.url(atRow: row)
         } else {
             folderURL = destinationFolder(target)
@@ -201,6 +217,10 @@ extension FileCommandController {
         case .contentSelection(let folder):
             guard let row = folder.selection.cursor.flatMap({ folder.row(of: $0) }) ?? folder.selection.rows.first,
                   let content = contentController() else { return }
+            content.activeList.beginInlineRename(row: row)
+        case .resultsSelection(let results):
+            guard let row = results.selection.cursor.flatMap({ results.row(of: $0) }) ?? results.selection.rows.first,
+                  let content = contentController(), content.activeList.source === results else { return }
             content.activeList.beginInlineRename(row: row)
         case .folder(let url):
             if let beginSidebarRename { beginSidebarRename(url); return }

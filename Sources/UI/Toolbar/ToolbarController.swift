@@ -31,12 +31,12 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
     private var sessionToken: ObserverToken?
     private var volumesToken: ObserverToken?
 
-    init(context: UIContext, session: BrowserSession) {
+    init(context: UIContext, session: BrowserSession, searchController: SearchController) {
         self.context = context
         self.session = session
         navigation = NavigationButtons(session: session, identifier: Self.navigationID)
         addressBar = AddressBarView(context: context)
-        search = SearchFieldController(session: session)
+        search = SearchFieldController(session: session, controller: searchController)
         searchItem = NSSearchToolbarItem(itemIdentifier: Self.searchID)
         addressItem = NSToolbarItem(itemIdentifier: Self.addressID)
         feedbackItem = NSMenuToolbarItem(itemIdentifier: Self.feedbackID)
@@ -49,7 +49,7 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
         super.init()
 
         searchItem.searchField = search.field
-        searchItem.label = L10n.string("Filter")
+        searchItem.label = L10n.string("Search")
         addressItem.view = addressBar
         addressItem.label = L10n.string("Address")
         addressItem.visibilityPriority = .high
@@ -74,7 +74,7 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
         syncViewMode()
     }
 
-    /// ⌘F / F3: the filter field takes the keyboard.
+    /// ⌘F / F3: the search field takes the keyboard.
     func beginSearch() {
         searchItem.beginSearchInteraction()
         if let window = search.field.window, search.field.currentEditor() == nil {
@@ -158,7 +158,7 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
         switch identifier {
         case navigationID: spec = (L10n.string("Navigation"), "chevron.left.chevron.right")
         case addressID: spec = (L10n.string("Address"), "link")
-        case searchID: spec = (L10n.string("Filter"), "magnifyingglass")
+        case searchID: spec = (L10n.string("Search"), "magnifyingglass")
         case viewSwitcherID: spec = (L10n.string("View"), "list.bullet")
         case feedbackID: spec = (L10n.string("Send Feedback"), "bubble.left")
         case updateID: spec = (L10n.string("Update"), "arrow.down.circle")
@@ -180,6 +180,14 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
             showFolder()
             search.folderChanged()
             navigation.update()
+        case .resultsChanged:
+            showFolder()
+            search.updatePlaceholder()
+            navigation.update()
+        case .searchTextChanged(let text):
+            search.searchTextChanged(text)
+        case .searchChanged:
+            break
         case .historyChanged:
             navigation.update()
         case .viewModeChanged:
@@ -189,9 +197,23 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
         }
     }
 
+    /// The folder's breadcrumb, or while results show "Search Results in “root”" (P3-10).
     private func showFolder() {
+        if let results = session.results {
+            let root = results.spec?.root ?? session.folder.directory
+            addressBar.showSearch(title: Self.resultsTitle(results, folder: session.folder.directory), root: root)
+            return
+        }
         let directory = session.folder.directory
         addressBar.show(directory, volume: context.environment.volumes.volume(for: directory))
+    }
+
+    /// "Search Results in “root”" for a spec's results; an external model's own title (Phase 4 tags).
+    static func resultsTitle(_ results: SearchResultsModel, folder: URL) -> String {
+        guard let spec = results.spec else { return results.title }
+        if spec.scope == .thisMac { return SearchStrings.resultsTitle(SearchStrings.scope(.thisMac)) }
+        let name = spec.root.lastPathComponent
+        return SearchStrings.resultsTitle(name.isEmpty ? "/" : name)
     }
 
     private func syncViewMode() {

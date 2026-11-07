@@ -10,6 +10,7 @@ enum CommandTarget {
     case favorite(ResolvedFavorite)
     case volume(VolumeInfo)
     case location(URL)                                   // a LOCATIONS row that is a folder, not a volume (iCloud Drive)
+    case resultsSelection(SearchResultsModel)            // content view focus while it shows search results (P3-10)
 }
 
 /// Runs commands. BrowserWindowController installs one FileCommandController (P1-35) on the content and sidebar panes.

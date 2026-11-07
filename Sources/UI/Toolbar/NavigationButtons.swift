@@ -93,12 +93,19 @@ final class NavigationButtons: NSObject {
     private func menu(_ entries: [(Int, URL)], action: Selector) -> NSMenu {
         let menu = NSMenu()
         for (index, url) in entries {
-            let name = url.lastPathComponent
-            let item = NSMenuItem(title: name.isEmpty || name == "/" ? "/" : name, action: action, keyEquivalent: "")
+            let item: NSMenuItem
+            if BrowserSession.isSearchURL(url) {            // a search entry (P3-10): its text, a magnifying glass
+                let text = SearchSpec(url: url).map { SearchStrings.fieldPlaceholder($0.text.trimmingCharacters(in: .whitespaces)) }
+                item = NSMenuItem(title: text ?? L10n.string("Search"), action: action, keyEquivalent: "")
+                item.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)
+            } else {
+                let name = url.lastPathComponent
+                item = NSMenuItem(title: name.isEmpty || name == "/" ? "/" : name, action: action, keyEquivalent: "")
+                item.toolTip = BreadcrumbPath.posixPath(url)
+                item.image = NSImage(systemSymbolName: "folder", accessibilityDescription: nil)
+            }
             item.target = self
             item.tag = index
-            item.toolTip = BreadcrumbPath.posixPath(url)
-            item.image = NSImage(systemSymbolName: "folder", accessibilityDescription: nil)
             menu.addItem(item)
         }
         return menu

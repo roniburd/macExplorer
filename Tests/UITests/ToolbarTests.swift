@@ -114,37 +114,47 @@ final class ToolbarTests: XCTestCase {
 
     // MARK: search filter
 
+    /// P3-10: the field is This folder + Name search (criteria, contract note 11), live as you type.
     func testSearchFieldFiltersLiveAndClearsOnNavigation() async throws {
         let h = try await ShellHarness.make(self)
         try h.file("Résumé.pdf"); try h.file("resume-old.txt"); try h.file("notes.txt"); try h.dir("sub")
+        h.environment.settings.searchScope = .thisFolder
+        h.environment.settings.searchMode = .name
         let controller = try await h.openWindow()
         let search = controller.toolbarController.search
         XCTAssertEqual(search.field.accessibilityIdentifier(), AXID.search)
         search.field.stringValue = "RESUME"
         search.textDidChange()
-        XCTAssertEqual(controller.session.folder.query.filter, "RESUME")
         try await h.waitUntil("filtered") { Set(controller.probeRowNames) == ["Résumé.pdf", "resume-old.txt"] }
+        XCTAssertEqual(controller.session.folder.query.criteria, SearchCriteria(nameTerms: [NameTerm("RESUME")]))
+        XCTAssertEqual(controller.session.folder.query.filter, "", "the Phase 1 substring filter is no longer set")
+        XCTAssertNil(controller.session.results, "This folder never shows results")
         search.field.stringValue = ""
         search.textDidChange()
         try await h.waitUntil("unfiltered") { controller.probeRowNames.count == 4 }
         search.field.stringValue = "notes"
         search.textDidChange()
+        try await h.waitUntil("criteria") { controller.session.folder.query.criteria != nil }
         controller.navigate(to: h.url("sub"))
-        XCTAssertEqual(search.field.stringValue, "", "the filter clears on navigation")
-        XCTAssertEqual(controller.session.folder.query.filter, "")
+        XCTAssertEqual(search.field.stringValue, "", "the search clears on navigation")
+        XCTAssertNil(controller.session.folder.query.criteria)
+        XCTAssertEqual(search.controller.text, "")
         controller.session.goBack()
         try await h.waitUntil("back unfiltered") { controller.probeRowNames.count == 4 }
     }
 
     func testSearchKeepsSortAndHiddenFlags() async throws {
         let h = try await ShellHarness.make(self)
+        h.environment.settings.searchScope = .thisFolder
         let controller = try await h.openWindow()
         let folder = controller.session.folder
         folder.setQuery(ViewQuery(sort: SortDescriptor(field: .size, ascending: false), showHidden: true))
         let search = controller.toolbarController.search
         search.field.stringValue = "x"
         search.textDidChange()
-        XCTAssertEqual(folder.query, ViewQuery(sort: SortDescriptor(field: .size, ascending: false), showHidden: true, filter: "x"))
+        try await h.waitUntil("criteria") { folder.query.criteria != nil }
+        XCTAssertEqual(folder.query, ViewQuery(sort: SortDescriptor(field: .size, ascending: false), showHidden: true,
+                                               criteria: SearchCriteria(nameTerms: [NameTerm("x")])))
     }
 
     func testFocusSearchMakesTheFieldFirstResponder() async throws {

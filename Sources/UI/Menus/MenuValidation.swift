@@ -43,6 +43,25 @@ import MacxFS
         command == .toggleFolderSizes ? (state.calculateFolderSizes ? .on : .off) : nil
     }
 
+    /// The checkmark of View › Search ▸ scope and mode items (P3-10); nil for other commands.
+    static func searchState(_ command: Command, scope: SearchScope, mode: SearchMode) -> NSControl.StateValue? {
+        let on: Bool
+        switch command {
+        case .searchScopeThisFolder: on = scope == .thisFolder
+        case .searchScopeSubfolders: on = scope == .subfolders
+        case .searchScopeThisMac: on = scope == .thisMac
+        case .searchModeName: on = mode == .name
+        case .searchModeContents: on = mode == .contents
+        default: return nil
+        }
+        return on ? .on : .off
+    }
+
+    /// View › Show / Hide Preview Pane, from `Settings.previewPaneVisible`.
+    static func previewPaneTitle(visible: Bool) -> String {
+        visible ? L10n.string("Hide Preview Pane") : MainMenuTitles.title(.togglePreviewPane)
+    }
+
     static func groupBy(for command: Command) -> GroupBy? {
         switch command {
         case .groupByNone: GroupBy.none

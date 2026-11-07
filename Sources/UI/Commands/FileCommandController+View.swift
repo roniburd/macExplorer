@@ -67,10 +67,15 @@ extension FileCommandController {
 
     private func setSort(field: SortField? = nil, ascending: Bool? = nil) {
         guard let session else { return }
-        let current = session.folder.query.sort
+        let results = session.results
+        let current = results?.sortDescriptor ?? session.folder.query.sort
         let newField = field ?? current.field
         let keepDirection = newField == current.field
         let sort = SortDescriptor(field: newField, ascending: ascending ?? (keepDirection ? current.ascending : true))
+        if let results {                 // results sort themselves; the folder's saved sort is untouched
+            results.setSortDescriptor(sort)
+            return
+        }
         session.updateViewState { $0.sort = sort }
     }
 

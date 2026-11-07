@@ -6,14 +6,10 @@ import Core
 /// `macx.menu.<rawValue>`, and take their single key equivalent from the active bindings' primary (Settings ›
 /// Shortcuts; System Settings › Keyboard › App Shortcuts still overrides it). Titles are matched in English by the scenario runner (`menu` steps).
 @MainActor public enum MainMenuBuilder {
-    /// Commands with no main-menu item. Esc (cancelOperation) is a key, not a menu command.
-    /// Phase 3 commands are listed until their menu items land (P3-10: search, Save Search…, Open Containing Folder,
-    /// Show Preview Pane; P3-11/P3-12: the saved-search and download items live in context menus and the preview pane).
-    static let notInMenu: Set<Command> = Set<Command>([.cancelOperation]).union(phase3NotYetInMenu)
-    static let phase3NotYetInMenu: Set<Command> = [   // P3-10
-        .togglePreviewPane, .openContainingFolder, .saveSearch, .stopSearch, .searchScopeThisFolder, .searchScopeSubfolders,
-        .searchScopeThisMac, .searchModeName, .searchModeContents, .renameSavedSearch, .removeSavedSearch, .downloadForPreview,
-    ]
+    /// Commands with no main-menu item. Esc (cancelOperation) is a key, not a menu command. The saved-search
+    /// commands live in the SEARCHES context menu (P3-11) and Download in the preview pane (P3-12).
+    static let notInMenu: Set<Command> = Set<Command>([.cancelOperation]).union(contextOnly)
+    static let contextOnly: Set<Command> = [.renameSavedSearch, .removeSavedSearch, .downloadForPreview]
 
     public static func build() -> NSMenu {
         // Tabs come only from MacExplorer's own commands (⌘T, "+", Open in New Tab); AppKit must not add its
@@ -101,6 +97,7 @@ import Core
             item(.rename), item(.duplicate), item(.makeAlias), item(.makeSymlink), .separator(),
             item(.moveToTrash), item(.deletePermanently), .separator(),
             item(.share), item(.properties), .separator(),
+            item(.saveSearch), .separator(),
             item(.eject), item(.removeFromFavorites), .separator(),
             item(.closeWindow),
         ]
@@ -132,6 +129,13 @@ import Core
             .separator(),
             item(.toggleHidden), item(.toggleCommandBar),
             standard("Show Sidebar", #selector(NSSplitViewController.toggleSidebar(_:))),
+            item(.togglePreviewPane),
+            .separator(),
+            submenu(L10n.string("Search"), id: "search", [
+                item(.searchScopeThisFolder), item(.searchScopeSubfolders), item(.searchScopeThisMac), .separator(),
+                item(.searchModeName), item(.searchModeContents), .separator(),
+                item(.stopSearch),
+            ]),
             .separator(),
             item(.refresh), .separator(),
             standard("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:))),
@@ -140,7 +144,7 @@ import Core
 
     private static func goItems() -> [NSMenuItem] {
         [
-            item(.back), item(.forward), item(.up), .separator(),
+            item(.back), item(.forward), item(.up), item(.openContainingFolder), .separator(),
             item(.focusAddressBar), item(.focusSearch), .separator(),
             item(.cycleFocusForward), item(.cycleFocusBackward),
         ]

@@ -38,4 +38,14 @@ enum AXID {
     static func column(_ index: Int) -> String { "macx.column.\(index)" }
     static let newTabItem = "macx.newTab"
     static let tabBarDrop = "macx.tabBarDrop"
+    // Phase 3 search (plan P3-10)
+    static let searchScopeBar = "macx.searchScopeBar"
+    static let searchScope = "macx.searchScope"
+    static let searchMode = "macx.searchMode"
+    static let searchFilters = "macx.searchFilters"
+    static let searchStop = "macx.searchStop"
+    static let searchStatus = "macx.searchStatus"
+    static let searchNotice = "macx.searchNotice"
+    static let searchSave = "macx.searchSave"
+    static let searchResultsTitle = "macx.searchResultsTitle"
 }

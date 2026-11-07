@@ -20,14 +20,23 @@ extension BrowserWindowController {
             list.focusView.keyDown(with: event)
         }
         bridge.sourceFrame = { [weak self] url in
-            guard let self, let row = self.session.folder.row(named: url.lastPathComponent),
+            guard let self, let row = self.quickLookRow(of: url),
                   let list = (self.contentPane as? ContentViewController)?.activeList as? QuickLookSourceList else { return nil }
             return list.quickLookSourceFrame(forModelRow: row)
         }
         scenarioHooks.quickLookState = { [weak controller] in
             (controller?.isVisible ?? false, controller?.items.map(\.lastPathComponent) ?? [])
         }
-        controller.bind(session.folder)
+        controller.bind(session.results ?? session.folder)
+    }
+
+    /// The model row of a Quick Look item in what the window shows (folder or results).
+    private func quickLookRow(of url: URL) -> Int? {
+        if let results = session.results {
+            return results.row(of: .name(url.path(percentEncoded: false))) ??
+                (0..<results.rowCount).first { results.url(atRow: $0) == url }
+        }
+        return session.folder.row(named: url.lastPathComponent)
     }
 
     // QLPreviewPanelController is an informal NSObject protocol (nonisolated); the panel calls it on the main thread.

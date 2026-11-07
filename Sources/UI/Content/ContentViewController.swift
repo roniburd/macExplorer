@@ -14,6 +14,14 @@ final class ContentViewController: CommandHandlingViewController {
     /// The Columns view (P2-19), created on first use.
     private(set) var columns: ColumnsViewController?
     let commandBar = CommandBarView()
+    /// Scope chips, Name / Contents, filters, progress, Stop, Save Search… and notices (P3-10).
+    let scopeBar = SearchScopeBar()
+    /// The window's search field controller (BrowserWindowController sets it).
+    var searchController: SearchController? {
+        didSet { searchController?.onChange = { [weak self] in self?.updateScopeBar() }; updateScopeBar() }
+    }
+    /// The toolbar search field is being edited: the scope bar shows while it is.
+    var searchFieldFocused = false { didSet { if searchFieldFocused != oldValue { updateScopeBar() } } }
     let statusBar = StatusBarView()
     let stack = NSStackView()
     let listContainer = NSView()
@@ -54,9 +62,11 @@ final class ContentViewController: CommandHandlingViewController {
     required init?(coder: NSCoder) { fatalError("ContentViewController is created in code") }
 
     override var focusContext: FocusContext { displayedResults is SearchResultsModel ? .searchResults : .content }
-    /// Results have no command target until P3-10 (`.resultsSelection`): no command acts on the folder's selection
-    /// while results are shown.
-    override var commandTarget: CommandTarget? { displayedResults == nil ? .contentSelection(session.folder) : nil }
+    /// While results show, commands act on the selected results (P3-10).
+    override var commandTarget: CommandTarget? {
+        guard let displayedResults else { return .contentSelection(session.folder) }
+        return (displayedResults as? SearchResultsModel).map { .resultsSelection($0) }
+    }
     /// What the active list shows: the results, else the session's folder.
     var displayedSource: any RowSource { displayedResults ?? session.folder }
 
@@ -68,12 +78,15 @@ final class ContentViewController: CommandHandlingViewController {
         stack.distribution = .fill
         stack.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(stack)
-        for part in [commandBar, listContainer, statusBar] as [NSView] {
+        for part in [scopeBar, commandBar, listContainer, statusBar] as [NSView] {
             part.translatesAutoresizingMaskIntoConstraints = false
             stack.addArrangedSubview(part)
             part.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         }
         commandBar.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        scopeBarHeight = scopeBar.heightAnchor.constraint(equalToConstant: scopeBar.preferredHeight)
+        scopeBarHeight?.isActive = true
+        scopeBar.isHidden = true            // hidden arranged views take no space (no jump of the list)
         statusBar.heightAnchor.constraint(equalToConstant: 22).isActive = true
         listContainer.setContentHuggingPriority(NSLayoutConstraint.Priority(1), for: .vertical)
         listContainer.setContentCompressionResistancePriority(NSLayoutConstraint.Priority(1), for: .vertical)
@@ -85,7 +98,7 @@ final class ContentViewController: CommandHandlingViewController {
             root.widthAnchor.constraint(greaterThanOrEqualToConstant: 320),
             root.heightAnchor.constraint(greaterThanOrEqualToConstant: 200),
         ])
-        stack.insertArrangedSubview(banner, at: 1)
+        stack.insertArrangedSubview(banner, at: 2)
         banner.translatesAutoresizingMaskIntoConstraints = false
         banner.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         emptyState.translatesAutoresizingMaskIntoConstraints = false
@@ -102,6 +115,7 @@ final class ContentViewController: CommandHandlingViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         emptyState.onAction = { [weak self] action in self?.performEmptyStateAction(action) }
+        installScopeBarActions()
         addChild(details)
         details.contextMenuProvider = { [weak self] row in self?.contextMenu(forRow: row) }
         details.dropTarget = dropTarget
@@ -155,7 +169,17 @@ final class ContentViewController: CommandHandlingViewController {
 
     private func handle(_ event: SessionEvent) {
         switch event {
-        case .folderChanged(let model): display(model)
+        case .folderChanged(let model):
+            // The folder under shown results can change (it was moved away); the results stay on screen.
+            if session.results == nil { display(model) } else { refreshFreeSpace(force: false) }
+            updateScopeBar()
+        case .resultsChanged(let model):
+            display(model ?? session.folder)
+            updateScopeBar()
+        case .searchTextChanged, .searchChanged:
+            updateScopeBar()
+            updateEmptyState()
+            updateCommandBar()
         case .viewModeChanged(let mode): setViewMode(mode)
         case .viewStateChanged(let state):
             applyViewState(state)
@@ -197,7 +221,9 @@ final class ContentViewController: CommandHandlingViewController {
             resultsToken = results.observe { [weak self, weak results] event in
                 guard let self, let results, results === self.displayedResults else { return }
                 switch event {
-                case .state, .notices: self.updateEmptyState(); self.updateStatus()
+                case .state:
+                    self.updateEmptyState(); self.updateStatus(); self.updateScopeBar(); self.updateCommandBar()
+                case .notices: self.updateEmptyState(); self.updateStatus(); self.updateScopeBar()
                 case .rows: break                          // observeRows delivers them
                 }
             }
@@ -270,7 +296,43 @@ final class ContentViewController: CommandHandlingViewController {
             return
         }
         emptyState.show(EmptyStateContent.make(state: folder.state, folderName: folder.directory.lastPathComponent,
-                                               visibleCount: folder.rowCount, filter: folder.query.filter))
+                                               visibleCount: folder.rowCount, filter: filterText(folder)))
+    }
+
+    /// The text the folder is filtered by: the This folder search (P3-10) or a Phase 1 filter.
+    private func filterText(_ folder: FolderModel) -> String {
+        guard folder.query.criteria != nil else { return folder.query.filter }
+        let text = session.searchSpec?.text.trimmingCharacters(in: .whitespaces) ?? ""
+        return text.isEmpty ? SearchStrings.filters : text
+    }
+
+    // MARK: search scope bar (P3-10)
+
+    private var scopeBarHeight: NSLayoutConstraint?
+
+    private func installScopeBarActions() {
+        scopeBar.onScope = { [weak self] scope in self?.searchController?.scope = scope }
+        scopeBar.onMode = { [weak self] mode in self?.searchController?.mode = mode }
+        scopeBar.onFilters = { [weak self] filters in self?.searchController?.filters = filters }
+        scopeBar.onStop = { [weak self] in self?.session.results?.stop() }
+        scopeBar.onSave = { [weak self] in
+            guard let self, let handler = self.handler, let target = self.commandTarget else { return }
+            handler.perform(.saveSearch, target: target, sender: self.scopeBar)
+        }
+        onSearchSubfolders = { [weak self] in self?.searchController?.scope = .subfolders }
+    }
+
+    /// Shown while the field has text, while a search or its results show, or while the field is being edited.
+    var scopeBarVisible: Bool {
+        searchFieldFocused || session.results != nil || session.searchSpec != nil || !(searchController?.text.isEmpty ?? true)
+    }
+
+    func updateScopeBar() {
+        guard isViewLoaded else { return }
+        let visible = scopeBarVisible
+        if let searchController { scopeBar.update(controller: searchController, session: session) }
+        scopeBarHeight?.constant = scopeBar.preferredHeight
+        if scopeBar.isHidden == visible { scopeBar.isHidden = !visible }
     }
 
     func showBanner(_ text: String?) {
@@ -352,9 +414,16 @@ final class ContentViewController: CommandHandlingViewController {
 
     /// Group By ▸ items show a checkmark for this folder's saved choice (P2-10).
     override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        if let command = MenuValidation.command(for: menuItem.action),
-           let state = MenuValidation.groupByState(command, session.viewState) ?? MenuValidation.folderSizesState(command, session.viewState) {
-            menuItem.state = state
+        if let command = MenuValidation.command(for: menuItem.action) {
+            if let state = MenuValidation.groupByState(command, session.viewState) ?? MenuValidation.folderSizesState(command, session.viewState) {
+                menuItem.state = state
+            }
+            if let searchController, let state = MenuValidation.searchState(command, scope: searchController.scope, mode: searchController.mode) {
+                menuItem.state = state
+            }
+            if command == .togglePreviewPane {
+                menuItem.title = MenuValidation.previewPaneTitle(visible: context.environment.settings.previewPaneVisible)
+            }
         }
         return super.validateMenuItem(menuItem)
     }
@@ -365,7 +434,13 @@ final class ContentViewController: CommandHandlingViewController {
     /// ⌘-click (a selection toggle here) do nothing. The selection is not touched.
     @discardableResult
     func newTabGesture(_ gesture: NewTabGesture, row: Int, in model: FolderModel? = nil) -> Bool {
-        guard model != nil || displayedResults == nil else { return false }   // results: P3-10
+        if model == nil, let results = displayedResults {
+            guard MiddleClickRouter.shouldOpenTab(gesture, in: .searchResults),
+                  MiddleClickRouter.folderTarget(row: row, in: results) != nil,
+                  let commands = handler as? FileCommandController else { return false }
+            commands.openInNewTab(rows: [row], in: results, select: false)
+            return true
+        }
         let folder = model ?? session.folder
         guard MiddleClickRouter.shouldOpenTab(gesture, in: .content),
               MiddleClickRouter.folderTarget(row: row, in: folder) != nil,
@@ -378,7 +453,14 @@ final class ContentViewController: CommandHandlingViewController {
 
     /// Right-click rule (§5.6, Review Focus 1). S6's scenario driver calls this for `rightClick` steps.
     func contextMenu(forRow row: Int?) -> NSMenu? {
-        guard let handler, displayedResults == nil else { return nil }   // the results menus are P3-10's
+        guard let handler else { return nil }
+        if let results = displayedResults as? SearchResultsModel {
+            let rule = ContextMenuBuilder.contextRows(clickedRow: row, selectedRows: results.selection.rows)
+            if let select = rule.select { results.select(select) }
+            if let rows = rule.rows, !rows.isEmpty { return menuBuilder.itemMenu(for: rows, in: results, handler: handler) }
+            return menuBuilder.emptySpaceMenu(for: results, viewState: session.viewState, handler: handler)
+        }
+        guard displayedResults == nil else { return nil }
         let folder = session.folder
         let rule = ContextMenuBuilder.contextRows(clickedRow: row, selectedRows: folder.selection.rows)
         if let select = rule.select { folder.select(select) }

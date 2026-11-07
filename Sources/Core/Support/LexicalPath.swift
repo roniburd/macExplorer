@@ -1,10 +1,10 @@
 import Foundation
 
 /// Pure string path normalization for in-memory comparisons (§5.6 clipboard and drop validation). No file-system calls.
-enum LexicalPath {
+public enum LexicalPath {
     /// Removes "." / ".." / duplicate and trailing slashes, and drops a leading "/private" before var, tmp or etc,
     /// so /private/var/… and /var/… compare equal (the same rule as MountTable).
-    static func standardize(_ path: String) -> String {
+    public static func standardize(_ path: String) -> String {
         guard path.hasPrefix("/") else { return path }
         var parts: [Substring] = []
         for c in path.split(separator: "/", omittingEmptySubsequences: true) {

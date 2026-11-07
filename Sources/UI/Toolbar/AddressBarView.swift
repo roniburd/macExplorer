@@ -17,6 +17,10 @@ final class AddressBarView: NSView {
     let breadcrumb = BreadcrumbView(frame: .zero)
     let editField = AddressEditField()
     let errorLabel = NSTextField(labelWithString: "")
+    /// Search results (P3-10): one non-navigating segment instead of the breadcrumb ("Search Results in “X”").
+    let searchSegment = NSButton(title: "", target: nil, action: nil)
+    /// The title while search results show; nil shows the breadcrumb.
+    private(set) var searchTitle: String?
     private(set) var isEditing = false
     private(set) var errorText: String?
     private(set) var currentURL: URL?
@@ -43,11 +47,29 @@ final class AddressBarView: NSView {
     /// Shows `url` (breadcrumb from `volume`). While editing, the typed text is kept.
     func show(_ url: URL, volume: VolumeInfo?) {
         currentURL = url
+        searchTitle = nil
         breadcrumb.show(BreadcrumbPath.segments(for: url, volume: volume))
+        if !isEditing { showDisplayMode() }
     }
 
-    /// What the bar shows: the field text while editing, else the breadcrumb ("Volume › a › b").
-    var displayText: String { isEditing ? editField.stringValue : breadcrumb.displayText }
+    /// Search results (P3-10): one segment titled `title` (magnifying glass); editing (click, ⌘L, ⌥D, F4) starts
+    /// from the search root's POSIX path. `show(_:volume:)` restores the breadcrumb.
+    func showSearch(title: String, root: URL) {
+        currentURL = root
+        searchTitle = title
+        searchSegment.title = title
+        searchSegment.toolTip = BreadcrumbPath.posixPath(root)
+        searchSegment.setAccessibilityLabel(title)
+        if !isEditing { showDisplayMode() }
+    }
+
+    /// What the bar shows: the field text while editing, else the search title or the breadcrumb ("Volume › a › b").
+    var displayText: String { isEditing ? editField.stringValue : (searchTitle ?? breadcrumb.displayText) }
+
+    private func showDisplayMode() {
+        breadcrumb.isHidden = searchTitle != nil
+        searchSegment.isHidden = searchTitle == nil
+    }
 
     /// ⌘L, ⌥D, F4, empty-space click. Again while editing: selects all.
     func beginEditing() {
@@ -60,6 +82,7 @@ final class AddressBarView: NSView {
             editField.resetUndo()
             editField.stringValue = BreadcrumbPath.posixPath(url)
             breadcrumb.isHidden = true
+            searchSegment.isHidden = true
             editField.isHidden = false
         }
         // Already editing in the field: re-focusing it would resign its field editor, which ends edit mode
@@ -127,7 +150,7 @@ final class AddressBarView: NSView {
             window.makeFirstResponder(nil)
         }
         editField.isHidden = true
-        breadcrumb.isHidden = false
+        showDisplayMode()
     }
 
     private func setError(_ text: String?) {
@@ -147,6 +170,8 @@ final class AddressBarView: NSView {
     private func wire() {
         breadcrumb.onNavigate = { [weak self] url in self?.onNavigate?(url, nil) }
         breadcrumb.onEmptySpaceClick = { [weak self] in self?.beginEditing() }
+        searchSegment.target = self
+        searchSegment.action = #selector(searchSegmentClicked(_:))
         let environment = self.environment
         breadcrumb.listSubfolders = { url in
             await SubfolderLister.list(url, readers: environment.readers, showHidden: environment.settings.showHidden)
@@ -176,7 +201,17 @@ final class AddressBarView: NSView {
         }
     }
 
+    @objc private func searchSegmentClicked(_ sender: Any?) { beginEditing() }
+
     private func buildLayout() {
+        searchSegment.bezelStyle = .accessoryBarAction
+        searchSegment.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)
+        searchSegment.imagePosition = .imageLeading
+        searchSegment.lineBreakMode = .byTruncatingMiddle
+        searchSegment.alignment = .left
+        searchSegment.isHidden = true
+        searchSegment.setAccessibilityIdentifier(AXID.searchResultsTitle)
+        searchSegment.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         errorLabel.textColor = .systemRed
         errorLabel.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
         errorLabel.lineBreakMode = .byTruncatingTail
@@ -184,7 +219,7 @@ final class AddressBarView: NSView {
         errorLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
         editField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         editField.isHidden = true
-        for view in [breadcrumb, editField, errorLabel] as [NSView] {
+        for view in [breadcrumb, searchSegment, editField, errorLabel] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
@@ -197,6 +232,9 @@ final class AddressBarView: NSView {
             breadcrumb.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -2),
             breadcrumb.topAnchor.constraint(equalTo: topAnchor),
             breadcrumb.bottomAnchor.constraint(equalTo: bottomAnchor),
+            searchSegment.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2),
+            searchSegment.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -2),
+            searchSegment.centerYAnchor.constraint(equalTo: centerYAnchor),
             editField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
             editField.centerYAnchor.constraint(equalTo: centerYAnchor),
             fieldTrailing,

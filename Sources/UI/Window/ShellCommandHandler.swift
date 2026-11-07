@@ -33,7 +33,7 @@ final class ShellCommandHandler: CommandHandler {
                                  canGoUp: session.folder.directory.standardizedFileURL.path != "/")
         let focus: FocusContext
         switch target {
-        case .contentSelection, .currentFolder:
+        case .contentSelection, .currentFolder, .resultsSelection:
             if Self.sidebarOnly.contains(command) { return false }
             focus = .content
         case .favorite(let favorite):
@@ -61,7 +61,7 @@ final class ShellCommandHandler: CommandHandler {
     /// The focus a command target comes from (Tab cycle origin).
     private static func focus(of target: CommandTarget) -> FocusContext {
         switch target {
-        case .contentSelection, .currentFolder: .content
+        case .contentSelection, .currentFolder, .resultsSelection: .content
         case .favorite: .sidebarFavorites
         case .volume, .location: .sidebarLocations
         case .folder: .sidebarFolders
@@ -73,7 +73,7 @@ final class ShellCommandHandler: CommandHandler {
         case .favorite(let favorite): favorite.url
         case .volume(let volume): volume.mountPoint
         case .folder(let url), .location(let url): url
-        case .contentSelection, .currentFolder: nil
+        case .contentSelection, .currentFolder, .resultsSelection: nil
         }
     }
 

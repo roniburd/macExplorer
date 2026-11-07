@@ -18,7 +18,7 @@ enum MiddleClickRouter {
 
     /// The row's URL when it can open as a tab: folders, and links (OpenPlanner resolves those; only a folder target
     /// opens). Files, packages (apps included) and other items never do.
-    static func folderTarget(row: Int, in folder: FolderModel) -> URL? {
+    static func folderTarget(row: Int, in folder: any RowSource) -> URL? {
         guard row >= 0, row < folder.rowCount else { return nil }
         switch folder.entry(atRow: row).kind {
         case .directory, .symlink, .alias: return folder.url(atRow: row)

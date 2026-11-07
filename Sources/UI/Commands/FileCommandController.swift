@@ -14,13 +14,15 @@ final class FileCommandController: CommandHandler {
     /// Commands whose UI arrives in a later Phase 2 task (disabled, never performed). The NSWindow tab commands are
     /// here too: NSWindow and BrowserWindowController handle them, so they never reach a pane's handler.
     /// Window tab commands (NSWindow handles them) and the Phase 3 commands whose actions land in later tasks:
-    /// search and Open Containing Folder (P3-10), saved searches (P3-11), preview pane (P3-12). Disabled until then.
+    /// saved searches (P3-11), preview pane (P3-12). Disabled until then.
     static let pendingCommands: Set<Command> = Command.windowTabCommands.union(phase3Pending)
     static let phase3Pending: Set<Command> = [
-        .openContainingFolder, .saveSearch, .stopSearch, .searchScopeThisFolder, .searchScopeSubfolders, .searchScopeThisMac,
-        .searchModeName, .searchModeContents,                       // P3-10
         .renameSavedSearch, .removeSavedSearch,                     // P3-11
         .togglePreviewPane, .downloadForPreview,                    // P3-12
+    ]
+    /// Folder-only view commands: results have no grouping, folder sizes or per-folder view to save.
+    static let folderOnlyCommands: Set<Command> = [
+        .groupByNone, .groupByKind, .groupByDateModified, .groupBySize, .groupByName, .toggleFolderSizes,
     ]
 
     var environment: CoreEnvironment { context.environment }
@@ -34,6 +36,7 @@ final class FileCommandController: CommandHandler {
     static func focus(for target: CommandTarget) -> FocusContext {
         switch target {
         case .contentSelection, .currentFolder: .content
+        case .resultsSelection: .searchResults
         case .folder: .sidebarFolders
         case .favorite: .sidebarFavorites
         case .volume, .location: .sidebarLocations
@@ -44,6 +47,11 @@ final class FileCommandController: CommandHandler {
         let focus = Self.focus(for: target)
         guard let effective = CommandAvailability.effectiveCommand(command, focus: focus),
               !Self.pendingCommands.contains(effective), let session else { return false }
+        if case .resultsSelection(let results) = target {
+            if Self.folderOnlyCommands.contains(effective) { return false }
+            // Make Alias / Create Symbolic Link put the new items next to the originals: one shared folder only.
+            if effective == .makeAlias || effective == .makeSymlink, Self.commonParent(of: results) == nil { return false }
+        }
         var state = CommandStateBuilder.state(for: target, session: session, environment: environment,
                                               needsFolderCount: effective == .openInNewTab)
         if effective == .quickLook { state.quickLookVisible = window?.quickLook.isVisible ?? false }
@@ -105,12 +113,56 @@ final class FileCommandController: CommandHandler {
             // Esc closes Quick Look first (Finder parity); otherwise it clears a pending cut.
             if window?.quickLook.hideIfVisible() != true { environment.clipboard.clearCut() }
         case .quickLook: window?.quickLook.toggle()
+        case .openContainingFolder: openContainingFolder(target)
+        case .stopSearch: session?.results?.stop()
+        case .saveSearch: saveSearch()
+        case .searchScopeThisFolder: window?.searchController.scope = .thisFolder
+        case .searchScopeSubfolders: window?.searchController.scope = .subfolders
+        case .searchScopeThisMac: window?.searchController.scope = .thisMac
+        case .searchModeName: window?.searchController.mode = .name
+        case .searchModeContents: window?.searchController.mode = .contents
         case .newTab, .nextTab, .previousTab, .showTabBar, .showAllTabs, .moveTabToNewWindow, .mergeAllWindows,
-             // P3-10 / P3-11 / P3-12
-             .togglePreviewPane, .openContainingFolder, .saveSearch, .stopSearch,
-             .searchScopeThisFolder, .searchScopeSubfolders, .searchScopeThisMac, .searchModeName, .searchModeContents,
-             .renameSavedSearch, .removeSavedSearch, .downloadForPreview:
+             // P3-11 / P3-12
+             .togglePreviewPane, .renameSavedSearch, .removeSavedSearch, .downloadForPreview:
             break   // pendingCommands: canPerform is false, so perform beeps above
+        }
+    }
+
+    // MARK: search (P3-10)
+
+    /// Go › Open Containing Folder (⌥⌘R): the first selected result's folder, with it selected.
+    func openContainingFolder(_ target: CommandTarget) {
+        guard case .resultsSelection(let results) = target, let session else { return }
+        let rows = results.selection.rows.filter { $0 < results.rowCount }
+        let row = results.selection.cursor.flatMap { results.row(of: $0) }.flatMap { rows.contains($0) ? $0 : nil } ?? rows.first
+        guard let row else { return }
+        session.openContainingFolder(of: results.url(atRow: row))
+    }
+
+    /// File › Save Search…: the search shown, named after its text (P3-11 asks for the name first).
+    func saveSearch() {
+        guard let spec = session?.searchSpec else { return }
+        _ = environment.settings.addSavedSearch(name: spec.text, spec: spec)
+    }
+
+    /// The one folder every selected result is in; nil for an empty selection or several folders.
+    static func commonParent(of results: SearchResultsModel) -> URL? {
+        let rows = results.selection.rows.filter { $0 < results.rowCount }
+        guard let first = rows.first else { return nil }
+        let parent = results.parentURL(atRow: first)
+        let key = LexicalPath.standardize(parent.path(percentEncoded: false))
+        for row in rows.dropFirst() where LexicalPath.standardize(results.parentURL(atRow: row).path(percentEncoded: false)) != key {
+            return nil
+        }
+        return parent
+    }
+
+    /// The rows a content target lists (a folder, or search results), for the URL-based helpers.
+    static func listSource(_ target: CommandTarget) -> (any RowSource)? {
+        switch target {
+        case .contentSelection(let folder): folder
+        case .resultsSelection(let results): results
+        case .currentFolder, .folder, .favorite, .volume, .location: nil
         }
     }
 
@@ -152,6 +204,12 @@ final class FileCommandController: CommandHandler {
                 return PathItem(directory: folder.directory, name: folder.name(atRow: row),
                                 isDirectory: kind == .directory || kind == .package)
             }
+        case .resultsSelection(let results):
+            results.selection.rows.filter { $0 < results.rowCount }.map { row in
+                let kind = results.entry(atRow: row).kind
+                return PathItem(directory: results.parentURL(atRow: row), name: results.name(atRow: row),
+                                isDirectory: kind == .directory || kind == .package)
+            }
         case .currentFolder(let folder): [PathItem(url: folder.directory, isDirectory: true)]
         case .folder(let url), .location(let url): [PathItem(url: url, isDirectory: true)]
         case .favorite(let favorite): favorite.url.map { [PathItem(url: $0, isDirectory: true)] } ?? []
@@ -165,6 +223,7 @@ final class FileCommandController: CommandHandler {
     func subjectURLs(_ target: CommandTarget) -> [URL] {
         switch target {
         case .contentSelection(let folder): folder.selectedURLs
+        case .resultsSelection(let results): results.selectedURLs
         case .currentFolder(let folder): [folder.directory]
         case .folder(let url), .location(let url): [url]
         case .favorite(let favorite): favorite.url.map { [$0] } ?? []
@@ -176,6 +235,8 @@ final class FileCommandController: CommandHandler {
     func destinationFolder(_ target: CommandTarget) -> URL {
         switch target {
         case .contentSelection(let folder), .currentFolder(let folder): folder.directory
+        case .resultsSelection(let results):       // Paste and New are disabled in results; the search root
+            results.spec?.root ?? session?.folder.directory ?? environment.settings.home
         case .folder(let url), .location(let url): url
         case .favorite(let favorite): favorite.url ?? environment.settings.home
         case .volume(let volume): volume.mountPoint
@@ -186,6 +247,7 @@ final class FileCommandController: CommandHandler {
     func containingFolder(_ target: CommandTarget) -> URL {
         switch target {
         case .contentSelection(let folder), .currentFolder(let folder): folder.directory
+        case .resultsSelection(let results): Self.commonParent(of: results) ?? environment.settings.home
         case .folder(let url): url.deletingLastPathComponent()
         case .favorite, .volume, .location: environment.settings.home
         }
@@ -214,7 +276,11 @@ final class FileCommandController: CommandHandler {
     }
 
     private func select(_ command: SelectionCommand, _ target: CommandTarget) {
-        if case .contentSelection(let folder) = target { folder.select(command) }
+        switch target {
+        case .contentSelection(let folder): folder.select(command)
+        case .resultsSelection(let results): results.select(command)
+        default: break
+        }
     }
 
     /// ⌘I / ⌥Return / command bar / context menus / the empty state's Properties button (§5.8).
@@ -233,6 +299,8 @@ final class FileCommandController: CommandHandler {
         switch target {
         case .volume(let volume): return .volume(volume)
         case .contentSelection(let folder): urls = folder.selectedURLs.isEmpty ? [folder.directory] : folder.selectedURLs
+        case .resultsSelection(let results):
+            if !results.selectedURLs.isEmpty { urls = results.selectedURLs } else if let root = results.spec?.root { urls = [root] } else { return nil }
         case .currentFolder(let folder): urls = [folder.directory]
         case .folder(let url), .location(let url): urls = [url]
         case .favorite(let favorite):

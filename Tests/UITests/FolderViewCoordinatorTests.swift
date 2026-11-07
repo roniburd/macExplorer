@@ -85,7 +85,7 @@ final class FolderViewCoordinatorTests: XCTestCase {
             case .folderChanged: events.append("folder")
             case .viewModeChanged(let mode): events.append("mode:\(mode.rawValue)")
             case .viewStateChanged(let state): events.append("state:\(state.mode.rawValue):\(state.iconSize.rawValue)")
-            case .historyChanged, .banner, .columnsChanged: break
+            case .historyChanged, .banner, .columnsChanged, .resultsChanged, .searchTextChanged, .searchChanged: break
             }
         }
         defer { token.cancel() }

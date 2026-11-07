@@ -18,6 +18,10 @@ enum CommandStateBuilder {
         state.canGoUp = session.folder.directory.standardizedFileURL.path != "/"
         state.folderIsReadOnly = session.folder.volume?.isReadOnly ?? false
         state.viewMode = session.viewMode
+        // Search (P3-10): Save Search… and Stop Search work from any focus in the window.
+        state.hasSearchQuery = session.searchSpec != nil
+        state.showingResults = session.results != nil
+        if case .searching? = session.results?.state { state.isSearching = true }
         switch target {
         case .contentSelection(let folder):
             let rows = folder.selection.rows
@@ -29,6 +33,19 @@ enum CommandStateBuilder {
             }
             if rows.count == 1, let row = rows.first, row < folder.rowCount {
                 let entry = folder.entry(atRow: row)
+                state.singleFolderSelected = entry.kind == .directory
+                state.targetIsPackage = entry.kind == .package
+            }
+        case .resultsSelection(let results):
+            let rows = results.selection.rows.filter { $0 < results.rowCount }
+            state.selectionCount = rows.count
+            state.canPaste = false                      // results have no single destination folder
+            state.folderIsReadOnly = false              // the file operations report read-only items themselves
+            if needsFolderCount {
+                state.selectedFolderCount = rows.contains { results.entry(atRow: $0).kind == .directory } ? 1 : 0
+            }
+            if rows.count == 1, let row = rows.first {
+                let entry = results.entry(atRow: row)
                 state.singleFolderSelected = entry.kind == .directory
                 state.targetIsPackage = entry.kind == .package
             }

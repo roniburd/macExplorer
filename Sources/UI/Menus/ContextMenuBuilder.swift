@@ -84,6 +84,9 @@ enum ContextMenuTitles {
         case .groupByName: L10n.string("Name")
         case .useViewAsDefault: L10n.string("Use as Default for All Folders")
         case .resetFolderView: L10n.string("Reset View for This Folder")
+        case .openContainingFolder: L10n.string("Open Containing Folder")
+        case .saveSearch: L10n.string("Save Search…")
+        case .stopSearch: L10n.string("Stop Search")
         default: command.rawValue
         }
     }
@@ -139,6 +142,78 @@ final class ContextMenuBuilder {
         menu.addItem(.separator())
         add(.properties, target, handler, to: menu)
         return menu   // AppKit appends Services ▸ for the list views' NSServicesMenuRequestor when it pops the menu
+    }
+
+    /// A right-click on search results (P3-10): Open, Open Containing Folder, Open in New Tab, Open With ▸, Quick Look,
+    /// —, Cut, Copy, Copy as Path (+ Copy Path As ▸), —, Rename, Move to Trash, —, Get Info. No Paste (no single
+    /// destination folder).
+    func itemMenu(for rows: IndexSet, in results: SearchResultsModel, handler: CommandHandler) -> NSMenu {
+        let menu = NSMenu()
+        let target = CommandTarget.resultsSelection(results)
+        let valid = rows.filteredIndexSet { $0 < results.rowCount }
+        add(.open, target, handler, to: menu)
+        add(.openContainingFolder, target, handler, to: menu)
+        if valid.contains(where: { MiddleClickRouter.folderTarget(row: $0, in: results) != nil }) {
+            add(.openInNewTab, target, handler, to: menu)
+        }
+        if let openWith = openWithItem(rows: valid, folder: results, handler: handler) { menu.addItem(openWith) }
+        add(.quickLook, target, handler, to: menu)
+        menu.addItem(.separator())
+        add(.cut, target, handler, to: menu)
+        add(.copy, target, handler, to: menu)
+        add(.copyAsPath, target, handler, to: menu)
+        menu.addItem(CopyPathMenu.submenuItem(target: target, handler: handler))
+        menu.addItem(.separator())
+        add(.rename, target, handler, to: menu)
+        add(.moveToTrash, target, handler, to: menu)
+        menu.addItem(.separator())
+        add(.properties, target, handler, to: menu).title = L10n.string("Get Info")
+        return menu
+    }
+
+    /// Empty space in search results (P3-10): Sort By ▸, View ▸, —, Search Again, Save Search…. No Paste, no New.
+    func emptySpaceMenu(for results: SearchResultsModel, viewState: FolderViewState? = nil, handler: CommandHandler) -> NSMenu {
+        let view = viewState ?? context.environment.settings.defaultFolderViewState()
+        let menu = NSMenu()
+        let target = CommandTarget.resultsSelection(results)
+        let sortItem = NSMenuItem(title: L10n.string("Sort By"), action: nil, keyEquivalent: "")
+        sortItem.identifier = NSUserInterfaceItemIdentifier("macx.menu.sortBy")
+        let sortMenu = NSMenu(title: sortItem.title)
+        let sort = results.sortDescriptor
+        for command in [Command.sortByName, .sortByDateModified, .sortBySize, .sortByKind, .sortByDateCreated, .sortAscending, .sortDescending] {
+            let on: Bool = switch command {
+            case .sortByName: sort.field == .name
+            case .sortByDateModified: sort.field == .dateModified
+            case .sortBySize: sort.field == .size
+            case .sortByKind: sort.field == .kind
+            case .sortByDateCreated: sort.field == .dateCreated
+            case .sortAscending: sort.ascending
+            default: !sort.ascending
+            }
+            add(command, target, handler, to: sortMenu).state = on ? .on : .off
+        }
+        sortItem.submenu = sortMenu
+        menu.addItem(sortItem)
+        let viewItem = NSMenuItem(title: L10n.string("View"), action: nil, keyEquivalent: "")
+        viewItem.identifier = NSUserInterfaceItemIdentifier("macx.menu.view")
+        let viewMenu = NSMenu(title: viewItem.title)
+        for command in [Command.viewAsDetails, .viewAsIcons, .iconSizeSmall, .iconSizeMedium, .iconSizeLarge, .toggleHidden] {
+            let on: Bool = switch command {
+            case .viewAsDetails: view.mode != .icons
+            case .viewAsIcons: view.mode == .icons
+            case .iconSizeSmall: view.iconSize == .small
+            case .iconSizeMedium: view.iconSize == .medium
+            case .iconSizeLarge: view.iconSize == .large
+            default: context.environment.settings.showHidden
+            }
+            add(command, target, handler, to: viewMenu).state = on ? .on : .off
+        }
+        viewItem.submenu = viewMenu
+        menu.addItem(viewItem)
+        menu.addItem(.separator())
+        add(.refresh, target, handler, to: menu).title = L10n.string("Search Again")
+        add(.saveSearch, target, handler, to: menu)
+        return menu
     }
 
     /// `viewState` is the folder's view state (P2-08), for the View ▸ checkmarks; nil uses the defaults.
@@ -220,7 +295,7 @@ final class ContextMenuBuilder {
         return on ? .on : .off
     }
 
-    private func openWithItem(rows: IndexSet, folder: FolderModel, handler: CommandHandler) -> NSMenuItem? {
+    private func openWithItem(rows: IndexSet, folder: any RowSource, handler: CommandHandler) -> NSMenuItem? {
         guard let commands = handler as? FileCommandController else { return nil }
         let fileRows = rows.filter { folder.entry(atRow: $0).kind != .directory }
         guard let first = fileRows.first else { return nil }

@@ -58,7 +58,8 @@ final class SystemQuickLookPanel: QuickLookPanelControlling {
 @MainActor
 final class QuickLookController {
     private let panel: @MainActor () -> any QuickLookPanelControlling
-    private weak var folder: FolderModel?
+    /// A folder or search results (P3-10).
+    private weak var folder: (any RowSource)?
     private var token: ObserverToken?
     private var builtItems: [URL]?
     /// How many times `items` was built from the selection (tests: a hidden panel builds none).
@@ -76,14 +77,14 @@ final class QuickLookController {
         return built
     }
 
-    func bind(_ folder: FolderModel?) {
+    func bind(_ folder: (any RowSource)?) {
         token?.cancel()
         token = nil
         self.folder = folder
-        token = folder?.observe { [weak self] event in
+        token = folder?.observeRows { [weak self] event in
             switch event {
             case .selection, .changes: self?.selectionChanged()
-            default: break
+            case .beginRename: break
             }
         }
         selectionChanged()
