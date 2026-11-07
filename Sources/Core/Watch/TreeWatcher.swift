@@ -14,6 +14,7 @@ public final class TreeWatcher {
         let url: URL
         private let source = Mutex<(any DispatchSourceFileSystemObject)?>(nil)
         private let cancelled = Mutex(false)
+        private let registered = Mutex(false)
         init(url: URL) { self.url = url }
 
         func open(on queue: DispatchQueue, onChange: @escaping @Sendable () -> Void) {
@@ -23,6 +24,9 @@ public final class TreeWatcher {
                                                               queue: queue)
             s.setEventHandler(handler: onChange)
             s.setCancelHandler { Darwin.close(fd) }
+            // resume() only schedules the kernel registration (on `queue`, after this block): until the registration
+            // handler runs a change goes unreported, so only then does the node count as live.
+            s.setRegistrationHandler { [weak self] in self?.registered.withLock { $0 = true } }
             let keep = cancelled.withLock { c -> Bool in
                 guard !c else { return false }
                 source.withLock { $0 = s }
@@ -31,8 +35,8 @@ public final class TreeWatcher {
             if keep { s.resume() } else { s.cancel(); s.resume() }
         }
 
-        /// The vnode source is installed (changes from now on are reported).
-        var isLive: Bool { source.withLock { $0 != nil } }
+        /// The vnode source is registered with the kernel (changes from now on are reported).
+        var isLive: Bool { registered.withLock { $0 } && source.withLock { $0 != nil } }
 
         func cancel() {
             cancelled.withLock { $0 = true }

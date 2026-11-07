@@ -142,6 +142,25 @@ final class WatcherTests: XCTestCase {
         XCTAssertTrue(changed.isEmpty, "an unwatched node reports nothing")
     }
 
+    /// liveCount == 1 promises "changes from now on are reported": a change made the instant it flips must still
+    /// arrive (the source used to count as live before it was resumed and registered with the kernel).
+    func testTreeWatcherLiveMeansRegistered() async throws {
+        for i in 0..<150 {
+            let dir = try sandbox.createDirectory("live\(i)")
+            var changed = false
+            let tree = TreeWatcher { _ in changed = true }
+            XCTAssertTrue(tree.watch(dir, isLocalVolume: true))
+            let deadline = ContinuousClock.now + .seconds(10)
+            while tree.liveCount == 0 {
+                guard ContinuousClock.now < deadline else { return XCTFail("source \(i) never opened") }
+                await Task.yield()
+            }
+            _ = try sandbox.createDirectory("live\(i)/child")
+            try await wait("change \(i)", timeout: .seconds(5)) { changed }
+            tree.unwatch(dir)
+        }
+    }
+
     func testTreeWatcherCapAndNonLocalVolumes() throws {
         XCTAssertEqual(TreeWatcher.sourceCap, 256)
         let tree = TreeWatcher { _ in }
