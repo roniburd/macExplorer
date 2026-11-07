@@ -199,8 +199,8 @@ final class ContextMenuBuilder {
         let viewMenu = NSMenu(title: viewItem.title)
         for command in [Command.viewAsDetails, .viewAsIcons, .iconSizeSmall, .iconSizeMedium, .iconSizeLarge, .toggleHidden] {
             let on: Bool = switch command {
-            case .viewAsDetails: view.mode != .icons
-            case .viewAsIcons: view.mode == .icons
+            case .viewAsDetails: true                   // results show only in Details (§11)
+            case .viewAsIcons: false
             case .iconSizeSmall: view.iconSize == .small
             case .iconSizeMedium: view.iconSize == .medium
             case .iconSizeLarge: view.iconSize == .large

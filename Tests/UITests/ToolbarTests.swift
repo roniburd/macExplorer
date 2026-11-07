@@ -181,4 +181,39 @@ final class ToolbarTests: XCTestCase {
         XCTAssertEqual(switcher.selectedIndex, 0)
         XCTAssertTrue(switcher.subitems.allSatisfy { !$0.label.isEmpty })
     }
+
+    /// Search QA: results always show in Details (§11), so while they show the switcher, CommandState.viewMode and the
+    /// results' View menu report Details even for a folder stored as Icons; Icons/Columns can't show results, so they
+    /// are disabled (the switcher ignores them) and the folder's stored mode is kept for when results close.
+    func testViewSwitcherAndViewMenuShowDetailsWhileResultsShowForAnIconsFolder() async throws {
+        let h = try await ShellHarness.make(self)
+        let controller = try await h.openWindow()
+        let session = controller.session
+        let switcher = controller.toolbarController.viewSwitcher
+        controller.toolbarController.selectViewMode(at: 1)
+        XCTAssertEqual(session.viewMode, .icons)
+        XCTAssertEqual(switcher.selectedIndex, 1)
+        let model = SearchResultsModel(title: "Red", events: { _ in AsyncStream { $0.yield(.completed(SearchSummary())); $0.finish() } },
+                                       context: h.environment.searchContext())
+        session.showResults(model, recordHistory: true)
+        XCTAssertEqual(switcher.selectedIndex, 0, "the switcher shows Details while results show")
+        XCTAssertEqual(session.displayedViewMode, .details)
+        let state = CommandStateBuilder.state(for: .resultsSelection(model), session: session, environment: h.environment,
+                                              previewPaneVisible: false)
+        XCTAssertEqual(state.viewMode, .details)
+        XCTAssertTrue(CommandAvailability.isEnabled(.viewAsDetails, focus: .searchResults, state: state))
+        XCTAssertFalse(CommandAvailability.isEnabled(.viewAsIcons, focus: .searchResults, state: state))
+        XCTAssertFalse(CommandAvailability.isEnabled(.viewAsColumns, focus: .searchResults, state: state))
+        let content = try XCTUnwrap(controller.contentPane as? ContentViewController)
+        let menu = try XCTUnwrap(content.contextMenu(forRow: nil))
+        let viewMenu = try XCTUnwrap(menu.items.first { $0.identifier?.rawValue == "macx.menu.view" }?.submenu)
+        XCTAssertEqual(viewMenu.items.first { $0.title == ContextMenuTitles.title(.viewAsDetails) }?.state, .on)
+        XCTAssertEqual(viewMenu.items.first { $0.title == ContextMenuTitles.title(.viewAsIcons) }?.state, .off)
+        controller.toolbarController.selectViewMode(at: 1)
+        XCTAssertEqual(switcher.selectedIndex, 0, "Icons can't show results")
+        XCTAssertEqual(session.viewMode, .icons, "the folder's stored mode is unchanged")
+        session.clearSearch()
+        XCTAssertEqual(switcher.selectedIndex, 1, "back to the folder's Icons")
+        XCTAssertEqual(session.displayedViewMode, .icons)
+    }
 }

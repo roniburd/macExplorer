@@ -261,6 +261,9 @@ final class BrowserSession {
 
     /// The results the window shows instead of the folder; nil while the folder is shown.
     private(set) var results: SearchResultsModel?
+    /// The mode on screen: results always show in Details with the Path column (§11), whatever the folder's stored
+    /// `viewMode` (kept for when the folder shows again). The switcher and CommandState report this one.
+    var displayedViewMode: ViewMode { results != nil ? .details : viewMode }
     /// The search being shown: a This folder filter (results nil) or the results' spec.
     private(set) var searchSpec: SearchSpec?
     /// The plan of the last `search(_:)` (its notices show in the scope bar for folder filters).

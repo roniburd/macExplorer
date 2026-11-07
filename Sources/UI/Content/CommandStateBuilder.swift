@@ -18,7 +18,7 @@ enum CommandStateBuilder {
         state.canGoForward = session.history.canGoForward
         state.canGoUp = session.folder.directory.standardizedFileURL.path != "/"
         state.folderIsReadOnly = session.folder.volume?.isReadOnly ?? false
-        state.viewMode = session.viewMode
+        state.viewMode = session.displayedViewMode   // Details while results show (§11)
         // Search (P3-10): Save Search… and Stop Search work from any focus in the window.
         state.hasSearchQuery = session.searchSpec != nil
         state.showingResults = session.results != nil

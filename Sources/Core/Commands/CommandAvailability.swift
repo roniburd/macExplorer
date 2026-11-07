@@ -78,6 +78,7 @@ public enum CommandAvailability {
         case .openContainingFolder:
             return state.showingResults && state.selectionCount >= 1 && (focus == .searchResults || focus == .content)
         case .saveSearch: return state.hasSearchQuery
+        case .viewAsIcons, .viewAsColumns: return !state.showingResults   // results show only in Details (§11)
         case .stopSearch: return state.isSearching
         case .renameSavedSearch, .removeSavedSearch: return focus == .sidebarSavedSearch
         case .downloadForPreview: return state.previewPaneVisible && state.selectionCount == 1
@@ -120,7 +121,7 @@ public enum CommandAvailability {
         case .up: return state.canGoUp
         case .focusAddressBar, .focusSearch, .cycleFocusForward, .cycleFocusBackward, .refresh,
              .newWindow, .closeWindow, .showOperations,
-             .viewAsDetails, .viewAsIcons, .iconSizeSmall, .iconSizeMedium, .iconSizeLarge,
+             .viewAsDetails, .iconSizeSmall, .iconSizeMedium, .iconSizeLarge,
              .densityCompact, .densityRegular, .densityComfortable, .toggleHidden, .toggleCommandBar,
              .sortByName, .sortByDateModified, .sortBySize, .sortByKind, .sortByDateCreated, .sortAscending, .sortDescending, .useViewAsDefault, .resetFolderView,
              .cancelOperation:
@@ -137,14 +138,14 @@ public enum CommandAvailability {
             }
         case .groupByNone, .groupByKind, .groupByDateModified, .groupBySize, .groupByName, .toggleFolderSizes:
             return state.viewMode == .details && (focus == .content || focus.isSidebar)
-        case .newTab, .viewAsColumns, .applyViewToAllFolders,
+        case .newTab, .applyViewToAllFolders,
              .nextTab, .previousTab, .showTabBar, .showAllTabs, .moveTabToNewWindow, .mergeAllWindows:
             return true   // the tab commands are validated again by NSWindow
         case .copyPathTilde, .copyPathFileURL, .copyName, .copyPathShellQuoted:
             return isEnabled(.copyAsPath, focus: focus, state: state)
         case .togglePreviewPane, .openContainingFolder, .saveSearch, .stopSearch,
              .searchScopeThisFolder, .searchScopeSubfolders, .searchScopeThisMac, .searchModeName, .searchModeContents,
-             .renameSavedSearch, .removeSavedSearch, .downloadForPreview:
+             .renameSavedSearch, .removeSavedSearch, .downloadForPreview, .viewAsIcons, .viewAsColumns:
             return false   // decided above
         }
     }

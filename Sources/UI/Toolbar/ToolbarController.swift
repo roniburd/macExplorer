@@ -89,6 +89,7 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
     func selectViewMode(at index: Int) {
         let modes = Self.switcherModes
         guard modes.indices.contains(index) else { return }
+        guard session.results == nil else { syncViewMode(); return }   // results show only in Details (§11)
         session.updateViewState { $0.mode = modes[index] }   // this folder only (P2-08)
         syncViewMode()
     }
@@ -182,6 +183,7 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
             navigation.update()
         case .resultsChanged:
             showFolder()
+            syncViewMode()                          // results show in Details (§11)
             search.updatePlaceholder()
             navigation.update()
         case .searchTextChanged(let text):
@@ -217,7 +219,7 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
     }
 
     private func syncViewMode() {
-        viewSwitcher.selectedIndex = Self.switcherModes.firstIndex(of: session.viewMode) ?? 0
+        viewSwitcher.selectedIndex = Self.switcherModes.firstIndex(of: session.displayedViewMode) ?? 0
     }
 
     @objc private func viewSwitcherChanged(_ sender: Any?) {
