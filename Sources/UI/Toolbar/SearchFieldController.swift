@@ -29,14 +29,25 @@ final class SearchFieldController: NSObject, NSSearchFieldDelegate {
         field.target = self
         field.action = #selector(searchChanged(_:))
         field.delegate = self
+        // The clear button resets text and filters (like Esc); backspacing the text out keeps the filters.
+        if let cancel = (field.cell as? NSSearchFieldCell)?.cancelButtonCell {
+            cancel.target = self
+            cancel.action = #selector(clearButtonClicked(_:))
+        }
         updatePlaceholder()
     }
 
-    /// Sends the field's text to the search controller.
+    /// Sends the field's text to the search controller. Empty text keeps the filters: a filters-only search goes on,
+    /// with no filters the controller clears the search (`SearchController.run`).
     func textDidChange() {
-        let text = field.stringValue
-        if text.isEmpty, !controller.text.isEmpty { controller.clear(); return }
-        controller.textDidChange(text)
+        controller.textDidChange(field.stringValue)
+    }
+
+    /// The field's clear (x) button: empties the field and resets the search, filters included.
+    @objc private func clearButtonClicked(_ sender: Any?) {
+        field.currentEditor()?.string = ""
+        field.stringValue = ""
+        controller.clear()
     }
 
     /// The session's search changed from outside the field (navigation clears it, Back shows a search).

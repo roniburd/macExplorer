@@ -74,6 +74,40 @@ final class SearchControllerTests: XCTestCase {
         XCTAssertTrue(c.diagnostics.isEmpty)
     }
 
+    /// Review (P3-10): backspacing the text out keeps the filters, so a filters-only search survives editing the text.
+    func testDeletingTheTextKeepsFiltersAndTheFiltersOnlySearch() async {
+        let c = SearchController(session: session, settings: env.settings, debounce: .milliseconds(10))
+        let field = SearchFieldController(session: session, controller: c)
+        c.scope = .subfolders
+        c.filters = SearchFilters(extensions: ["pdf"])
+        await waitUntil("filters-only results") { session.results != nil }
+        field.field.stringValue = "tax"
+        field.textDidChange()
+        await waitUntil("text results") { session.results?.spec?.text == "tax" }
+        field.field.stringValue = ""
+        field.textDidChange()
+        XCTAssertEqual(c.filters, SearchFilters(extensions: ["pdf"]), "typing never drops the filters")
+        await waitUntil("filters-only search again") { session.results?.spec?.text == "" }
+        XCTAssertEqual(session.results?.spec?.filters, SearchFilters(extensions: ["pdf"]))
+    }
+
+    /// The field's clear button still resets everything, filters included (like Esc).
+    func testClearButtonResetsFilters() async throws {
+        let c = SearchController(session: session, settings: env.settings, debounce: .milliseconds(10))
+        let field = SearchFieldController(session: session, controller: c)
+        c.scope = .subfolders
+        c.filters = SearchFilters(extensions: ["pdf"])
+        field.field.stringValue = "tax"
+        field.textDidChange()
+        c.commit()
+        await waitUntil("results") { session.results != nil }
+        let cancel = try XCTUnwrap((field.field.cell as? NSSearchFieldCell)?.cancelButtonCell)
+        NSApplication.shared.sendAction(try XCTUnwrap(cancel.action), to: cancel.target, from: cancel)
+        XCTAssertEqual(field.field.stringValue, "")
+        XCTAssertEqual(c.filters, SearchFilters())
+        XCTAssertNil(session.results)
+    }
+
     func testScopeChangeRerunsAndAdoptDoesNot() async {
         let c = SearchController(session: session, settings: env.settings, debounce: .milliseconds(10))
         c.scope = .thisFolder

@@ -6,10 +6,11 @@ import Core
 /// `macx.menu.<rawValue>`, and take their single key equivalent from the active bindings' primary (Settings ›
 /// Shortcuts; System Settings › Keyboard › App Shortcuts still overrides it). Titles are matched in English by the scenario runner (`menu` steps).
 @MainActor public enum MainMenuBuilder {
-    /// Commands with no main-menu item. Esc (cancelOperation) is a key, not a menu command. The saved-search
-    /// commands live in the SEARCHES context menu (P3-11) and Download in the preview pane (P3-12).
-    static let notInMenu: Set<Command> = Set<Command>([.cancelOperation]).union(contextOnly)
-    static let contextOnly: Set<Command> = [.renameSavedSearch, .removeSavedSearch, .downloadForPreview]
+    /// Commands with no main-menu item. Esc (cancelOperation) is a key, not a menu command. Every other command has
+    /// one, so a primary assigned in Settings › Shortcuts works (primaries fire only as menu key equivalents): the
+    /// saved-search commands (also in the SEARCHES context menu, P3-11) and Download for Preview (also the preview
+    /// pane's button, P3-12) included.
+    static let notInMenu: Set<Command> = [.cancelOperation]
 
     public static func build() -> NSMenu {
         // Tabs come only from MacExplorer's own commands (⌘T, "+", Open in New Tab); AppKit must not add its
@@ -98,7 +99,7 @@ import Core
             item(.moveToTrash), item(.deletePermanently), .separator(),
             item(.share), item(.properties), .separator(),
             item(.saveSearch), .separator(),
-            item(.eject), item(.removeFromFavorites), .separator(),
+            item(.eject), item(.removeFromFavorites), item(.renameSavedSearch), item(.removeSavedSearch), .separator(),
             item(.closeWindow),
         ]
     }
@@ -129,7 +130,7 @@ import Core
             .separator(),
             item(.toggleHidden), item(.toggleCommandBar),
             standard("Show Sidebar", #selector(NSSplitViewController.toggleSidebar(_:))),
-            item(.togglePreviewPane),
+            item(.togglePreviewPane), item(.downloadForPreview),
             .separator(),
             submenu(L10n.string("Search"), id: "search", [
                 item(.searchScopeThisFolder), item(.searchScopeSubfolders), item(.searchScopeThisMac), .separator(),

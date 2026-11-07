@@ -74,9 +74,9 @@ final class MenuValidationTests: XCTestCase {
             XCTAssertEqual(item.identifier?.rawValue, "macx.menu.\(command.rawValue)")
             XCTAssertFalse(item.title.isEmpty)
         }
-        // P3-10: the saved-search commands are SEARCHES context-menu items, Download is the preview pane's button.
-        XCTAssertEqual(MainMenuBuilder.notInMenu, [.cancelOperation, .renameSavedSearch, .removeSavedSearch, .downloadForPreview],
-                       "Esc is a key, not a menu command")
+        // Review (P3-09..13): the saved-search commands and Download for Preview have menu items too, so their
+        // rebindable primaries work.
+        XCTAssertEqual(MainMenuBuilder.notInMenu, [.cancelOperation], "Esc is a key, not a menu command")
     }
 
     func testPhase2MenuItemsExistWithKeys() throws {

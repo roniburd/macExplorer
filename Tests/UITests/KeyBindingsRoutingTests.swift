@@ -69,6 +69,38 @@ final class KeyBindingsRoutingTests: XCTestCase {
         XCTAssertEqual(back.keyEquivalentModifierMask, .command)
     }
 
+    /// Review (P3-09..13): the menu-less Phase 3 commands have main-menu items, so a primary assigned in Settings ›
+    /// Shortcuts becomes their key equivalent and the key performs the command (primaries fire only through the menu).
+    func testPrimaryOnPhase3CommandsPerformsThroughTheMenu() throws {
+        _ = NSApplication.shared
+        final class Target: NSObject {
+            var hits: [String] = []
+            @objc func macx_downloadForPreview(_ sender: Any?) { hits.append("download") }
+            @objc func macx_renameSavedSearch(_ sender: Any?) { hits.append("rename") }
+            @objc func macx_removeSavedSearch(_ sender: Any?) { hits.append("remove") }
+        }
+        let target = Target()
+        let menu = MainMenuBuilder.build()
+        var o = KeyBindingOverrides.empty
+        o.setPrimary(KeyChord(parsing: "ctrl+opt+cmd+d"), for: .downloadForPreview)
+        o.setPrimary(KeyChord(parsing: "ctrl+opt+cmd+r"), for: .renameSavedSearch)
+        o.setPrimary(KeyChord(parsing: "ctrl+opt+cmd+x"), for: .removeSavedSearch)
+        MainMenuBuilder.applyKeyEquivalents(KeyBindings(overrides: o), to: menu)
+        for (command, key) in [(Command.downloadForPreview, "d"), (.renameSavedSearch, "r"), (.removeSavedSearch, "x")] {
+            let menuItem = try XCTUnwrap(item(command, in: menu), "\(command) has a main-menu item")
+            XCTAssertEqual(menuItem.keyEquivalent, key)
+            XCTAssertEqual(menuItem.keyEquivalentModifierMask, [.control, .option, .command])
+            menuItem.target = target
+        }
+        for (key, code) in [("d", UInt16(2)), ("r", 15), ("x", 7)] {
+            let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [.control, .option, .command],
+                                                       timestamp: 0, windowNumber: 0, context: nil, characters: key,
+                                                       charactersIgnoringModifiers: key, isARepeat: false, keyCode: code))
+            XCTAssertTrue(menu.performKeyEquivalent(with: event), key)
+        }
+        XCTAssertEqual(target.hits, ["download", "rename", "remove"])
+    }
+
     func testControllerTracksSettings() async throws {
         _ = NSApplication.shared
         let s = settings()
