@@ -48,3 +48,31 @@ public final class FakeUbiquitousDownloader: UbiquitousDownloading {
         }
     }
 }
+
+public enum DownloadState: Sendable, Equatable { case downloading, done, failed, timedOut }
+
+public enum DownloadWatcher {
+    /// Yields `.downloading`, starts the download (a throw yields `.failed`), then polls `isDataless` every
+    /// `pollInterval` until it clears (`.done`) or `timeout` passes (`.timedOut`). Ending iteration cancels polling.
+    public static func download(_ url: URL, using downloader: any UbiquitousDownloading,
+                                pollInterval: Duration = .milliseconds(500), timeout: Duration = .seconds(600)) -> AsyncStream<DownloadState> {
+        AsyncStream { continuation in
+            let task = Task {
+                continuation.yield(.downloading)
+                do { try await downloader.startDownloading(url) } catch {
+                    continuation.yield(.failed)
+                    continuation.finish()
+                    return
+                }
+                let deadline = ContinuousClock.now + timeout
+                while !Task.isCancelled {
+                    if !(await downloader.isDataless(url)) { continuation.yield(.done); break }
+                    if ContinuousClock.now >= deadline { continuation.yield(.timedOut); break }
+                    try? await Task.sleep(for: pollInterval)
+                }
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+}
