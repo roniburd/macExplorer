@@ -675,6 +675,34 @@ On Apple keyboards F2–F5 are media keys and need fn unless "Use F1, F2, etc. k
 - **Command palette** (⌘⇧P): fuzzy-search every command.
 - **Keymap customization:** a Settings › Keyboard table covering primaries and alternates, presets (Explorer default, Finder), and JSON import/export.
 
+### Phase 5 — Follow-ups
+
+Larger Phase 3 items deferred from QA (v0.2.0-beta.11). Each one is a behaviour gap, not a regression.
+
+- **Search results and the preview pane follow changes made by other apps:**
+  - *Observed:* results only follow in-app changes. `SearchResultsModel` subscribes to `ChangeBus.observeAll` (`observeLocalChanges` → `applyLocal`), so a trash, move or rename done in Finder, Terminal or another app leaves stale rows, and opening one fails. Spotlight-backed searches (This Mac, Contents) already drop rows their live query reports as `.removed`. Crawler results (Subfolders, by name) never change. `PreviewPaneController` likewise reloads only on a `ChangeBus` change in the previewed item's folder (`localChange`) or a row event: when another app edits or deletes the previewed file, the stale preview and details stay.
+  - *Expected:* within about a second of an external change, deleted rows (and every result under a deleted or moved folder) disappear, renamed rows are re-keyed and re-sorted, modified rows show their new size and date, and selection follows like it does for in-app changes. New external files still never join results (contract note 12). The preview pane reloads a previewed file that changed, and shows the empty or "No longer available" state when it was deleted, without interrupting an in-progress download.
+  - *Sketch:*
+    - Add a Core `ResultsWatcher` (one per non-closed, shown or parked results model) that owns a bounded set of recursive FSEventStreams built on `FSEventStreamBox` (directory granularity like `SubtreeWatcher`, plus `kFSEventStreamCreateFlagFileEvents` so renames come with paths, 0.5–1 s latency).
+    - Choose the watched roots from `SearchResultStore.parents`: collapse them to their lowest common ancestors and cap at about 16 streams. A crawler search is watched at its root; This Mac uses one stream per volume that holds results. Use `kFSEventStreamEventFlagMustScanSubDirs`, a dropped-events flag or a cap overflow as a signal to revalidate, not to rerun.
+    - Classify on the stream queue with a pure `ResultsEventClassifier` (like `SubtreeEventClassifier`): keep only events whose path, or one of its ancestors, is in `foldedParentKeys()`. Coalesce them into a set of suspect paths and hand that to the main actor once per delivery.
+    - On main, enqueue a new `Op.external(Set<String>)` into the existing pump. The pump `lstat`s the suspect paths on a lane under the materialization policy (never main; dataless entries are never materialized), then reuses the `applyLocal` path: missing paths go through `results.remove(paths:)` / `removeResults(under:)` (not set aside, because an external delete has no undo), and existing paths get their `Entry` refreshed (size, dates, flags). A rename event pair, or an inode that matches on `idStable` volumes, goes through `results.rename(path:to:types:)` and `selection.substitute`. Revalidating 100k rows after a drop runs in chunks of about 2k per frame under the `FramePacer`.
+    - In-app changes keep their exact `ChangeBus` path. External events for paths that `ChangeBus` already applied are no-ops, because the row is gone or already matches.
+    - Parked models (`BrowserSession.parked`, up to 5) pause their watcher. When a model is shown again (`showHistoryEntry`), it resumes from its saved `lastEventID`, so FSEvents replays the gap. If the replay fails, it revalidates every row once.
+    - Preview pane: watch the previewed file's folder with the existing non-recursive `Watcher` (`EventClassifier`) or a `TreeWatcher` vnode source while a single subject is shown. On a change that names the subject, compare (size, mtime, fileID). If they differ, call `scheduleUpdate(force: true)`. If the file is gone, `showNothing()` / unavailable. Stop the watcher in `deactivate()`.
+  - *Tests:* the classifier is tested on synthetic `RawFSEvent`s (pure). Tests of the model's `Op.external` use a fake watcher factory injected through `SearchContext` (like `makeWatcher` / `makeSubtreeWatcher` in `CoreEnvironment`) and assert removal, rename, modification and selection behaviour against 100k-row fixtures. One live FSEvents test changes files in its own `$TMPDIR/macx-*` sandbox with POSIX calls. A UI scenario covers a sandbox file deleted by a helper process while results show it.
+
+- **Going Back to a search that was still running:**
+  - *Observed:* navigating away from running results parks them, and `BrowserSession.parkResults` calls `stop()` on a `.searching` model. Back or Forward (`showHistoryEntry`) then shows the parked model as is: partial rows, state `.stopped`, and the status bar reads "Stopped. N results", although the user never stopped it.
+  - *Expected:* returning to a search that was interrupted only by navigation either resumes or transparently re-runs it, with a short notice ("Search resumed" / "Search restarted"). The rows and selection the user saw are kept where they still match. A search the user stopped explicitly (Esc / Stop) stays stopped.
+  - *Sketch:*
+    - Record why the search stopped: `SearchState.stopped` gains a reason (`.user` vs `.parked`), or the model keeps a `stoppedByNavigation` flag set through a new `park()` that `parkResults` calls instead of `stop()`.
+    - In `showHistoryEntry`, a parked model stopped by navigation gets `resume()`. Its first version starts a new generation like `start()` but keeps the current `results`, `selection` and `scrollAnchor`. Incoming batches merge by path: `SearchResultStore.index(ofPath:)` dedupes rows that are already there. When the engine completes, rows not seen in the new generation are dropped, so deletions made while parked are handled too.
+    - Crawler engines could later resume from a persisted BFS frontier instead of restarting, but the dedupe-merge re-run is enough first.
+    - Spotlight searches re-run their `NSMetadataQuery` (cheap). A `SearchNotice.resumed` case is shown in the notice bar.
+    - Parked-model eviction (`parkedLimit`) and closing are unchanged. A model evicted while stopped by navigation falls back to the existing `SearchSpec(url:)` re-run.
+  - *Tests:* a `SearchResultsModel` test with a scripted fake engine (park mid-stream, resume, assert rows deduped, selection kept, stale rows dropped on completion, state `.searching` → `.complete`). A `BrowserSession` test proves Back resumes a navigation-parked search but not a user-stopped one. A UI scenario uses the sandboxed crawler with a slow fixture.
+
 ## 12. Risks & mitigations
 
 | Risk | Mitigation |
