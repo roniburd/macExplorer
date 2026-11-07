@@ -27,6 +27,8 @@ public final class CoreEnvironment {
     public let undo: FileOpUndoStack
     public let operations: OperationsCenter
     public let termination: TerminationCoordinator
+    /// Spotlight, index status and iCloud downloads for search and preview (P3-06). Sandboxed environments use fakes.
+    public let searchServices: SearchServices
 
     /// Undo action names ("Copy", "Move"…) are user-visible text, which Core never produces: the app installs a
     /// localized formatter at launch (P1-26). Default: the verb's raw value ("copying").
@@ -51,22 +53,24 @@ public final class CoreEnvironment {
                             volumeScanner: any VolumeScanning, volumeEvents: (any VolumeEventSource)?,
                             pasteboard: any PasteboardBackend, launchServices: any LaunchServicesProviding,
                             ejector: any Ejecting, trash: any TrashService, fileOpTuning: FileOpTuning = FileOpTuning(),
-                            home: URL = FileManager.default.homeDirectoryForCurrentUser) {
+                            home: URL = FileManager.default.homeDirectoryForCurrentUser,
+                            searchServices: SearchServices? = nil) {
         // `home` (additive, consistency pass): the app passes its --root in sandbox mode (P1-26 AppBootstrap) so
         // default favorites and "go home" fallbacks never leave the sandbox.
         self.init(statePaths: statePaths, lanes: lanes, settingsStorage: settingsStorage, volumeScanner: volumeScanner,
                   volumeEvents: volumeEvents, pasteboard: pasteboard, launchServices: launchServices, ejector: ejector,
                   trash: trash, fileOpTuning: fileOpTuning, home: home,
-                  interactionTarget: nil)
+                  interactionTarget: nil, searchServices: searchServices)
     }
 
     init(statePaths: StatePaths, lanes: LanePool, settingsStorage: any SettingsStorage,
          volumeScanner: any VolumeScanning, volumeEvents: (any VolumeEventSource)?,
          pasteboard: any PasteboardBackend, launchServices provider: any LaunchServicesProviding,
          ejector: any Ejecting, trash: any TrashService, fileOpTuning: FileOpTuning,
-         home: URL, interactionTarget: (any FileOpInteraction)?) {
+         home: URL, interactionTarget: (any FileOpInteraction)?, searchServices: SearchServices? = nil) {
         self.statePaths = statePaths
         self.lanes = lanes
+        self.searchServices = searchServices ?? .system(lanes: lanes)
         self.types = .shared
         let volumes = Volumes(lanes: lanes, scanner: volumeScanner, events: volumeEvents)
         self.volumes = volumes
@@ -143,6 +147,20 @@ public final class CoreEnvironment {
         FolderModel(directory: directory, context: folderContext(), query: query ?? settings.viewQuery())
     }
 
+    // MARK: search (P3-06)
+
+    public func searchContext() -> SearchContext {
+        SearchContext(lanes: lanes, volumes: volumes, types: types, changeBus: changeBus, settings: settings,
+                      pacer: TimerFramePacer(), services: searchServices)
+    }
+
+    public func planSearch(_ spec: SearchSpec) async -> SearchPlan { await searchContext().plan(spec) }
+
+    /// `plan.engine` must be `.crawler` or `.spotlight` (the folder filter runs in the FolderModel).
+    public func makeSearchResults(_ spec: SearchSpec, plan: SearchPlan) -> SearchResultsModel {
+        SearchResultsModel(spec: spec, plan: plan, context: searchContext())
+    }
+
     /// Idempotent. Launch recovery first (§6.3: partials removed, trashed destinations restored, incomplete jobs
     /// reported), then jobs may run, then the operations consumer and the volume list start.
     public func start() async -> RecoveryReport {
@@ -179,8 +197,9 @@ public final class CoreEnvironment {
         return sandboxPrefixes.contains { name.hasPrefix($0) && name.count > $0.count }
     }
 
-    /// Test/scenario factory (§3.12). Everything lives inside `root`; nothing is written until used.
-    public static func sandboxed(root: URL) -> CoreEnvironment {
+    /// Test/scenario factory (§3.12). Everything lives inside `root`; nothing is written until used. Search services
+    /// default to fakes: no Spotlight index access, no real iCloud downloads.
+    public static func sandboxed(root: URL, searchServices: SearchServices = .fake()) -> CoreEnvironment {
         precondition(isSandboxRoot(root), "CoreEnvironment.sandboxed requires a macx-* sandbox root in the temporary directory, got \(root.path)")
         // Keep the caller's spelling (standardizedFileURL turns an existing /private/var root into /var), so
         // service paths compare equal to the URLs the caller builds from the same root.
@@ -192,6 +211,7 @@ public final class CoreEnvironment {
             volumeEvents: nil, pasteboard: InMemoryPasteboard(), launchServices: FakeLaunchServices(),
             ejector: SandboxEjector(root: base, lanes: lanes),
             trash: SandboxTrash(directory: base.appending(path: ".trash", directoryHint: .isDirectory)),
-            fileOpTuning: FileOpTuning(), home: base, interactionTarget: ScriptedInteraction())
+            fileOpTuning: FileOpTuning(), home: base, interactionTarget: ScriptedInteraction(),
+            searchServices: searchServices)
     }
 }
