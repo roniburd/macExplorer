@@ -80,17 +80,31 @@ enum SearchScenarios {
             for i in 0..<20 { ctx.flat("bulk/d\(i)", count: 1_000) }
             let spec = SearchSpec(text: "file", scope: .subfolders, root: ctx.work)
             let plan = await ctx.env.planSearch(spec)
-            let m = ctx.env.makeSearchResults(spec, plan: plan)
-            defer { m.close() }
-            m.start()
-            try await ctx.waitUntil("first rows") { m.rowCount > 0 || !isSearching(m) }
-            try ctx.expect(isSearching(m), "still searching when Stop is pressed: \(m.state)")
-            m.stop()
-            let count = m.rowCount
-            try await Task.sleep(for: .milliseconds(300))
-            guard case .stopped = m.state else { throw ScenarioFailure("state after Stop: \(m.state)") }
-            try ctx.expect(m.rowCount <= count + 2_000, "at most one in-flight batch lands after Stop (\(count) → \(m.rowCount))")
-            try ctx.expect(m.rowCount < 20_000, "the crawl did not run to the end (\(m.rowCount) rows)")
+            // Stop is pressed from the first frame that shows rows (polling raced the crawler: it can finish in
+            // ~15 ms, so a 20 ms poll on a loaded machine saw it complete). A run whose whole crawl landed in that
+            // first frame cannot show a mid-crawl Stop: it is retried (the crawl is that fast only rarely).
+            for attempt in 1...5 {
+                let m = ctx.env.makeSearchResults(spec, plan: plan)
+                defer { m.close() }
+                var stoppedAt: Int?
+                let token = m.observeRows { _ in
+                    guard stoppedAt == nil, m.rowCount > 0, m.rowCount < 20_000, isSearching(m) else { return }
+                    m.stop()
+                    stoppedAt = m.rowCount
+                }
+                m.start()
+                try await ctx.waitUntil("first rows", timeout: .seconds(30)) { stoppedAt != nil || !isSearching(m) }
+                guard let count = stoppedAt else {
+                    if attempt < 5, m.rowCount == 20_000 { token.cancel(); continue }
+                    throw ScenarioFailure("Stop was never pressed mid-crawl (attempt \(attempt)): \(m.state), \(m.rowCount) rows")
+                }
+                try await Task.sleep(for: .milliseconds(300))
+                token.cancel()
+                guard case .stopped = m.state else { throw ScenarioFailure("state after Stop: \(m.state)") }
+                try ctx.expect(m.rowCount <= count + 2_000, "at most one in-flight batch lands after Stop (\(count) → \(m.rowCount))")
+                try ctx.expect(m.rowCount < 20_000, "the crawl did not run to the end (\(m.rowCount) rows)")
+                return
+            }
         },
         CoreScenario("search.resultsFollowFileOps") { ctx in
             ctx.file("a/needle-1.txt"); ctx.file("b/needle-2.txt"); ctx.file("b/needle-3.txt")
