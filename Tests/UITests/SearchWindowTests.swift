@@ -125,7 +125,11 @@ final class SearchWindowTests: XCTestCase {
         let target = try XCTUnwrap(content.commandTarget)
         XCTAssertFalse(handler.canPerform(.stopSearch, target: target), "complete: nothing to stop")
         XCTAssertTrue(handler.canPerform(.saveSearch, target: target))
+        let prompter = FakePrompter(["tax"])          // P3-11: Save Search… asks for the name first
+        h.context.namePrompter = prompter
         handler.perform(.saveSearch, target: target, sender: nil)
+        try await h.waitUntil("saved") { !h.environment.settings.savedSearches.isEmpty }
+        XCTAssertEqual(prompter.asked, ["tax"])
         XCTAssertEqual(h.environment.settings.savedSearches.map(\.name), ["tax"])
         XCTAssertEqual(h.environment.settings.savedSearches.first?.spec.scope, .subfolders)
         let item = NSMenuItem(title: "", action: Selector(Command.searchScopeSubfolders.selectorName), keyEquivalent: "")

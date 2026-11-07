@@ -53,6 +53,10 @@ final class ShellCommandHandler: CommandHandler {
             focus = .sidebarFolders
             state.selectionCount = 1
             state.singleFolderSelected = true
+        case .savedSearch:
+            if command != .open { return false }    // interim handler: FileCommandController runs the rest
+            focus = .sidebarSavedSearch
+            state.selectionCount = 1
         }
         return CommandAvailability.isEnabled(command, focus: focus, state: state,
                                              collidesWithTextEditing: ActiveKeyBindings.current.collidesWithTextEditing)
@@ -65,6 +69,7 @@ final class ShellCommandHandler: CommandHandler {
         case .favorite: .sidebarFavorites
         case .volume, .location: .sidebarLocations
         case .folder: .sidebarFolders
+        case .savedSearch: .sidebarSavedSearch
         }
     }
 
@@ -73,7 +78,7 @@ final class ShellCommandHandler: CommandHandler {
         case .favorite(let favorite): favorite.url
         case .volume(let volume): volume.mountPoint
         case .folder(let url), .location(let url): url
-        case .contentSelection, .currentFolder, .resultsSelection: nil
+        case .contentSelection, .currentFolder, .resultsSelection, .savedSearch: nil
         }
     }
 
@@ -98,7 +103,13 @@ final class ShellCommandHandler: CommandHandler {
         case .viewAsIcons: setViewMode(.icons)
         case .undo: UndoTarget.manager(window: window.window, fallback: context.environment.undo.undoManager).undo()
         case .redo: UndoTarget.manager(window: window.window, fallback: context.environment.undo.undoManager).redo()
-        case .open: if let url = Self.url(of: target) { window.session.navigate(to: url) }
+        case .open:
+            if case .savedSearch(let saved) = target {
+                let session = window.session
+                Task { await session.openSavedSearch(saved) }
+            } else if let url = Self.url(of: target) {
+                window.session.navigate(to: url)
+            }
         case .openInNewWindow: if let url = Self.url(of: target) { context.windows.openWindow(at: url) }
         case .eject:
             guard case .volume(let volume) = target else { return }

@@ -34,6 +34,8 @@ extension FileCommandController {
         case .folder, .favorite, .volume, .location:
             guard let url = subjectURLs(target).first else { return }
             if newWindow { context.windows.openWindow(at: url) } else { window?.navigate(to: url) }
+        case .savedSearch(let saved):
+            openSavedSearch(saved, in: newWindow ? .newWindow : .thisWindow)
         case .currentFolder(let folder):
             if newWindow { context.windows.openWindow(at: folder.directory) }
         }
@@ -61,6 +63,8 @@ extension FileCommandController {
                          in: results, select: true)
         case .folder, .favorite, .volume, .location:
             window?.openTabs(subjectURLs(target), select: true)
+        case .savedSearch(let saved):
+            openSavedSearch(saved, in: .newTab)
         case .currentFolder(let folder):
             window?.openTabs([folder.directory], select: true)
         }

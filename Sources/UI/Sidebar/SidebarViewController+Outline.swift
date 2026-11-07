@@ -15,7 +15,7 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
 
     func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
         switch item as? SidebarItem {
-        case .favoritesHeader?, .locationsHeader?, .foldersHeader?: true
+        case .favoritesHeader?, .searchesHeader?, .locationsHeader?, .foldersHeader?: true
         case .folder(let node)?: tree.isExpandable(node)
         default: false
         }
@@ -39,9 +39,17 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
         let id = header ? SidebarCellView.headerIdentifier : SidebarCellView.identifier
         let cell = outlineView.makeView(withIdentifier: id, owner: nil) as? SidebarCellView ?? SidebarCellView(header: header)
         cell.onEject = nil
+        cell.setAccessibilityIdentifier(nil)
         switch item {
         case .favoritesHeader:
             cell.configure(title: L10n.string("Favorites"), symbol: nil, dimmed: false, ejectable: false, toolTip: nil)
+        case .searchesHeader:
+            cell.configure(title: L10n.string("Searches"), symbol: nil, dimmed: false, ejectable: false, toolTip: nil)
+        case .savedSearch(let saved):
+            cell.configure(title: saved.name, symbol: "magnifyingglass", dimmed: false, ejectable: false,
+                           toolTip: SearchStrings.savedSearchTooltip(saved.spec))
+            cell.setAccessibilityLabel(SearchStrings.savedSearchAccessibilityLabel(saved.name))
+            cell.setAccessibilityIdentifier(AXID.sidebarSavedSearch(saved.name))
         case .locationsHeader:
             cell.configure(title: L10n.string("Locations"), symbol: nil, dimmed: false, ejectable: false, toolTip: nil)
         case .foldersHeader:
@@ -99,23 +107,28 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
                 outlineView.collapseItem(box(.folder(child)), collapseChildren: true)
             }
             isSyncing = wasSyncing
-        case .favoritesHeader, .locationsHeader, .foldersHeader:
+        case .favoritesHeader, .searchesHeader, .locationsHeader, .foldersHeader:
             guard !isSyncing, !settings.collapsedSections.contains(item.section) else { return }
             settings.collapsedSections.insert(item.section)
-        case .favorite, .location, .iCloudDrive, .cloudStorage, .trash:
+        case .favorite, .savedSearch, .location, .iCloudDrive, .cloudStorage, .trash:
             break
         }
     }
 
     // MARK: drag and drop (§5.4: drag folders between favorites to add them, drag favorites to reorder)
 
-    /// User favorites drag to reorder (a private id, never a file); FOLDERS tree nodes drag as their folder's file
-    /// URL, like Explorer's navigation pane (QA round 1). Volume roots, Locations and default favorites don't drag.
+    /// User favorites and saved searches drag to reorder (a private id, never a file); FOLDERS tree nodes drag as
+    /// their folder's file URL, like Explorer's navigation pane (QA round 1). Volume roots, Locations and default
+    /// favorites don't drag.
     func outlineView(_ outlineView: NSOutlineView, pasteboardWriterForItem item: Any) -> (any NSPasteboardWriting)? {
         switch item as? SidebarItem {
         case .favorite(let favorite)? where favorite.defaultKind == nil:
             let writer = NSPasteboardItem()
             writer.setString(favorite.id.uuidString, forType: Self.favoritePasteboardType)
+            return writer
+        case .savedSearch(let saved)?:
+            let writer = NSPasteboardItem()
+            writer.setString(saved.id.uuidString, forType: Self.savedSearchPasteboardType)
             return writer
         case .folder(let node)? where !node.isRoot:
             return node.url as NSURL
@@ -142,6 +155,11 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
         if case .favoritesHeader? = item as? SidebarItem, index != NSOutlineViewDropOnItemIndex {
             return favoritesDropOperation(info.draggingPasteboard, childIndex: index)
         }
+        // SEARCHES takes only its own rows, between rows; nothing drops onto a saved search.
+        if case .searchesHeader? = item as? SidebarItem {
+            return index != NSOutlineViewDropOnItemIndex ? savedSearchesDropOperation(info.draggingPasteboard) : []
+        }
+        if Self.draggedSavedSearchID(info.draggingPasteboard) != nil { return [] }
         // P1-36 (§5.4, §5.6): drops onto a tree node, favorite or volume row go through DropTarget.
         if index == NSOutlineViewDropOnItemIndex, let url = folderURL(forDropOnto: item) {
             return fileDropTarget.validate(info, destination: url)
@@ -150,6 +168,12 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
     }
 
     func outlineView(_ outlineView: NSOutlineView, acceptDrop info: any NSDraggingInfo, item: Any?, childIndex index: Int) -> Bool {
+        if case .searchesHeader? = item as? SidebarItem {
+            guard index != NSOutlineViewDropOnItemIndex, savedSearchesDropOperation(info.draggingPasteboard) != [],
+                  let id = Self.draggedSavedSearchID(info.draggingPasteboard) else { return false }
+            return moveSavedSearch(id: id, toChildIndex: index)
+        }
+        if Self.draggedSavedSearchID(info.draggingPasteboard) != nil { return false }
         if index == NSOutlineViewDropOnItemIndex, let url = folderURL(forDropOnto: item) {
             return fileDropTarget.perform(info, destination: url, in: outlineView)
         }
@@ -191,6 +215,35 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
     func addFavorites(_ urls: [URL], atChildIndex childIndex: Int) async -> Int {
         let defaults = favorites.rows.filter { $0.defaultKind != nil }.count
         return await favorites.add(urls, atUserIndex: max(0, childIndex - defaults))
+    }
+
+    // MARK: saved searches (P3-11)
+
+    /// Between SEARCHES rows: a dragged saved search of this list moves; files and everything else are refused.
+    func savedSearchesDropOperation(_ pasteboard: NSPasteboard) -> NSDragOperation {
+        guard let id = Self.draggedSavedSearchID(pasteboard), settings.savedSearches.contains(where: { $0.id == id }) else {
+            return []
+        }
+        return .move
+    }
+
+    /// Moves a saved search to its final position (`index` counts after the removal, as `Settings.moveSavedSearch`).
+    @discardableResult
+    func moveSavedSearch(id: UUID, to index: Int) -> Bool {
+        guard let from = settings.savedSearches.firstIndex(where: { $0.id == id }) else { return false }
+        settings.moveSavedSearch(from: from, to: index)
+        return true
+    }
+
+    /// A drop at the outline's `childIndex` (counted before the removal): a drop below the last row lands last.
+    @discardableResult
+    func moveSavedSearch(id: UUID, toChildIndex childIndex: Int) -> Bool {
+        guard let from = settings.savedSearches.firstIndex(where: { $0.id == id }) else { return false }
+        return moveSavedSearch(id: id, to: childIndex > from ? childIndex - 1 : childIndex)
+    }
+
+    static func draggedSavedSearchID(_ pasteboard: NSPasteboard) -> UUID? {
+        pasteboard.string(forType: savedSearchPasteboardType).flatMap(UUID.init(uuidString:))
     }
 
     static func draggedFavoriteID(_ pasteboard: NSPasteboard) -> UUID? {

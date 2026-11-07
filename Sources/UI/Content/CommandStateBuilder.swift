@@ -51,6 +51,8 @@ enum CommandStateBuilder {
             }
         case .currentFolder:
             state.selectionCount = 0
+        case .savedSearch:
+            state.selectionCount = 1                    // the row itself (Open, Rename, Remove)
         case .folder, .location:
             state.selectionCount = 1
             state.singleFolderSelected = true

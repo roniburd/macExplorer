@@ -172,12 +172,14 @@ final class SidebarHarness {
     static func title(_ item: SidebarItem) -> String {
         switch item {
         case .favorite(let f): f.name
+        case .savedSearch(let s): s.name
         case .location(let v): v.name
         case .iCloudDrive: "iCloud Drive"
         case .cloudStorage(let folder): folder.name
         case .trash: "Trash"
         case .folder(let node): node.name
         case .favoritesHeader: "FAVORITES"
+        case .searchesHeader: "SEARCHES"
         case .locationsHeader: "LOCATIONS"
         case .foldersHeader: "FOLDERS"
         }

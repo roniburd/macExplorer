@@ -48,4 +48,7 @@ enum AXID {
     static let searchNotice = "macx.searchNotice"
     static let searchSave = "macx.searchSave"
     static let searchResultsTitle = "macx.searchResultsTitle"
+    // Phase 3 saved searches (plan P3-11)
+    static func sidebarSavedSearch(_ name: String) -> String { "macx.sidebar.search.\(name)" }
+    static let namePromptField = "macx.namePromptField"
 }

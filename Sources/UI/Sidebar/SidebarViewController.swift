@@ -2,12 +2,15 @@ import AppKit
 import Core
 import MacxFS
 
-/// The sidebar (§5.4): one source-list NSOutlineView with FAVORITES, LOCATIONS and FOLDERS sections. Rows navigate the
+/// The sidebar (§5.4): one source-list NSOutlineView with FAVORITES, SEARCHES (P3-11, only while there are saved
+/// searches), LOCATIONS and FOLDERS sections. Rows navigate the
 /// window's session; commands act on the focused row (`focusContext` / `commandTarget`), never on the content
 /// selection. Section collapse state persists in `Settings.collapsedSections`.
 @MainActor
 final class SidebarViewController: CommandHandlingViewController {
     static let favoritePasteboardType = NSPasteboard.PasteboardType("com.macexplorer.favorite")
+    /// A dragged SEARCHES row (P3-11): its `SavedSearch.id` as a UUID string. Only SEARCHES accepts it.
+    static let savedSearchPasteboardType = NSPasteboard.PasteboardType("com.macexplorer.saved-search")
 
     let context: UIContext
     let session: BrowserSession
@@ -20,10 +23,19 @@ final class SidebarViewController: CommandHandlingViewController {
     lazy var openBackgroundTab: (URL) -> Void = { [weak self] url in
         (self?.view.window?.windowController as? BrowserWindowController)?.openTabs([url], select: false)
     }
+    /// ⌘-click / middle-click / Open in New Tab on a SEARCHES row: a tab of this window at the search's folder that
+    /// then runs the saved search (`select`: false for middle-click, a background tab). Tests replace it.
+    lazy var openSavedSearchInTab: (SavedSearch, Bool) -> Void = { [weak self] saved, select in
+        guard let self, let host = self.view.window?.windowController as? BrowserWindowController else { return }
+        let tab = self.context.windows.openTab(at: saved.spec.root, in: host, select: select)
+        Task { await tab.session.openSavedSearch(saved) }
+    }
     /// Locate… picks the new folder (tests replace it). Default: an NSOpenPanel sheet.
     var pickFolder: (_ message: String, _ window: NSWindow?) async -> URL? = SidebarViewController.openPanel
 
     private(set) var locationItems: [SidebarItem] = []
+    /// The SEARCHES rows (`Settings.savedSearches`); the section is absent while empty.
+    private(set) var savedSearchItems: [SidebarItem] = []
     private var iCloudDrive: URL?
     private var cloudStorage: [CloudStorageFolder] = []
     private var trash: URL?
@@ -122,7 +134,7 @@ final class SidebarViewController: CommandHandlingViewController {
         outlineView.allowsEmptySelection = true
         outlineView.allowsMultipleSelection = false
         outlineView.setAccessibilityLabel(L10n.string("Sidebar"))
-        outlineView.registerForDraggedTypes([Self.favoritePasteboardType] + DropTarget.acceptedTypes)
+        outlineView.registerForDraggedTypes([Self.favoritePasteboardType, Self.savedSearchPasteboardType] + DropTarget.acceptedTypes)
         // Favorites reorder (.move); tree folders drag like files (copy/move/alias, the right-drag menu).
         outlineView.setDraggingSourceOperationMask([.copy, .move, .link, .generic], forLocal: true)
         outlineView.setDraggingSourceOperationMask([.copy, .move, .link, .generic], forLocal: false)
@@ -163,6 +175,7 @@ final class SidebarViewController: CommandHandlingViewController {
             if case .folderChanged = event { self?.revealCurrentFolder() }
         })
         rebuildLocations()
+        savedSearchItems = settings.savedSearches.map(SidebarItem.savedSearch)
         updateTreeRoots()
         favorites.refresh()
         refreshICloudDrive()
@@ -189,8 +202,10 @@ final class SidebarViewController: CommandHandlingViewController {
 
     // MARK: rows
 
-    /// The headers in the outline, in order (Phase 1: always all three; SEARCHES arrives with P3-11).
-    var sectionHeaders: [SidebarSection] { SidebarSection.allCases.filter { SidebarItem.header($0) != nil } }
+    /// The headers in the outline, in order: FAVORITES, SEARCHES (only with saved searches), LOCATIONS, FOLDERS.
+    var sectionHeaders: [SidebarSection] {
+        SidebarSection.allCases.filter { SidebarItem.header($0) != nil && ($0 != .searches || !savedSearchItems.isEmpty) }
+    }
 
     var selectedItem: SidebarItem? { item(atRow: outlineView.selectedRow) }
 
@@ -212,10 +227,11 @@ final class SidebarViewController: CommandHandlingViewController {
         guard let item else { return sectionHeaders.compactMap(SidebarItem.header) }
         switch item {
         case .favoritesHeader: return favorites.rows.map(SidebarItem.favorite)
+        case .searchesHeader: return savedSearchItems
         case .locationsHeader: return locationItems
         case .foldersHeader: return tree.roots.map(SidebarItem.folder)
         case .folder(let node): return tree.children(of: node).map(SidebarItem.folder)
-        case .favorite, .location, .iCloudDrive, .cloudStorage, .trash: return []
+        case .favorite, .savedSearch, .location, .iCloudDrive, .cloudStorage, .trash: return []
         }
     }
 
@@ -236,13 +252,22 @@ final class SidebarViewController: CommandHandlingViewController {
 
     // MARK: activation
 
-    /// Click, Return or keyboard selection: navigate to the row's folder (a stale favorite offers Locate…).
-    func activateRow(_ row: Int) {
+    /// Click, Return or keyboard selection: navigate to the row's folder (a stale favorite offers Locate…); a saved
+    /// search runs (P3-11). `newTab` (⌘-click, middle-click on a saved search) opens it in a new tab instead.
+    func activateRow(_ row: Int, newTab: Bool = false) {
         guard let item = item(atRow: row) else { return }
+        if case .savedSearch(let saved) = item {
+            if newTab { return openSavedSearchInTab(saved, true) }
+            if outlineView.selectedRow != row { select(row: row) }   // the row keeps the focus (Del, F2 act on it)
+        }
         activate(item)
     }
 
     func activate(_ item: SidebarItem) {
+        if case .savedSearch(let saved) = item {
+            runSavedSearch(saved)
+            return
+        }
         if case .favorite(let favorite) = item, favorite.isStale {
             locate(favorite)
             return
@@ -250,6 +275,15 @@ final class SidebarViewController: CommandHandlingViewController {
         guard let url = item.url else { return }
         if ChangeBus.key(for: url) == ChangeBus.key(for: session.folder.directory) { return }
         session.navigate(to: url)
+    }
+
+    /// Runs `saved` in this window unless it is the search already shown (the click after the selection change that
+    /// started it, like a folder row's second activation). The field, chips and navigation update synchronously.
+    func runSavedSearch(_ saved: SavedSearch) {
+        guard session.searchSpec != saved.spec else { return }
+        let spec = session.prepareSavedSearch(saved)
+        let session = session
+        Task { await session.search(spec) }
     }
 
     @objc private func rowClicked(_ sender: Any?) {
@@ -310,6 +344,11 @@ final class SidebarViewController: CommandHandlingViewController {
             expandPath(path)
             return
         }
+        // Keep the SEARCHES row whose search the window shows (a This folder search navigated to its root).
+        if case .savedSearch(let saved)? = selectedItem, session.searchSpec == saved.spec {
+            expandPath(path)
+            return
+        }
         guard let path, !settings.collapsedSections.contains(.folders) else {
             if let selected = selectedItem, isTreeItem(selected) { select(row: -1) }
             return
@@ -361,6 +400,7 @@ final class SidebarViewController: CommandHandlingViewController {
         guard let before = lastSettings, before != now else { return }
         lastSettings = now
         if before.favorites != now.favorites || before.hiddenDefaults != now.hiddenDefaults { favorites.refresh() }
+        if before.savedSearches != now.savedSearches { rebuildSearches(now.savedSearches) }
         if before.showICloud != now.showICloud || before.showCloudStorage != now.showCloudStorage
             || before.showExternal != now.showExternal {
             rebuildLocations()
@@ -370,6 +410,30 @@ final class SidebarViewController: CommandHandlingViewController {
         if before.collapsed != now.collapsed { syncHeaderExpansion() }
         if before.showHidden != now.showHidden { tree.showHidden = now.showHidden }
         if !before.autoReveal && now.autoReveal { revealCurrentFolder() }
+    }
+
+    /// SEARCHES follows `Settings.savedSearches`: the header is inserted with the first saved search and removed
+    /// with the last; otherwise only that section reloads.
+    private func rebuildSearches(_ searches: [SavedSearch]) {
+        let items = searches.map(SidebarItem.savedSearch)
+        guard items != savedSearchItems else { return }
+        let wasShown = !savedSearchItems.isEmpty
+        let oldIndex = sectionHeaders.firstIndex(of: .searches)
+        savedSearchItems = items
+        guard isViewLoaded else { return }
+        switch (wasShown, !items.isEmpty) {
+        case (false, true):
+            guard let index = sectionHeaders.firstIndex(of: .searches) else { return }
+            reloadPreservingSelection { outlineView.insertItems(at: [index], inParent: nil, withAnimation: []) }
+            syncHeaderExpansion()
+        case (true, false):
+            guard let index = oldIndex else { return }
+            reloadPreservingSelection { outlineView.removeItems(at: [index], inParent: nil, withAnimation: []) }
+        case (true, true):
+            reloadSection(.searchesHeader)
+        case (false, false):
+            break
+        }
     }
 
     private func volumesChanged() {
@@ -526,6 +590,7 @@ final class SidebarViewController: CommandHandlingViewController {
 /// The Settings values the sidebar follows.
 struct SettingsSnapshot: Equatable {
     var favorites: [Favorite]
+    var savedSearches: [SavedSearch]
     var hiddenDefaults: Set<DefaultFavorite>
     var showICloud: Bool
     var showCloudStorage: Bool
@@ -536,6 +601,7 @@ struct SettingsSnapshot: Equatable {
 
     @MainActor init(_ settings: Settings) {
         favorites = settings.favorites
+        savedSearches = settings.savedSearches
         hiddenDefaults = settings.hiddenDefaultFavorites
         showICloud = settings.showICloudInSidebar
         showCloudStorage = settings.showCloudStorageInSidebar

@@ -44,11 +44,23 @@ extension SidebarViewController {
             menu.addItem(SidebarMenuItem(L10n.string("Remove from Favorites")) { [weak self] in
                 self?.perform(.removeFromFavorites, on: item)
             })
+        case .savedSearch(let saved):
+            menu.addItem(SidebarMenuItem(L10n.string("Open")) { [weak self] in self?.runSavedSearch(saved) })
+            menu.addItem(SidebarMenuItem(L10n.string("Open in New Tab")) { [weak self] in
+                self?.openSavedSearchInTab(saved, true)
+            })
+            menu.addItem(.separator())
+            menu.addItem(SidebarMenuItem(L10n.string("sidebar.search.rename")) { [weak self] in
+                self?.perform(.renameSavedSearch, on: item)
+            })
+            menu.addItem(SidebarMenuItem(L10n.string("Remove from Sidebar")) { [weak self] in
+                self?.perform(.removeSavedSearch, on: item)
+            })
         case .location(let volume):
             addVolumeItems(volume, item: item, to: menu)
         case .folder(let node) where node.isVolumeRoot:
             addVolumeItems(node.volume, item: item, to: menu)
-        case .iCloudDrive, .cloudStorage, .trash, .folder, .favoritesHeader, .locationsHeader, .foldersHeader:
+        case .iCloudDrive, .cloudStorage, .trash, .folder, .favoritesHeader, .searchesHeader, .locationsHeader, .foldersHeader:
             break
         }
         return menu.items.isEmpty ? nil : menu
@@ -78,6 +90,11 @@ extension SidebarViewController {
     /// the sidebar selection nor the window's folder changes. False when the row has no folder.
     @discardableResult
     func handleNewTabGesture(_ gesture: NewTabGesture, row: Int) -> Bool {
+        if case .savedSearch(let saved)? = item(atRow: row) {
+            guard MiddleClickRouter.shouldOpenTab(gesture, in: .sidebarSavedSearch) else { return false }
+            openSavedSearchInTab(saved, false)
+            return true
+        }
         guard let item = item(atRow: row), !item.isHeader, let url = item.url,
               MiddleClickRouter.shouldOpenTab(gesture, in: item.focusContext) else { return false }
         openBackgroundTab(url)

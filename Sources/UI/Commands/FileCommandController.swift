@@ -14,11 +14,18 @@ final class FileCommandController: CommandHandler {
     /// Commands whose UI arrives in a later Phase 2 task (disabled, never performed). The NSWindow tab commands are
     /// here too: NSWindow and BrowserWindowController handle them, so they never reach a pane's handler.
     /// Window tab commands (NSWindow handles them) and the Phase 3 commands whose actions land in later tasks:
-    /// saved searches (P3-11), preview pane (P3-12). Disabled until then.
+    /// preview pane (P3-12). Disabled until then.
     static let pendingCommands: Set<Command> = Command.windowTabCommands.union(phase3Pending)
     static let phase3Pending: Set<Command> = [
-        .renameSavedSearch, .removeSavedSearch,                     // P3-11
         .togglePreviewPane, .downloadForPreview,                    // P3-12
+    ]
+    /// What a SEARCHES row (a query, not a file) takes besides the window/view commands of
+    /// `SidebarViewController.rowIndependent`: Open, Open in New Window/Tab, Rename, Remove and the window's search
+    /// commands (P3-11). Every file command is off, so no FileOpQueue job ever starts from it.
+    static let savedSearchCommands: Set<Command> = [
+        .open, .openInNewWindow, .openInNewTab, .renameSavedSearch, .removeSavedSearch,
+        .saveSearch, .stopSearch, .togglePreviewPane, .searchScopeThisFolder, .searchScopeSubfolders, .searchScopeThisMac,
+        .searchModeName, .searchModeContents,
     ]
     /// Folder-only view commands: results have no grouping, folder sizes or per-folder view to save.
     static let folderOnlyCommands: Set<Command> = [
@@ -40,6 +47,7 @@ final class FileCommandController: CommandHandler {
         case .folder: .sidebarFolders
         case .favorite: .sidebarFavorites
         case .volume, .location: .sidebarLocations
+        case .savedSearch: .sidebarSavedSearch
         }
     }
 
@@ -47,6 +55,10 @@ final class FileCommandController: CommandHandler {
         let focus = Self.focus(for: target)
         guard let effective = CommandAvailability.effectiveCommand(command, focus: focus),
               !Self.pendingCommands.contains(effective), let session else { return false }
+        if case .savedSearch = target, !Self.savedSearchCommands.contains(effective),
+           !SidebarViewController.rowIndependent.contains(effective) {
+            return false
+        }
         if case .resultsSelection(let results) = target {
             if Self.folderOnlyCommands.contains(effective) { return false }
             // Make Alias / Create Symbolic Link put the new items next to the originals: one shared folder only.
@@ -109,6 +121,8 @@ final class FileCommandController: CommandHandler {
         case .toggleFolderSizes: toggleFolderSizes()
         case .eject: eject(target)
         case .removeFromFavorites: removeFavorite(target)
+        case .renameSavedSearch: renameSavedSearch(target)
+        case .removeSavedSearch: removeSavedSearch(target)
         case .cancelOperation:
             // Esc closes Quick Look first (Finder parity); otherwise it clears a pending cut.
             if window?.quickLook.hideIfVisible() != true { environment.clipboard.clearCut() }
@@ -122,8 +136,8 @@ final class FileCommandController: CommandHandler {
         case .searchModeName: window?.searchController.mode = .name
         case .searchModeContents: window?.searchController.mode = .contents
         case .newTab, .nextTab, .previousTab, .showTabBar, .showAllTabs, .moveTabToNewWindow, .mergeAllWindows,
-             // P3-11 / P3-12
-             .togglePreviewPane, .renameSavedSearch, .removeSavedSearch, .downloadForPreview:
+             // P3-12
+             .togglePreviewPane, .downloadForPreview:
             break   // pendingCommands: canPerform is false, so perform beeps above
         }
     }
@@ -139,11 +153,58 @@ final class FileCommandController: CommandHandler {
         session.openContainingFolder(of: results.url(atRow: row))
     }
 
-    /// File › Save Search…: the search shown, named after its text (P3-11 asks for the name first).
+    /// File › Save Search…: asks for a name (initially the query text), then adds the search shown to SEARCHES (made
+    /// unique). Cancel saves nothing.
     func saveSearch() {
         guard let spec = session?.searchSpec else { return }
-        _ = environment.settings.addSavedSearch(name: spec.text, spec: spec)
+        let prompter = context.namePrompter
+        let settings = environment.settings
+        let host = window?.window
+        Task {
+            guard let name = await prompter.promptForName(title: SearchStrings.savedSearchSaveTitle, initial: spec.text,
+                                                          on: host) else { return }
+            settings.addSavedSearch(name: name, spec: spec)
+        }
     }
+
+    // MARK: saved searches (P3-11): settings only, never a file-system call
+
+    /// F2 / Rename… on a SEARCHES row: asks for the new name (made unique among the others).
+    func renameSavedSearch(_ target: CommandTarget) {
+        guard case .savedSearch(let saved) = target else { return }
+        let prompter = context.namePrompter
+        let settings = environment.settings
+        let host = window?.window
+        Task {
+            guard let name = await prompter.promptForName(title: SearchStrings.savedSearchRenameTitle, initial: saved.name,
+                                                          on: host) else { return }
+            settings.renameSavedSearch(saved.id, to: name)
+        }
+    }
+
+    /// Del / Remove from Sidebar on a SEARCHES row: forgets the search; no file is touched.
+    func removeSavedSearch(_ target: CommandTarget) {
+        guard case .savedSearch(let saved) = target else { return }
+        environment.settings.removeSavedSearch(saved.id)
+    }
+
+    /// Open / Open in New Window / Open in New Tab on a SEARCHES row.
+    func openSavedSearch(_ saved: SavedSearch, in place: SavedSearchPlace) {
+        switch place {
+        case .thisWindow:
+            guard let session else { return }
+            Task { await session.openSavedSearch(saved) }
+        case .newWindow:
+            let controller = context.windows.openWindow(at: saved.spec.root)
+            Task { await controller.session.openSavedSearch(saved) }
+        case .newTab:
+            guard let window else { return }
+            let tab = context.windows.openTab(at: saved.spec.root, in: window, select: true)
+            Task { await tab.session.openSavedSearch(saved) }
+        }
+    }
+
+    enum SavedSearchPlace { case thisWindow, newWindow, newTab }
 
     /// The one folder every selected result is in; nil for an empty selection or several folders.
     static func commonParent(of results: SearchResultsModel) -> URL? {
@@ -162,7 +223,7 @@ final class FileCommandController: CommandHandler {
         switch target {
         case .contentSelection(let folder): folder
         case .resultsSelection(let results): results
-        case .currentFolder, .folder, .favorite, .volume, .location: nil
+        case .currentFolder, .folder, .favorite, .volume, .location, .savedSearch: nil
         }
     }
 
@@ -214,6 +275,7 @@ final class FileCommandController: CommandHandler {
         case .folder(let url), .location(let url): [PathItem(url: url, isDirectory: true)]
         case .favorite(let favorite): favorite.url.map { [PathItem(url: $0, isDirectory: true)] } ?? []
         case .volume(let volume): [PathItem(url: volume.mountPoint, isDirectory: true)]
+        case .savedSearch: []
         }
     }
 
@@ -228,6 +290,7 @@ final class FileCommandController: CommandHandler {
         case .folder(let url), .location(let url): [url]
         case .favorite(let favorite): favorite.url.map { [$0] } ?? []
         case .volume(let volume): [volume.mountPoint]
+        case .savedSearch: []                       // a query, not a file: file commands get no items
         }
     }
 
@@ -240,6 +303,7 @@ final class FileCommandController: CommandHandler {
         case .folder(let url), .location(let url): url
         case .favorite(let favorite): favorite.url ?? environment.settings.home
         case .volume(let volume): volume.mountPoint
+        case .savedSearch(let saved): saved.spec.root   // never used: Paste and New are disabled there
         }
     }
 
@@ -249,7 +313,7 @@ final class FileCommandController: CommandHandler {
         case .contentSelection(let folder), .currentFolder(let folder): folder.directory
         case .resultsSelection(let results): Self.commonParent(of: results) ?? environment.settings.home
         case .folder(let url): url.deletingLastPathComponent()
-        case .favorite, .volume, .location: environment.settings.home
+        case .favorite, .volume, .location, .savedSearch: environment.settings.home
         }
     }
 
@@ -306,6 +370,7 @@ final class FileCommandController: CommandHandler {
         case .favorite(let favorite):
             guard let url = favorite.url else { return nil }
             urls = [url]
+        case .savedSearch: return nil
         }
         if urls.count == 1, let volume = volumes.first(where: { $0.mountPoint.standardizedFileURL.path == urls[0].standardizedFileURL.path }) {
             return .volume(volume)

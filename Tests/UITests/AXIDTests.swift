@@ -30,5 +30,7 @@ final class AXIDTests: XCTestCase {
         XCTAssertEqual(AXID.automaticUpdateChecks, "macx.settings.automaticUpdateChecks")
         XCTAssertEqual(AXID.checkForUpdatesNow, "macx.settings.checkForUpdatesNow")
         XCTAssertEqual(AXID.offerCrashReports, "macx.settings.offerCrashReports")
+        XCTAssertEqual(AXID.sidebarSavedSearch("Taxes"), "macx.sidebar.search.Taxes")
+        XCTAssertEqual(AXID.namePromptField, "macx.namePromptField")
     }
 }

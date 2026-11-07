@@ -52,6 +52,29 @@ enum SearchStrings {
         }
     }
 
+    /// A SEARCHES row's tooltip (P3-11): "tax kind:pdf — Subfolders of “work”".
+    static func savedSearchTooltip(_ spec: SearchSpec) -> String {
+        let text = spec.text.trimmingCharacters(in: .whitespaces)
+        let query = text.isEmpty ? L10n.string("search.filtersOnly") : text
+        return String(format: L10n.string("search.savedSearchTooltip"), query, scopePhrase(spec))
+    }
+
+    /// "in “work”", "Subfolders of “work”", "This Mac".
+    static func scopePhrase(_ spec: SearchSpec) -> String {
+        let name = spec.root.lastPathComponent
+        return switch spec.scope {
+        case .thisFolder: String(format: L10n.string("search.scopePhrase.thisFolder"), name)
+        case .subfolders: String(format: L10n.string("search.scopePhrase.subfolders"), name)
+        case .thisMac: L10n.string("search.scopePhrase.thisMac")
+        }
+    }
+
+    static var savedSearchSaveTitle: String { L10n.string("search.save.title") }
+    static var savedSearchRenameTitle: String { L10n.string("search.rename.title") }
+    static func savedSearchAccessibilityLabel(_ name: String) -> String {
+        String(format: L10n.string("search.savedSearchLabel"), name)
+    }
+
     static func mode(_ mode: SearchMode) -> String {
         switch mode {
         case .name: L10n.string("search.mode.name")

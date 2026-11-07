@@ -3921,6 +3921,17 @@
         }
       }
     },
+    "Remove from Sidebar" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove from Sidebar"
+          }
+        }
+      }
+    },
     "Removed %ld incomplete copies." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4302,6 +4313,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Search commands…"
+          }
+        }
+      }
+    },
+    "Searches" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Searches"
           }
         }
       }
@@ -6134,6 +6156,17 @@
         }
       }
     },
+    "search.filtersOnly" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(filters only)"
+          }
+        }
+      }
+    },
     "search.kind.application" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6343,6 +6376,17 @@
         }
       }
     },
+    "search.rename.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rename Saved Search"
+          }
+        }
+      }
+    },
     "search.resultsTitle" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6361,6 +6405,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Save Search…"
+          }
+        }
+      }
+    },
+    "search.save.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save Search"
+          }
+        }
+      }
+    },
+    "search.savedSearchLabel" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saved search, %@"
+          }
+        }
+      }
+    },
+    "search.savedSearchTooltip" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ — %2$@"
           }
         }
       }
@@ -6388,6 +6465,39 @@
       }
     },
     "search.scope.thisMac" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This Mac"
+          }
+        }
+      }
+    },
+    "search.scopePhrase.subfolders" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Subfolders of “%@”"
+          }
+        }
+      }
+    },
+    "search.scopePhrase.thisFolder" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "in “%@”"
+          }
+        }
+      }
+    },
+    "search.scopePhrase.thisMac" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -6515,6 +6625,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "1 result"
+          }
+        }
+      }
+    },
+    "sidebar.search.rename" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rename…"
           }
         }
       }

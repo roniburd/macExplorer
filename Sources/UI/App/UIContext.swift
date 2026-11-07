@@ -22,6 +22,8 @@ public final class UIContext {
     var makeThumbnailGenerator: @MainActor () -> any ThumbnailGenerating = { QLThumbnailGeneratorAdapter() }
     /// Eject questions and errors (P1-28 EjectFlow); tests install a scripted one.
     var ejectPrompts: any EjectPrompting = AlertEjectPrompts()
+    /// Save Search… and Rename Saved Search ask for a name here (P3-11); tests install a scripted one.
+    var namePrompter: any NamePrompting = SheetNamePrompter()
     /// The open Settings window (P1-30), if any; SettingsWindowController.show reuses it.
     var settingsWindow: SettingsWindowController?
     /// Keeps the active key table and the menu bar in step with Settings › Shortcuts.

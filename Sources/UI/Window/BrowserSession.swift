@@ -310,6 +310,25 @@ final class BrowserSession {
         }
     }
 
+    /// A SEARCHES row (P3-11): a This folder search first goes to its folder, then the field and chips adopt the spec
+    /// and it runs. A missing root shows the results' "no longer available" state (or the folder's error).
+    func openSavedSearch(_ saved: SavedSearch) async {
+        await search(prepareSavedSearch(saved))
+    }
+
+    /// The synchronous part of `openSavedSearch`: navigation, `searchSpec` and `.searchTextChanged`. Returns the spec
+    /// to run.
+    @discardableResult
+    func prepareSavedSearch(_ saved: SavedSearch) -> SearchSpec {
+        let spec = saved.spec
+        if spec.scope == .thisFolder, !Self.samePath(spec.root, folder.directory) {
+            navigate(to: spec.root)
+        }
+        searchSpec = spec                           // set before the event: the field adopts session.searchSpec
+        observers.send(.searchTextChanged(spec.text))
+        return spec
+    }
+
     /// Shows a model built elsewhere (Phase 4 TAGS, saved searches) and starts it.
     func showResults(_ model: SearchResultsModel, recordHistory: Bool) {
         guard !closed else { return }
