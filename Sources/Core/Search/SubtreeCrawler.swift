@@ -80,6 +80,10 @@ struct CrawlRun: Sendable {
         let perms = permissions.relevant(forRoot: rootPath)
 
         var queue = [rootPath], head = 0
+        // Hard-linked directories are the only way to reach a folder twice (symlinks are never followed, mount
+        // points never crossed), so fileID dedupe is only a guard there. Volumes without stable IDs (SMB, FAT,
+        // exFAT, unknown) can repeat or synthesize fileIDs: deduping would silently drop real folders.
+        let dedupeByFileID = rootVolume?.capabilities.idStable == true
         var visited = Set<UInt64>()
         var scanned = 0, results = 0, skippedTotal = 0
         var skipped: [SkippedLocation] = []
@@ -109,7 +113,7 @@ struct CrawlRun: Sendable {
                     || MountTable.standardize(v.mountPoint.path(percentEncoded: false)) == MountTable.standardize(childPath) {
                     continue
                 }
-                if child.fileID != 0, !visited.insert(child.fileID).inserted { continue }
+                if dedupeByFileID, child.fileID != 0, !visited.insert(child.fileID).inserted { continue }
                 queue.append(childPath)
             }
         }
@@ -120,6 +124,8 @@ struct CrawlRun: Sendable {
                 while inFlight < max(1, options.maxConcurrentReads), head < queue.count, !truncated {
                     let path = queue[head]
                     head += 1
+                    // Memory follows the frontier, not every folder ever queued.
+                    if head > 4096, head > queue.count / 2 { queue.removeFirst(head); head = 0 }
                     inFlight += 1
                     group.addTask { (path, await self.readOne(path, volume: volume)) }
                 }
@@ -190,12 +196,15 @@ struct CrawlRun: Sendable {
                 box.resume(.cancelled)
             }
         }
-        return await withTaskCancellationHandler {
+        let outcome = await withTaskCancellationHandler {
             await box.value()
         } onCancel: {
             inner.cancel()
             box.resume(.cancelled)
         }
+        // A stalled read that later recovers stops at its next batch boundary instead of reading on unseen.
+        if case .stalled = outcome.status { inner.cancel() }
+        return outcome
     }
 
     /// Lane work: read, match, collect descendable children. Synchronous; no suspension points.
@@ -215,7 +224,9 @@ struct CrawlRun: Sendable {
                         let bytes = UnsafeBufferPointer(rebasing: names[o..<(o + Int(e.nameLen))])
                         let name = String(decoding: bytes, as: UTF8.self)
                         let descend = e.kind == .directory || (e.kind == .package && options.includePackages)
-                        if descend && !e.flags.contains(.dataless) {
+                        // The reader flags mount points itself (DIR_MNTSTATUS_MNTPOINT / another st_dev), so a
+                        // stale or empty mount table snapshot cannot lead the crawl onto another volume.
+                        if descend && !e.flags.contains(.dataless) && !e.flags.contains(.mountPoint) {
                             outcome.children.append(.init(name: name, fileID: e.fileID))
                         }
                         let folded = SortKeys.searchFold(name)

@@ -14,6 +14,7 @@ public struct EntryFlags: OptionSet, Sendable, Hashable {
     public static let readable        = EntryFlags(rawValue: 1 << 8)   // access mask R_OK
     public static let writable        = EntryFlags(rawValue: 1 << 9)   // access mask W_OK
     public static let hasHardLinks    = EntryFlags(rawValue: 1 << 10)  // linkID != fileID
+    public static let mountPoint      = EntryFlags(rawValue: 1 << 11)  // DIR_MNTSTATUS_MNTPOINT or another st_dev (rowID 0)
     public var isHidden: Bool { !isDisjoint(with: [.dotName, .bsdHidden]) }
 }
 

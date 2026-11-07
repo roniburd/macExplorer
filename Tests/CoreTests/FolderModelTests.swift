@@ -599,6 +599,13 @@ final class FolderModelTests: XCTestCase {
         XCTAssertEqual(log.renames, [0])
     }
 
+    /// CPU time consumed by the calling thread (immune to time spent waiting for a core).
+    private static func threadCPUTime() -> Duration {
+        var ts = timespec()
+        clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts)
+        return .seconds(Int64(ts.tv_sec)) + .nanoseconds(Int64(ts.tv_nsec))
+    }
+
     /// QA round 1: pasting ~10k items posts 10k selections; resolving them after a patch must not be O(names × rows).
     func testTenThousandPendingSelectionsResolveQuickly() async throws {
         let w = try await FolderTestWorld.make(self)
@@ -611,16 +618,18 @@ final class FolderModelTests: XCTestCase {
         reads.last.continuation.yield(.batch(TestBatch.files(reads.last.generation, names)))
         reads.last.continuation.yield(.completed(ReadSummary(entryCount: names.count, degradedCount: 0, usedFallback: false, elapsed: .zero)))
         try await w.waitUntil("complete") { m.state == .complete && m.rowCount == 10_000 }
-        let clock = ContinuousClock()
+        // Thread CPU time, not wall time: both calls are synchronous on this thread, and under a loaded parallel
+        // run (load average 40) wall time measured scheduling waits (9.6 s), not the work. O(names × rows) would
+        // still cost seconds of CPU, so the bound keeps pinning the one-pass contract.
         m.pendingSelect = names.reversed()
-        let start = clock.now
+        let start = Self.threadCPUTime()
         m.satisfyPending()
-        let elapsed = clock.now - start
+        let elapsed = Self.threadCPUTime() - start
         XCTAssertEqual(m.selection.count, 10_000)
-        XCTAssertLessThan(elapsed, .milliseconds(250), "one pass over the store (debug build bound)")
-        let again = clock.now
+        XCTAssertLessThan(elapsed, .milliseconds(250), "one pass over the store (debug build bound, CPU time)")
+        let again = Self.threadCPUTime()
         m.select(.names(names))
-        XCTAssertLessThan(clock.now - again, .milliseconds(250), "select(.names) resolves in one pass too")
+        XCTAssertLessThan(Self.threadCPUTime() - again, .milliseconds(250), "select(.names) resolves in one pass too")
         XCTAssertEqual(m.selection.count, 10_000)
     }
 

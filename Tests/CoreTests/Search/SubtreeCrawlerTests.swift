@@ -366,6 +366,78 @@ final class SubtreeCrawlerTests: XCTestCase {
         XCTAssertEqual(reasons, ["eio": .unreadable(EIO), "eperm": .permission(EPERM), "partial": .unreadable(EIO)])
         XCTAssertEqual(c.summary?.skippedTotal, 3)
     }
+
+    // Review finding (round 2): the reader's own mount-point signal stops the crawl even when the mount table
+    // snapshot is empty or stale.
+    func testCrawlerDoesNotCrossRealDiskImageWithEmptyMountTable() async throws {
+        guard DiskImage.isAvailable else { throw XCTSkip("hdiutil unavailable") }
+        let image = try DiskImage.create(in: sandbox, format: .apfs, sizeMB: 16, volumeName: "MACXSTALE")
+        defer { try? image.detach() }
+        try sandbox.createFile(image.relativeMountPath + "/needle-in-image.txt")
+        try sandbox.createFile("needle-here.txt")
+        let c = await collect(crawl("needle", mountTable: MountTableStore()))
+        XCTAssertEqual(rel(c.paths), ["needle-here.txt"])
+    }
+
+    /// Rewrites every directory's fileID to one value, as a volume without stable IDs may report.
+    private func repeatingDirectoryIDs() -> SubtreeCrawler.DirectoryRead {
+        { url, g, o, t, ctx, emit in
+            SubtreeCrawler.defaultRead(url, g, o, t, ctx) { batch in
+                var b = batch
+                for i in b.entries.indices where b.entries[i].kind == .directory { b.entries[i].fileID = 42 }
+                return emit(b)
+            }
+        }
+    }
+
+    private func rootVolume(idStable: Bool) -> MountTableStore {
+        let info = VolumeInfo(id: VolumeID(raw: "test:root"), mountPoint: sandbox.root, name: "Root",
+                              format: "APFS", isBoot: false, isInternal: true, isRemovable: false, isEjectable: false,
+                              isLocal: true, isReadOnly: false, isBrowsable: true, totalCapacity: nil,
+                              capabilities: VolumeCapabilities(idStable: idStable, renameExcl: true, clone: true, caseSensitive: false))
+        return MountTableStore(MountTable([info]))
+    }
+
+    // Review finding (round 2): fileID dedupe only on idStable volumes; elsewhere repeated IDs must not hide folders.
+    func testRepeatedFileIDsDoNotHideFoldersWithoutStableIDs() async throws {
+        try sandbox.createFile("a/needle-a.txt")
+        try sandbox.createFile("b/needle-b.txt")
+        let unstable = await collect(crawl("needle", mountTable: rootVolume(idStable: false), read: repeatingDirectoryIDs()))
+        XCTAssertEqual(rel(unstable.paths), ["a/needle-a.txt", "b/needle-b.txt"])
+        let unknown = await collect(crawl("needle", read: repeatingDirectoryIDs()))
+        XCTAssertEqual(rel(unknown.paths), ["a/needle-a.txt", "b/needle-b.txt"], "unknown volume: no dedupe")
+        let stable = await collect(crawl("needle", mountTable: rootVolume(idStable: true), read: repeatingDirectoryIDs()))
+        XCTAssertEqual(stable.paths.count, 1, "idStable: one fileID is one folder (hard-link guard)")
+    }
+
+    // Review finding (round 2): a stalled read that recovers is cancelled, so it stops instead of reading on unseen.
+    func testStalledReadIsCancelledWhenItRecovers() async throws {
+        try sandbox.createFile("slow/needle-slow.txt")
+        try sandbox.createFile("fast/needle-fast.txt")
+        let lanes = LanePool(config: WatchdogConfig(stallTimeout: .milliseconds(200), tick: .milliseconds(50)))
+        let cancelledAfterStall = Locked<Bool?>(nil)
+        let stalling: SubtreeCrawler.DirectoryRead = { url, g, o, t, ctx, emit in
+            if url.lastPathComponent == "slow" {
+                Thread.sleep(forTimeInterval: 0.8)                                         // no heartbeat
+                cancelledAfterStall.withLock { $0 = ctx.isCancelled }
+            }
+            return SubtreeCrawler.defaultRead(url, g, o, t, ctx, emit)
+        }
+        let c = await collect(crawl("needle", lanes: lanes, read: stalling))
+        XCTAssertEqual(rel(c.paths), ["fast/needle-fast.txt"])
+        for _ in 0..<40 where cancelledAfterStall.value == nil { try await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertEqual(cancelledAfterStall.value, true, "the recovered lane sees its job cancelled")
+    }
+
+    // Review finding (round 2): the BFS queue is compacted; a wide tree still finds everything.
+    func testWideTreeCompactsQueueAndFindsEverything() async throws {
+        for i in 0..<5_000 { try sandbox.createDirectory("w\(i)") }
+        try sandbox.createFile("w4999/needle-last.txt")
+        try sandbox.createFile("w10/needle-ten.txt")
+        let c = await collect(crawl("needle"))
+        XCTAssertEqual(rel(c.paths), ["w4999/needle-last.txt", "w10/needle-ten.txt"])
+        XCTAssertEqual(c.summary?.directoriesScanned, 5_001)
+    }
 }
 
 /// Lock-protected value for spies that lane threads call concurrently.

@@ -70,6 +70,7 @@ struct RecordConverter {
         let fileID = has(CFSK_HAS_FILEID) ? r.file_id : 0
         let isMountPoint = (has(CFSK_HAS_MOUNTSTATUS) && r.mount_status & UInt32(DIR_MNTSTATUS_MNTPOINT) != 0)
             || (has(CFSK_HAS_DEVID) && directoryDevice != nil && r.dev_id != directoryDevice)
+        if isMountPoint { flags.insert(.mountPoint) }
         let rowID = isMountPoint ? 0 : has(CFSK_HAS_LINKID) && r.link_id != 0 ? r.link_id : fileID
         let size: Int64 = isDir ? Int64(r.entry_count) : (has(CFSK_HAS_DATALENGTH) ? r.data_length : 0)
         let entry = Entry(rowID: rowID, fileID: fileID, size: size,

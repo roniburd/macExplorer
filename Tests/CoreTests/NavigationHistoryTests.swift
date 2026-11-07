@@ -92,4 +92,17 @@ final class NavigationHistoryTests: XCTestCase {
         _ = b.goBack()
         XCTAssertNotEqual(a, b)
     }
+
+    // Review finding (round 2): entries compare lexically (no stat on the main actor), including "." / ".." and /private.
+    func testFileURLsCompareLexically() {
+        var h = NavigationHistory(current: u("/nonexistent-macx/a/./b/"))
+        h.visit(u("/nonexistent-macx/a/c/../b"))
+        XCTAssertEqual(h.backList, [], "same folder spelled differently is not a new entry")
+        h.visit(u("/private/var/macx-nonexistent-x"))
+        h.visit(u("/var/macx-nonexistent-x/"))
+        XCTAssertEqual(h.backList.count, 1, "/private/var and /var spell the same folder")
+        h.visit(u("/tmp/macx-nonexistent-s"))
+        h.replaceCurrent(u("/var/macx-nonexistent-x"))
+        XCTAssertEqual(h.backList, [u("/nonexistent-macx/a/./b/")], "the /private spelling of the back entry was dropped")
+    }
 }

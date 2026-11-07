@@ -72,7 +72,7 @@ public struct NavigationHistory: Sendable, Equatable {
     /// Non-file URLs (saved/typed searches, `x-macexplorer-search:`) have no path: they compare by their full text.
     private static func key(_ url: URL) -> String {
         guard url.isFileURL else { return url.absoluteString }
-        let path = url.standardizedFileURL.path(percentEncoded: false)
-        return path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
+        // Lexical only (no stat): history is driven from the main actor (§4.4). Also folds "/private/var|tmp|etc".
+        return LexicalPath.standardize(url.path(percentEncoded: false))
     }
 }
