@@ -1,6 +1,7 @@
 import Foundation
 
-/// Per-window back/forward stacks (§5.2). URLs are compared by standardized path, ignoring a trailing slash.
+/// Per-window back/forward stacks (§5.2). File URLs are compared by standardized path, ignoring a trailing slash; other URLs
+/// (searches) by their full text.
 public struct NavigationHistory: Sendable, Equatable {
     /// Maximum entries kept in `backList`; the oldest are dropped first.
     public static let limit = 100
@@ -52,6 +53,14 @@ public struct NavigationHistory: Sendable, Equatable {
         return target
     }
 
+    /// Replaces the current entry without growing history (retyped search, cleared search).
+    /// Drops a trailing back entry equal to `url`, so returning from a search does not leave a duplicate;
+    /// `forwardList` is unchanged.
+    public mutating func replaceCurrent(_ url: URL) {
+        if let last = backList.last, Self.key(last) == Self.key(url) { backList.removeLast() }
+        current = url
+    }
+
     public var canGoBack: Bool { !backList.isEmpty }
     public var canGoForward: Bool { !forwardList.isEmpty }
 
@@ -60,7 +69,9 @@ public struct NavigationHistory: Sendable, Equatable {
         if backList.count > Self.limit { backList.removeFirst(backList.count - Self.limit) }
     }
 
+    /// Non-file URLs (saved/typed searches, `x-macexplorer-search:`) have no path: they compare by their full text.
     private static func key(_ url: URL) -> String {
+        guard url.isFileURL else { return url.absoluteString }
         let path = url.standardizedFileURL.path(percentEncoded: false)
         return path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
     }
