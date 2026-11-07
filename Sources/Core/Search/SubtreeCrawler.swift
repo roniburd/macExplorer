@@ -4,8 +4,9 @@ import MacxFS
 /// "Subfolders, by name" engine (§11 Phase 3): breadth-first over the root's subtree with at most
 /// `maxConcurrentReads` directory reads in flight on the root volume's `.scan` lanes, each under
 /// `withNoMaterialization`. Never follows symlinks or aliases, never crosses mount points, skips packages and
-/// hidden items unless enabled, skips blocked (TCC) prefixes without opening them. Names are matched as stored on
-/// disk; Finder display names are applied by the results model when rows are shown.
+/// hidden items unless enabled, skips blocked (TCC) prefixes without opening them. Name terms match the on-disk
+/// name or the Finder display name (hidden extensions), as the in-folder filter does. Localized folder names are
+/// not available without materializing metadata, so they are not matched here (accepted engine difference).
 public enum SubtreeCrawler {
     /// Synchronous directory read (lane only). Returns a Result: typed-throws closures must not cross
     /// `LanePool.perform` (S1 Contract note 7).
@@ -88,6 +89,30 @@ struct CrawlRun: Sendable {
             skippedTotal += 1
             if skipped.count < 50 { skipped.append(SkippedLocation(path: path, reason: reason)) }
         }
+        /// Emits the outcome's matches (up to the cap) and queues its descendable children.
+        func absorb(_ path: String, _ outcome: DirectoryOutcome) {
+            let parentURL = URL(filePath: path, directoryHint: .isDirectory)
+            for batch in outcome.matches where !truncated {
+                var b = batch
+                let room = options.maxResults - results
+                if b.count > room { b = Self.prefix(b, room); truncated = true }
+                if b.count > 0 { out.yield(.batch(SearchBatch(parent: parentURL, batch: b))); results += b.count }
+                if results >= options.maxResults { truncated = true }
+            }
+            for child in outcome.children {
+                let childPath = Self.join(path, child.name)
+                if perms.isBlocked(childPath) { skip(childPath, .protectedLocation); continue }
+                // Another volume, or a mount point of any volume: not descended. MountTable.standardize
+                // on both sides, so /private/var/… and /var/… spellings compare equal.
+                if let v = table.volume(containing: childPath),
+                   v.id != rootVolume?.id
+                    || MountTable.standardize(v.mountPoint.path(percentEncoded: false)) == MountTable.standardize(childPath) {
+                    continue
+                }
+                if child.fileID != 0, !visited.insert(child.fileID).inserted { continue }
+                queue.append(childPath)
+            }
+        }
 
         let finished: Bool = await withTaskGroup(of: (String, DirectoryOutcome).self) { group in
             var inFlight = 0
@@ -111,33 +136,18 @@ struct CrawlRun: Sendable {
                 case .failed(let f):
                     if f.stage == .unresponsiveVolume { out.yield(.failed(.volumeUnresponsive)); group.cancelAll(); return false }
                     if path == rootPath { out.yield(.failed(.rootUnreadable(Reason(errno: f.code)))); group.cancelAll(); return false }
-                    skip(path, .permission(f.code))
+                    absorb(path, outcome)                           // batches delivered before a mid-read failure
+                    switch f.code {
+                    case EACCES, EPERM: skip(path, .permission(f.code))
+                    case ENOENT, ENOTDIR: break                     // deleted or replaced mid-crawl: nothing to report
+                    default: skip(path, .unreadable(f.code))
+                    }
                 case .stalled:
                     if path == rootPath { out.yield(.failed(.volumeUnresponsive)); group.cancelAll(); return false }
                     skip(path, .unresponsive)
                 case .read:
                     scanned += 1
-                    let parentURL = URL(filePath: path, directoryHint: .isDirectory)
-                    for batch in outcome.matches where !truncated {
-                        var b = batch
-                        let room = options.maxResults - results
-                        if b.count > room { b = Self.prefix(b, room); truncated = true }
-                        if b.count > 0 { out.yield(.batch(SearchBatch(parent: parentURL, batch: b))); results += b.count }
-                        if results >= options.maxResults { truncated = true }
-                    }
-                    for child in outcome.children {
-                        let childPath = Self.join(path, child.name)
-                        if perms.isBlocked(childPath) { skip(childPath, .protectedLocation); continue }
-                        // Another volume, or a mount point of any volume: not descended. MountTable.standardize
-                        // on both sides, so /private/var/… and /var/… spellings compare equal.
-                        if let v = table.volume(containing: childPath),
-                           v.id != rootVolume?.id
-                            || MountTable.standardize(v.mountPoint.path(percentEncoded: false)) == MountTable.standardize(childPath) {
-                            continue
-                        }
-                        if child.fileID != 0, !visited.insert(child.fileID).inserted { continue }
-                        queue.append(childPath)
-                    }
+                    absorb(path, outcome)
                 }
                 if clock.now - lastProgress >= options.progressInterval {
                     lastProgress = clock.now
@@ -209,7 +219,18 @@ struct CrawlRun: Sendable {
                             outcome.children.append(.init(name: name, fileID: e.fileID))
                         }
                         let folded = SortKeys.searchFold(name)
-                        if folded.withUnsafeBytes({ matcher.matches(e, foldedName: $0) }) { hits.append(e, nameBytes: bytes) }
+                        let display = !options.showAllExtensions && (e.kind == .package || e.flags.contains(.extensionHidden))
+                            ? DisplayName.make(name: name, kind: e.kind, flags: e.flags, localizedStem: nil, showAllExtensions: false)
+                            : name
+                        let hit: Bool
+                        if display != name {
+                            hit = SortKeys.searchFold(display).withUnsafeBytes { shown in
+                                folded.withUnsafeBytes { matcher.matches(e, foldedName: shown, foldedFileName: $0) }
+                            }
+                        } else {
+                            hit = folded.withUnsafeBytes { matcher.matches(e, foldedName: $0) }
+                        }
+                        if hit { hits.append(e, nameBytes: bytes) }
                     }
                 }
                 if hits.count > 0 { outcome.matches.append(hits) }

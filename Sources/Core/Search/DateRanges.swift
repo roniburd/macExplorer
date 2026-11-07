@@ -44,7 +44,17 @@ public enum DateRanges {
         }
     }
 
-    static func ns(_ date: Date) -> Int64 { Int64((date.timeIntervalSince1970 * 1_000_000_000).rounded()) }
+    /// Nanoseconds since 1970, saturated: Int64 ns only spans ≈1677-09-21…2262-04-11, while `DayStamp` accepts years
+    /// 0000…9999 (typed, saved or restored from history). Out-of-range days clamp to `.min`/`.max`, so
+    /// `modified:9999-01-01` matches nothing and `created:>0001-01-01` matches everything, instead of trapping.
+    static func ns(_ date: Date) -> Int64 {
+        let value = (date.timeIntervalSince1970 * 1_000_000_000).rounded()
+        if value.isNaN { return 0 }
+        // Double(Int64.max) rounds up to 2^63, which itself does not fit: compare with >=.
+        if value >= Double(Int64.max) { return .max }
+        if value <= Double(Int64.min) { return .min }
+        return Int64(value)
+    }
 
     static func start(_ day: DayStamp, offsetDays: Int, _ calendar: Calendar) -> Date {
         let base = calendar.date(from: DateComponents(year: day.year, month: day.month, day: day.day))!

@@ -1,6 +1,7 @@
 import XCTest
 @testable import Core
 @testable import MacxFS
+import MacxFixtures
 
 final class SearchResultStoreTests: XCTestCase {
     let types = TypeRegistry()
@@ -104,5 +105,39 @@ final class SearchResultStoreTests: XCTestCase {
         XCTAssertEqual(s.displayName(0, showAllExtensions: false), "Report")
         XCTAssertEqual(s.displayName(0, showAllExtensions: true), "Report.pdf")
         XCTAssertEqual(s.nameKeys.withKey(0) { Array($0) }, SortKeys.nameKey("Report", isFolder: false))
+    }
+
+    // Review finding: parents are normalized lexically (no file-system call), keep the caller's /private spelling,
+    // and lookups accept either the /private/var/... or the /var/... spelling.
+    func testRealPrivateVarParentKeepsSpellingAndMatchesEitherSpelling() throws {
+        let sandbox = try Sandbox()
+        defer { sandbox.destroy() }
+        try sandbox.createDirectory("dir")
+        var real = sandbox.url("dir").path(percentEncoded: false)
+        if real.hasSuffix("/") { real.removeLast() }
+        let privateSpelling = real.hasPrefix("/private/") ? real : "/private" + real
+        let varSpelling = String(privateSpelling.dropFirst("/private".count))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: privateSpelling))
+        var s = SearchResultStore()
+        s.append(batch(privateSpelling + "/", ["a.txt", "b.txt", "c.txt"]))
+        XCTAssertEqual(s.parents, [privateSpelling], "the crawler's spelling is kept")
+        XCTAssertEqual(s.path(0), privateSpelling + "/a.txt")
+        XCTAssertEqual(s.identity(0), .name(privateSpelling + "/a.txt"))
+        XCTAssertEqual(s.index(ofPath: varSpelling + "/a.txt"), 0)
+        XCTAssertEqual(s.index(ofPath: privateSpelling + "/a.txt"), 0)
+        s.append(batch(varSpelling, ["d.txt"]))                  // the same folder in the other spelling
+        XCTAssertEqual(s.parents, [privateSpelling])
+        XCTAssertEqual(s.remove(paths: [privateSpelling + "/a.txt"]), 1)
+        XCTAssertEqual(s.remove(paths: [varSpelling + "/b.txt"]), 1)
+        XCTAssertTrue(s.rename(path: varSpelling + "/c.txt", to: "c2.txt", types: types))
+        XCTAssertNotNil(s.index(ofPath: privateSpelling + "/c2.txt"))
+        XCTAssertEqual(s.count, 2)
+    }
+
+    func testMissingParentNormalizesTheSameWay() {
+        var s = SearchResultStore()
+        s.append(batch("/private/var/macx-missing-\(UUID().uuidString)/./x/../y//", ["n"]))
+        XCTAssertTrue(s.parents[0].hasPrefix("/private/var/macx-missing-"))
+        XCTAssertTrue(s.parents[0].hasSuffix("/y"))
     }
 }

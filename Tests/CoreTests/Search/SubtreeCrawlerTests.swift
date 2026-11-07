@@ -302,6 +302,70 @@ final class SubtreeCrawlerTests: XCTestCase {
                                           lanes: LanePool(), mountTable: MountTableStore(), types: types)
         for await e in stream { if case .batch(let b) = e { XCTAssertEqual(b.batch.generation, gen) } }
     }
+
+    // Review finding: APFS is case-insensitive, so a differently cased root spelling must still hit the blocked prefix.
+    func testBlockedPrefixesMatchCaseInsensitively() {
+        let perms = CrawlPermissions(blockedPrefixes: ["/Users/roni/Desktop", "/Users/roni/Documents/"])
+        let relevant = perms.relevant(forRoot: "/users/RONI")
+        XCTAssertEqual(relevant.blockedPrefixes, ["/Users/roni/Desktop", "/Users/roni/Documents"])
+        XCTAssertTrue(relevant.isBlocked("/users/RONI/Desktop"))
+        XCTAssertTrue(relevant.isBlocked("/users/roni/desktop/x"))
+        XCTAssertTrue(relevant.isBlocked("/USERS/roni/DOCUMENTS"))
+        XCTAssertFalse(relevant.isBlocked("/users/roni/DesktopNot"))
+        XCTAssertTrue(perms.relevant(forRoot: "/Users/roni/desktop").blockedPrefixes.isEmpty, "the root itself is never blocked")
+    }
+
+    func testCrawlerSkipsBlockedPrefixWithDifferentCaseRoot() async throws {
+        try sandbox.createFile("Protected/needle.txt")
+        try sandbox.createFile("Free/needle.txt")
+        let root = sandbox.root.path(percentEncoded: false).trimmingSuffixSlash
+        let reads = Locked<[String]>([])
+        let spy: SubtreeCrawler.DirectoryRead = { url, g, o, t, ctx, emit in
+            reads.withLock { $0.append(url.path(percentEncoded: false).trimmingSuffixSlash) }
+            return SubtreeCrawler.defaultRead(url, g, o, t, ctx, emit)
+        }
+        let perms = CrawlPermissions(blockedPrefixes: [root.uppercased() + "/PROTECTED"])
+        let c = await collect(crawl("needle", permissions: perms, read: spy))
+        XCTAssertEqual(rel(c.paths), ["Free/needle.txt"])
+        XCTAssertFalse(reads.value.contains { $0.lowercased().hasSuffix("/protected") }, "a blocked folder must never be opened")
+    }
+
+    // Review finding: name terms see the Finder display name too, like the in-folder filter (Sorter.matches).
+    func testNameTermsMatchDisplayNameWithHiddenExtension() async throws {
+        try sandbox.createFile("x/report.pdf")
+        try sandbox.setHiddenExtension("x/report.pdf")
+        try sandbox.createFile("x/report.txt")                      // extension shown: "*report" does not match
+        let c = await collect(crawl("*report"))
+        XCTAssertEqual(rel(c.paths), ["x/report.pdf"])
+        var all = CrawlOptions()
+        all.showAllExtensions = true
+        let shown = await collect(crawl("*report", options: all))
+        XCTAssertEqual(rel(shown.paths), [], "with all extensions shown the display name is the on-disk name")
+        let onDisk = await collect(crawl("*.pdf"))
+        XCTAssertEqual(rel(onDisk.paths), ["x/report.pdf"], "the on-disk name still matches")
+    }
+
+    // Review finding: only EACCES/EPERM are permission skips; a vanished folder is dropped; other errors are generic.
+    func testReadErrorsMapToSkipReasons() async throws {
+        for name in ["gone", "notdir", "eio", "eperm", "partial"] { try sandbox.createDirectory(name) }
+        try sandbox.createFile("partial/needle-a.txt")
+        let fail: [String: Int32] = ["gone": ENOENT, "notdir": ENOTDIR, "eio": EIO, "eperm": EPERM]
+        let spy: SubtreeCrawler.DirectoryRead = { url, g, o, t, ctx, emit in
+            let name = (url.path(percentEncoded: false).trimmingSuffixSlash as NSString).lastPathComponent
+            if let code = fail[name] { return .failure(ReadFailure(code: code, stage: .open)) }
+            if name == "partial" {
+                _ = SubtreeCrawler.defaultRead(url, g, o, t, ctx, emit)      // first batch delivered, then the read fails
+                return .failure(ReadFailure(code: EIO, stage: .read))
+            }
+            return SubtreeCrawler.defaultRead(url, g, o, t, ctx, emit)
+        }
+        let c = await collect(crawl("needle", read: spy))
+        XCTAssertEqual(rel(c.paths), ["partial/needle-a.txt"], "matches read before the failure are kept")
+        let reasons = Dictionary(uniqueKeysWithValues: (c.summary?.skipped ?? []).map {
+            (($0.path as NSString).lastPathComponent, $0.reason) })
+        XCTAssertEqual(reasons, ["eio": .unreadable(EIO), "eperm": .permission(EPERM), "partial": .unreadable(EIO)])
+        XCTAssertEqual(c.summary?.skippedTotal, 3)
+    }
 }
 
 /// Lock-protected value for spies that lane threads call concurrently.

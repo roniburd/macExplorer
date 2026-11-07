@@ -19,7 +19,9 @@ public struct SearchProgress: Sendable, Equatable {
     }
 }
 
-public enum SkipReason: Sendable, Equatable { case permission(Int32), protectedLocation, unresponsive }
+/// Why a folder below the root was not (fully) searched. `permission` is EACCES/EPERM only; `unreadable` is any
+/// other read error (EIO, …). A folder that vanished mid-crawl (ENOENT/ENOTDIR) is not reported.
+public enum SkipReason: Sendable, Equatable { case permission(Int32), protectedLocation, unresponsive, unreadable(Int32) }
 
 public struct SkippedLocation: Sendable, Equatable {
     public var path: String

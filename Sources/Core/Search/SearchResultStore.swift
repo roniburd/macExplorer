@@ -1,17 +1,24 @@
 import Foundation
 import MacxFS
 
-/// Results of one search: entries from many folders. Identity is the standardized full path (`RowID.name`), never
-/// the inode (inode numbers repeat across volumes), so the wrapped store's identity map is never consulted.
+/// Results of one search: entries from many folders. Identity is the full path (`RowID.name`), never the inode
+/// (inode numbers repeat across volumes), so the wrapped store's identity map is never consulted.
+///
+/// Path forms (contract for P3-05/P3-06): `SearchBatch.parent`, `remove(paths:)`, `rename(path:)` and
+/// `index(ofPath:)` accept any spelling of a path: "/private/var/…" or "/var/…", with or without "."/".." or a
+/// trailing slash. Normalization is purely lexical (never `standardizedFileURL`, which stats the path and drops
+/// "/private" only when it exists, and must not run on the main actor). Shown paths, URLs and identities keep
+/// the spelling of the first batch for each folder (lexically cleaned); lookups compare `MountTable.standardize`
+/// keys, so the crawler's, Spotlight's and the change bus's spellings all find the same row.
 public struct SearchResultStore: Sendable {
     public private(set) var store = EntryStore(identityMode: .objectID)
     /// `SortKeys.nameKey` of each entry's Finder display name (extensions shown per the item's own flag), by storage
     /// index; kept aligned with `store` by append, remove and rename.
     public private(set) var nameKeys = SortKeyColumn()
     public private(set) var parents: [String] = []
-    private var parentLookup: [String: UInt32] = [:]
+    private var parentLookup: [String: UInt32] = [:]    // keyed by MountTable.standardize(parent)
     private var parentOf: [UInt32] = []                 // by storage index
-    private var pathIndex: [String: UInt32] = [:]
+    private var pathIndex: [String: UInt32] = [:]       // keyed by MountTable.standardize(full path)
 
     public init() {}
 
@@ -29,14 +36,25 @@ public struct SearchResultStore: Sendable {
         store.displayName(index, showAllExtensions: showAllExtensions)
     }
     public func identity(_ index: UInt32) -> RowID { .name(path(index)) }
-    public func index(ofPath path: String) -> UInt32? { pathIndex[path] }
+    public func index(ofPath path: String) -> UInt32? { pathIndex[Self.key(path)] }
+
+    /// Lookup key: lexical, "/private/var|tmp|etc" folded to "/var|tmp|etc".
+    static func key(_ path: String) -> String { MountTable.standardize(path) }
 
     static func join(_ parent: String, _ name: String) -> String { parent == "/" ? "/" + name : parent + "/" + name }
 
-    /// Lexically standardized path without a trailing slash ("/" stays "/").
+    /// Lexically cleaned path (no ".", "..", duplicate or trailing slashes; "/" stays "/") in the caller's spelling:
+    /// a leading "/private" is kept. No file-system access.
     static func standardizedParent(_ url: URL) -> String {
-        let p = url.standardizedFileURL.path(percentEncoded: false)
-        return p.count > 1 && p.hasSuffix("/") ? String(p.dropLast()) : p
+        let path = url.path(percentEncoded: false)
+        guard path.hasPrefix("/") else { return path }
+        var parts: [Substring] = []
+        for c in path.split(separator: "/", omittingEmptySubsequences: true) {
+            if c == "." { continue }
+            if c == ".." { _ = parts.popLast(); continue }
+            parts.append(c)
+        }
+        return "/" + parts.joined(separator: "/")
     }
 
     /// Appends the batch at the end of storage (not displayed until the caller merges the indices into the order).
@@ -44,16 +62,17 @@ public struct SearchResultStore: Sendable {
     @discardableResult
     public mutating func append(_ batch: SearchBatch) -> [UInt32] {
         guard batch.batch.count > 0 else { return [] }
-        let parent = Self.standardizedParent(batch.parent)
-        let paths = (0..<batch.batch.count).map { Self.join(parent, batch.batch.name(at: $0)) }
+        let spelled = Self.standardizedParent(batch.parent)
+        let parentKey = Self.key(spelled)
+        let paths = (0..<batch.batch.count).map { Self.join(parentKey, batch.batch.name(at: $0)) }   // lookup keys
         removeIndices(Set(paths.compactMap { pathIndex[$0] }))
         let p: UInt32
-        if let known = parentLookup[parent] {
+        if let known = parentLookup[parentKey] {
             p = known
         } else {
             p = UInt32(parents.count)
-            parents.append(parent)
-            parentLookup[parent] = p
+            parents.append(spelled)
+            parentLookup[parentKey] = p
         }
         let start = store.count
         store.append(batch.batch)
@@ -66,7 +85,7 @@ public struct SearchResultStore: Sendable {
     /// Removes the given full paths (unknown ones are ignored). Returns how many entries were removed.
     @discardableResult
     public mutating func remove(paths: [String]) -> Int {
-        let indices = Set(paths.compactMap { pathIndex[$0] })
+        let indices = Set(paths.compactMap { pathIndex[Self.key($0)] })
         removeIndices(indices)
         return indices.count
     }
@@ -74,7 +93,7 @@ public struct SearchResultStore: Sendable {
     /// Remove + append of a re-typed entry (new name, new type from the new extension, dot-name flag). The renamed
     /// entry is appended at the end and is not in the order; the caller merges it.
     public mutating func rename(path: String, to newName: String, types: TypeRegistry) -> Bool {
-        guard let index = pathIndex[path] else { return false }
+        guard let index = pathIndex[Self.key(path)] else { return false }
         var entry = store.entry(index)
         let parentURL = URL(filePath: parentPath(index), directoryHint: .isDirectory)
         if entry.kind != .directory {
