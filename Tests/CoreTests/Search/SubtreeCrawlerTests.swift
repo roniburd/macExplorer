@@ -169,16 +169,24 @@ final class SubtreeCrawlerTests: XCTestCase {
     func testStalledDirectoryIsSkippedWithoutWaiting() async throws {
         try sandbox.createFile("slow/needle-slow.txt")
         try sandbox.createFile("fast/needle-fast.txt")
-        let lanes = LanePool(config: WatchdogConfig(stallTimeout: .milliseconds(200), tick: .milliseconds(50)))
+        // A 1 s stall timeout: a starved but healthy read is not mistaken for a stall.
+        let lanes = LanePool(config: WatchdogConfig(stallTimeout: .seconds(1), tick: .milliseconds(50)))
+        let release = Locked(false), slowReturned = Locked(false)
         let stalling: SubtreeCrawler.DirectoryRead = { url, g, o, t, ctx, emit in
-            if url.lastPathComponent == "slow" { Thread.sleep(forTimeInterval: 1.5) }      // no heartbeat
+            if url.lastPathComponent == "slow" {
+                parkLane { release.value }                                                // no heartbeat
+                slowReturned.withLock { $0 = true }
+            }
             return SubtreeCrawler.defaultRead(url, g, o, t, ctx, emit)
         }
-        let start = ContinuousClock.now
         let c = await collect(crawl("needle", lanes: lanes, read: stalling))
-        XCTAssertLessThan(ContinuousClock.now - start, .milliseconds(1_200), "the crawl must not wait for the stalled read")
+        // The slow read is held until the crawl is over, so finishing at all proves the crawl did not wait for it.
+        XCTAssertFalse(slowReturned.value, "the crawl must not wait for the stalled read")
+        release.withLock { $0 = true }
         XCTAssertEqual(rel(c.paths), ["fast/needle-fast.txt"])
         XCTAssertEqual(c.summary?.skipped.first?.reason, .unresponsive)
+        let freed = await pollUntil { slowReturned.value }
+        XCTAssertTrue(freed, "the stalled read returns once released")
     }
 
     func testUnreadableRootFails() async throws {
@@ -193,38 +201,39 @@ final class SubtreeCrawlerTests: XCTestCase {
     }
 
     func testCancellingIterationStopsTheCrawl() async throws {
-        try FixtureTree.deep(in: sandbox, at: "deep", depth: 6, breadth: 4, filesPerDir: 20)
-        let reads = Locked(0)
-        let counting: SubtreeCrawler.DirectoryRead = { url, g, o, t, ctx, emit in
-            reads.withLock { $0 += 1 }
-            return SubtreeCrawler.defaultRead(url, g, o, t, ctx, emit)
-        }
+        // 1 + 4 + 16 = 21 directories under "deep", plus the sandbox root: 22 reads for a crawl nothing stops.
+        try FixtureTree.deep(in: sandbox, at: "deep", depth: 3, breadth: 4, filesPerDir: 5)
+        let gate = ReadGate(open: 1)                    // the root is read; "deep" parks until its job is cancelled
+        let read = gate.read
         // The stream lives only inside the consumer: leaving the loop releases it, which terminates it.
         let root = sandbox.root, types = types
         let consumer = Task {
             let stream = SubtreeCrawler.crawl(root: root, criteria: SearchCriteria(nameTerms: [NameTerm("")]),   // matches everything
                                               options: CrawlOptions(), permissions: .none, generation: .initial.next(),
-                                              lanes: LanePool(), mountTable: MountTableStore(), types: types, read: counting)
-            for await e in stream { if case .batch = e { break } }
+                                              lanes: LanePool(), mountTable: MountTableStore(), types: types, read: read)
+            for await e in stream {
+                guard case .batch = e else { continue }
+                await pollUntil { gate.counts.value.parked == 1 }      // leave the loop with a read in flight
+                break
+            }
         }
         await consumer.value
-        try await Task.sleep(for: .milliseconds(300))
-        let afterCancel = reads.value
-        try await Task.sleep(for: .milliseconds(300))
-        XCTAssertEqual(reads.value, afterCancel, "no directory reads start after the consumer stopped")
-        // The tree has 1 + 4 + 16 + 64 + 256 + 1024 = 1365 directories. How far the crawl got before the cancel took
-        // effect is timing (slow CI runners read hundreds); it must only not have finished.
-        XCTAssertLessThan(afterCancel, 1_365, "the crawl stopped before reading the whole tree")
+        try await assertCrawlStopped(gate)
     }
 
     func testAtMostTwoReadsInFlightOnScanLanesWithoutMaterialization() async throws {
         for d in 0..<8 { try sandbox.createFile("d\(d)/e/needle-\(d).txt") }
+        let siblings = Set((0..<8).map { "d\($0)" })
         struct Counts { var current = 0, peak = 0, sawMaterialization = false }
         let counts = Locked(Counts())
         let spy: SubtreeCrawler.DirectoryRead = { url, g, o, t, ctx, emit in
             counts.withLock { $0.current += 1; $0.peak = max($0.peak, $0.current); if !o.noMaterialization { $0.sawMaterialization = true } }
-            Thread.sleep(forTimeInterval: 0.02)
             defer { counts.withLock { $0.current -= 1 } }
+            // A sibling read waits (heart-beating) until a second read overlaps it, so the peak does not depend on
+            // two lane threads starting within a few milliseconds of each other.
+            if siblings.contains(url.lastPathComponent) {
+                parkLane(timeout: .seconds(10), heartbeat: ctx) { counts.value.peak >= 2 }
+            }
             return SubtreeCrawler.defaultRead(url, g, o, t, ctx, emit)
         }
         let lanes = LanePool()
@@ -275,27 +284,32 @@ final class SubtreeCrawlerTests: XCTestCase {
     }
 
     func testCancellingTheConsumingTaskStopsTheCrawl() async throws {
-        try FixtureTree.deep(in: sandbox, at: "deep", depth: 5, breadth: 4, filesPerDir: 10)
-        let reads = Locked(0)
-        let counting: SubtreeCrawler.DirectoryRead = { url, g, o, t, ctx, emit in
-            reads.withLock { $0 += 1 }
-            return SubtreeCrawler.defaultRead(url, g, o, t, ctx, emit)
-        }
-        let stream = crawl("", read: counting)
+        // 1 + 4 + 16 = 21 directories under "deep", plus the sandbox root: 22 reads for a crawl nothing stops.
+        try FixtureTree.deep(in: sandbox, at: "deep", depth: 3, breadth: 4, filesPerDir: 5)
+        let gate = ReadGate(open: 1)                    // the root is read; "deep" parks until its job is cancelled
+        let stream = crawl("", read: gate.read)
         let firstBatch = Locked(false)
         let consumer = Task {
             for await e in stream { if case .batch = e { firstBatch.withLock { $0 = true } } }
         }
-        while !firstBatch.value { try await Task.sleep(for: .milliseconds(5)) }
+        let ready = await pollUntil { firstBatch.value && gate.counts.value.parked == 1 }
+        XCTAssertTrue(ready, "the consumer saw a batch while a read is in flight")
         consumer.cancel()
         await consumer.value
-        try await Task.sleep(for: .milliseconds(300))
-        let afterCancel = reads.value
-        try await Task.sleep(for: .milliseconds(300))
-        XCTAssertEqual(reads.value, afterCancel, "no directory reads start after the consuming task was cancelled")
-        // The tree has 1 + 4 + 16 + 64 + 256 + 1024 = 1365 directories. How far the crawl got before the cancel took
-        // effect is timing (slow CI runners read hundreds); it must only not have finished.
-        XCTAssertLessThan(afterCancel, 1_365, "the crawl stopped before reading the whole tree")
+        try await assertCrawlStopped(gate)
+    }
+
+    /// After the consumer is gone: the read that was in flight sees its lane job cancelled, and no read starts
+    /// after it. Without the cancel the parked read would give up only after 30 s and the crawl would read on.
+    private func assertCrawlStopped(_ gate: ReadGate, file: StaticString = #filePath, line: UInt = #line) async throws {
+        let released = await pollUntil { gate.counts.value.released == 1 }
+        XCTAssertTrue(released, "the in-flight read returned", file: file, line: line)
+        let counts = gate.counts.value
+        XCTAssertEqual(counts.parked, 1, "one read was in flight when the consumer stopped", file: file, line: line)
+        XCTAssertEqual(counts.releasedByCancel, 1, "the in-flight read sees its job cancelled", file: file, line: line)
+        try await Task.sleep(for: .milliseconds(200))      // a negative check: a short settle can only false-pass
+        XCTAssertEqual(gate.counts.value.started, 2, "no directory read starts after the cancel (root and deep, of 22)",
+                       file: file, line: line)
     }
 
     func testBatchesCarryTheGeneration() async throws {
@@ -418,18 +432,23 @@ final class SubtreeCrawlerTests: XCTestCase {
     func testStalledReadIsCancelledWhenItRecovers() async throws {
         try sandbox.createFile("slow/needle-slow.txt")
         try sandbox.createFile("fast/needle-fast.txt")
-        let lanes = LanePool(config: WatchdogConfig(stallTimeout: .milliseconds(200), tick: .milliseconds(50)))
+        // A 1 s stall timeout: a starved but healthy read is not mistaken for a stall.
+        let lanes = LanePool(config: WatchdogConfig(stallTimeout: .seconds(1), tick: .milliseconds(50)))
+        let release = Locked(false)
         let cancelledAfterStall = Locked<Bool?>(nil)
         let stalling: SubtreeCrawler.DirectoryRead = { url, g, o, t, ctx, emit in
             if url.lastPathComponent == "slow" {
-                Thread.sleep(forTimeInterval: 0.8)                                         // no heartbeat
+                parkLane { release.value }                                                // no heartbeat
                 cancelledAfterStall.withLock { $0 = ctx.isCancelled }
             }
             return SubtreeCrawler.defaultRead(url, g, o, t, ctx, emit)
         }
         let c = await collect(crawl("needle", lanes: lanes, read: stalling))
         XCTAssertEqual(rel(c.paths), ["fast/needle-fast.txt"])
-        for _ in 0..<40 where cancelledAfterStall.value == nil { try await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertNil(cancelledAfterStall.value, "the slow read is still held when the crawl completes")
+        release.withLock { $0 = true }                                                   // the read recovers
+        let recovered = await pollUntil { cancelledAfterStall.value != nil }
+        XCTAssertTrue(recovered, "the recovered read returned")
         XCTAssertEqual(cancelledAfterStall.value, true, "the recovered lane sees its job cancelled")
     }
 
@@ -461,6 +480,50 @@ private final class Locked<T>: @unchecked Sendable {
     init(_ value: T) { stored = value }
     var value: T { lock.withLock { stored } }
     func withLock<R>(_ body: (inout T) -> R) -> R { lock.withLock { body(&stored) } }
+}
+
+/// Polls `condition` until it holds or `timeout` passes; returns whether it held (callers assert on it).
+@discardableResult
+private func pollUntil(timeout: Duration = .seconds(30), _ condition: @Sendable () -> Bool) async -> Bool {
+    let deadline = ContinuousClock.now + timeout
+    while !condition() {
+        guard ContinuousClock.now < deadline else { return false }
+        try? await Task.sleep(for: .milliseconds(5))
+    }
+    return true
+}
+
+/// Blocks a lane thread until `condition` holds or `timeout` passes. Heart-beats while waiting if given a
+/// context, so the watchdog does not call the read stalled; without one the read looks hung, as on a dead volume.
+private func parkLane(timeout: Duration = .seconds(30), heartbeat: LaneContext? = nil, until condition: () -> Bool) {
+    let deadline = ContinuousClock.now + timeout
+    while !condition(), ContinuousClock.now < deadline {
+        heartbeat?.heartbeat()
+        Thread.sleep(forTimeInterval: 0.002)
+    }
+}
+
+/// A directory read source that lets the first `open` reads through and parks every later one (heart-beating, so
+/// the watchdog never calls it stalled) until its lane job is cancelled, or 30 s pass. The crawl cannot finish on
+/// its own, so how far it got before a cancel is not a race against the runner's speed.
+private final class ReadGate: Sendable {
+    struct Counts { var started = 0, parked = 0, released = 0, releasedByCancel = 0 }
+    let counts = Locked(Counts())
+    let open: Int
+    init(open: Int) { self.open = open }
+
+    var read: SubtreeCrawler.DirectoryRead {
+        { [counts, open] url, g, o, t, ctx, emit in
+            let n: Int = counts.withLock { $0.started += 1; return $0.started }
+            if n > open {
+                counts.withLock { $0.parked += 1 }
+                parkLane(heartbeat: ctx) { ctx.isCancelled }
+                let cancelled = ctx.isCancelled
+                counts.withLock { $0.released += 1; if cancelled { $0.releasedByCancel += 1 } }
+            }
+            return SubtreeCrawler.defaultRead(url, g, o, t, ctx, emit)
+        }
+    }
 }
 
 private extension String {
