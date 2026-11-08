@@ -15,10 +15,12 @@ final class RowSourceTests: XCTestCase {
         env = CoreEnvironment.sandboxed(root: sandbox.root)
     }
 
-    func waitUntil(_ timeout: Duration = .seconds(5), _ condition: () -> Bool) async {
+    /// Polls until `condition` holds; fails at the caller after `timeout` (a real folder load on a slow runner).
+    func waitUntil(_ timeout: Duration = .seconds(30), file: StaticString = #filePath, line: UInt = #line,
+                   _ condition: () -> Bool) async {
         let deadline = ContinuousClock.now + timeout
         while !condition() {
-            guard ContinuousClock.now < deadline else { return }
+            guard ContinuousClock.now < deadline else { return XCTFail("timed out", file: file, line: line) }
             try? await Task.sleep(for: .milliseconds(10))
         }
     }

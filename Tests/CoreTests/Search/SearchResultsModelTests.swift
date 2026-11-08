@@ -46,11 +46,17 @@ final class SearchResultsModelTests: XCTestCase {
 
     func names(_ m: SearchResultsModel) -> [String] { (0..<m.rowCount).map { m.name(atRow: $0) } }
 
-    func waitUntil(_ what: String, timeout: TimeInterval = 5, _ condition: @escaping () -> Bool) async {
-        let end = Date().addingTimeInterval(timeout)
-        while !condition() && Date() < end { try? await Task.sleep(for: .milliseconds(5)) }
+    /// Polls until `condition` holds; fails at the caller after `timeout`. With a `pacer`, grants a frame whenever
+    /// the pump waits for one, so a slow runner cannot use up a fixed number of frames before the work arrives.
+    func waitUntil(_ what: String, timeout: Duration = .seconds(30), ticking pacer: ManualFramePacer? = nil,
+                   file: StaticString = #filePath, line: UInt = #line, _ condition: () -> Bool) async {
+        let deadline = ContinuousClock.now + timeout
+        while !condition() && ContinuousClock.now < deadline {
+            if let pacer, pacer.waiting > 0 { pacer.tick() }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
         let ok = condition()
-        XCTAssertTrue(ok, "timed out: \(what)")
+        XCTAssertTrue(ok, "timed out: \(what)", file: file, line: line)
     }
 
     func makeModel(_ script: ScriptedSearchEvents) -> SearchResultsModel {
@@ -121,19 +127,21 @@ final class SearchResultsModelTests: XCTestCase {
         script.continuations[old]!.yield(batch("/", ["old.txt"], gen: old))
         await waitUntil("pump waiting") { pacer.waiting == 1 }
         script.continuations[old]!.yield(.completed(SearchSummary(resultCount: 1)))
-        try? await Task.sleep(for: .milliseconds(50))         // the old engine's completion is queued, no frame yet
+        // Events are handled in order: once the progress after it shows, the completion is queued (no frame yet).
+        script.continuations[old]!.yield(.progress(SearchProgress(directoriesScanned: 7)))
+        await waitUntil("old completion queued") { if case .searching(let p) = m.state { p.directoriesScanned == 7 } else { false } }
+        XCTAssertEqual(pacer.waiting, 1, "no frame was granted yet")
         m.start()
         let new = m.generation
-        pacer.tick()
-        try? await Task.sleep(for: .milliseconds(50))         // the pump ran its frame (and idles: nothing left)
-        guard case .searching = m.state else { return XCTFail("restarted run completed early: \(m.state)") }
-        XCTAssertEqual(names(m), [])
+        pacer.tick()                                          // the frame that would apply the old run's queued ops
         script.continuations[new]!.yield(batch("/", ["new.txt"], gen: new))
+        // The new batch is applied in that frame or a later one: either way a leaked old completion would have
+        // finished the run by the time the row shows, and a leaked old batch would show with it.
+        await waitUntil("new rows", ticking: pacer) { m.rowCount >= 1 }
+        guard case .searching = m.state else { return XCTFail("restarted run completed early: \(m.state)") }
+        XCTAssertEqual(names(m), ["new.txt"])
         script.continuations[new]!.yield(.completed(SearchSummary(resultCount: 1)))
-        for _ in 0..<20 where { if case .complete = m.state { false } else { true } }() {
-            pacer.tick(); try? await Task.sleep(for: .milliseconds(10))
-        }
-        await waitUntil("new run complete") { if case .complete = m.state { true } else { false } }
+        await waitUntil("new run complete", ticking: pacer) { if case .complete = m.state { true } else { false } }
         XCTAssertEqual(names(m), ["new.txt"])
     }
 
@@ -295,7 +303,7 @@ final class SearchResultsModelTests: XCTestCase {
         let gen = m.generation
         let names = (0...SearchResultsModel.resultLimit).map { "f\($0)" }
         script.continuations[gen]!.yield(batch("/", names, gen: gen))
-        await waitUntil("capped", timeout: 20) { if case .complete = m.state { true } else { false } }
+        await waitUntil("capped") { if case .complete = m.state { true } else { false } }
         XCTAssertEqual(m.rowCount, SearchResultsModel.resultLimit)
         XCTAssertTrue(m.notices.contains(.truncated(limit: SearchResultsModel.resultLimit)))
         if case .complete(let s) = m.state { XCTAssertTrue(s.truncated) }
