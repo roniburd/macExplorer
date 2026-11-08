@@ -107,9 +107,9 @@ jobs:
           placeholder=REPLACE_WITH_SPARKLE_PUBLIC_KEY
           if [ "$DRY" != "true" ]; then
             missing=0
-            [ "$key" != "$placeholder" ] || { echo "::error::Set SUPublicEDKey in Resources/Info.plist (README › Releasing)"; missing=1; }
-            [ -n "$SPARKLE_ED_PRIVATE_KEY" ] || { echo "::error::secret SPARKLE_ED_PRIVATE_KEY is not set (README › Releasing)"; missing=1; }
-            [ -n "$HOMEBREW_TAP_TOKEN" ] || { echo "::error::secret HOMEBREW_TAP_TOKEN is not set (README › Releasing)"; missing=1; }
+            [ "$key" != "$placeholder" ] || { echo "::error::Set SUPublicEDKey in Resources/Info.plist (DEVELOPMENT.md › Releasing)"; missing=1; }
+            [ -n "$SPARKLE_ED_PRIVATE_KEY" ] || { echo "::error::secret SPARKLE_ED_PRIVATE_KEY is not set (DEVELOPMENT.md › Releasing)"; missing=1; }
+            [ -n "$HOMEBREW_TAP_TOKEN" ] || { echo "::error::secret HOMEBREW_TAP_TOKEN is not set (DEVELOPMENT.md › Releasing)"; missing=1; }
             [ "$missing" = 0 ] || exit 1
           fi
           if [ -n "$SPARKLE_ED_PRIVATE_KEY" ] && [ "$key" != "$placeholder" ]; then
@@ -262,7 +262,7 @@ jobs:
           tag="v$VERSION"
           base="https://github.com/${GITHUB_REPOSITORY}/releases/download/$tag"
           if ! git fetch origin gh-pages:gh-pages; then
-            [ "$DRY" = "true" ] || { echo "::error::no gh-pages branch; create it and enable Pages (README › Releasing)"; exit 1; }
+            [ "$DRY" = "true" ] || { echo "::error::no gh-pages branch; create it and enable Pages (DEVELOPMENT.md › Releasing)"; exit 1; }
             echo "::notice::no gh-pages branch; rendering a fresh appcast"
           fi
           mkdir -p dist/pages

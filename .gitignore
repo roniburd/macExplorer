@@ -8,3 +8,4 @@ bench-*.json
 brainstorm
 .claude/worktrees/
 docs/design/icon-concepts/.neighbours/
+docs/
