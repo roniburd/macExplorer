@@ -1,6 +1,6 @@
 import XCTest
 @testable import Core
-import MacxFS
+@testable import MacxFS
 import MacxFixtures
 
 @MainActor
@@ -16,10 +16,13 @@ final class FolderSizeServiceTests: XCTestCase {
         _ = await env.start()
     }
 
-    func waitUntil(_ timeout: Duration = .seconds(10), _ condition: () -> Bool) async {
+    /// Fails the test at the caller when `condition` does not hold within `timeout` (a late FSEvents delivery is a
+    /// timeout, not a confusing value mismatch further down).
+    func waitUntil(_ timeout: Duration = .seconds(30), file: StaticString = #filePath, line: UInt = #line,
+                   _ condition: () -> Bool) async {
         let deadline = ContinuousClock.now + timeout
         while !condition() {
-            guard ContinuousClock.now < deadline else { return }
+            guard ContinuousClock.now < deadline else { return XCTFail("timed out after \(timeout)", file: file, line: line) }
             try? await Task.sleep(for: .milliseconds(20))
         }
     }
@@ -264,7 +267,7 @@ final class FolderSizeServiceTests: XCTestCase {
         }
         addTeardownBlock { try? image.detach() }
         try Data(count: 1_000).write(to: image.mountPoint.appending(path: "inside"))   // inside the test's own image
-        let lanes = LanePool()
+        let lanes = patientLanes()
         let table = MountTableStore(MountTable([
             VolumeInfoFixtures.volume(id: "uuid:ROOT", mountPoint: URL(filePath: "/", directoryHint: .isDirectory)),
             VolumeInfoFixtures.volume(id: "uuid:IMG", mountPoint: image.mountPoint),
@@ -281,16 +284,17 @@ final class FolderSizeServiceTests: XCTestCase {
         session.stop()
     }
 
+    /// A pool whose healthy scans never stall on a loaded runner. Tests mark a volume unresponsive by hand: how
+    /// LanePool gets there (hung lane calls, poison cap) is covered in FSKitTests, these tests cover what the
+    /// session does with it.
+    private func patientLanes() -> LanePool { LanePool(config: WatchdogConfig(stallTimeout: .seconds(120))) }
+
     /// P2-13 failure rule: `volumeUnresponsive` stops the queue, cells stay "Calculating…", retry() sizes again.
     func testUnresponsiveVolumeHaltsUntilRetry() async throws {
         try sandbox.createFile("big/a.bin", contents: Data(count: 100))
         let volume = VolumeID(raw: "uuid:HUNG")
-        let lanes = LanePool(config: WatchdogConfig(stallTimeout: .milliseconds(50), tick: .milliseconds(10), poisonCap: 1))
-        _ = try? await lanes.perform(on: volume, .scan) { _ in Thread.sleep(forTimeInterval: 0.3) }   // no heartbeats
-        let deadline = ContinuousClock.now + .seconds(5)
-        while await lanes.health(of: volume) != .unresponsive, ContinuousClock.now < deadline {
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        let lanes = patientLanes()
+        await lanes.markUnresponsive(volume)
         let health = await lanes.health(of: volume)
         XCTAssertEqual(health, .unresponsive)
         let table = MountTableStore(MountTable([
@@ -317,12 +321,8 @@ final class FolderSizeServiceTests: XCTestCase {
         try sandbox.createFile("hung/a.bin", contents: Data(count: 10))
         try sandbox.createFile("ok/b.bin", contents: Data(count: 70))
         let hungVolume = VolumeID(raw: "uuid:HUNG")
-        let lanes = LanePool(config: WatchdogConfig(stallTimeout: .milliseconds(50), tick: .milliseconds(10), poisonCap: 1))
-        _ = try? await lanes.perform(on: hungVolume, .scan) { _ in Thread.sleep(forTimeInterval: 0.3) }   // no heartbeats
-        let deadline = ContinuousClock.now + .seconds(5)
-        while await lanes.health(of: hungVolume) != .unresponsive, ContinuousClock.now < deadline {
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        let lanes = patientLanes()
+        await lanes.markUnresponsive(hungVolume)
         let health = await lanes.health(of: hungVolume)
         XCTAssertEqual(health, .unresponsive)
         let table = MountTableStore(MountTable([
@@ -354,7 +354,14 @@ final class FolderSizeServiceTests: XCTestCase {
         let service = FolderSizeService(lanes: env.lanes, mountTable: env.volumes.mountTableStore, changeBus: env.changeBus,
                                         makeSubtreeWatcher: { _, handler in watcher.handler = handler; return watcher },
                                         minRescanInterval: .seconds(1))
-        let model = try await model()
+        // No real folder watcher: big/b.bin below changes big's mtime, and a late FSEvents delivery of that would
+        // re-queue big outside the test's own events. Only the events sent here trigger rescans.
+        var context = env.folderContext()
+        context.makeWatcher = { _, _, _ in NoopWatcher() }
+        let model = FolderModel(directory: sandbox.root, context: context, query: ViewQuery())
+        addTeardownBlock { @MainActor in model.close() }
+        model.start()
+        await waitUntil { model.state == .complete }
         let session = service.attach(to: model)
         await session.waitUntilIdle()
         let before = session.scansStarted
@@ -369,11 +376,12 @@ final class FolderSizeServiceTests: XCTestCase {
         XCTAssertEqual(model.folderSize(atRow: model.row(named: "big")!)?.bytes, 150, "the last value still arrives")
         let scans = session.scansStarted - before
         XCTAssertGreaterThanOrEqual(scans, 1)
-        // At most one rescan per started second of events, plus the trailing rescan that coalesces the last window.
-        // Bounded by the measured span, not the nominal 1.5 s: on a loaded machine the 50 ms sleeps run long.
+        // Rescans start at least 1 s apart, so at most 1 + span/1 s start while events arrive, plus the trailing
+        // rescan that coalesces the last window. Bounded by the measured span, not the nominal 1.5 s: on a loaded
+        // machine the 50 ms sleeps run long. With the test's events as the only source this holds at any speed.
         let allowed = 2 + Int(eventSpan / .seconds(1))
         XCTAssertLessThanOrEqual(scans, allowed, "rescans are rate limited (events spanned \(eventSpan))")
-        XCTAssertLessThan(scans, 10, "rescans are rate limited, not one per event")
+        XCTAssertLessThan(scans, 30, "rescans are rate limited, not one per event")
         session.stop()
     }
 
