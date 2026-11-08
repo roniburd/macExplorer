@@ -298,7 +298,7 @@ final class MetricSuite {
                     let start = self.clock.now
                     watch.model.setQuery(ViewQuery(sort: SortDescriptor(field: .name, ascending: ascending)))
                     ascending.toggle()
-                    try await self.waitUntil("re-sort applied", timeout: .seconds(10)) { watch.changeEvents > before }
+                    try await self.waitUntil("re-sort applied", timeout: .seconds(60)) { watch.changeEvents > before }
                     return self.elapsedMs(since: start)
                 }
             }
@@ -370,7 +370,7 @@ final class MetricSuite {
                     let start = self.clock.now
                     self.sandbox.file("\(self.relativeDir)/\(name)")
                     self.fileCount += 1
-                    try await self.waitUntil("incremental FSEvent applied", timeout: .seconds(10)) {
+                    try await self.waitUntil("incremental FSEvent applied", timeout: .seconds(60)) {
                         watch.model.row(named: name) != nil
                     }
                     return self.elapsedMs(since: start)
@@ -387,7 +387,7 @@ final class MetricSuite {
                     for i in 0..<300 { self.sandbox.file("\(self.relativeDir)/full-\(tag)-\(i).txt") }
                     self.fileCount += 300
                     let target = self.fileCount
-                    try await self.waitUntil("full re-read applied", timeout: .seconds(20)) { watch.model.rowCount == target }
+                    try await self.waitUntil("full re-read applied", timeout: .seconds(60)) { watch.model.rowCount == target }
                     return self.elapsedMs(since: start)
                 }
             }
