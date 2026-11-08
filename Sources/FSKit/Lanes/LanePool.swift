@@ -116,14 +116,13 @@ public actor LanePool {
         if unresponsive.remove(volume) != nil { hub.send((volume, .healthy)) }
     }
 
-    public nonisolated var healthChanges: AsyncStream<(VolumeID, VolumeHealth)> { hub.stream() }
-
-    /// Test hook (`@testable`): marks `volume` unresponsive now, exactly as reaching poisonCap would, so a test can
-    /// fake a hung volume without a short real-clock stallTimeout that would also govern its healthy work. The app
-    /// never calls this; `resetVolume` undoes it.
+    /// Test seam (@testable): marks `volume` unresponsive as reaching the poison cap does, so tests of what callers
+    /// do with an unresponsive volume need neither a hung lane call nor a short watchdog for their healthy work.
     func markUnresponsive(_ volume: VolumeID) {
         if unresponsive.insert(volume).inserted { hub.send((volume, .unresponsive)) }
     }
+
+    public nonisolated var healthChanges: AsyncStream<(VolumeID, VolumeHealth)> { hub.stream() }
 
     // MARK: Internals
 
