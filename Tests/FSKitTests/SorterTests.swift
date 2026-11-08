@@ -211,7 +211,7 @@ final class SorterTests: XCTestCase {
         }
     }
 
-    /// §4.4 smoke: 100k re-sort per field. Debug: sanity bound; release (-c release -Xswiftc -enable-testing): 4 × 30 ms.
+    /// §4.4 smoke: 100k re-sort per field, with a sanity bound (the budget is macx-bench's `resort.*`).
     func testResort100kSmoke() {
         var rows: [(String, Kind, Int64, Int64, EntryFlags)] = []
         rows.reserveCapacity(100_000)
@@ -222,11 +222,9 @@ final class SorterTests: XCTestCase {
         let s = store(rows)
         let keys = SortKeys.nameKeys(s, range: 0..<s.count)
         let ranks = registry.kindRanks().ranks
-        #if DEBUG
-        let budget = Duration.seconds(10)   // sanity only: -Onone and swift test --parallel contention
-        #else
-        let budget = Duration.milliseconds(120)
-        #endif
+        // Sanity only (a quadratic sort would take minutes), in debug and release alike: the §4.4 30 ms budget is
+        // `macx-bench --check-budgets` (`resort.*`), not a wall-clock assert under swift test --parallel contention.
+        let budget = Duration.seconds(10)
         for field in SortField.entryFields {
             let clock = ContinuousClock()
             let elapsed = clock.measure {

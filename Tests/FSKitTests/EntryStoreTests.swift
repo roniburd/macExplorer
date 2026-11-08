@@ -201,6 +201,8 @@ final class EntryStoreTests: XCTestCase {
             best = min(best, clock.now - start)
             XCTAssertEqual(found.count, 10_000)
         }
-        XCTAssertLessThan(best, .milliseconds(100), "10k names against 10k entries (debug build bound)")
+        // One pass is ~2 x 10^4 name normalizations; a scan per name would be ~5 x 10^7 (tens of seconds or more in a debug build).
+        // 10 s is about 100x one debug-build pass (runner load cannot reach it); a scan per name still exceeds it.
+        XCTAssertLessThan(best, .seconds(10), "10k names against 10k entries in one pass, not one scan per name")
     }
 }
