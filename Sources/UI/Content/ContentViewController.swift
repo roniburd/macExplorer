@@ -29,6 +29,8 @@ final class ContentViewController: CommandHandlingViewController {
     private(set) var operationsCapsule: OperationsCapsule?
     let emptyState = EmptyStateView()
     let banner = BannerView()
+    /// Breathing room between the command bar and the list, in the list's background; hidden with the bar.
+    let listGap = ListBackgroundSpacer()
     private lazy var menuBuilder = ContextMenuBuilder(context: context)
     /// Drops onto the lists (P1-36); its origin is this window.
     private(set) lazy var dropTarget = DropTarget(context: context, originView: view)
@@ -101,6 +103,10 @@ final class ContentViewController: CommandHandlingViewController {
         stack.insertArrangedSubview(banner, at: 2)
         banner.translatesAutoresizingMaskIntoConstraints = false
         banner.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        stack.insertArrangedSubview(listGap, at: 3)     // scope bar, command bar, banner, gap, list, status bar
+        listGap.translatesAutoresizingMaskIntoConstraints = false
+        listGap.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        listGap.heightAnchor.constraint(equalToConstant: CommandBarView.listGap).isActive = true
         emptyState.translatesAutoresizingMaskIntoConstraints = false
         listContainer.addSubview(emptyState)
         NSLayoutConstraint.activate([
@@ -554,6 +560,7 @@ final class ContentViewController: CommandHandlingViewController {
 
     private func applyCommandBarVisibility() {
         commandBar.isHidden = !context.environment.settings.commandBarVisible
+        listGap.isHidden = commandBar.isHidden
     }
 
     func updateCommandBar(shiftHeld: Bool = NSEvent.modifierFlags.contains(.shift)) {
@@ -597,5 +604,15 @@ extension NSViewController {
             if let match = child.firstDescendant(of: type) { return match }
         }
         return nil
+    }
+}
+
+/// A plain strip filled with the list background (`controlBackgroundColor`), so the list appears to start lower.
+@MainActor
+final class ListBackgroundSpacer: NSView {
+    override var isOpaque: Bool { true }
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.controlBackgroundColor.setFill()
+        dirtyRect.fill()
     }
 }

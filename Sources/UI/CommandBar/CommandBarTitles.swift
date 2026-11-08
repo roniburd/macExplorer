@@ -1,3 +1,4 @@
+import AppKit
 import Core
 
 /// Command-bar button labels, SF Symbols and pull-down item titles (§5.3).
@@ -24,6 +25,14 @@ import Core
         case .toggleHidden: L10n.string("Hidden Items")
         case .toggleCommandBar: L10n.string("Command Bar")
         default: MainMenuTitles.title(command)
+        }
+    }
+
+    /// Enabled icon colour: the accent colour, red for the destructive Delete / Delete Permanently.
+    static func tint(_ command: Command) -> NSColor {
+        switch command {
+        case .moveToTrash, .deletePermanently: .systemRed
+        default: .controlAccentColor
         }
     }
 

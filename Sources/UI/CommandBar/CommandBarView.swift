@@ -6,8 +6,15 @@ import Core
 /// Buttons and menu items are nil-targeted `Command.selectorName` actions, so they follow the first responder (content
 /// or sidebar, §5.4). `update` enables the buttons from the owner's CommandState and focus; pull-down items validate
 /// through the responder chain. Delete becomes Delete Permanently while ⇧ is held.
+///
+/// Look ("duotone accent"): enabled icons are hierarchical SF Symbols in the accent colour (Delete in red, ⋯ in
+/// secondary label) with primary-label titles; disabled buttons switch icon and title to tertiary label, so a selection
+/// visibly lights the bar up. A hairline separates the bar from the list; `listGap` of list background follows it.
 @MainActor
 final class CommandBarView: NSView {
+    /// Space between the bar and the start of the list (drawn in the list's background by the content pane).
+    static let listGap: CGFloat = 8
+
     static let newMenuID = "macx.commandBar.new"
     static let sortMenuID = "macx.commandBar.sort"
     static let viewMenuID = "macx.commandBar.view"
@@ -21,6 +28,15 @@ final class CommandBarView: NSView {
     private var buttons: [Command: NSButton] = [:]
     private var deleteCommand: Command = .moveToTrash
     private let stack = NSStackView()
+    private let hairline = NSBox()
+    /// Per control: its SF Symbol, its enabled tint, and the enabled state its look was last drawn for.
+    private var looks: [ObjectIdentifier: Look] = [:]
+
+    private struct Look {
+        var symbol: String
+        var tint: NSColor
+        var drawnEnabled: Bool?
+    }
 
     init() {
         newButton = Self.pullDown(id: Self.newMenuID, title: L10n.string("New"), symbol: "plus",
@@ -47,6 +63,15 @@ final class CommandBarView: NSView {
         for command in [Command.cut, .copy, .paste, .rename, .share, .properties] { buttons[command] = Self.button(command) }
         buttons[.moveToTrash] = deleteButton
         layoutBar()
+        for (command, button) in buttons { looks[ObjectIdentifier(button)] = Look(symbol: CommandBarTitles.symbol(command), tint: CommandBarTitles.tint(command)) }
+        looks[ObjectIdentifier(newButton)] = Look(symbol: "plus", tint: .controlAccentColor)
+        looks[ObjectIdentifier(sortButton)] = Look(symbol: "arrow.up.arrow.down", tint: .controlAccentColor)
+        looks[ObjectIdentifier(viewButton)] = Look(symbol: "rectangle.grid.1x2", tint: .controlAccentColor)
+        looks[ObjectIdentifier(moreButton)] = Look(symbol: "ellipsis", tint: .secondaryLabelColor)
+        for control in controls { (control.cell as? NSButtonCell)?.imageDimsWhenDisabled = false }
+        applyLooks(force: true)
+        NotificationCenter.default.addObserver(self, selector: #selector(systemColorsChanged(_:)),
+                                               name: NSColor.systemColorsDidChangeNotification, object: nil)
     }
 
     required init?(coder: NSCoder) { fatalError("CommandBarView is created in code") }
@@ -77,6 +102,37 @@ final class CommandBarView: NSView {
         for (command, button) in buttons where button !== deleteButton { button.isEnabled = enabled(command) }
         deleteButton.isEnabled = enabled(deleteCommand)
         newButton.isEnabled = [Command.newFolder, .newTextFile, .newEmptyFile].contains(where: enabled)
+        applyLooks()
+    }
+
+    // MARK: look
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyLooks(force: true)
+    }
+
+    @objc private func systemColorsChanged(_ note: Notification) { applyLooks(force: true) }   // accent colour changed
+
+    /// Enabled: hierarchical symbol in the control's tint + primary-label title. Disabled: both in tertiary label.
+    /// Only redraws controls whose enabled state changed, unless `force`.
+    private func applyLooks(force: Bool = false) {
+        for control in controls {
+            guard let button = control as? NSButton, var look = looks[ObjectIdentifier(button)] else { continue }
+            let enabled = button.isEnabled
+            guard force || look.drawnEnabled != enabled else { continue }
+            look.drawnEnabled = enabled
+            looks[ObjectIdentifier(button)] = look
+            let color: NSColor = enabled ? look.tint : .tertiaryLabelColor
+            let description = button.accessibilityLabel() ?? button.title
+            button.image = NSImage(systemSymbolName: look.symbol, accessibilityDescription: description)?
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(hierarchicalColor: color))
+            guard !button.title.isEmpty else { continue }
+            button.attributedTitle = NSAttributedString(string: button.title, attributes: [
+                .foregroundColor: enabled ? NSColor.labelColor : NSColor.tertiaryLabelColor,
+                .font: button.font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize),
+            ])
+        }
     }
 
     // MARK: building
@@ -85,6 +141,8 @@ final class CommandBarView: NSView {
         guard command != deleteCommand else { return }
         deleteCommand = command
         Self.configure(deleteButton, command)
+        looks[ObjectIdentifier(deleteButton)]?.symbol = CommandBarTitles.symbol(command)
+        looks[ObjectIdentifier(deleteButton)]?.drawnEnabled = nil   // configure reset the image and title
     }
 
     private func layoutBar() {
@@ -105,11 +163,18 @@ final class CommandBarView: NSView {
             if view is NSControl { view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal) }
         }
         addSubview(stack)
+        hairline.boxType = .separator
+        hairline.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(hairline)
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: trailingAnchor),
             stack.topAnchor.constraint(equalTo: topAnchor),
             stack.bottomAnchor.constraint(equalTo: bottomAnchor),
+            hairline.leadingAnchor.constraint(equalTo: leadingAnchor),
+            hairline.trailingAnchor.constraint(equalTo: trailingAnchor),
+            hairline.bottomAnchor.constraint(equalTo: bottomAnchor),
+            hairline.heightAnchor.constraint(equalToConstant: 1),
         ])
         setAccessibilityElement(true)
         setAccessibilityRole(.toolbar)
@@ -180,6 +245,7 @@ final class CommandBarView: NSView {
         box.boxType = .separator
         box.translatesAutoresizingMaskIntoConstraints = false
         box.heightAnchor.constraint(equalToConstant: 16).isActive = true
+        box.widthAnchor.constraint(equalToConstant: 1).isActive = true   // else it soaks up slack and turns horizontal
         return box
     }
 }

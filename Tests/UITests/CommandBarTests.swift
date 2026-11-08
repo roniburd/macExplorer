@@ -74,6 +74,39 @@ final class CommandBarTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(bar.button(for: .copy)).isEnabled)
     }
 
+    private func titleColor(_ button: NSButton) -> NSColor? {
+        button.attributedTitle.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
+    }
+
+    func testDisabledButtonsUseTertiaryLabelAndLightUpWhenEnabled() throws {
+        let bar = CommandBarView()
+        bar.update(state: CommandState(), focus: .content, shiftHeld: false)
+        let copy = try XCTUnwrap(bar.button(for: .copy))
+        XCTAssertFalse(copy.isEnabled)
+        XCTAssertEqual(titleColor(copy), .tertiaryLabelColor)
+        XCTAssertEqual(titleColor(try XCTUnwrap(bar.button(for: .properties))), .labelColor)
+        XCTAssertFalse((copy.cell as? NSButtonCell)?.imageDimsWhenDisabled ?? true, "the tertiary tint is the dimming")
+        XCTAssertNotNil(copy.image)
+
+        bar.update(state: CommandState(selectionCount: 1, canPaste: true), focus: .content, shiftHeld: false)
+        XCTAssertTrue(copy.isEnabled)
+        XCTAssertEqual(titleColor(copy), .labelColor)
+        XCTAssertEqual(copy.title, "Copy", "styling keeps the plain title")
+        XCTAssertEqual(CommandBarTitles.tint(.copy), .controlAccentColor)
+        XCTAssertEqual(CommandBarTitles.tint(.moveToTrash), .systemRed)
+        XCTAssertEqual(CommandBarTitles.tint(.deletePermanently), .systemRed)
+    }
+
+    func testDeletePermanentlyKeepsTheLook() {
+        let bar = CommandBarView()
+        bar.update(state: CommandState(selectionCount: 1), focus: .content, shiftHeld: true)
+        XCTAssertEqual(titleColor(bar.deleteButton), .labelColor)
+        XCTAssertEqual(bar.deleteButton.title, "Delete Permanently…")
+        bar.update(state: CommandState(), focus: .content, shiftHeld: false)
+        XCTAssertEqual(titleColor(bar.deleteButton), .tertiaryLabelColor)
+        XCTAssertEqual(bar.deleteButton.title, "Delete")
+    }
+
     func testShiftTurnsDeleteIntoDeletePermanently() throws {
         let bar = CommandBarView()
         let state = CommandState(selectionCount: 1)
@@ -136,10 +169,12 @@ final class CommandBarTests: XCTestCase {
         content.session.folder.select(.set(IndexSet(integer: 0), cursor: 0))
         try await h.waitUntil("copy enabled") { content.commandBar.button(for: .copy)?.isEnabled == true }
 
+        XCTAssertFalse(content.listGap.isHidden)
+        XCTAssertEqual(content.listGap.frame.height, CommandBarView.listGap, "breathing room above the list")
         h.environment.settings.commandBarVisible = false
-        try await h.waitUntil("command bar hidden") { content.commandBar.isHidden }
+        try await h.waitUntil("command bar hidden") { content.commandBar.isHidden && content.listGap.isHidden }
         h.environment.settings.commandBarVisible = true
-        try await h.waitUntil("command bar shown") { !content.commandBar.isHidden }
+        try await h.waitUntil("command bar shown") { !content.commandBar.isHidden && !content.listGap.isHidden }
     }
 
     func testToggleCommandBarCommand() async throws {
