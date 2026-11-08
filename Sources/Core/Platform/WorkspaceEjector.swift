@@ -7,8 +7,13 @@ import MacxFS
 /// any URL that is not itself a mount point, so it can never eject the volume that merely contains a path.
 public struct WorkspaceEjector: Ejecting {
     private let lanes: LanePool
+    /// How long lsof may run when `eject` names the holders of a busy volume. Tests on slow runners pass more.
+    private let diagnosisTimeout: Duration
 
-    public init(lanes: LanePool) { self.lanes = lanes }
+    public init(lanes: LanePool, diagnosisTimeout: Duration = .seconds(3)) {
+        self.lanes = lanes
+        self.diagnosisTimeout = diagnosisTimeout
+    }
 
     private enum Outcome: Sendable { case ejected, notMountPoint, error(domain: String, code: Int, message: String) }
 
@@ -38,7 +43,7 @@ public struct WorkspaceEjector: Ejecting {
             throw .failed(code: EINVAL, message: "")
         case .error(let domain, let code, let message):
             if Self.isBusy(domain: domain, code: code) {
-                throw .busy(processes: await blockingProcesses(mountPoint, timeout: .seconds(3)))
+                throw .busy(processes: await blockingProcesses(mountPoint, timeout: diagnosisTimeout))
             }
             throw .failed(code: Int32(truncatingIfNeeded: code), message: message)
         }
