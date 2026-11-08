@@ -43,14 +43,18 @@ enum CrossVolumeScenarios {
         CoreScenario("xvol.pauseAndResumeMidCopy", requires: .diskImages, timeout: .seconds(120)) { ctx in
             let image = try await ctx.image("pause", .hfsPlus, sizeMB: 128)
             let big = ctx.file("big.bin", bytes: 64 << 20)
-            let queue = ctx.makeQueue(trash: ctx.dir("t"), interaction: ScriptedInteraction(), tuning: .slowChunks)
+            let gate = ChunkGate()
+            defer { gate.open() }
+            let queue = ctx.makeQueue(trash: ctx.dir("t"), interaction: ScriptedInteraction(), tuning: gate.tuning)
             let id = await queue.enqueue(JobRequest(.copy(sources: [big], destination: image.mountPoint), registersUndo: false))
-            try await ctx.waitUntilAsync("copy started", timeout: .seconds(20)) { (await bytesDone(queue, id) ?? 0) > 0 }
+            try await ctx.waitUntil("copy held at its first chunk") { gate.isHeld }
             await queue.pause(id)
-            try await ctx.waitUntilAsync("paused", timeout: .seconds(5)) { await queue.snapshots().first { $0.id == id }?.state == .paused }
-            try await Task.sleep(for: .milliseconds(250))
+            gate.open()
+            try await ctx.waitUntilAsync("paused") { await queue.snapshots().first { $0.id == id }?.state == .paused }
+            // Bytes are counted before the chunk hook, and the pause checkpoint runs right after it: nothing moves now.
             let before = await bytesDone(queue, id)
-            try await Task.sleep(for: .milliseconds(400))
+            try ctx.expect((before ?? 0) > 0, "paused after the first chunk (\(String(describing: before)) bytes)")
+            try await Task.sleep(for: .milliseconds(400))      // a negative check: it can only miss a late byte
             let after = await bytesDone(queue, id)
             try ctx.expectEqual(after, before, "no bytes copied while paused")
             await queue.resume(id)
@@ -64,10 +68,13 @@ enum CrossVolumeScenarios {
             ctx.file("tree/big.bin", bytes: 64 << 20)
             ctx.file("tree/z-after.txt")
             try ctx.setMode(tree, 0o755)
-            let queue = ctx.makeQueue(trash: ctx.dir("t"), interaction: ScriptedInteraction(), tuning: .slowChunks)
+            let gate = ChunkGate()
+            defer { gate.open() }
+            let queue = ctx.makeQueue(trash: ctx.dir("t"), interaction: ScriptedInteraction(), tuning: gate.tuning)
             let id = await queue.enqueue(JobRequest(.copy(sources: [tree], destination: image.mountPoint), registersUndo: false))
-            try await ctx.waitUntilAsync("copy started", timeout: .seconds(20)) { (await bytesDone(queue, id) ?? 0) > 0 }
+            try await ctx.waitUntil("copy held at its first chunk") { gate.isHeld }
             await queue.cancel(id)
+            gate.open()
             let out = await queue.outcome(of: id)
             try ctx.expect(out.wasCancelled, "cancelled")
             let copied = image.mountPoint.appending(path: "tree")
@@ -120,7 +127,7 @@ enum CrossVolumeScenarios {
             _ = await ctx.perform(.rename(file, to: "AB.txt"))
             let names = ctx.entries(image.mountPoint)
             try ctx.expect(names.contains("AB.txt") && !names.contains("ab.txt"), "case-only rename stored on exFAT: \(names)")
-            try await ctx.waitUntil("model shows AB.txt", timeout: .seconds(5)) {
+            try await ctx.waitUntil("model shows AB.txt") {
                 ctx.names(m).contains("AB.txt") && !ctx.names(m).contains("ab.txt")
             }
         },

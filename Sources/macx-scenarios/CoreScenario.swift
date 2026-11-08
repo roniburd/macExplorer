@@ -1,6 +1,7 @@
 import Core
 import Darwin
 import Foundation
+import Synchronization
 
 struct ScenarioFailure: Error, CustomStringConvertible {
     let description: String
@@ -52,11 +53,41 @@ enum Deadline {
     }
 }
 
-extension FileOpTuning {
-    /// 256 KiB chunks with a 3 ms pause each: a 64 MiB copy takes about 0.8 s, so pause/cancel land mid-file.
-    static var slowChunks: FileOpTuning {
-        FileOpTuning(copyChunkBytes: 256 << 10, faultHook: { point, _ in
-            if point == .midCopyChunk { usleep(3_000) }
+/// Holds a copy at its first copied chunk until the scenario has paused or cancelled the job, so "mid-copy" does not
+/// depend on how fast the runner copies. The hook runs on the copy's lane (`FaultPoint.midCopyChunk`); the copy's
+/// pause/cancel checkpoint runs right after it, so a pause or cancel issued while held takes effect before another
+/// byte is copied. The hold is bounded (`limit`) so a scenario that fails early never wedges the lane.
+final class ChunkGate: Sendable {
+    private let state = Mutex((reached: false, opened: false))
+    private let released = DispatchSemaphore(value: 0)
+    private let limit: Duration
+
+    init(limit: Duration = .seconds(60)) { self.limit = limit }
+
+    var isHeld: Bool { state.withLock { $0.reached && !$0.opened } }
+
+    /// 256 KiB chunks: a 64 MiB file reaches the first chunk long before its end.
+    var tuning: FileOpTuning {
+        FileOpTuning(copyChunkBytes: 256 << 10, faultHook: { [self] point, _ in
+            guard point == .midCopyChunk else { return }
+            let hold = state.withLock { s -> Bool in
+                guard !s.reached else { return false }
+                s.reached = true
+                return true
+            }
+            guard hold else { return }
+            let seconds = Double(limit.components.seconds)
+            _ = released.wait(timeout: .now() + seconds)
         })
+    }
+
+    /// Lets the held copy go on (idempotent).
+    func open() {
+        let first = state.withLock { s -> Bool in
+            guard !s.opened else { return false }
+            s.opened = true
+            return true
+        }
+        if first { released.signal() }
     }
 }
