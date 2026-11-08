@@ -7,5 +7,5 @@
    {"expect": {"fieldEditorText": "π"}},
    {"expect": {"previewState": "hidden"}},
    {"key": "esc"}, {"click": "a.txt"}, {"key": "opt+p"},
-   {"waitFor": {"previewState": "text"}, "timeoutMs": 2000}
+   {"waitFor": {"previewState": "text"}}
  ]}

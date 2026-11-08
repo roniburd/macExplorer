@@ -5,12 +5,12 @@
   {"key": "cmd+f"}, {"waitFor": {"focus": "fieldEditor"}},
   {"type": "needle"}, {"waitFor": {"rows": ["needle-top.txt"]}},
   {"setSearchScope": "subfolders"},
-  {"waitFor": {"searchState": "complete", "resultCount": 1}, "timeoutMs": 5000},
+  {"waitFor": {"searchState": "complete", "resultCount": 1}},
   {"expect": {"rows": ["needle-top.txt"]}},
   {"command": "toggleHidden"},
-  {"waitFor": {"searchState": "complete", "resultCount": 5}, "timeoutMs": 5000},
+  {"waitFor": {"searchState": "complete", "resultCount": 5}},
   {"expect": {"rowCount": 5, "rowsContain": [".needle-dot.txt", ".needle-sub-dot.txt", "needle-hidden-flag.txt", "needle-top.txt", "needle-under-dot.txt"]}},
   {"command": "toggleHidden"},
-  {"waitFor": {"searchState": "complete", "resultCount": 1}, "timeoutMs": 5000},
+  {"waitFor": {"searchState": "complete", "resultCount": 1}},
   {"expect": {"rows": ["needle-top.txt"]}}
  ]}

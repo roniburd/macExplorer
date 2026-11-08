@@ -2,5 +2,5 @@
  "fixture": {"files": ["a.txt"], "dirs": []},
  "steps": [
   {"click": "a.txt"}, {"key": "cmd+d"},
-  {"waitFor": {"rowsContain": ["a.txt", "a copy.txt"], "filesExist": ["a copy.txt"]}, "timeoutMs": 5000}
+  {"waitFor": {"rowsContain": ["a.txt", "a copy.txt"], "filesExist": ["a copy.txt"]}}
  ]}

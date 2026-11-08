@@ -7,6 +7,6 @@
   {"key": "cmd+f"}, {"waitFor": {"focus": "fieldEditor"}},
   {"setSearchScope": "thisMac"},
   {"type": "report"},
-  {"waitFor": {"searchState": "complete", "resultCount": 2}, "timeoutMs": 5000},
+  {"waitFor": {"searchState": "complete", "resultCount": 2}},
   {"expect": {"rows": ["annual report.pdf", "Report Maker.app"], "rowPaths": ["docs", "Apps"], "notices": [], "folder": ""}}
  ]}

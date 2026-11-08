@@ -7,5 +7,5 @@
   {"waitFor": {"groupBy": "dateModified", "groups": ["A long time ago (2)"]}},
   {"sleepMs": 1500},
   {"fsWrite": {"path": "big/new.txt", "bytes": 3}},
-  {"waitFor": {"groups": ["Today (1)", "A long time ago (1)"], "visibleRows": ["big", "keep"]}, "timeoutMs": 5000}
+  {"waitFor": {"groups": ["Today (1)", "A long time ago (1)"], "visibleRows": ["big", "keep"]}}
  ]}

@@ -3,7 +3,7 @@
  "steps": [
   {"click": "a.txt"}, {"key": "cmd+x"}, {"waitFor": {"cut": ["a.txt"]}},
   {"doubleClick": "dest"}, {"waitFor": {"folder": "dest", "rows": []}},
-  {"key": "cmd+v"}, {"waitFor": {"rows": ["a.txt"]}, "timeoutMs": 5000},
+  {"key": "cmd+v"}, {"waitFor": {"rows": ["a.txt"]}},
   {"expect": {"filesExist": ["dest/a.txt"], "filesAbsent": ["a.txt"], "cut": []}},
   {"key": "cmd+v"}, {"sleepMs": 800},
   {"expect": {"rows": ["a.txt"], "sheetPresent": false}},

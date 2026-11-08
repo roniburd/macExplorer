@@ -1,11 +1,11 @@
 {"name": "undo-redo",
  "fixture": {"files": ["a.txt", "b.txt"], "dirs": []},
  "steps": [
-  {"click": "a.txt"}, {"key": "fn+delete"}, {"waitFor": {"rows": ["b.txt"], "filesAbsent": ["a.txt"]}, "timeoutMs": 5000},
-  {"key": "cmd+z"}, {"waitFor": {"rows": ["a.txt", "b.txt"], "filesExist": ["a.txt"]}, "timeoutMs": 5000},
-  {"key": "cmd+shift+z"}, {"waitFor": {"rows": ["b.txt"]}, "timeoutMs": 5000},
-  {"key": "ctrl+z"}, {"waitFor": {"rows": ["a.txt", "b.txt"]}, "timeoutMs": 5000},
-  {"key": "cmd+y"}, {"waitFor": {"rows": ["b.txt"]}, "timeoutMs": 5000},
-  {"click": "b.txt"}, {"key": "cmd+delete"}, {"waitFor": {"rows": []}, "timeoutMs": 5000},
-  {"command": "undo"}, {"waitFor": {"rows": ["b.txt"], "filesExist": ["b.txt"]}, "timeoutMs": 5000}
+  {"click": "a.txt"}, {"key": "fn+delete"}, {"waitFor": {"rows": ["b.txt"], "filesAbsent": ["a.txt"]}},
+  {"key": "cmd+z"}, {"waitFor": {"rows": ["a.txt", "b.txt"], "filesExist": ["a.txt"]}},
+  {"key": "cmd+shift+z"}, {"waitFor": {"rows": ["b.txt"]}},
+  {"key": "ctrl+z"}, {"waitFor": {"rows": ["a.txt", "b.txt"]}},
+  {"key": "cmd+y"}, {"waitFor": {"rows": ["b.txt"]}},
+  {"click": "b.txt"}, {"key": "cmd+delete"}, {"waitFor": {"rows": []}},
+  {"command": "undo"}, {"waitFor": {"rows": ["b.txt"], "filesExist": ["b.txt"]}}
  ]}

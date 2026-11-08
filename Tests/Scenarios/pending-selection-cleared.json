@@ -9,6 +9,6 @@
   {"type": ".hid"}, {"key": "return"}, {"waitFor": {"folder": ".hid", "rows": ["in.txt"]}},
   {"key": "cmd+up"}, {"waitFor": {"folder": "", "rowCount": 2}},
   {"click": "top.txt"}, {"expect": {"selection": ["top.txt"]}},
-  {"key": "cmd+shift+."}, {"waitFor": {"rowCount": 4}}, {"sleepMs": 300},
+  {"key": "cmd+shift+."}, {"waitFor": {"showHidden": true, "rowCount": 4}}, {"sleepMs": 300},
   {"expect": {"selection": ["top.txt"]}}
  ]}
