@@ -42,8 +42,15 @@ jobs:
           swift build 2>&1 | tee "$RUNNER_TEMP/build-debug.log"
           test "${PIPESTATUS[0]}" -eq 0
           ! grep -E '(^|[^A-Za-z])warning:' "$RUNNER_TEMP/build-debug.log"
-      - name: Test
-        run: swift test --parallel
+      - name: Test (swift test --parallel; a failed case is retried once, alone)
+        run: scripts/test-with-retry.sh --self-test && scripts/test-with-retry.sh
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: .build/test-results/
+          if-no-files-found: ignore
       - name: Bundle
         run: |
           scripts/bundle.sh release

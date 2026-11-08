@@ -19,6 +19,7 @@ on:
 
 permissions:
   contents: write
+  actions: read     # the "Wait for CI" step reads ci.yml runs for the tagged commit
 
 # Publishing runs share one group so gh-pages/tap pushes are serialised. GitHub keeps at most one pending
 # run per group and cancels the older pending one when another joins, so dry runs get a group of their own
@@ -40,7 +41,7 @@ env:
 jobs:
   release:
     runs-on: xcode-27   # GitHub image with Xcode 27.x (macos-26 tops out at Xcode 26.6)
-    timeout-minutes: 60
+    timeout-minutes: 120  # up to 50 min waiting for CI, then possibly the tests, build, sign and publish
     steps:
       - uses: actions/checkout@v4
         with:
@@ -110,8 +111,21 @@ jobs:
               || { echo "::error::SPARKLE_ED_PRIVATE_KEY does not belong to SUPublicEDKey in Resources/Info.plist"; exit 1; }
           fi
 
-      - name: Test
-        run: swift test --parallel
+      # The tests already ran in CI (ci.yml) on this commit: wait for that result instead of running them again.
+      # CI failed -> no release. No CI run, or only cancelled ones (ci.yml cancels a ref's in-progress run when main
+      # moves on) -> run the tests here, with one retry of each failed case. Re-runnable: re-run CI, then this job.
+      - name: Wait for CI on this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha="$(git rev-parse HEAD)"
+          rc=0; scripts/release/wait-for-ci.sh "$sha" || rc=$?
+          case "$rc" in
+            0) echo "Tests: CI passed on $sha" >> "$GITHUB_STEP_SUMMARY" ;;
+            3) echo "::notice title=Tests::no completed CI run for $sha; running the tests in this job"
+               scripts/test-with-retry.sh ;;
+            *) exit 1 ;;
+          esac
 
       - name: Signing identity
         id: sign

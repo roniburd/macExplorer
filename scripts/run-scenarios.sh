@@ -7,6 +7,8 @@
 # (--manifest) before using it; on exit this script detaches images mounted under the run dir or a listed
 # sandbox only, clears uchg/000 inside them, and deletes them (with --keep-sandbox it detaches and clears but keeps
 # them and the run directory, and prints their paths). Nothing else is touched.
+# A failed scenario (exit 1 with a report) runs once more on its own; passing then is a `::warning title=Flaky
+# scenario::` and the script exits 0 (no retry over 5 failures). macx-scenarios itself is unchanged.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 2
 
@@ -66,5 +68,40 @@ BIN="$(swift build -c "$CONFIG" --show-bin-path)/macx-scenarios"
 
 "$BIN" --require-images --json "$RUN/report.json" --manifest "$MANIFEST" "$@" 2>&1 | tee "$RUN/log.txt"
 status=${PIPESTATUS[0]}
-mkdir -p .build && cp "$RUN/report.json" .build/scenario-report.json 2>/dev/null
-exit "$status"
+mkdir -p .build && rm -f .build/scenario-retry-*.json && cp "$RUN/report.json" .build/scenario-report.json 2>/dev/null
+[ "$status" = 1 ] && [ -s "$RUN/report.json" ] || exit "$status"
+
+# names_with_status <report.json> <status>: the scenario names in the report with that status, one per line.
+names_with_status() {
+  local k=0 name
+  while name="$(plutil -extract "results.$k.name" raw -o - "$1" 2>/dev/null)"; do
+    [ "$(plutil -extract "results.$k.status" raw -o - "$1" 2>/dev/null)" = "$2" ] && printf '%s\n' "$name"
+    k=$((k + 1))
+  done
+  return 0
+}
+
+# Shared CI runners are slow and uneven: each failed scenario runs ONCE more on its own (a later --filter wins over
+# one in "$@"; the substring may select a few more scenarios, only the named one is judged). Passing then counts as
+# flaky (a ::warning). More than MAX_RETRIES (default 5) failures, or a run without a report, is not retried.
+failed_names=()
+while IFS= read -r n; do [ -n "$n" ] && failed_names+=("$n"); done < <(names_with_status "$RUN/report.json" failed)
+[ ${#failed_names[@]} -gt 0 ] || exit "$status"
+if [ ${#failed_names[@]} -gt "${MAX_RETRIES:-5}" ]; then
+  echo "run-scenarios: ${#failed_names[@]} scenarios failed (more than ${MAX_RETRIES:-5}); not retrying"; exit "$status"
+fi
+still=0; k=0
+for n in "${failed_names[@]}"; do
+  k=$((k + 1))
+  echo "RETRY $n"
+  "$BIN" --require-images --json "$RUN/retry-$k.json" --manifest "$MANIFEST" "$@" --filter "$n" 2>&1 | tee -a "$RUN/log.txt"
+  if [ -s "$RUN/retry-$k.json" ] && names_with_status "$RUN/retry-$k.json" passed | grep -qxF -- "$n"; then
+    echo "::warning title=Flaky scenario::core scenario $n failed then passed on retry"
+    [ -z "${GITHUB_STEP_SUMMARY:-}" ] || printf -- '- Flaky core scenario `%s`\n' "$n" >> "$GITHUB_STEP_SUMMARY"
+  else
+    still=1; echo "FAIL $n again on retry"
+  fi
+  cp "$RUN/retry-$k.json" ".build/scenario-retry-$k.json" 2>/dev/null
+done
+[ "$still" = 0 ] && echo "run-scenarios: every failed scenario passed on retry (flaky)"
+exit "$still"

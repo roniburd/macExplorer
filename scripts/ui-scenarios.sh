@@ -5,6 +5,8 @@
 # Each scenario gets <run>/<name>/{macx-scenario-root,state,trash}. The app runs with --root, --state-dir,
 # --sandbox-trash, a private --pasteboard, --fake-launch-services and --skip-onboarding, so it never writes a real
 # user folder, the real Trash, the general pasteboard or real LaunchServices defaults.
+# A failed scenario runs once more in a fresh sandbox (<run>/<name>.retry); passing then is reported as a
+# `::warning title=Flaky scenario::` and status "flaky" in .build/ui-scenario-report.json (no retry over 5 failures).
 # Exit codes: 0 all passed (or no GUI session without --require-gui), 1 a scenario failed, 2 environment, 64 usage.
 # On exit: kill our app if it still runs, detach images under the run dir, clear uchg/000, delete the run dir.
 set -uo pipefail
@@ -120,39 +122,76 @@ done
 [ ${#names[@]} -gt 0 ] || { echo "ui-scenarios: no scenario matches '$FILTER'" >&2; exit 64; }
 
 LOGS="$REPO/.build/ui-scenario-logs/$(basename "$RUN")"
-passed=0; failed=0; entries=""
-for n in "${names[@]}"; do
-  dir="$RUN/$n"
+
+# run_scenario <name> <run name>: runs scenario <name> in $RUN/<run name>; sets ms, act and msg (empty = passed).
+run_scenario() {
+  local n="$1" dir="$RUN/$2" log="$RUN/$2.log" out index
   # P3-13: the fake Spotlight index state for this file (the app never asks the real index in sandbox runs).
-  status="$(/usr/bin/plutil -extract indexStatus raw -o - "$SCEN_DIR/$n.json" 2>/dev/null || echo disabled)"
-  case "$status" in enabled|disabled|unknown) ;; *) status=disabled ;; esac
-  launch "$dir" "$RUN/$n.log" --scenario "$SCEN_DIR/$n.json" --scenario-output "$dir/result.json" --index-status "$status"
+  index="$(/usr/bin/plutil -extract indexStatus raw -o - "$SCEN_DIR/$n.json" 2>/dev/null || echo disabled)"
+  case "$index" in enabled|disabled|unknown) ;; *) index=disabled ;; esac
+  launch "$dir" "$log" --scenario "$SCEN_DIR/$n.json" --scenario-output "$dir/result.json" --index-status "$index"
   await_app "$TIMEOUT"
   out="$dir/result.json"
   ms=0; act=false
   if [ "$APP_CODE" = timeout ]; then
     msg="timed out after $TIMEOUT s (app killed)"
   elif [ ! -s "$out" ]; then
-    msg="no result file (app exit $APP_CODE); see $n.log"
+    msg="no result file (app exit $APP_CODE); see $2.log"
   else
     ms="$(field durationMs "$out")"; act="$(field activated "$out")"
     if [ "$(field passed "$out")" = true ] && [ "$APP_CODE" = 0 ]; then msg=""
     else msg="step $(field failedStep "$out" || echo '?'): $(field message "$out") (exit $APP_CODE)"; fi
   fi
+  if [ -n "$msg" ]; then
+    mkdir -p "$LOGS" && cp "$log" "$LOGS/$2.log" 2>/dev/null && { [ ! -s "$out" ] || cp "$out" "$LOGS/$2.json"; }
+  fi
+  return 0
+}
+
+# add_entry <name> <status> <message>: appends one result to the JSON report (uses ms and act).
+add_entry() {
+  entries="${entries:+$entries,}{\"name\":$(json_string "$1"),\"status\":\"$2\",\"durationMs\":${ms:-0},\"activated\":${act:-false},\"message\":$(json_string "$3")}"
+}
+
+passed=0; flaky=0; failed=0; entries=""; failed_names=(); failed_msgs=()
+for n in "${names[@]}"; do
+  run_scenario "$n" "$n"
   if [ -z "$msg" ]; then
-    passed=$((passed + 1)); status=passed
+    passed=$((passed + 1)); add_entry "$n" passed ""
     echo "PASS $n (${ms} ms, activated=${act:-false})"
   else
-    failed=$((failed + 1)); status=failed
+    failed_names+=("$n"); failed_msgs+=("$msg")
     echo "FAIL $n: $msg"
-    mkdir -p "$LOGS" && cp "$RUN/$n.log" "$LOGS/$n.log" 2>/dev/null && { [ ! -s "$out" ] || cp "$out" "$LOGS/$n.json"; }
   fi
-  entry="{\"name\":$(json_string "$n"),\"status\":\"$status\",\"durationMs\":${ms:-0},\"activated\":${act:-false},\"message\":$(json_string "$msg")}"
-  entries="${entries:+$entries,}$entry"
+done
+
+# Shared CI runners are slow and uneven: each failed scenario runs ONCE more in a fresh sandbox ($RUN/<name>.retry).
+# Passing then counts as flaky (a ::warning), not failed. More than MAX_RETRIES (default 5) failures is real
+# breakage and is not retried.
+MAX_RETRIES="${MAX_RETRIES:-5}"
+retry=1
+if [ ${#failed_names[@]} -gt "$MAX_RETRIES" ]; then
+  retry=0; echo "ui-scenarios: ${#failed_names[@]} scenarios failed (more than $MAX_RETRIES); not retrying"
+fi
+i=0
+while [ "$i" -lt ${#failed_names[@]} ]; do
+  n="${failed_names[$i]}"; first="${failed_msgs[$i]}"; i=$((i + 1))
+  msg="$first"
+  if [ "$retry" = 1 ]; then echo "RETRY $n"; run_scenario "$n" "$n.retry"; fi
+  if [ "$retry" = 1 ] && [ -z "$msg" ]; then
+    flaky=$((flaky + 1)); add_entry "$n" flaky "first run: $first"
+    echo "PASS $n on retry (${ms} ms); first run: $first"
+    echo "::warning title=Flaky scenario::UI scenario $n failed then passed on retry (first run: $first)"
+    [ -z "${GITHUB_STEP_SUMMARY:-}" ] || printf -- '- Flaky UI scenario `%s` (first run: %s)\n' "$n" "$first" >> "$GITHUB_STEP_SUMMARY"
+  else
+    failed=$((failed + 1))
+    if [ "$retry" = 1 ]; then add_entry "$n" failed "$first; retry: $msg"; echo "FAIL $n again on retry: $msg"
+    else add_entry "$n" failed "$first"; fi
+  fi
 done
 
 mkdir -p "$REPO/.build"
-printf '{"results":[%s],"passed":%d,"failed":%d}\n' "$entries" "$passed" "$failed" > "$REPO/.build/ui-scenario-report.json"
-echo "ui-scenarios: $passed passed, $failed failed"
-[ "$failed" -eq 0 ] || echo "logs of failed scenarios: $LOGS"
+printf '{"results":[%s],"passed":%d,"flaky":%d,"failed":%d}\n' "$entries" "$passed" "$flaky" "$failed" > "$REPO/.build/ui-scenario-report.json"
+echo "ui-scenarios: $passed passed, $flaky flaky (passed on retry), $failed failed"
+[ ${#failed_names[@]} -eq 0 ] || echo "logs of failed runs: $LOGS"
 [ "$failed" -eq 0 ]

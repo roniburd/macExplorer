@@ -183,6 +183,9 @@ don't need that: they run the workflow file at the tagged commit). `ci.yml`'s pu
 also watch `main`; if the default branch isn't `main`, rename it or change that trigger. A publishing run (a tag
 push, or a dispatch with dry run off) stops before building unless `SUPublicEDKey` is set, `SPARKLE_ED_PRIVATE_KEY`
 belongs to it, and `HOMEBREW_TAP_TOKEN` is set; until then only dry runs succeed.
+The release does not re-run the tests: it waits (up to 50 min) for CI on the tagged commit
+(`scripts/release/wait-for-ci.sh`) and stops if CI failed; fix or re-run CI, then re-run the release. Only when the
+commit has no CI run, or its runs were all cancelled, does the release run `scripts/test-with-retry.sh` itself.
 
 ## Tests, scenarios and benchmarks
 
@@ -205,7 +208,10 @@ they never write the preferences of a real install. Scenario files use the schem
 `Sources/UI/Scenario/ScenarioFile.swift`.
 
 CI (`.github/workflows/ci.yml`, `xcode-27` runner, Xcode 27.2) runs the layering checks, release and debug builds, the tests,
-the bundle, both scenario runners and `macx-bench`. A pull request fails on a benchmark only when a metric is
+the bundle, both scenario runners and `macx-bench`. Shared runners are slow, so CI retries a failure once:
+`scripts/test-with-retry.sh` runs `swift test --parallel` and re-runs each failed test case alone (not when more
+than 5 failed, or on a build error), and both scenario runners re-run each failed scenario once; a pass on retry is a
+`Flaky test` / `Flaky scenario` warning annotation instead of a failure. A pull request fails on a benchmark only when a metric is
 more than 20% **and** more than 5 ms slower than the baseline measured on `main` with the same runner image; the
 absolute budgets show up as warnings.
 
