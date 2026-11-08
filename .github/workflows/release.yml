@@ -48,6 +48,14 @@ jobs:
           fetch-depth: 0
       - name: Select Xcode
         run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
+      - name: Cache SwiftPM downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/org.swift.swiftpm
+          key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.resolved') }}
+          restore-keys: swiftpm-${{ runner.os }}-${{ runner.arch }}-
+      - name: Resolve packages (retries network errors)
+        run: scripts/resolve-packages.sh
 
       - name: Version
         id: v
