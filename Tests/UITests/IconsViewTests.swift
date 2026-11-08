@@ -183,15 +183,19 @@ final class IconsViewTests: XCTestCase {
         let (content, session, window) = try await h.makeContent(size: NSSize(width: 700, height: 500))
         content.setViewMode(.icons)
         let icons = try XCTUnwrap(content.icons)
-        try await Task.sleep(for: .milliseconds(100))
+        // Settle the first layout pass here (the window is offscreen, so no display cycle is guaranteed to run it in
+        // time): with legacy scrollers the vertical scroller takes a column, and a grid read before it is stale.
+        content.view.layoutSubtreeIfNeeded()
+        icons.view.layoutSubtreeIfNeeded()
         let columns = icons.layout.columns
         session.folder.select(.set(IndexSet(integer: 0), cursor: 0))
-        for _ in 0..<6 {
+        for step in 1...6 {
             icons.collectionView.keyDown(with: try key(.downArrow, window: window))
-            try await Task.sleep(for: .milliseconds(30))
+            try await h.waitUntil("row \(step) selected") { session.folder.selection.rows == IndexSet(integer: step * columns) }
+            try await Task.sleep(for: .milliseconds(30))   // a run-loop turn (layout passes, selection events) between keys
         }
         XCTAssertEqual(session.folder.selection.rows, IndexSet(integer: 6 * columns))
-        XCTAssertTrue(icons.visibleRows().contains(6 * columns), "visible \(icons.visibleRows())")
+        try await h.waitUntil("arrowed-to item scrolled into view") { icons.visibleRows().contains(6 * columns) }
     }
 
     func testSwitchingViewModeKeepsSelection() async throws {
