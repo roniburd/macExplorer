@@ -13,9 +13,11 @@ on:
 permissions:
   contents: read
 
+# Pull requests and branches cancel superseded runs; main never does, so every main commit (and any release tag on
+# it, which waits for this commit's CI run in release.yml) gets a finished CI result.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || 'latest' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   XCODE_VERSION: "27.2"
