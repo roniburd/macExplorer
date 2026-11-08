@@ -1,0 +1,46 @@
+# Publishes site/ to GitHub Pages (https://roniburd.github.io/macExplorer/).
+# Pages serves the gh-pages branch, which also holds appcast.xml for Sparkle updates (release.yml writes it).
+# This workflow copies site/ over the branch's other files and never touches appcast.xml.
+name: Site
+
+on:
+  push:
+    branches: [main]
+    paths: ["site/**", ".github/workflows/site.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Its own group: release.yml's "release-publish" group cancels pending runs that join it, so sharing it could
+# drop a queued release. Concurrent pushes to gh-pages from both workflows are handled by the rebase retry below.
+concurrency:
+  group: site-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish site/ to gh-pages
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin gh-pages:gh-pages || { echo "::error::no gh-pages branch (README › Releasing)"; exit 1; }
+          git worktree add "$RUNNER_TEMP/pages" gh-pages
+          # appcast.xml and .git belong to the branch, tools/ only makes screenshots.
+          rsync -a --delete --exclude .git --exclude appcast.xml --exclude tools/ site/ "$RUNNER_TEMP/pages/"
+          touch "$RUNNER_TEMP/pages/.nojekyll"
+          cd "$RUNNER_TEMP/pages"
+          test -f appcast.xml || { echo "::error::appcast.xml missing from gh-pages; refusing to publish"; exit 1; }
+          git add -A
+          if git diff --cached --quiet; then echo "::notice::site unchanged"; exit 0; fi
+          git commit -m "site: ${GITHUB_SHA::7}"
+          for attempt in 1 2 3; do
+            git push origin gh-pages && exit 0
+            echo "push rejected (attempt $attempt); rebasing on the latest gh-pages"
+            git pull --rebase origin gh-pages
+          done
+          exit 1
