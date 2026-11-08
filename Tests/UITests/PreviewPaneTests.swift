@@ -37,14 +37,16 @@ final class PreviewPaneTests: XCTestCase {
         context = nil
     }
 
-    private func waitUntil(_ what: String, timeout: TimeInterval = 5, _ condition: () -> Bool) async {
-        let end = Date().addingTimeInterval(timeout)
-        while Date() < end {
-            if condition() { return }
+    /// A condition wait with a deadline generous enough for a CPU-starved CI runner; a timeout fails at the caller's line.
+    private func waitUntil(_ what: String, timeout: Duration = .seconds(30), file: StaticString = #filePath,
+                           line: UInt = #line, _ condition: () -> Bool) async {
+        let deadline = ContinuousClock.now + timeout
+        while !condition() {
+            guard ContinuousClock.now < deadline else {
+                return XCTFail("timed out after \(timeout) waiting for: \(what)", file: file, line: line)
+            }
             try? await Task.sleep(for: .milliseconds(10))
         }
-        if condition() { return }
-        XCTFail("timed out: \(what)")
     }
 
     private func pane(resolve: PreviewPaneController.Resolver? = nil) -> PreviewPaneController {
@@ -119,7 +121,7 @@ final class PreviewPaneTests: XCTestCase {
         p.bind(m)
         for n in ["1.txt", "2.txt", "3.txt", "4.txt"] { select(m, [n]) }
         await waitUntil("last shown") { if case .text = p.displayState { true } else { false } }
-        try? await Task.sleep(for: .milliseconds(100))
+        await p.settled()
         XCTAssertEqual(resolved.value, ["4.txt"])
     }
 
@@ -186,7 +188,7 @@ final class PreviewPaneTests: XCTestCase {
         p.isActive = false
         p.bind(m)
         select(m, ["a.txt"])
-        try? await Task.sleep(for: .milliseconds(100))
+        await p.settled()                          // an inactive pane schedules nothing to wait for
         XCTAssertEqual(calls.value, 0)
         XCTAssertEqual(p.displayState, .hidden)
         XCTAssertEqual(p.probeState, "hidden")
@@ -264,7 +266,7 @@ final class PreviewPaneTests: XCTestCase {
         XCTAssertTrue(split.previewItem.isCollapsed)
         split.togglePreviewPane()
         await waitUntil("shown") { !split.previewItem.isCollapsed && !split.isAnimatingPreview }
-        try? await Task.sleep(for: .milliseconds(300))
+        split.view.layoutSubtreeIfNeeded()         // the toggle's final layout, not an intermediate frame
         XCTAssertLessThan(split.previewPane.view.frame.width, 399, "precondition: the window is too narrow for 400")
         XCTAssertEqual(env.settings.previewPaneWidth, 400, "the toggle's clamped width is not stored")
         window.window?.setContentSize(NSSize(width: 900, height: 640))
@@ -409,9 +411,20 @@ final class PreviewPaneTests: XCTestCase {
     }
 
     // QA polish: Quick Look kept showing the old content after the previewed file changed on disk.
+    // The folder's watcher is scripted: the test delivers the event fseventsd would send for the overwrite, so the
+    // reload never waits on FSEvents latency of a loaded runner (FolderWatchTests cover the real watcher).
     func testQuickLookReloadsWhenTheFileChanges() async throws {
         try sandbox.writePNG("d/p.png", pixels: 16)
-        let m = await folder("d")
+        let watch = Box<(@Sendable (WatchEvent) -> Void)?>(nil)
+        var folderContext = env.folderContext()
+        folderContext.makeWatcher = { _, _, handler in
+            watch.value = handler
+            return NoopWatcher()
+        }
+        let m = FolderModel(directory: sandbox.url("d"), context: folderContext, query: env.settings.viewQuery())
+        addTeardownBlock { @MainActor in m.close() }
+        m.start()
+        await waitUntil("loaded") { m.state == .complete }
         let p = pane()
         p.bind(m)
         select(m, ["p.png"])
@@ -419,15 +432,19 @@ final class PreviewPaneTests: XCTestCase {
         XCTAssertEqual(host.refreshes, 0)
         let bigger = try XCTUnwrap(Sandbox.pngData(pixels: 64, red: 0.9, green: 0.1, blue: 0.1))
         try sandbox.overwrite("d/p.png", contents: bigger)               // a new size and modification date on disk
-        await waitUntil("reloaded after the on-disk change", timeout: 10) { self.host.refreshes >= 1 }
+        await waitUntil("watching") { watch.value != nil }
+        let deliver = try XCTUnwrap(watch.value)
+        deliver(.items(["p.png"]))                                       // what fseventsd reports for the overwrite
+        await waitUntil("reloaded after the on-disk change") { self.host.refreshes >= 1 }
         XCTAssertEqual(host.shownURL, sandbox.url("d/p.png"))
         let before = host.refreshes
         // An in-app change for the item (ChangeBus), even when size and date look the same, reloads it too.
         env.changeBus.post([LocalChange(directory: sandbox.url("d"), modified: ["p.png"])])
         await waitUntil("reloaded after the ChangeBus change") { self.host.refreshes > before }
+        await p.settled()
         let settled = host.refreshes
         env.changeBus.post([LocalChange(directory: sandbox.url("d"), modified: ["other.png"])])
-        try? await Task.sleep(for: .milliseconds(150))
+        await p.settled()
         XCTAssertEqual(host.refreshes, settled, "a change to another item does not reload")
     }
 
