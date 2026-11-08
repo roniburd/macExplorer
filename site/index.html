@@ -3,31 +3,226 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>MacExplorer website concepts</title>
+<title>MacExplorer: Finder, with the good parts of Explorer</title>
+<meta name="description" content="MacExplorer is a free, native macOS file manager: cut and paste that moves files, an address bar you can type in, a folder tree and folder sizes.">
 <link rel="icon" href="assets/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:ital,wght@0,400..900;1,400..900&display=swap" rel="stylesheet">
 <style>
-  body { margin: 0; font: 16px/1.55 -apple-system, system-ui, sans-serif; background: #F2F3F5; color: #1D1D1F; }
-  main { max-width: 760px; margin: 0 auto; padding: 56px 24px; }
-  h1 { font-size: 28px; margin: 0 0 6px; }
-  p { color: #5C6270; margin: 0 0 28px; }
-  ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
-  a { display: block; background: #fff; border-radius: 12px; padding: 18px 20px; text-decoration: none; color: inherit;
-      box-shadow: 0 0 0 .5px rgba(0,0,0,.12); }
-  a:hover { box-shadow: 0 0 0 2px #2F7CF6; }
-  a:focus-visible { outline: 3px solid #2F7CF6; outline-offset: 2px; }
-  b { display: block; font-size: 18px; }
-  span { color: #5C6270; font-size: 15px; }
+  :root {
+    --alu: #E3E5E8;
+    --alu-2: #D5D8DD;
+    --cap: #FAFAFB;
+    --graphite: #26292E;
+    --muted: #6B7079;
+    --yellow: #F2B632;
+    --line: #C9CDD3;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--alu); color: var(--graphite); font: 400 17px/1.6 "Schibsted Grotesk", system-ui, sans-serif; }
+  a { color: inherit; text-underline-offset: 3px; }
+  :focus-visible { outline: 3px solid var(--graphite); outline-offset: 3px; border-radius: 6px; }
+  code { font: .9em ui-monospace, "SF Mono", Menlo, monospace; }
+  .col { max-width: 720px; margin: 0 auto; padding: 0 24px; }
+  .wide { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+
+  header.top { display: flex; justify-content: space-between; align-items: center; padding-block: 22px; }
+  .brand { display: flex; gap: 10px; align-items: center; font-weight: 700; text-decoration: none; }
+  .brand img { width: 28px; height: 28px; }
+  header.top nav { display: flex; gap: 22px; font-size: 15px; color: var(--muted); }
+  header.top nav a { text-decoration: none; }
+  header.top nav a:hover { color: var(--graphite); text-decoration: underline; }
+
+  /* keycaps, used only in the shortcuts grid */
+  .keys { display: inline-flex; gap: 8px; align-items: center; }
+  .cap { --s: .56; display: inline-grid; place-items: center; min-width: calc(64px * var(--s)); height: calc(64px * var(--s));
+         padding: 0 calc(14px * var(--s)); background: var(--cap); border-radius: calc(12px * var(--s));
+         font-weight: 650; font-size: calc(26px * var(--s)); line-height: 1; color: var(--graphite);
+         box-shadow: 0 calc(4px * var(--s)) 0 var(--alu-2), 0 calc(5px * var(--s)) 0 #B9BEC6, 0 calc(8px * var(--s)) calc(14px * var(--s)) rgba(38,41,46,.18); }
+  .cap.wide-cap { min-width: calc(150px * var(--s)); }
+  .keys .or { color: var(--muted); font-size: 14px; }
+
+  /* hero */
+  .hero { text-align: center; padding-block: 56px 0; }
+  .hero h1 { font-size: clamp(38px, 6.4vw, 68px); line-height: 1.02; letter-spacing: -.035em; font-weight: 800; margin: 0 auto 16px; max-width: 18ch; }
+  .hero .sub { font-size: 20px; color: var(--muted); max-width: 40ch; margin: 0 auto; }
+  .actions { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 12px; margin: 30px 0 10px; }
+  .dl { background: var(--graphite); color: #fff; text-decoration: none; font-weight: 650; padding: 13px 26px; border-radius: 12px; }
+  .dl:hover { background: #3a3e45; }
+  .ghost { text-decoration: none; font-weight: 600; padding: 12px 22px; border-radius: 12px; background: var(--cap);
+           box-shadow: 0 0 0 .5px rgba(0,0,0,.14), 0 4px 10px rgba(38,41,46,.08); }
+  .ghost:hover { background: #fff; }
+  .hero small { color: var(--muted); font-size: 14px; }
+  .hero figure { margin: 36px auto 0; max-width: 900px; }
+  .hero figure img { display: block; width: 100%; height: auto; }
+
+  /* install, right under the hero */
+  .install { padding-block: 40px 64px; text-align: center; }
+  .install h2 { font-size: clamp(28px, 4vw, 38px); letter-spacing: -.025em; margin: 0 0 6px; }
+  .install > p { color: var(--muted); margin: 0 0 22px; }
+  .ways { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; text-align: left; }
+  .way { background: var(--cap); border-radius: 14px; padding: 18px 18px 20px; box-shadow: 0 0 0 .5px rgba(0,0,0,.12); min-width: 0; }
+  .way h3 { margin: 0 0 4px; font-size: 18px; letter-spacing: -.01em; }
+  .way p { margin: 0 0 14px; font-size: 15px; color: var(--muted); }
+  .way .dl { display: inline-block; padding: 10px 18px; font-size: 15px; }
+  .code { display: flex; align-items: center; gap: 8px; background: var(--graphite); color: #fff; border-radius: 10px; padding: 8px 8px 8px 12px; }
+  .code code { min-width: 0; flex: 1; font-size: 13px; overflow-x: auto; white-space: nowrap; }
+  .code button { border: 0; border-radius: 7px; background: #454a52; color: #fff; padding: 5px 10px; font: inherit; font-size: 13px; cursor: pointer; }
+  .code button:hover { background: #575c65; }
+  .install .fine { color: var(--muted); font-size: 14px; max-width: 64ch; margin: 18px auto 0; }
+
+  /* why */
+  .why { padding-block: 64px; border-top: 1px solid var(--line); }
+  .why h2 { font-size: clamp(28px, 4vw, 38px); letter-spacing: -.025em; margin: 0 0 16px; }
+  .why p { max-width: 62ch; margin: 0 0 14px; }
+
+  /* features: small title, short explanation, screenshot */
+  .feature { padding-block: 56px; border-top: 1px solid var(--line); }
+  .feature h2 { font-size: clamp(28px, 4vw, 38px); line-height: 1.1; letter-spacing: -.025em; margin: 0 0 10px; font-weight: 750; }
+  .feature p { margin: 0 0 10px; max-width: 60ch; }
+  .feature figure { margin: 28px -6% 0; }
+  .feature figure img { display: block; width: 100%; height: auto; }
+  .feature figure.narrow { margin: 28px 0 0; max-width: 460px; }
+
+  /* shortcuts */
+  .shortcuts { padding-block: 56px 64px; border-top: 1px solid var(--line); }
+  .shortcuts h2 { font-size: clamp(28px, 4vw, 38px); letter-spacing: -.025em; margin: 0 0 26px; }
+  .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 34px 30px; }
+  .grid h3 { margin: 16px 0 4px; font-size: 18px; letter-spacing: -.01em; }
+  .grid p { margin: 0; font-size: 15px; color: var(--muted); }
+
+  footer { padding-block: 32px 44px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+  footer p { margin: 0 0 8px; max-width: 70ch; }
+
+  @media (max-width: 760px) {
+    .ways, .grid { grid-template-columns: 1fr; }
+    .feature figure { margin: 24px 0 0; }
+    header.top nav a:not(:last-child) { display: none; }
+  }
 </style>
 </head>
 <body>
+<div class="wide"><header class="top">
+  <a class="brand" href="#"><img src="assets/icon.png" alt="">MacExplorer</a>
+  <nav aria-label="Page">
+    <a href="#why">Why</a>
+    <a href="#shortcuts">Shortcuts</a>
+    <a href="https://github.com/roniburd/macExplorer">GitHub</a>
+  </nav>
+</header></div>
+
 <main>
-  <h1>MacExplorer website concepts</h1>
-  <p>Three directions for the same content. Pick one (or parts of several) and it becomes this page.</p>
-  <ul>
-    <li><a href="concepts/a-phrasebook/"><b>A. Phrasebook</b><span>A bilingual phrasebook for people coming from Windows: what you want to do, how Finder says it, how MacExplorer says it.</span></a></li>
-    <li><a href="concepts/b-window/"><b>B. The window</b><span>The page is a MacExplorer window: sections are folders in the tree, and the address bar jumps around the page.</span></a></li>
-    <li><a href="concepts/c-keystrokes/"><b>C. Keystrokes</b><span>Minimal and keyboard-led, with a live ⌘X / ⌘V demo in the hero.</span></a></li>
-  </ul>
+  <section class="hero col">
+    <h1>Finder, with the good parts of Explorer.</h1>
+    <p class="sub">A native file manager for macOS 26. Cut and paste that moves files, an address bar you can type in, a folder tree, and folder sizes.</p>
+    <div class="actions">
+      <a class="dl" href="https://github.com/roniburd/macExplorer/releases/latest">Download for macOS 26</a>
+      <a class="ghost" href="#install">Other ways to install</a>
+    </div>
+    <small>Free and open source. Beta.</small>
+    <figure><img src="assets/shots/details.png" width="1112" height="752"
+      alt="MacExplorer showing a Documents folder with folder sizes, a folder tree in the sidebar and the selection size in the status bar."></figure>
+  </section>
+
+  <section class="install wide" id="install" aria-labelledby="install-title">
+    <h2 id="install-title">Install</h2>
+    <p>Free, MIT-licensed, and it updates itself. Needs macOS 26 Tahoe.</p>
+    <div class="ways">
+      <div class="way">
+        <h3>Download</h3>
+        <p>Open the .dmg and drag MacExplorer to Applications.</p>
+        <a class="dl" href="https://github.com/roniburd/macExplorer/releases/latest">Download the .dmg</a>
+      </div>
+      <div class="way">
+        <h3>Homebrew</h3>
+        <p>One line in Terminal.</p>
+        <div class="code"><code id="brew">brew install --cask roniburd/macexplorer/macexplorer</code><button type="button" data-copy="brew">Copy</button></div>
+      </div>
+      <div class="way">
+        <h3>Source</h3>
+        <p>Build it yourself with Xcode 27 and SwiftPM.</p>
+        <div class="code"><code id="clone">git clone https://github.com/roniburd/macExplorer.git</code><button type="button" data-copy="clone">Copy</button></div>
+      </div>
+    </div>
+    <p class="fine">MacExplorer isn't notarized yet. If macOS won't open it the first time, run
+      <code>xattr -dr com.apple.quarantine /Applications/MacExplorer.app</code> once.</p>
+  </section>
+
+  <section class="why col" id="why">
+    <h2>Why we built it</h2>
+    <p>Lots of people move between a Windows PC at work and a Mac at home, or switched after years of File Explorer. Finder does a lot well, but a few things you do every day are harder than they need to be: moving files, typing a path, seeing where you are in the tree.</p>
+    <p>We kept the Mac parts (Quick Look, tags, the sidebar, Liquid Glass, the ⌘ shortcuts) and borrowed the Explorer ideas that make those everyday jobs quicker. It's a native AppKit app, and it opens folders with 100,000 files without stalling.</p>
+  </section>
+
+  <div class="col">
+    <section class="feature">
+      <h2>Cut and paste.</h2>
+      <p>⌘X a file and it greys out. Go to another folder, ⌘V, and it moves there. Esc changes your mind, ⌘Z undoes it.</p>
+      <figure><img src="assets/shots/cut.png" width="1112" height="752" loading="lazy" alt="Two files in Documents shown greyed and italic after Cut, waiting to be pasted."></figure>
+    </section>
+
+    <section class="feature">
+      <h2>Type where you want to go.</h2>
+      <p>Click the address bar, or press ⌘L, and type a path. Paste one from anywhere, or start with <code>~</code>.</p>
+      <figure><img src="assets/shots/address.png" width="1112" height="752" loading="lazy" alt="The address bar in edit mode with Documents/Projects/Website typed into it."></figure>
+    </section>
+
+    <section class="feature">
+      <h2>A folder tree, and folder sizes.</h2>
+      <p>The tree under the sidebar always shows where you are. Turn on View › Calculate Folder Sizes and every folder shows how much it holds.</p>
+      <figure class="narrow"><img src="assets/shots/properties.png" width="552" height="500" loading="lazy" alt="Properties window for the Projects folder: 6.5 MB, 4 files and 3 folders."></figure>
+    </section>
+
+    <section class="feature">
+      <h2>Tabs, and a mouse that works.</h2>
+      <p>⌘T for a new tab, or middle-click a folder. The back and forward buttons on your mouse go back and forward.</p>
+      <figure><img src="assets/shots/tabs.png" width="1112" height="752" loading="lazy" alt="A window with three tabs: Documents, Downloads and Pictures."></figure>
+    </section>
+
+    <section class="feature">
+      <h2>Downloads, sorted out.</h2>
+      <p>Group any folder by date, kind, size or name. Each folder remembers its own view.</p>
+      <figure><img src="assets/shots/group-by-date.png" width="1112" height="752" loading="lazy" alt="Downloads grouped into Today, Yesterday, Last week, Last month and Earlier this year."></figure>
+    </section>
+  </div>
+
+  <section class="shortcuts col" id="shortcuts" aria-labelledby="sc-title">
+    <h2 id="sc-title">And the little things</h2>
+    <div class="grid">
+      <div><div class="keys" aria-label="Command I"><span class="cap">⌘</span><span class="cap">I</span></div>
+        <h3>Properties</h3><p>Size, contents and permissions, one window per item.</p></div>
+      <div><div class="keys" aria-label="F2"><span class="cap">F2</span></div>
+        <h3>Rename</h3><p>Return opens, as in Explorer. You can switch it to rename.</p></div>
+      <div><div class="keys" aria-label="Space"><span class="cap wide-cap">space</span></div>
+        <h3>Quick Look</h3><p>Same as Finder, arrow keys included.</p></div>
+      <div><div class="keys" aria-label="Command 1, 2, 3"><span class="cap">⌘</span><span class="cap">1</span><span class="cap">2</span><span class="cap">3</span></div>
+        <h3>Views</h3><p>Details, Icons and Columns.</p></div>
+      <div><div class="keys" aria-label="Shift Command C"><span class="cap">⇧</span><span class="cap">⌘</span><span class="cap">C</span></div>
+        <h3>Copy the path</h3><p>Or as a <code>~</code> path, file URL, name, or quoted for the shell.</p></div>
+      <div><div class="keys" aria-label="Command Z"><span class="cap">⌘</span><span class="cap">Z</span></div>
+        <h3>Undo</h3><p>Every move, rename, copy and trash.</p></div>
+      <div><div class="keys" aria-label="Command Shift N"><span class="cap">⇧</span><span class="cap">⌘</span><span class="cap">N</span></div>
+        <h3>New folder</h3><p>Or New ▸ Text File, right where you are.</p></div>
+      <div><div class="keys" aria-label="Command Delete"><span class="cap">⌘</span><span class="cap">⌫</span></div>
+        <h3>Move to Trash</h3><p>With undo.</p></div>
+      <div><div class="keys" aria-label="Command Option V"><span class="cap">⌥</span><span class="cap">⌘</span><span class="cap">V</span></div>
+        <h3>Move here</h3><p>Finder's move shortcut still works too.</p></div>
+    </div>
+  </section>
 </main>
+
+<footer><div class="col">
+  <p>MacExplorer can't replace Finder system-wide: “Show in Finder” in other apps, the Dock icon and Open/Save panels still use Finder.</p>
+  <p>Open source on <a href="https://github.com/roniburd/macExplorer">GitHub</a>. <a href="https://github.com/roniburd/macExplorer/issues/new/choose">Report a bug or ask for a feature</a>.</p>
+</div></footer>
+
+<script>
+  document.querySelectorAll("[data-copy]").forEach(btn => btn.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(document.getElementById(btn.dataset.copy).textContent); btn.textContent = "Copied"; }
+    catch { btn.textContent = "Select and copy"; }
+    setTimeout(() => btn.textContent = "Copy", 1600);
+  }));
+</script>
 </body>
 </html>
