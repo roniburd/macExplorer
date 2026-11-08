@@ -2,6 +2,7 @@ import Darwin
 import Foundation
 import Core
 import MacxFS
+import Synchronization
 
 /// Phase 3 (P3-13) `search.*` family: the crawler, filters, saved searches and cancellation, run headless through
 /// CoreEnvironment on fixtures inside the scenario sandbox only. Spotlight is never queried (the sandboxed
@@ -77,36 +78,41 @@ enum SearchScenarios {
             try ctx.expect(m.plan?.diagnostics.isEmpty ?? false, "no syntax diagnostics: \(String(describing: m.plan?.diagnostics))")
         },
         CoreScenario("search.cancelStopsCrawl") { ctx in
-            // 500 folders of 40 files: the crawl reads one folder at a time per lane, so 20,000 rows arrive over hundreds of
-            // batches instead of ~20 big ones that a fast runner delivers in a single frame.
-            for i in 0..<500 { ctx.flat("bulk/d\(i)", count: 40) }
+            // The real crawler, held after its first batch (CrawlGate) so Stop lands mid-crawl however the runner
+            // schedules the crawl's lanes against the main actor. How the crawler reacts to cancellation is covered by
+            // SubtreeCrawlerTests; this checks that Stop cancels the engine and keeps the rows already shown.
+            for i in 0..<100 { ctx.flat("bulk/d\(i)", count: 40) }
+            let total = 100 * 40
             let spec = SearchSpec(text: "file", scope: .subfolders, root: ctx.work)
             let plan = await ctx.env.planSearch(spec)
-            // Stop is pressed from the first frame that shows rows (polling raced the crawler: it can finish in
-            // ~15 ms, so a 20 ms poll on a loaded machine saw it complete). A run whose whole crawl landed in that
-            // first frame cannot show a mid-crawl Stop: it is retried (the crawl is that fast only rarely).
-            for attempt in 1...5 {
-                let m = ctx.env.makeSearchResults(spec, plan: plan)
-                defer { m.close() }
-                var stoppedAt: Int?
-                let token = m.observeRows { _ in
-                    guard stoppedAt == nil, m.rowCount > 0, m.rowCount < 20_000, isSearching(m) else { return }
-                    m.stop()
-                    stoppedAt = m.rowCount
-                }
-                m.start()
-                try await ctx.waitUntil("first rows", timeout: .seconds(30)) { stoppedAt != nil || !isSearching(m) }
-                guard let count = stoppedAt else {
-                    if attempt < 5, m.rowCount == 20_000 { token.cancel(); continue }
-                    throw ScenarioFailure("Stop was never pressed mid-crawl (attempt \(attempt)): \(m.state), \(m.rowCount) rows")
-                }
-                try await Task.sleep(for: .milliseconds(300))
-                token.cancel()
-                guard case .stopped = m.state else { throw ScenarioFailure("state after Stop: \(m.state)") }
-                try ctx.expect(m.rowCount <= count + 2_000, "at most one in-flight batch lands after Stop (\(count) → \(m.rowCount))")
-                try ctx.expect(m.rowCount < 20_000, "the crawl did not run to the end (\(m.rowCount) rows)")
-                return
+            guard case .crawler(let root, let criteria) = plan.engine else {
+                throw ScenarioFailure("expected a crawler plan, got \(plan.engine)")
             }
+            let search = ctx.env.searchContext()
+            let lanes = ctx.env.lanes, mounts = ctx.env.volumes.mountTableStore, types = ctx.env.types
+            let permissions = search.crawlPermissions()
+            var options = CrawlOptions()
+            options.maxResults = SearchResultsModel.resultLimit
+            let crawlOptions = options
+            let gate = CrawlGate()
+            defer { gate.open() }
+            let m = SearchResultsModel(title: spec.text, events: { generation in
+                gate.forward(SubtreeCrawler.crawl(root: root, criteria: criteria, options: crawlOptions, permissions: permissions,
+                                                  generation: generation, lanes: lanes, mountTable: mounts, types: types))
+            }, context: search)
+            defer { m.close() }
+            m.start()
+            try await ctx.waitUntil("the first rows show while the crawl is held") { gate.isHeld && m.rowCount > 0 }
+            try ctx.expect(isSearching(m), "still searching while held: \(m.state)")
+            m.stop()
+            let count = m.rowCount
+            guard case .stopped = m.state else { throw ScenarioFailure("state after Stop: \(m.state)") }
+            try await ctx.waitUntil("Stop cancels the crawl's event stream") { gate.wasCancelled }
+            gate.open()
+            try await Task.sleep(for: .milliseconds(300))      // a negative check: nothing may land after Stop
+            guard case .stopped = m.state else { throw ScenarioFailure("state after the crawl was let go: \(m.state)") }
+            try ctx.expectEqual(m.rowCount, count, "no rows land after Stop")
+            try ctx.expect(count <= gate.forwardedRows && count < total, "only the rows shown before Stop (\(count) of \(total))")
         },
         CoreScenario("search.resultsFollowFileOps") { ctx in
             ctx.file("a/needle-1.txt"); ctx.file("b/needle-2.txt"); ctx.file("b/needle-3.txt")
@@ -144,4 +150,43 @@ enum SearchScenarios {
             try ctx.expectEqual(names(m), ["needle-here.txt"], "mount points are not crossed")
         },
     ]
+}
+
+/// Forwards a crawl's events to a SearchResultsModel and holds them after the first batch until `open()`, so a
+/// scenario can act mid-crawl without racing the crawler. Records whether the model cancelled the stream.
+final class CrawlGate: Sendable {
+    private let state = Mutex((held: false, opened: false, cancelled: false, forwardedRows: 0))
+
+    var isHeld: Bool { state.withLock { $0.held && !$0.opened } }
+    var wasCancelled: Bool { state.withLock { $0.cancelled } }
+    var forwardedRows: Int { state.withLock { $0.forwardedRows } }
+
+    func open() { state.withLock { $0.opened = true } }
+
+    func forward(_ crawl: AsyncStream<SearchEvent>) -> AsyncStream<SearchEvent> {
+        let (stream, continuation) = AsyncStream<SearchEvent>.makeStream(bufferingPolicy: .unbounded)
+        let task = Task { [self] in
+            for await event in crawl {
+                continuation.yield(event)
+                guard case .batch(let b) = event else { continue }
+                let first = state.withLock { s -> Bool in
+                    s.forwardedRows += b.batch.count
+                    guard !s.held else { return false }
+                    s.held = true
+                    return true
+                }
+                if first { await waitUntilOpen() }
+            }
+            continuation.finish()
+        }
+        continuation.onTermination = { [self] termination in
+            if case .cancelled = termination { state.withLock { $0.cancelled = true } }
+            task.cancel()
+        }
+        return stream
+    }
+
+    private func waitUntilOpen() async {
+        while !state.withLock({ $0.opened }) && !Task.isCancelled { try? await Task.sleep(for: .milliseconds(10)) }
+    }
 }
