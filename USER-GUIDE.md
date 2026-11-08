@@ -1,122 +1,368 @@
 # MacExplorer user guide
 
-Everything MacExplorer does, in detail. For a quick start, see the [README](README.md).
+How to use every part of MacExplorer.
+New here? Start with the [README](README.md).
 
-## Views & Tabs (Phase 2)
+**Contents**
 
-- **Tabs.** Every window is a native macOS tab group. ⌘T opens a new tab on the current folder (on `--root` in
-  sandbox mode), ⌃Tab / ⌃⇧Tab move to the next / previous tab, ⌘W closes the tab, and ⇧⌘\ shows all tabs.
-  Middle-click a folder in the content area, the sidebar or the folder tree to open it in a new tab; ⌘-click opens
-  a new tab in the sidebar and the tree (in the content area ⌘-click still toggles the selection). "Open in New
-  Tab" is also in the context menu. To open a dragged folder as a tab, drop it on the "＋" New Tab toolbar button
-  (the P2-06 spike: AppKit's tab bar has no public drop target). Conflict and error dialogs of a job are shown on
-  the tab that started it, which is selected first; if that tab has closed they go to the Operations panel.
-- **Per-folder views.** Each folder remembers its view mode, columns, sort, icon size, density, Group by and "Calculate
-  Folder Sizes" (keyed by volume UUID + file ID where IDs are stable, by path elsewhere). A folder you never changed
-  follows Finder's view of it, application folders open as large icons, and everything else follows the defaults.
-  View › Use as Default for All Folders makes the current view the default; View › Apply to All Folders… also forgets
-  every folder's own view; View › Reset View for This Folder forgets this one's.
-- **Group by** (View › Group By, or the context menu): Kind, Date Modified (Today, Yesterday, Earlier this Week…),
-  Size buckets or Name (first letter), with floating group rows you can collapse. VoiceOver reads a group row as
-  "<title>, <n> items, collapsed/expanded".
-- **Quick Look.** Space opens and closes the Quick Look panel for the selection, and the arrow keys move through
-  the items. While you are type-selecting (the last letter was typed less than a second ago) Space is part of the
-  name, so `my f` reaches `my file.txt`.
-- **Folder sizes.** View › Calculate Folder Sizes scans each folder of the current folder on a background lane:
-  hard links count once, symlinks are never followed, other volumes are not entered, and iCloud placeholders are
-  not downloaded. A size with unreadable or not-downloaded parts shows as "≥ 1.2 MB". Results are cached and
-  updated through the file-system watcher; sorting by Size uses them.
-- **More columns** (right-click a column header): Tags, Date Last Opened, Permissions (rwx), Owner, Comments, and
-  Path in search results. All of them sort; their values are read in the background and refresh when another app
-  changes only a tag or comment.
-- **Copy Path As ▸** (Edit menu and context menu): POSIX Path (⇧⌘C, "Copy as Path"), ~ Path, File URL, Name,
-  Quoted for Shell.
-- **Thumbnails** in Icons view replace type icons for visible items once Quick Look has made them (never for iCloud
-  placeholders); scrolling away cancels the request, and a 64 MB cache keeps recent ones.
-- **Columns view** (⌘3, View › as Columns): one column per folder level. Selecting a folder opens the next column,
-  → / ← move into and out of columns, and each column's trailing handle resizes it (double-click fits the names).
+1. [Tabs](#tabs)
+2. [Views](#views)
+3. [Folder sizes](#folder-sizes)
+4. [Copy a path](#copy-a-path)
+5. [Quick Look and the preview pane](#quick-look-and-the-preview-pane)
+6. [Search](#search)
+7. [Properties](#properties)
+8. [Settings](#settings)
+9. [Updates](#updates)
+10. [Feedback and crashes](#feedback-and-crashes)
+11. [What MacExplorer can't do](#what-macexplorer-cant-do)
 
-## Search & Preview (Phase 3)
+---
 
-- **Search field** (⌘F). Type to search; Esc clears it and returns to the folder. The scope bar under the toolbar
-  has the scope chips **This Folder / Subfolders / This Mac**, a **Name / Contents** toggle, filters, progress,
-  **Stop** and **Save**; the same choices are in View › Search. Which engine runs:
+## Tabs
 
-  | Scope | Name | Contents |
-  |---|---|---|
-  | This Folder | instant in-memory filter of the listed folder (every keystroke) | Spotlight, direct children only; a volume that isn't indexed falls back to the name filter with a notice |
-  | Subfolders | our own crawler (parallel directory reads, packages and hidden folders skipped by default, symlinks never followed, other volumes never entered) | Spotlight inside the folder; not indexed → the crawler by name, with a notice |
-  | This Mac | Spotlight over the whole Mac ("Spotlight is turned off" when indexing is off) | Spotlight |
+Every window can hold several tabs, like Safari.
 
-  Every search other than the instant filter is debounced (250 ms) and shows its results in Details with a
-  **Path** column. Retyping or changing the scope cancels the running search; its late results never appear.
-- **Syntax** (close to Explorer's Advanced Query Syntax; terms are ANDed):
+<img src="site/assets/shots/guide/tabs.png" width="640" alt="The tab bar with three tabs: Documents, Downloads and Pictures.">
 
-  | Token | Meaning |
-  |---|---|
-  | `word`, `"two words"` | a name term (Name mode) or content term (Contents mode); `*` and `?` make it a whole-name glob (`*.pdf`, `report?.doc`, `IMG_*`), case- and accent-insensitive |
-  | `name:x`, `name:"a b"` | a name term in both modes |
-  | `kind:` / `type:` + `folder document text pdf image movie audio archive app code` (plurals and synonyms work, comma-separated) | OR within one token and across repeated `kind:` tokens |
-  | `ext:` / `extension:` + `pdf`, `.pdf`, `*.pdf`, `jpg,png` | OR |
-  | `size:` + `>10MB` `>=1.5GB` `<1KB` `<=100` `=0` `1MB..10MB` `10MB` (±0.5 unit) `empty tiny small medium large huge gigantic` | repeated `size:` tokens intersect |
-  | `modified:` / `date:`, `created:` + `today yesterday thisweek lastweek thismonth lastmonth thisyear lastyear last7days last30days`, `2026-01-31`, `>2026-01-31`, `>=`, `<`, `<=`, `2026-01-01..2026-01-31` | repeated tokens intersect |
-  | unknown key (`foo:bar`), quoted `"kind:image"` | a literal term |
-  | a known key with a bad value (`size:big`, `kind:spaceship`) | ignored, with "Didn't understand 'size:big'" under the field |
+| To | Do this |
+|---|---|
+| Open a new tab | ⌘T |
+| Open a folder in a new tab | Middle-click it, or right-click › **Open in New Tab** |
+| Go to the next / previous tab | ⌃Tab / ⌃⇧Tab |
+| Close a tab | ⌘W |
+| See all tabs | ⇧⌘\ |
+| Open a dragged folder as a tab | Drop it on the **＋** button in the toolbar |
 
-  Sizes are decimal like the sizes the app shows (`KB` = 1,000 bytes, `MB`, `GB`, `TB`); `KiB`, `MiB`, `GiB`, `TiB`
-  are binary. Size words: empty < 1 B, tiny < 16 KB, small < 1 MB, medium < 128 MB, large < 1 GB, huge < 4 GB,
-  gigantic ≥ 4 GB.
-- **Filters** (the scope bar's Filters button): kind, date modified and created ranges, size range and extension,
-  combined with the typed query.
-- **Saved searches.** File › Save Search… (or Save in the scope bar) adds the search to the sidebar's **SEARCHES**
-  section. Click one to run it again; rename, reorder (drag) or remove it from its context menu. Del on a saved
-  search removes only the saved search, never a file.
-- **Working with results.** Results follow file operations without re-running: trashed and moved items disappear,
-  renamed ones show their new names. Double-click a folder result to open it and ⌘[ to return to the same results.
-  Go › **Open Containing Folder** (⌥⌘R) opens the item's folder with the item selected. View › Search › **Stop
-  Search** cancels a running search. A search stops at **100,000 results** and says "Showing the first 100,000
-  results. Refine your search."
-- **Preview pane** (View › Show Preview Pane, ⌥P, like Explorer). It shows the selection: text and code as a fast
-  preview of the first 256 KB (with a note when the file is longer), other types in Quick Look, folders and
-  multiple items as a summary, and a details grid underneath (size, dates, dimensions or duration). An iCloud
-  file that is not downloaded is never read: the pane offers a **Download** button instead. ⌥P typed while a text
-  field has focus types "π" and leaves the pane alone. The pane's visibility and width are remembered.
-- **Spotlight notes.** Contents and This Mac need Spotlight indexing (`mdutil -s /` shows the state; macExplorer
-  only ever runs `mdutil -s`). Volumes that aren't indexed fall back to name search with a notice. Protected
-  folders (Desktop, Documents, Downloads, iCloud Drive without a recorded grant, and app data under `~/Library`)
-  are skipped by Subfolders search without asking for access, and counted in "N folders were skipped".
-- All new commands (preview pane, Open Containing Folder, the search scopes and modes, Stop, Save Search) can be
-  rebound in Settings › Shortcuts.
+In the sidebar and the folder tree, ⌘-click also opens a new tab.
+In the file list, ⌘-click selects more than one item, as usual.
+
+If a copy or move needs your answer, the question appears on the tab that started it.
+
+---
+
+## Views
+
+There are three views.
+
+| View | Shortcut | Good for |
+|---|---|---|
+| Details | ⌘1 | Sorting by name, date, size or kind |
+| Icons | ⌘2 | Photos and images (shows thumbnails) |
+| Columns | ⌘3 | Moving through deep folders |
+
+<img src="site/assets/shots/guide/columns.png" width="450" alt="Columns view with Projects open and Website selected, showing its files in the next column.">
+
+In Columns view:
+
+- → opens the selected folder in the next column.
+- ← goes back one column.
+- Drag a column's edge to resize it. Double-click the edge to fit the names.
+
+### Each folder remembers its view
+
+Change the view of a folder, and it stays that way the next time you open it.
+This covers the view, columns, sort order, icon size, density, grouping and folder sizes.
+
+| Menu command | What it does |
+|---|---|
+| View › **Use as Default for All Folders** | Makes this view the default for folders you haven't changed |
+| View › **Apply to All Folders…** | Makes this view the default and forgets every folder's own view |
+| View › **Reset View for This Folder** | Forgets this folder's view |
+
+Folders you never changed follow their Finder view.
+The Applications folder opens with large icons.
+
+### Group by
+
+View › **Group By** sorts items into groups you can collapse.
+
+<img src="site/assets/shots/guide/group-by-date.png" width="560" alt="Downloads grouped into Today, Yesterday and earlier groups.">
+
+| Group by | Groups |
+|---|---|
+| Kind | Folders, Documents, Images… |
+| Date Modified | Today, Yesterday, Earlier this Week… |
+| Size | Tiny, Small, Medium, Large… |
+| Name | First letter |
+
+### More columns
+
+Right-click a column header in Details view to add a column.
+
+| Column | Shows |
+|---|---|
+| Tags | Finder tags |
+| Date Last Opened | When you last opened the item |
+| Permissions | `rwxr-xr-x` style |
+| Owner | The user who owns the item |
+| Comments | Finder comments |
+| Path | Where a search result lives (search results only) |
+
+Click any column header to sort by it.
+
+### Thumbnails
+
+Icons view shows a picture of each image, PDF or movie instead of a generic icon.
+Thumbnails are never made for iCloud files that aren't downloaded.
+Turn them off in Settings › View › **Show thumbnails**.
+
+---
+
+## Folder sizes
+
+Finder shows `--` for folder sizes.
+MacExplorer can show real sizes.
+
+Choose View › **Calculate Folder Sizes**.
+
+<img src="site/assets/shots/guide/sizes.png" width="560" alt="Details view with a size shown for each folder.">
+
+- Sizes are worked out in the background. You can keep working.
+- Sorting by Size uses them.
+- They update when files change.
+
+A size like **≥ 1.2 MB** means some files couldn't be counted.
+Usually they are unreadable, or in iCloud and not downloaded.
+
+MacExplorer never downloads iCloud files to measure them.
+It doesn't follow aliases or enter other disks.
+
+---
+
+## Copy a path
+
+Choose Edit › **Copy Path As**, or right-click an item.
+
+| Option | Example |
+|---|---|
+| POSIX Path (⇧⌘C) | `/Users/alex/Documents/Budget 2027.xlsx` |
+| ~ Path | `~/Documents/Budget 2027.xlsx` |
+| File URL | `file:///Users/alex/Documents/Budget%202027.xlsx` |
+| Name | `Budget 2027.xlsx` |
+| Quoted for Shell | `'/Users/alex/Documents/Budget 2027.xlsx'` |
+
+---
+
+## Quick Look and the preview pane
+
+**Quick Look:** press Space to open a big preview of the selection.
+Press Space again to close it.
+The arrow keys move to the next item while it's open.
+
+If you are typing a name to jump to it, Space counts as part of the name.
+So typing `my f` selects `my file.txt` instead of opening Quick Look.
+
+**Preview pane:** press ⌥P, or choose View › **Show Preview Pane**.
+It stays open beside the files, like in Windows Explorer.
+
+<img src="site/assets/shots/guide/preview.png" width="720" alt="The preview pane on the right, showing the text of Meeting notes.md and its details.">
+
+| You select | The pane shows |
+|---|---|
+| A text or code file | The text (the first 256 KB) |
+| An image, PDF, movie… | A Quick Look preview |
+| A folder or several items | A summary |
+| An iCloud file that isn't downloaded | A **Download** button. Nothing downloads until you click it. |
+
+Under the preview there are details such as size, dates and dimensions.
+
+---
+
+## Search
+
+Press ⌘F and type.
+Press Esc to clear the search and go back to the folder.
+
+<img src="site/assets/shots/guide/search.png" width="640" alt="A search for kind:pdf in Documents and its subfolders, with the Path column showing where each PDF is.">
+
+The bar under the toolbar sets **where** and **what** to search.
+
+| Where | Searches |
+|---|---|
+| **This Folder** | Only the folder you are in |
+| **Subfolders** | The folder and every folder inside it |
+| **This Mac** | Everything Spotlight knows about |
+
+| What | Matches |
+|---|---|
+| **Name** | File and folder names |
+| **Contents** | Text inside files (uses Spotlight) |
+
+- Results show in Details view with a **Path** column.
+- **Stop** ends a running search.
+- A search shows at most 100,000 results.
+
+### Search words
+
+Type plain words to match names.
+Add a key such as `kind:` or `size:` to narrow it down.
+All the words must match.
+
+| Type | Finds |
+|---|---|
+| `invoice` | Names containing "invoice" |
+| `"tax return"` | Names containing that exact phrase |
+| `*.pdf` | Names ending in `.pdf` |
+| `IMG_*` | Names starting with `IMG_` |
+| `report?.doc` | `report1.doc`, `reportB.doc`… |
+| `kind:image` | Images |
+| `ext:jpg,png` | JPG or PNG files |
+| `size:>10MB` | Files over 10 MB |
+| `modified:today` | Files changed today |
+| `created:lastweek` | Files created last week |
+| `invoice kind:pdf modified:thisyear` | PDFs with "invoice" in the name, changed this year |
+
+Upper and lower case don't matter.
+Neither do accents.
+
+<details>
+<summary><b>All search keys</b></summary>
+
+| Key | Values |
+|---|---|
+| `name:` | A word that must be in the name, even in Contents mode |
+| `kind:` or `type:` | `folder` `document` `text` `pdf` `image` `movie` `audio` `archive` `app` `code` |
+| `ext:` or `extension:` | `pdf`, `.pdf`, `*.pdf`, or a list: `jpg,png` |
+| `size:` | `>10MB` `>=1.5GB` `<1KB` `=0` `1MB..10MB` |
+| `size:` (words) | `empty` `tiny` `small` `medium` `large` `huge` `gigantic` |
+| `modified:` or `date:` | `today` `yesterday` `thisweek` `lastweek` `thismonth` `lastmonth` `thisyear` `lastyear` `last7days` `last30days` |
+| `modified:` (dates) | `2026-01-31` `>2026-01-31` `<=2026-01-31` `2026-01-01..2026-01-31` |
+| `created:` | The same values as `modified:` |
+
+Size words:
+
+| Word | Size |
+|---|---|
+| empty | 0 bytes |
+| tiny | under 16 KB |
+| small | under 1 MB |
+| medium | under 128 MB |
+| large | under 1 GB |
+| huge | under 4 GB |
+| gigantic | 4 GB or more |
+
+Rules:
+
+- `KB`, `MB` and `GB` count in thousands, like the sizes in the app. `KiB`, `MiB` and `GiB` count in 1,024s.
+- A list of values means "any of them": `kind:pdf,image`.
+- If a value isn't understood, the search ignores it and says so under the field.
+- A key MacExplorer doesn't know, like `foo:bar`, is searched as plain text.
+
+</details>
+
+### Filters
+
+The **Filters** button does the same as the keys, without typing.
+You can pick a kind, a date range, a size range and an extension.
+
+### Saved searches
+
+Choose File › **Save Search…**, or click **Save** in the search bar.
+The search appears in the sidebar under **SEARCHES**.
+
+- Click it to run it again.
+- Drag to reorder.
+- Right-click to rename or remove it.
+
+Deleting a saved search never deletes any files.
+
+### Working with results
+
+| To | Do this |
+|---|---|
+| Open a folder from the results | Double-click it |
+| Go back to the results | ⌘[ |
+| Open the folder that holds an item | Go › **Open Containing Folder** (⌥⌘R) |
+
+Results stay up to date.
+Items you trash or move disappear, and renamed items show their new names.
+
+### When Spotlight is needed
+
+Contents searches and This Mac use Spotlight.
+If a disk isn't indexed, MacExplorer searches names instead and tells you.
+
+Subfolders search skips protected folders (Desktop, Documents, Downloads, iCloud Drive) unless you've already given access.
+It tells you how many it skipped.
+It never pops up a privacy prompt.
+
+---
+
+## Properties
+
+Select an item and press ⌘I.
+
+<img src="site/assets/shots/guide/properties.png" width="440" alt="The Properties window of the Projects folder, with General, Permissions and Details tabs.">
+
+Properties works like Windows Explorer's.
+It shows a live folder size and has a **Permissions** tab.
+
+---
+
+## Settings
+
+Open Settings with ⌘,.
+
+| Tab | What you can change |
+|---|---|
+| General | Startup folder, where folders open, what Return does, the Terminal app, updates |
+| View | Hidden files, file extensions, thumbnails, row density, date format, the command bar |
+| Sidebar | Which sections and locations show |
+| Shortcuts | Any keyboard shortcut |
+| Advanced | Delete confirmations, the full path in the window title, crash reports |
+
+<img src="site/assets/shots/guide/settings.png" width="420" alt="The General tab of Settings.">
+
+**Return key:** choose whether Return opens the item (like Windows) or renames it (like Finder).
+F2 always renames.
+
+**Function keys:** F2 (rename) and F5 (refresh) need the fn key, unless your Mac is set to use F1, F2… as standard keys.
+That setting is in System Settings › Keyboard.
+
+---
 
 ## Updates
 
-MacExplorer checks for updates once a day and downloads them in the background. When one is ready, a
-**Restart to Update** button appears in the toolbar. Choose **Release** or **Beta** in Settings › General › Updates.
-Moving from Beta back to Release never downgrades: you stay on your beta until a newer release ships.
+MacExplorer checks for updates once a day and downloads them in the background.
+When one is ready, a **Restart to Update** button appears in the toolbar.
+
+| To | Go to |
+|---|---|
+| Choose Release or Beta versions | Settings › General › Updates › **Channel** |
+| Check right now | Settings › General › **Check Now** |
+| Go back to an earlier version | MacExplorer › **Install Previous Version…** |
+
+Switching from Beta to Release never downgrades you.
+You stay on your beta until a newer release comes out.
+
+---
 
 ## Feedback and crashes
 
-Help › **Report a Bug…** / **Request a Feature…** (also in the toolbar's **Send Feedback** menu) open a prefilled
-GitHub issue (you need a GitHub account and you review everything before submitting). If MacExplorer crashes, it
-offers to report it the next time you open it; turn this off in Settings › Advanced.
+| To | Do this |
+|---|---|
+| Report a bug | Help › **Report a Bug…** |
+| Ask for a feature | Help › **Request a Feature…** |
 
-## Things macExplorer does not do
+Both open a pre-filled GitHub issue.
+You need a GitHub account.
+You see everything before it's sent.
 
-- **It does not replace Finder as the system file viewer.** macOS has no public API for that, so "Show in Finder"
-  in other apps, the Dock's Finder icon and Open/Save panels still use Finder.
-- **Cut in macExplorer, paste in Finder copies.** Cut writes the file URLs plus a private marker that only
-  macExplorer understands. Finder sees ordinary file URLs and copies them. To move from macExplorer to Finder, drag
-  the items, or copy them and use Finder's ⌥⌘V (Move Item Here). The other way round works: Finder ⌘C, then
-  macExplorer ⌥⌘V (Move Item Here) moves.
-- Libraries, Previous Versions, NTFS security tabs, drive letters, Mac App Store distribution, macOS before 26.
-- "Put Back" from the Trash is not offered; undo restores trashed items instead.
-- **Very large copies are slower to paste elsewhere.** Above 5,000 items, copy, cut and drag write each file URL as
-  a promise that macExplorer fills in when another app asks for it (writing 100k items up front takes over 20 s).
-  Pasting inside macExplorer is unaffected. Pasting those items in another app, or quitting macExplorer while they
-  are on the clipboard, takes about 1 ms per item. Above 5,000 items the clipboard also has no plain-text list of
-  the paths.
+If MacExplorer crashes, it offers to send a report the next time it opens.
+Turn this off in Settings › Advanced.
 
-Function keys: F2 (rename) and F5 (refresh) need fn held, unless "Use F1, F2, etc. keys as standard function keys"
-is on in Keyboard settings. Development builds are ad-hoc signed, so macOS may ask again for folder access after a
-rebuild.
+---
 
+## What MacExplorer can't do
+
+| Limit | Why | What to do |
+|---|---|---|
+| It can't replace Finder everywhere | macOS has no way to change the system file browser | "Show in Finder", the Dock icon and Open/Save panels still use Finder |
+| Cut in MacExplorer, paste in Finder makes a copy | Finder doesn't understand MacExplorer's cut | Drag the files instead, or use ⌥⌘V in Finder |
+| No "Put Back" from the Trash | — | Use Undo (⌘Z) to restore trashed items |
+| Very big copies paste slowly in other apps | Above 5,000 items, the paths are handed over one by one | Pasting inside MacExplorer is still fast |
+| No Libraries, drive letters or NTFS permissions | These are Windows features | — |
+| Needs macOS 26 or later | It uses the newest macOS design | — |
+
+The other way round works: copy in Finder with ⌘C, then press ⌥⌘V in MacExplorer to move.

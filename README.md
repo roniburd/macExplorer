@@ -68,7 +68,7 @@ file operation can be undone. Finder tags, the sidebar and the ⌘ shortcuts all
 
 **What it can't do:** replace Finder system-wide. "Show in Finder" in other apps, the Dock icon and Open/Save panels
 still use Finder, because macOS has no public way to change that. Cutting in MacExplorer and pasting in Finder makes
-a copy. More in the [user guide](USER-GUIDE.md#things-macexplorer-does-not-do).
+a copy. More in the [user guide](USER-GUIDE.md#what-macexplorer-cant-do).
 
 ## More
 
