@@ -351,14 +351,11 @@ final class SystemPasteboardTests: XCTestCase {
 
     func testWrites100kURLsWithoutCap() {
         let urls = (0..<100_000).map { u("/tmp/macx-bench/f\($0).txt") }
-        let start = ContinuousClock.now
         board.writeFileURLs(urls, cutMarker: true)
-        let elapsed = ContinuousClock.now - start
         XCTAssertEqual(raw.pasteboardItems?.count, 100_000)
         XCTAssertTrue(board.hasCutMarker())
-        // Above the eager limit the file-url data is promised (overview pasteboard decision 2026-11-03: 100k < 1.5 s
-        // release); 4x for debug builds. macx-bench measures the real cost against the budget.
-        XCTAssertLessThan(elapsed, .seconds(6))
+        // Above the eager limit the file-url data is promised. The time budget (overview pasteboard decision
+        // 2026-11-03: 100k < 1.5 s release) is checked by macx-bench's "pasteboard" metric, not by wall time here.
         XCTAssertEqual(raw.pasteboardItems?.last?.string(forType: .fileURL).flatMap(URL.init(string:))?.path, "/tmp/macx-bench/f99999.txt")
     }
 
@@ -367,9 +364,8 @@ final class SystemPasteboardTests: XCTestCase {
     func testAboveTheEagerLimitFileURLsArePromisedAndStillRead() throws {
         XCTAssertEqual(FileURLPasteboardItems.eagerLimit, 5_000)
         let urls = (0...FileURLPasteboardItems.eagerLimit).map { u("/tmp/macx/f\($0).txt") }
-        let start = ContinuousClock.now
+        // The ≤10k < 300 ms budget is macx-bench's "pasteboard" metric; this test pins the promised-not-eager contract.
         board.writeFileURLs(urls, cutMarker: true)
-        XCTAssertLessThan(ContinuousClock.now - start, .milliseconds(1_200), "≤10k < 300 ms release, 4x in debug")
         XCTAssertEqual(raw.pasteboardItems?.count, urls.count)
         XCTAssertTrue(board.hasCutMarker())
         XCTAssertTrue(board.hasFileURLs())
