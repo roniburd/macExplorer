@@ -21,18 +21,28 @@ public final class MdutilIndexStatus: IndexStatusProviding {
     private let cacheLifetime: Duration
     private let cache = Mutex<[String: CacheEntry]>([:])
     private struct CacheEntry: Sendable { var status: IndexingStatus; var at: ContinuousClock.Instant }
+    /// Runs the status command for a mount point on a lane (path, timeout, lane context).
+    typealias Runner = @Sendable (String, Duration, LaneContext) -> IndexingStatus
+    private let run: Runner
 
-    public init(lanes: LanePool, timeout: Duration = .seconds(2), cacheLifetime: Duration = .seconds(60)) {
-        self.lanes = lanes; self.timeout = timeout; self.cacheLifetime = cacheLifetime
+    public convenience init(lanes: LanePool, timeout: Duration = .seconds(2), cacheLifetime: Duration = .seconds(60)) {
+        self.init(lanes: lanes, timeout: timeout, cacheLifetime: cacheLifetime) { path, timeout, context in
+            MdutilIndexStatus.runMdutil(path, timeout: timeout, context: context)
+        }
+    }
+
+    /// Test hook: `run` stands in for `/usr/bin/mdutil` (the app always uses the public init).
+    init(lanes: LanePool, timeout: Duration = .seconds(2), cacheLifetime: Duration = .seconds(60), run: @escaping Runner) {
+        self.lanes = lanes; self.timeout = timeout; self.cacheLifetime = cacheLifetime; self.run = run
     }
 
     public func status(ofVolumeAt mountPoint: URL) async -> IndexingStatus {
         let key = CrawlPermissions.trim(mountPoint.standardizedFileURL.path(percentEncoded: false))
         let lifetime = cacheLifetime
         if let hit = cache.withLock({ $0[key] }), ContinuousClock.now - hit.at < lifetime { return hit.status }
-        let timeout = self.timeout
+        let timeout = self.timeout, run = self.run
         let status = (try? await lanes.perform(on: .unknown) { context in
-            Self.runMdutil(key, timeout: timeout, context: context)
+            run(key, timeout, context)
         }) ?? .unknown
         cache.withLock { $0[key] = CacheEntry(status: status, at: ContinuousClock.now) }
         return status
