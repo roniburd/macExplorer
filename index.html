@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MacExplorer: Finder, with the good parts of Explorer</title>
+<meta name="description" content="MacExplorer is a free, native macOS file manager: cut and paste that moves files, an address bar you can type in, a folder tree and folder sizes.">
+<link rel="icon" href="assets/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:ital,wght@0,400..900;1,400..900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --alu: #E3E5E8;
+    --alu-2: #D5D8DD;
+    --cap: #FAFAFB;
+    --graphite: #26292E;
+    --muted: #6B7079;
+    --yellow: #F2B632;
+    --line: #C9CDD3;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--alu); color: var(--graphite); font: 400 17px/1.6 "Schibsted Grotesk", system-ui, sans-serif; }
+  a { color: inherit; text-underline-offset: 3px; }
+  :focus-visible { outline: 3px solid var(--graphite); outline-offset: 3px; border-radius: 6px; }
+  code { font: .9em ui-monospace, "SF Mono", Menlo, monospace; }
+  .col { max-width: 720px; margin: 0 auto; padding: 0 24px; }
+  .wide { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+
+  header.top { display: flex; justify-content: space-between; align-items: center; padding-block: 22px; }
+  .brand { display: flex; gap: 10px; align-items: center; font-weight: 700; text-decoration: none; }
+  .brand img { width: 28px; height: 28px; }
+  header.top nav { display: flex; gap: 22px; font-size: 15px; color: var(--muted); }
+  header.top nav a { text-decoration: none; }
+  header.top nav a:hover { color: var(--graphite); text-decoration: underline; }
+
+  /* keycaps, used only in the shortcuts grid */
+  .keys { display: inline-flex; gap: 8px; align-items: center; }
+  .cap { --s: .56; display: inline-grid; place-items: center; min-width: calc(64px * var(--s)); height: calc(64px * var(--s));
+         padding: 0 calc(14px * var(--s)); background: var(--cap); border-radius: calc(12px * var(--s));
+         font-weight: 650; font-size: calc(26px * var(--s)); line-height: 1; color: var(--graphite);
+         box-shadow: 0 calc(4px * var(--s)) 0 var(--alu-2), 0 calc(5px * var(--s)) 0 #B9BEC6, 0 calc(8px * var(--s)) calc(14px * var(--s)) rgba(38,41,46,.18); }
+  .cap.wide-cap { min-width: calc(150px * var(--s)); }
+  .keys .or { color: var(--muted); font-size: 14px; }
+
+  /* hero */
+  .hero { text-align: center; padding-block-start: 56px; }
+  .hero h1 { font-size: clamp(38px, 6.4vw, 68px); line-height: 1.02; letter-spacing: -.035em; font-weight: 800; margin: 0 auto 16px; max-width: 18ch; }
+  .hero .sub { font-size: 20px; color: var(--muted); max-width: 40ch; margin: 0 auto; }
+  .dl { background: var(--graphite); color: #fff; text-decoration: none; font-weight: 650; padding: 13px 26px; border-radius: 12px; }
+  .dl:hover { background: #3a3e45; }
+  .hero { padding-block-end: 64px; }
+  .hero figure { margin: 40px auto 0; }
+  .hero figure img { display: block; width: 100%; height: auto; }
+  .gh { display: inline-flex; align-items: center; gap: 7px; }
+
+  /* install, in the hero */
+  .ways { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; text-align: left; margin: 32px -9% 0; }
+  .way { display: flex; flex-direction: column; align-items: flex-start; background: var(--cap); border-radius: 14px; padding: 18px 18px 20px;
+         box-shadow: 0 0 0 .5px rgba(0,0,0,.12); min-width: 0; }
+  .way h3 { margin: 0 0 4px; font-size: 18px; letter-spacing: -.01em; }
+  .way p { margin: 0 0 14px; font-size: 15px; color: var(--muted); }
+  .way .dl, .way .code { margin-top: auto; }   /* the button and the command line up at the bottom of both cards */
+  .way .dl { display: inline-block; padding: 10px 18px; font-size: 15px; line-height: 1.6; }
+  .code { align-self: stretch; display: flex; align-items: center; gap: 8px; background: var(--graphite); color: #fff; border-radius: 10px; padding: 8px 8px 8px 12px; }
+  .code code { min-width: 0; flex: 1; font-size: 13px; line-height: 1.5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .code code .line { display: block; }
+  .code button { border: 0; border-radius: 7px; background: #454a52; color: #fff; padding: 5px 10px; font: inherit; font-size: 13px; cursor: pointer; }
+  .code button:hover { background: #575c65; }
+  .hero .fine { color: var(--muted); font-size: 14px; max-width: 64ch; margin: 16px auto 0; }
+
+  /* why */
+  .why { padding-block: 64px; border-top: 1px solid var(--line); }
+  .why h2 { font-size: clamp(28px, 4vw, 38px); letter-spacing: -.025em; margin: 0 0 16px; }
+  .why p { margin: 0 0 14px; }
+  .why p, .feature p { text-align: justify; hyphens: auto; -webkit-hyphens: auto; text-wrap: pretty; }
+
+  /* features: small title, short explanation, screenshot */
+  .feature { padding-block: 56px; border-top: 1px solid var(--line); }
+  .feature h2 { font-size: clamp(28px, 4vw, 38px); line-height: 1.1; letter-spacing: -.025em; margin: 0 0 10px; font-weight: 750; }
+  .feature p { margin: 0 0 10px; }
+  .feature figure { margin: 28px -6% 0; }
+  .feature figure img { display: block; width: 100%; height: auto; }
+  .pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 28px -20% 0; }
+  .feature .pair figure { margin: 0; }
+
+  /* zoomed crops: shown at their own pixel size so they stay sharp */
+  .zooms { display: flex; flex-direction: column; align-items: center; gap: 14px; margin: 28px -6% 0; }
+  .feature .zoom { margin: 0; max-width: 100%; background: #fff; border-radius: 12px; overflow: hidden;
+                   box-shadow: 0 0 0 .5px rgba(0,0,0,.16), 0 14px 30px rgba(38,41,46,.16); }
+  .feature .zoom img { display: block; max-width: 100%; height: auto; }
+  .tree-sizes { display: flex; justify-content: center; align-items: center; gap: 22px; margin: 28px -6% 0; }
+  .tree-sizes .zoom { flex: none; }
+  .tree-sizes .zoom:last-child { flex: 0 1 auto; min-width: 0; }
+
+  /* mouse back / forward: a 7 s loop */
+  .feature .backdemo { display: flex; align-items: center; gap: 18px; margin: 0; max-width: 100%; }
+  .backdemo .frames { display: grid; flex: 0 1 auto; min-width: 0; }
+  .backdemo .frames img { grid-area: 1 / 1; }
+  .backdemo .f-to { opacity: 0; animation: show-to 7s infinite; }
+  .backdemo .mouse { position: relative; flex: none; width: 140px; }
+  .backdemo .btn-back { animation: press-back 7s infinite; }
+  .backdemo .btn-fwd { animation: press-fwd 7s infinite; }
+  .backdemo .tip { position: absolute; left: 80px; font-size: 12px; font-weight: 650; background: var(--graphite); color: #fff;
+                   padding: 2px 8px; border-radius: 6px; opacity: 0; }
+  .backdemo .t-back { top: 58px; animation: tip-back 7s infinite; }
+  .backdemo .t-fwd { top: 38px; animation: tip-fwd 7s infinite; }
+  @keyframes show-to   { 0%, 30% { opacity: 0; } 34%, 80% { opacity: 1; } 84%, 100% { opacity: 0; } }
+  @keyframes press-back { 0%, 26% { fill: #C9CDD3; } 28%, 36% { fill: var(--yellow); } 40%, 100% { fill: #C9CDD3; } }
+  @keyframes press-fwd  { 0%, 76% { fill: #C9CDD3; } 78%, 86% { fill: var(--yellow); } 90%, 100% { fill: #C9CDD3; } }
+  @keyframes tip-back  { 0%, 26% { opacity: 0; } 28%, 44% { opacity: 1; } 48%, 100% { opacity: 0; } }
+  @keyframes tip-fwd   { 0%, 76% { opacity: 0; } 78%, 94% { opacity: 1; } 98%, 100% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    .backdemo .f-to, .backdemo .btn-back, .backdemo .btn-fwd, .backdemo .tip { animation: none; }
+  }
+
+  /* shortcuts */
+  .shortcuts { padding-block: 56px 64px; border-top: 1px solid var(--line); }
+  .shortcuts h2 { font-size: clamp(28px, 4vw, 38px); letter-spacing: -.025em; margin: 0 0 26px; }
+  .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 34px 30px; }
+  .grid h3 { margin: 16px 0 4px; font-size: 18px; letter-spacing: -.01em; }
+  .grid p { margin: 0; font-size: 15px; color: var(--muted); }
+
+  footer { padding-block: 32px 44px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+  footer p { margin: 0 0 8px; max-width: 70ch; }
+
+  @media (max-width: 760px) {
+    .ways, .grid { grid-template-columns: 1fr; }
+    .ways { margin-inline: 0; }
+    .feature figure { margin: 24px 0 0; }
+    .pair { grid-template-columns: 1fr; margin: 24px 0 0; }
+    .zooms, .tree-sizes { margin-inline: 0; }
+    .tree-sizes { flex-direction: column; }
+    .feature .backdemo { flex-direction: column; }
+    header.top nav a:not(:last-child) { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wide"><header class="top">
+  <a class="brand" href="#"><img src="assets/icon.png" alt="">MacExplorer</a>
+  <nav aria-label="Page">
+    <a href="#why">Why</a>
+    <a href="#shortcuts">Shortcuts</a>
+    <a class="gh" href="https://github.com/roniburd/macExplorer"><svg width="18" height="18" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>Source on GitHub</a>
+  </nav>
+</header></div>
+
+<main>
+  <section class="hero col">
+    <h1>Finder, with the good parts of Explorer.</h1>
+    <p class="sub">A native file manager for macOS 26. Cut and paste that moves files, an address bar you can type in, a folder tree, and folder sizes.</p>
+    <div class="ways" id="install">
+      <div class="way">
+        <h3>Download</h3>
+        <p>Open the .dmg and drag MacExplorer to Applications.</p>
+        <a class="dl" href="https://github.com/roniburd/macExplorer/releases/latest">Download for macOS 26</a>
+      </div>
+      <div class="way">
+        <h3>Homebrew</h3>
+        <p>Or one line in Terminal.</p>
+        <div class="code"><code id="brew"><span class="line">brew install --cask</span><span class="line">roniburd/macexplorer/macexplorer</span></code><button type="button" data-copy="brew">Copy</button></div>
+      </div>
+    </div>
+    <p class="fine">Free, open source, and it updates itself. Not notarized yet: if macOS won't open it the first time, run
+      <code>xattr -dr com.apple.quarantine /Applications/MacExplorer.app</code> once.</p>
+    <figure><img src="assets/shots/details.png" width="1112" height="752"
+      alt="MacExplorer showing a Documents folder with folder sizes, a folder tree in the sidebar and the selection size in the status bar."></figure>
+  </section>
+
+  <section class="why col" id="why">
+    <h2>Why we built it</h2>
+    <p>A file manager should make everyday jobs quick: moving files, getting to a folder, seeing where you are and what's taking space. MacExplorer is a native AppKit app that does those well and stays fast in folders with 100,000 files.</p>
+    <p>Finder gets a lot right, so we kept it: Quick Look, tags, the sidebar, Liquid Glass, the ⌘ shortcuts. Where Finder makes those jobs harder than they need to be, we borrowed the ideas Windows File Explorer got right: cut and paste, an address bar you can type in, a folder tree, folder sizes.</p>
+    <p>That also makes the Mac easier if you move between a Windows PC at work and a Mac at home, or switched after years of File Explorer.</p>
+  </section>
+
+  <div class="col">
+    <section class="feature">
+      <h2>Cut and paste.</h2>
+      <p>⌘X a file and it greys out. Go to another folder, ⌘V, and it moves there. Esc changes your mind, ⌘Z undoes it.</p>
+      <figure><img src="assets/shots/cut.png" width="1112" height="752" loading="lazy" alt="Two files in Documents shown greyed and italic after Cut, waiting to be pasted."></figure>
+    </section>
+
+    <section class="feature">
+      <h2>Type where you want to go.</h2>
+      <p>Click the address bar, or press ⌘L, and type a path. Paste one from anywhere, or start with <code>~</code>.</p>
+      <div class="zooms">
+        <figure class="zoom"><img src="assets/shots/crops/address-crumbs.png" width="832" height="54" loading="lazy" alt="The address bar showing Macintosh HD › Users › alex › Documents as a breadcrumb."></figure>
+        <figure class="zoom"><img src="assets/shots/crops/address-edit.png" width="832" height="54" loading="lazy" alt="The same address bar after a click, with Documents/Projects/Website typed into it."></figure>
+      </div>
+    </section>
+
+    <section class="feature">
+      <h2>A folder tree, and folder sizes.</h2>
+      <p>The tree under the sidebar always shows where you are. Turn on View › Calculate Folder Sizes and every folder shows how much it holds.</p>
+      <div class="tree-sizes">
+        <figure class="zoom"><img src="assets/shots/crops/tree.png" width="160" height="440" loading="lazy" alt="The folder tree open to alex › Documents › Projects › Website."></figure>
+        <figure class="zoom"><img src="assets/shots/crops/sizes.png" width="540" height="112" loading="lazy" alt="Folder sizes in the Size column: Garden plan 830 KB, Kitchen remodel 310 KB, Website 5.4 MB."></figure>
+      </div>
+    </section>
+
+    <section class="feature">
+      <h2>Tabs, and a mouse that works.</h2>
+      <p>⌘T for a new tab, or middle-click a folder. The back and forward buttons on your mouse go back and forward.</p>
+      <div class="zooms">
+        <figure class="zoom"><img src="assets/shots/crops/tabs-bar.png" width="832" height="88" loading="lazy" alt="The tab bar with three tabs: Documents, Downloads and Pictures."></figure>
+        <figure class="backdemo" aria-label="Animation: pressing the mouse back button goes from Projects back to Documents, and forward returns to Projects.">
+          <div class="frames zoom">
+            <img class="f-from" src="assets/shots/crops/back-from.png" width="540" height="188" loading="lazy" alt="">
+            <img class="f-to" src="assets/shots/crops/back-to.png" width="540" height="188" loading="lazy" alt="">
+          </div>
+          <div class="mouse" aria-hidden="true">
+            <svg width="74" height="110" viewBox="0 0 74 110">
+              <rect x="8" y="2" width="58" height="104" rx="29" fill="#FAFAFB" stroke="#9AA0A9" stroke-width="2"/>
+              <path d="M37 2v34M8 36h58" stroke="#C9CDD3" stroke-width="2"/>
+              <rect x="34" y="12" width="6" height="14" rx="3" fill="#C9CDD3"/>
+              <rect class="btn-fwd" x="2" y="40" width="9" height="16" rx="3" fill="#C9CDD3"/>
+              <rect class="btn-back" x="2" y="60" width="9" height="16" rx="3" fill="#C9CDD3"/>
+            </svg>
+            <span class="tip t-back">Back</span><span class="tip t-fwd">Forward</span>
+          </div>
+        </figure>
+      </div>
+    </section>
+
+    <section class="feature">
+      <h2>Group any folder.</h2>
+      <p>Group by date to see what changed today, by kind to find every PDF, or by size to see what's big. Collapse the groups you don't need. Each folder remembers its own view.</p>
+      <figure><img src="assets/shots/group-by-date.png" width="1112" height="752" loading="lazy" alt="Downloads grouped into Today, Yesterday, Last week, Last month and Earlier this year."></figure>
+    </section>
+  </div>
+
+  <section class="shortcuts col" id="shortcuts" aria-labelledby="sc-title">
+    <h2 id="sc-title">And the little things</h2>
+    <div class="grid">
+      <div><div class="keys" aria-label="Command I"><span class="cap">⌘</span><span class="cap">I</span></div>
+        <h3>Properties</h3><p>Size, contents and permissions, one window per item.</p></div>
+      <div><div class="keys" aria-label="F2"><span class="cap">F2</span></div>
+        <h3>Rename</h3><p>Return opens, as in Explorer. You can switch it to rename.</p></div>
+      <div><div class="keys" aria-label="Space"><span class="cap wide-cap">space</span></div>
+        <h3>Quick Look</h3><p>Same as Finder, arrow keys included.</p></div>
+      <div><div class="keys" aria-label="Command 1, 2, 3"><span class="cap">⌘</span><span class="cap">1</span><span class="cap">2</span><span class="cap">3</span></div>
+        <h3>Views</h3><p>Details, Icons and Columns.</p></div>
+      <div><div class="keys" aria-label="Shift Command C"><span class="cap">⇧</span><span class="cap">⌘</span><span class="cap">C</span></div>
+        <h3>Copy the path</h3><p>Or as a <code>~</code> path, file URL, name, or quoted for the shell.</p></div>
+      <div><div class="keys" aria-label="Command Z"><span class="cap">⌘</span><span class="cap">Z</span></div>
+        <h3>Undo</h3><p>Every move, rename, copy and trash.</p></div>
+      <div><div class="keys" aria-label="Command Shift N"><span class="cap">⇧</span><span class="cap">⌘</span><span class="cap">N</span></div>
+        <h3>New folder</h3><p>Or New ▸ Text File, right where you are.</p></div>
+      <div><div class="keys" aria-label="Command Delete"><span class="cap">⌘</span><span class="cap">⌫</span></div>
+        <h3>Move to Trash</h3><p>With undo.</p></div>
+      <div><div class="keys" aria-label="Command Option V"><span class="cap">⌥</span><span class="cap">⌘</span><span class="cap">V</span></div>
+        <h3>Move here</h3><p>Finder's move shortcut still works too.</p></div>
+    </div>
+  </section>
+</main>
+
+<footer><div class="col">
+  <p>MacExplorer can't replace Finder system-wide: “Show in Finder” in other apps, the Dock icon and Open/Save panels still use Finder.</p>
+  <p>Open source on <a href="https://github.com/roniburd/macExplorer">GitHub</a>. <a href="https://github.com/roniburd/macExplorer/issues/new/choose">Report a bug or ask for a feature</a>.</p>
+</div></footer>
+
+<script>
+  document.querySelectorAll("[data-copy]").forEach(btn => btn.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText([...document.getElementById(btn.dataset.copy).querySelectorAll('.line')].map(l => l.textContent).join(' ') || document.getElementById(btn.dataset.copy).textContent); btn.textContent = "Copied"; }
+    catch { btn.textContent = "Select and copy"; }
+    setTimeout(() => btn.textContent = "Copy", 1600);
+  }));
+</script>
+</body>
+</html>

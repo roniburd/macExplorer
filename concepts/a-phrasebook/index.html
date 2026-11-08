@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MacExplorer: a Mac file manager that speaks Explorer</title>
+<meta name="description" content="MacExplorer is a free, native macOS file manager for people who know Windows File Explorer: real cut and paste, an address bar you can type in, a folder tree, folder sizes.">
+<link rel="icon" href="../../assets/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Source+Serif+4:ital,opsz,wght@0,8..60,400..700;1,8..60,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #E6EBF0;
+    --paper-deep: #DAE1E8;
+    --ink: #15233F;
+    --ink-soft: #46546E;
+    --hi: #FFE15A;
+    --pencil: #B3261E;
+    --rule: #B9C3CE;
+    --measure: 68ch;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font: 400 1.0625rem/1.65 "Source Serif 4", Georgia, serif;
+    font-optical-sizing: auto;
+  }
+  a { color: inherit; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+  a:focus-visible, button:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; border-radius: 2px; }
+  .wrap { max-width: 1160px; margin: 0 auto; padding: 0 28px; }
+  .head-word { font-family: "Archivo", sans-serif; font-stretch: 72%; font-weight: 850; letter-spacing: -0.01em; }
+
+  /* masthead */
+  .bar { display: flex; align-items: center; justify-content: space-between; padding-block: 22px; border-bottom: 1px solid var(--rule); }
+  .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; font-family: "Archivo", sans-serif; font-weight: 700; font-stretch: 90%; }
+  .brand img { width: 30px; height: 30px; }
+  .bar nav { display: flex; gap: 22px; font-family: "Archivo", sans-serif; font-stretch: 90%; font-size: .95rem; }
+  .bar nav a { text-decoration: none; }
+  .bar nav a:hover { text-decoration: underline; }
+
+  /* hero: a dictionary entry */
+  .entry-hero { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.4fr); gap: 48px; align-items: center; padding-block: 72px 56px; }
+  .entry-hero h1 { margin: 0; font-size: clamp(3rem, 7vw, 5.6rem); line-height: .9; }
+  .pron { margin: 14px 0 0; font-style: italic; color: var(--ink-soft); font-size: 1.15rem; }
+  .pron b { font-style: normal; font-family: "Archivo", sans-serif; font-weight: 600; font-stretch: 85%; font-size: .9em; margin-right: .4em; }
+  .senses { margin: 26px 0 0; padding: 0; list-style: none; counter-reset: s; max-width: 44ch; }
+  .senses li { counter-increment: s; position: relative; padding-left: 2em; margin: 0 0 12px; font-size: 1.12rem; }
+  .senses li::before { content: counter(s) "."; position: absolute; left: 0; font-family: "Archivo", sans-serif; font-weight: 800; }
+  .senses .ex { display: block; font-style: italic; color: var(--ink-soft); font-size: .98rem; }
+  .cta { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-top: 30px; }
+  .btn { display: inline-block; background: var(--ink); color: var(--paper); text-decoration: none; padding: 13px 22px;
+         font-family: "Archivo", sans-serif; font-weight: 700; font-stretch: 95%; border-radius: 3px; }
+  .btn:hover { background: #22345b; }
+  .cta small { color: var(--ink-soft); font-size: .92rem; }
+  .plate { margin: 0; }
+  .plate img { width: 100%; height: auto; display: block; filter: drop-shadow(0 18px 30px rgba(21,35,63,.18)); }
+  .plate figcaption { font-size: .9rem; color: var(--ink-soft); font-style: italic; margin: 6px 0 0 4%; }
+
+  /* the phrasebook */
+  .section-title { display: flex; align-items: baseline; gap: 18px; border-top: 3px solid var(--ink); padding-top: 16px; margin: 40px 0 8px; }
+  .section-title h2 { margin: 0; font-size: clamp(2rem, 4vw, 2.8rem); line-height: 1; }
+  .section-title p { margin: 0; color: var(--ink-soft); font-style: italic; }
+  .cols { display: grid; grid-template-columns: 1.1fr 1fr 1.15fr; gap: 0 28px; }
+  .colhead { font-family: "Archivo", sans-serif; font-stretch: 85%; font-weight: 600; font-size: .9rem; color: var(--ink-soft);
+             padding: 14px 0 8px; border-bottom: 1px solid var(--rule); position: sticky; top: 0; background: var(--paper); z-index: 2; }
+  .colhead.ours-head span { background: var(--hi); padding: 1px 6px; color: var(--ink); }
+  .phrase { display: contents; }
+  .phrase > div { padding: 20px 0 22px; border-bottom: 1px solid var(--rule); }
+  .phrase h3 { margin: 0; font-size: 1.55rem; line-height: 1.1; }
+  .phrase h3 + p { margin: 6px 0 0; color: var(--ink-soft); font-size: .98rem; }
+  .finder p { margin: 0; }
+  .finder .detour { color: var(--pencil); font-style: italic; }
+  .ours { position: relative; }
+  .ours p { margin: 0; }
+  .ours .say { background: linear-gradient(transparent 8%, var(--hi) 8%, var(--hi) 92%, transparent 92%);
+               box-decoration-break: clone; -webkit-box-decoration-break: clone; padding: 0 4px; font-weight: 600; }
+  .ours figure { margin: 14px 0 0; }
+  .ours figure img { width: 100%; height: auto; display: block; border-radius: 6px; filter: drop-shadow(0 8px 16px rgba(21,35,63,.14)); }
+  kbd { font-family: "Archivo", sans-serif; font-stretch: 90%; font-weight: 600; font-size: .86em; border: 1px solid var(--ink-soft);
+        border-bottom-width: 2px; border-radius: 4px; padding: 0 .35em; background: #F3F6F9; white-space: nowrap; }
+
+  /* preface */
+  .preface { display: grid; grid-template-columns: 1fr 1.2fr; gap: 56px; padding-block: 40px 10px; }
+  .preface h2 { margin: 0; font-size: clamp(2rem, 4vw, 2.8rem); line-height: 1; }
+  .preface .body { max-width: var(--measure); font-size: 1.12rem; line-height: 1.72; }
+  .preface .body p:first-child::first-letter { font-family: "Archivo", sans-serif; font-weight: 900; font-stretch: 70%; float: left;
+        font-size: 4.3em; line-height: .8; padding: 6px 10px 0 0; }
+  .kept { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 28px; margin-top: 4px; }
+  .kept div { border-top: 1px solid var(--rule); padding: 14px 0; }
+  .kept b { font-family: "Archivo", sans-serif; font-stretch: 85%; }
+  .kept p { margin: 2px 0 0; color: var(--ink-soft); font-size: .98rem; }
+
+  .limits { max-width: var(--measure); }
+  .limits li { margin-bottom: 8px; }
+
+  .install { background: var(--ink); color: var(--paper); margin-top: 64px; padding: 64px 0; }
+  .install .wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: start; }
+  .install .wrap > div { min-width: 0; }
+  .install h2 { margin: 0 0 12px; font-size: clamp(2.2rem, 5vw, 3.4rem); line-height: .95; }
+  .install p { margin: 0 0 14px; max-width: 46ch; }
+  .install .btn { background: var(--hi); color: var(--ink); }
+  .install .btn:hover { background: #ffd92a; }
+  .code { display: flex; gap: 10px; align-items: center; background: #0f1a30; border-radius: 4px; padding: 14px 16px; margin-bottom: 14px; }
+  .code code { min-width: 0; font: 500 .92rem/1.4 ui-monospace, "SF Mono", Menlo, monospace; flex: 1; overflow-x: auto; white-space: nowrap; }
+  .code button { background: transparent; color: var(--paper); border: 1px solid #50607e; border-radius: 3px; padding: 5px 10px;
+                 font-family: "Archivo", sans-serif; cursor: pointer; }
+  .code button:hover { border-color: var(--paper); }
+  .install .fine { color: #AEB9CB; font-size: .92rem; }
+  .install .fine code { font-size: .86rem; }
+  footer { padding-block: 26px 40px; font-family: "Archivo", sans-serif; font-stretch: 90%; font-size: .92rem; color: var(--ink-soft); }
+  footer .wrap { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+
+  @media (max-width: 860px) {
+    .entry-hero, .preface, .install .wrap { grid-template-columns: 1fr; gap: 32px; }
+    .entry-hero { padding-block-start: 44px; }
+    .cols { grid-template-columns: 1fr; }
+    .colhead { display: none; }
+    .phrase > div { border-bottom: 0; padding: 6px 0; }
+    .phrase > div:first-child { padding-top: 26px; }
+    .phrase > div:last-child { border-bottom: 1px solid var(--rule); padding-bottom: 24px; }
+    .finder::before { content: "In Finder: "; font-family: "Archivo", sans-serif; font-weight: 600; font-stretch: 85%; color: var(--ink-soft); }
+    .ours::before { content: "In MacExplorer: "; font-family: "Archivo", sans-serif; font-weight: 600; font-stretch: 85%; }
+    .kept { grid-template-columns: 1fr; }
+    .bar nav a:not(:last-child) { display: none; }
+  }
+</style>
+</head>
+<body>
+<header class="wrap bar">
+  <a class="brand" href="#top"><img src="../../assets/icon.png" alt="">MacExplorer</a>
+  <nav aria-label="Page">
+    <a href="#phrasebook">Phrasebook</a>
+    <a href="#why">Why we built it</a>
+    <a href="#install">Download</a>
+  </nav>
+</header>
+
+<main id="top">
+  <section class="wrap entry-hero">
+    <div>
+      <h1 class="head-word">MacExplorer</h1>
+      <p class="pron"><b>noun</b>a file manager for the Mac that speaks Explorer.</p>
+      <ol class="senses">
+        <li>A native macOS app for people who learned files on Windows.
+          <span class="ex">“I hit ⌘X on a file and it actually moved.”</span></li>
+        <li>Finder, with the parts of File Explorer you keep reaching for: cut and paste, an address bar you can type in, a folder tree.</li>
+      </ol>
+      <div class="cta">
+        <a class="btn" href="https://github.com/roniburd/macExplorer/releases/latest">Download for macOS 26</a>
+        <small>Free and open source. Beta.</small>
+      </div>
+    </div>
+    <figure class="plate">
+      <img src="../../assets/shots/details.png" width="1112" height="752"
+           alt="MacExplorer window showing a Documents folder in Details view, with a folder tree on the left, folder sizes in the Size column and a status bar with the selection size and free space.">
+      <figcaption>Fig. 1. Documents, with folder sizes and the tree.</figcaption>
+    </figure>
+  </section>
+
+  <section class="wrap" id="phrasebook" aria-labelledby="pb-title">
+    <div class="section-title">
+      <h2 class="head-word" id="pb-title">Phrasebook</h2>
+      <p>What you want to do, and how to say it.</p>
+    </div>
+    <div class="cols" role="table" aria-label="Finder compared with MacExplorer">
+      <div class="colhead" role="columnheader">You want to</div>
+      <div class="colhead" role="columnheader">In Finder</div>
+      <div class="colhead ours-head" role="columnheader"><span>In MacExplorer</span></div>
+
+      <div class="phrase" role="row">
+        <div role="cell"><h3 class="head-word">Move files</h3><p>Take them from here, put them there.</p></div>
+        <div role="cell" class="finder"><p>⌘X does nothing on files. Copy with <kbd>⌘C</kbd>, then <span class="detour">hold Option and choose Move Item Here (<kbd>⌥⌘V</kbd>)</span>.</p></div>
+        <div role="cell" class="ours"><p><span class="say"><kbd>⌘X</kbd>, then <kbd>⌘V</kbd>.</span> Cut files show greyed until you paste them. <kbd>Esc</kbd> cancels.</p>
+          <figure><img src="../../assets/shots/cut.png" width="1112" height="752" loading="lazy" alt="Two files in Documents shown greyed and italic after Cut, waiting to be pasted."></figure></div>
+      </div>
+
+      <div class="phrase" role="row">
+        <div role="cell"><h3 class="head-word">Go to a folder</h3><p>You know the path. You want to type it.</p></div>
+        <div role="cell" class="finder"><p>The path bar is read-only. <span class="detour">Go › Go to Folder (<kbd>⇧⌘G</kbd>) opens a separate sheet.</span></p></div>
+        <div role="cell" class="ours"><p><span class="say">Click the address bar, or press <kbd>⌘L</kbd>, and type.</span> Paste a path, use <code>~</code>, get suggestions. Every part of the path has a menu of its sibling folders.</p>
+          <figure><img src="../../assets/shots/address.png" width="1112" height="752" loading="lazy" alt="The address bar in edit mode with the text Documents/Projects/Website typed into it."></figure></div>
+      </div>
+
+      <div class="phrase" role="row">
+        <div role="cell"><h3 class="head-word">See where you are</h3><p>The whole tree, not just favourites.</p></div>
+        <div role="cell" class="finder"><p>The sidebar is a flat list of favourites. <span class="detour">For a tree, switch the whole window to List or Columns.</span></p></div>
+        <div role="cell" class="ours"><p><span class="say">A folder tree under the sidebar</span> that opens to the folder you're in and expands as you go.</p></div>
+      </div>
+
+      <div class="phrase" role="row">
+        <div role="cell"><h3 class="head-word">Find what's big</h3><p>Which folder is eating the disk?</p></div>
+        <div role="cell" class="finder"><p>Folders show <code>--</code>. <span class="detour">“Calculate all sizes” is in View Options, and slow.</span></p></div>
+        <div role="cell" class="ours"><p><span class="say">View › Calculate Folder Sizes.</span> Sizes fill in from a background scan, are cached, and stay current as files change. Sort by Size uses them.</p></div>
+      </div>
+
+      <div class="phrase" role="row">
+        <div role="cell"><h3 class="head-word">Copy a path</h3><p>For a terminal, a ticket, a chat.</p></div>
+        <div role="cell" class="finder"><p><span class="detour">Hold Option in the context menu</span> for Copy as Pathname.</p></div>
+        <div role="cell" class="ours"><p><span class="say">Copy Path As ▸</span> POSIX path (<kbd>⇧⌘C</kbd>), <code>~</code> path, file URL, name, or quoted for the shell.</p></div>
+      </div>
+
+      <div class="phrase" role="row">
+        <div role="cell"><h3 class="head-word">Make a new file</h3><p>An empty text file, right here.</p></div>
+        <div role="cell" class="finder"><p>New Folder only. <span class="detour">Open an editor, save, pick the folder.</span></p></div>
+        <div role="cell" class="ours"><p><span class="say">New ▸ Text File</span> from the command bar or the context menu, named and ready to rename.</p></div>
+      </div>
+
+      <div class="phrase" role="row">
+        <div role="cell"><h3 class="head-word">Sort out Downloads</h3><p>What came in today, this week, last month.</p></div>
+        <div role="cell" class="finder"><p>Use Groups, then choose a grouping. Fine, but folders forget their view when <code>.DS_Store</code> files get lost.</p></div>
+        <div role="cell" class="ours"><p><span class="say">View › Group By › Date Modified.</span> Each folder remembers its own view, stored by MacExplorer, never in <code>.DS_Store</code> files on shared drives.</p>
+          <figure><img src="../../assets/shots/group-by-date.png" width="1112" height="752" loading="lazy" alt="Downloads grouped into Today, Yesterday, Last week, Last month and Earlier this year."></figure></div>
+      </div>
+
+      <div class="phrase" role="row">
+        <div role="cell"><h3 class="head-word">Use the mouse</h3><p>The side buttons and the wheel click.</p></div>
+        <div role="cell" class="finder"><p>Back and forward mouse buttons do nothing.</p></div>
+        <div role="cell" class="ours"><p><span class="say">Mouse back and forward go back and forward.</span> Middle-click a folder to open it in a new tab. Right-drag asks Copy, Move or Alias.</p></div>
+      </div>
+
+      <div class="phrase" role="row">
+        <div role="cell"><h3 class="head-word">Check a folder</h3><p>Size, contents, permissions.</p></div>
+        <div role="cell" class="finder"><p>Get Info, one window per item, size computed when it gets to it.</p></div>
+        <div role="cell" class="ours"><p><span class="say">Properties (<kbd>⌘I</kbd> or <kbd>⌥↩</kbd>)</span> with a live size and file count, and a Permissions tab.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap preface" id="why" aria-labelledby="why-title">
+    <h2 class="head-word" id="why-title">A note on why</h2>
+    <div class="body">
+      <p>Plenty of people use a Mac at home and Windows at work, or moved over after twenty years of File Explorer. Finder is good at many things, but a few habits never transfer: cut and paste does nothing, the path can't be typed, there's no tree to see where you are.</p>
+      <p>MacExplorer keeps what the Mac does well and borrows the Explorer ideas that make files easier to handle. It's a native AppKit app, so it looks like it belongs on macOS 26, and it's built to stay fast in folders with 100,000 files.</p>
+    </div>
+  </section>
+
+  <section class="wrap" aria-labelledby="kept-title">
+    <div class="section-title">
+      <h2 class="head-word" id="kept-title">Words that mean the same</h2>
+      <p>The Mac habits stay where they are.</p>
+    </div>
+    <div class="kept">
+      <div><b>Space</b><p>Quick Look, with the arrow keys to move through files.</p></div>
+      <div><b>Return, your way</b><p>Return opens and F2 renames, as in Explorer. Want Finder's Return-renames? It's a setting.</p></div>
+      <div><b>⌘⌫ moves to Trash</b><p>With undo, like every other file operation.</p></div>
+      <div><b>⌘1, ⌘2, ⌘3</b><p>Details, Icons and Columns views.</p></div>
+      <div><b>Tabs</b><p>Native macOS tabs. <kbd>⌘T</kbd>, <kbd>⌃Tab</kbd>, drag a folder onto ＋.</p></div>
+      <div><b>Tags and Liquid Glass</b><p>Finder tags, the macOS 26 sidebar and toolbar, dark mode.</p></div>
+    </div>
+  </section>
+
+  <section class="wrap" aria-labelledby="limits-title">
+    <div class="section-title">
+      <h2 class="head-word" id="limits-title">Not in this edition</h2>
+      <p>What MacExplorer can't do.</p>
+    </div>
+    <ul class="limits">
+      <li>It can't replace Finder system-wide. “Show in Finder” in other apps, the Dock icon and Open/Save panels still use Finder. macOS has no public way to change that.</li>
+      <li>Cut in MacExplorer and paste in Finder makes a copy. Drag instead, or use Finder's <kbd>⌥⌘V</kbd>.</li>
+      <li>No Libraries, drive letters or macOS versions before 26.</li>
+    </ul>
+  </section>
+</main>
+
+<section class="install" id="install" aria-labelledby="install-title">
+  <div class="wrap">
+    <div>
+      <h2 class="head-word" id="install-title">Get MacExplorer</h2>
+      <p>Free, MIT-licensed, and updates itself in the background. Needs macOS 26 Tahoe.</p>
+      <a class="btn" href="https://github.com/roniburd/macExplorer/releases/latest">Download the .dmg</a>
+    </div>
+    <div>
+      <p>Or with Homebrew:</p>
+      <div class="code"><code id="brew">brew install --cask roniburd/macexplorer/macexplorer</code><button type="button" data-copy="brew">Copy</button></div>
+      <p class="fine">MacExplorer isn't notarized yet. If macOS won't open it the first time, run
+        <code>xattr -dr com.apple.quarantine /Applications/MacExplorer.app</code> once.</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span>MacExplorer is open source on <a href="https://github.com/roniburd/macExplorer">GitHub</a>.</span>
+    <span><a href="https://github.com/roniburd/macExplorer/issues/new/choose">Report a bug or ask for a feature</a></span>
+  </div>
+</footer>
+
+<script>
+  document.querySelectorAll("[data-copy]").forEach(btn => btn.addEventListener("click", async () => {
+    const text = document.getElementById(btn.dataset.copy).textContent;
+    try { await navigator.clipboard.writeText(text); btn.textContent = "Copied"; }
+    catch { btn.textContent = "Select and copy"; }
+    setTimeout(() => btn.textContent = "Copy", 1600);
+  }));
+</script>
+</body>
+</html>
