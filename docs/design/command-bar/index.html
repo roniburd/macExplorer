@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MacExplorer: command bar options</title>
+<style>
+  :root {
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+  }
+  /* Page + mock tokens, light */
+  body {
+    --canvas: #dfe2e7;
+    --ink: #1d1f23;
+    --ink-2: #555b66;
+    --rule: #c3c8d0;
+    --win: #ececec;
+    --bar-band: #e3e3e3;
+    --list: #ffffff;
+    --alt-row: #f4f5f5;
+    --label: rgba(0,0,0,.85);
+    --label-2: rgba(0,0,0,.50);
+    --label-3: rgba(0,0,0,.26);
+    --sep: rgba(0,0,0,.10);
+    --sel: #0064e1;
+    --accent: #007aff;
+    --blue: #007aff; --red: #ff3b30; --orange: #ff9500; --cyan: #1aa3d9; --purple: #af52de;
+    --indigo: #5856d6; --green: #28a745; --teal: #2a9d9f; --gray: #8e8e93; --pink: #e6336f;
+    --folder: #5fb4f2;
+    --measure: #e0218a;
+  }
+  body[data-theme="dark"] {
+    --canvas: #16171a;
+    --ink: #eceef2;
+    --ink-2: #9aa1ad;
+    --rule: #33363c;
+    --win: #2c2c2e;
+    --bar-band: #333336;
+    --list: #1e1e1e;
+    --alt-row: #262627;
+    --label: rgba(255,255,255,.85);
+    --label-2: rgba(255,255,255,.55);
+    --label-3: rgba(255,255,255,.25);
+    --sep: rgba(255,255,255,.10);
+    --sel: #0a5ad1;
+    --accent: #0a84ff;
+    --blue: #0a84ff; --red: #ff453a; --orange: #ff9f0a; --cyan: #64d2ff; --purple: #bf5af2;
+    --indigo: #7d7aff; --green: #32d74b; --teal: #40c8c9; --gray: #98989d; --pink: #ff6b96;
+    --folder: #4aa3e8;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-font-smoothing: antialiased; }
+  body {
+    margin: 0;
+    background: var(--canvas);
+    color: var(--ink);
+    font: 14px/1.5 var(--font);
+    transition: background .2s, color .2s;
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+  /* ---------- page chrome ---------- */
+  .top {
+    position: sticky; top: 0; z-index: 10;
+    background: color-mix(in srgb, var(--canvas) 88%, transparent);
+    backdrop-filter: blur(14px) saturate(1.4);
+    -webkit-backdrop-filter: blur(14px) saturate(1.4);
+    border-bottom: 1px solid var(--rule);
+  }
+  .top-inner {
+    max-width: 1360px; margin: 0 auto; padding: 14px 32px;
+    display: flex; flex-wrap: wrap; gap: 12px 28px; align-items: center;
+  }
+  .top h1 {
+    font: 600 17px/1.2 var(--font-display); letter-spacing: -.01em; margin: 0; margin-right: auto;
+  }
+  .ctl { display: flex; align-items: center; gap: 8px; color: var(--ink-2); font-size: 13px; }
+  .seg { display: inline-flex; background: var(--rule); border-radius: 8px; padding: 2px; }
+  .seg button {
+    font: 500 13px/1 var(--font); color: var(--ink); background: transparent; border: 0;
+    padding: 6px 12px; border-radius: 6px; cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] { background: var(--list); box-shadow: 0 1px 2px rgba(0,0,0,.18); }
+  .seg button:focus-visible, .chk:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .chk { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font: 13px var(--font); color: var(--ink-2); }
+  .chk input { accent-color: var(--accent); width: 14px; height: 14px; margin: 0; }
+
+  .intro { max-width: 1360px; margin: 0 auto; padding: 44px 32px 8px; }
+  .intro h2 {
+    font: 700 44px/1.05 var(--font-display); letter-spacing: -.03em; margin: 0 0 14px; max-width: 16ch;
+  }
+  .intro p { margin: 0; max-width: 68ch; color: var(--ink-2); font-size: 15px; }
+
+  main { max-width: 1360px; margin: 0 auto; padding: 24px 32px 96px; }
+  .opt {
+    display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 32px;
+    padding: 36px 0; border-top: 1px solid var(--rule);
+  }
+  .opt:first-child { border-top: 0; }
+  .meta h3 {
+    font: 600 21px/1.2 var(--font-display); letter-spacing: -.015em; margin: 0 0 10px;
+    display: flex; gap: 10px; align-items: baseline;
+  }
+  .meta h3 .n { font-variant-numeric: tabular-nums; color: var(--ink-2); font-weight: 500; min-width: 1.4em; }
+  .meta p { margin: 0 0 10px; color: var(--ink-2); max-width: 44ch; }
+  .meta dl { margin: 14px 0 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 13px; }
+  .meta dt { color: var(--ink-2); }
+  .meta dd { margin: 0; }
+  .meta code {
+    display: block; margin-top: 14px; padding: 10px 12px; border-radius: 8px;
+    background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink);
+    font: 12px/1.5 ui-monospace, "SF Mono", Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  .reference-tag { font-size: 12px; color: var(--ink-2); border: 1px solid var(--rule); border-radius: 999px; padding: 1px 8px; font-weight: 500; }
+
+  /* ---------- the mock window ---------- */
+  .win {
+    background: var(--win); border-radius: 12px; overflow: hidden;
+    box-shadow: 0 0 0 .5px rgba(0,0,0,.22), 0 18px 40px -12px rgba(0,0,0,.28);
+    color: var(--label); font: 13px/1 var(--font); user-select: none;
+  }
+  .titlebar { height: 44px; display: flex; align-items: center; gap: 14px; padding: 0 14px; border-bottom: 1px solid var(--sep); }
+  .lights { display: flex; gap: 8px; }
+  .lights i { width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; display: block; }
+  .lights i:nth-child(2) { background: #febc2e; }
+  .lights i:nth-child(3) { background: #28c840; }
+  .nav { display: flex; gap: 2px; color: var(--label-2); }
+  .nav svg { width: 22px; height: 22px; }
+  .crumbs {
+    flex: 1; height: 26px; border-radius: 7px; background: color-mix(in srgb, var(--label) 6%, transparent);
+    display: flex; align-items: center; gap: 6px; padding: 0 10px; color: var(--label-2); font-size: 12.5px;
+  }
+  .crumbs b { color: var(--label); font-weight: 500; }
+  .search { width: 150px; height: 26px; border-radius: 7px; background: color-mix(in srgb, var(--label) 6%, transparent); color: var(--label-3); display: flex; align-items: center; padding: 0 8px; font-size: 12.5px; }
+
+  .body { display: grid; grid-template-columns: 1fr; min-height: 260px; }
+  .side { display: none; padding: 10px 8px; border-right: 1px solid var(--sep); font-size: 12.5px; color: var(--label); }
+  .side h4 { margin: 4px 8px 6px; font: 600 11px/1 var(--font); color: var(--label-2); }
+  .side div { padding: 5px 8px; border-radius: 6px; display: flex; gap: 7px; align-items: center; }
+  .side div svg { width: 14px; height: 14px; color: var(--accent); }
+  .side .on { background: color-mix(in srgb, var(--label) 9%, transparent); }
+
+  .content { display: flex; flex-direction: column; min-width: 0; }
+  .bar {
+    height: 28px; display: flex; align-items: center; gap: 2px; padding: 0 8px;
+    background: var(--win); position: relative;
+  }
+  .bar.band { background: var(--bar-band); }
+  .bar.hair { border-bottom: 1px solid var(--sep); }
+  .bar .spacer { flex: 1; }
+  .bar .div { width: 1px; height: 16px; background: var(--sep); margin: 0 4px; }
+  .b {
+    display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 6px; border-radius: 5px;
+    color: var(--b-text); font: 13px/1 var(--font); white-space: nowrap;
+    transition: color .18s, background-color .18s, opacity .18s;
+  }
+  .b svg { width: 16px; height: 16px; flex: none; color: var(--b-icon); transition: color .18s; overflow: visible; }
+  .b svg .duo { opacity: 0; }
+  .b .chev { width: 8px; height: 8px; color: var(--label-2); margin-left: 1px; }
+  .b.iconOnly { padding: 0 5px; }
+  .b.off { color: var(--off-text); }
+  .b.off svg { color: var(--off-icon); }
+  .b.off .chev { opacity: .4; }
+
+  .gap { position: relative; flex: none; }
+  .gap .m {
+    display: none; position: absolute; left: 50%; top: 0; bottom: 0; width: 0; border-left: 1px solid var(--measure);
+  }
+  .gap .m::before, .gap .m::after { content: ""; position: absolute; left: -4px; width: 8px; border-top: 1px solid var(--measure); }
+  .gap .m::before { top: 0; } .gap .m::after { bottom: 0; }
+  .gap .m span {
+    position: absolute; left: 8px; top: 50%; transform: translateY(-50%);
+    font: 600 10px/1 var(--font); color: var(--measure); white-space: nowrap;
+  }
+  body.measure .gap .m { display: block; }
+  body.measure .gap { outline: 1px dashed color-mix(in srgb, var(--measure) 60%, transparent); outline-offset: -1px; }
+
+  .list { background: var(--list); flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .th, .tr { display: grid; grid-template-columns: minmax(0,1fr) 170px 70px 90px; align-items: center; padding: 0 10px; }
+  .th { height: 24px; font-size: 11.5px; color: var(--label-2); border-bottom: 1px solid var(--sep); }
+  .th span { padding-left: 6px; border-left: 1px solid var(--sep); }
+  .th span:first-child { border-left: 0; padding-left: 0; }
+  .rows { padding: 0 6px; }
+  .tr { height: 24px; border-radius: 5px; font-size: 13px; padding: 0 4px; cursor: default; }
+  .tr:nth-child(even) { background: var(--alt-row); }
+  .tr span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 6px; color: var(--label-2); }
+  .tr span:first-child { color: var(--label); display: flex; align-items: center; gap: 6px; padding-left: 0; }
+  .tr.sel { background: var(--sel); }
+  .tr.sel span { color: #fff !important; }
+  .tr svg { width: 16px; height: 16px; flex: none; }
+  .fill { flex: 1; min-height: 20px; }
+  .status { height: 22px; display: flex; align-items: center; padding: 0 12px; font-size: 11.5px; color: var(--label-2); border-top: 1px solid var(--sep); background: var(--win); }
+
+  /* option-specific treatments */
+  .chips .b:not(.off):not(.pd) { background: color-mix(in srgb, var(--b-icon) 13%, transparent); }
+  .chips .b:not(.off):not(.pd) { color: color-mix(in srgb, var(--b-icon) 70%, var(--label)); }
+  .duo-on .b:not(.off) svg .duo { opacity: .28; }
+  .tiles .b svg.glyph { display: none; }
+  .tile {
+    width: 18px; height: 18px; border-radius: 5px; display: grid; place-items: center; flex: none;
+    background: var(--b-icon); transition: background-color .18s, box-shadow .18s;
+  }
+  .tile svg { width: 12px; height: 12px; color: #fff !important; }
+  .b.off .tile { background: transparent; box-shadow: inset 0 0 0 1px var(--label-3); }
+  .b.off .tile svg { color: var(--label-3) !important; }
+  .bold .b svg { stroke-width: 1.75; }
+  .bold .b:not(.off) { font-weight: 500; }
+
+  @media (max-width: 1140px) {
+    .opt { grid-template-columns: 1fr; gap: 18px; }
+    .body { grid-template-columns: 1fr; }
+    .side { display: none; }
+  }
+  @media (max-width: 720px) {
+    .intro h2 { font-size: 32px; }
+    .win { overflow-x: auto; }
+    .content { min-width: 680px; }
+    .top-inner, .intro, main { padding-left: 16px; padding-right: 16px; }
+  }
+</style>
+</head>
+<body data-theme="light">
+
+<div class="top">
+  <div class="top-inner">
+    <h1>Command bar options</h1>
+    <div class="ctl">Selection
+      <div class="seg" role="group" aria-label="Selection">
+        <button type="button" data-sel="none" aria-pressed="true">Nothing selected</button>
+        <button type="button" data-sel="file" aria-pressed="false">One file selected</button>
+      </div>
+    </div>
+    <div class="ctl">Appearance
+      <div class="seg" role="group" aria-label="Appearance">
+        <button type="button" data-theme-btn="light" aria-pressed="true">Light</button>
+        <button type="button" data-theme-btn="dark" aria-pressed="false">Dark</button>
+      </div>
+    </div>
+    <label class="chk"><input type="checkbox" id="measure"> Show the gap</label>
+  </div>
+</div>
+
+<header class="intro">
+  <h2>Colour, breathing room, and a clearer off state.</h2>
+  <p>Ten takes on the bar above the file list. Flip the selection toggle (or click a row in any window) to see
+    which buttons come alive: Cut, Copy, Rename, Share and Delete need a selection, while the rest are always on.
+    Each option lists the gap it adds above the list and the AppKit change it would take.</p>
+</header>
+
+<main id="opts"></main>
+
+<script>
+/* ---------------- icons (16-unit grid, stroke = currentColor) ---------------- */
+const I = {
+  plus:   `<path d="M8 3v10M3 8h10"/>`,
+  cut:    `<circle cx="4.6" cy="11.6" r="2.1"/><circle cx="11.4" cy="11.6" r="2.1"/><path d="M6 10.1 11.2 2.6M10 10.1 4.8 2.6"/>`,
+  copy:   `<rect class="duo" x="5.2" y="5.2" width="8.3" height="9.3" rx="1.6" fill="currentColor" stroke="none"/><rect x="5.2" y="5.2" width="8.3" height="9.3" rx="1.6"/><path d="M2.8 11.2V3.6c0-.9.7-1.6 1.6-1.6h6.2"/>`,
+  paste:  `<rect class="duo" x="3.2" y="3" width="9.6" height="11.4" rx="1.6" fill="currentColor" stroke="none"/><rect x="3.2" y="3" width="9.6" height="11.4" rx="1.6"/><rect x="5.8" y="1.6" width="4.4" height="2.8" rx=".9" fill="var(--list)"/>`,
+  rename: `<path class="duo" d="M10.6 2.4l3 3L6 13H3v-3z" fill="currentColor" stroke="none"/><path d="M10.6 2.4l3 3L6 13H3v-3zM9 4l3 3"/>`,
+  share:  `<path d="M8 9.6V1.8M5.2 4.5 8 1.8l2.8 2.7M5.6 6.4H4.2v8h7.6v-8h-1.4"/><rect class="duo" x="4.2" y="6.4" width="7.6" height="8" fill="currentColor" stroke="none"/>`,
+  trash:  `<path class="duo" d="M4 4.2l.75 9.6h6.5L12 4.2z" fill="currentColor" stroke="none"/><path d="M2.4 4.2h11.2M6 4.2V2.4h4v1.8M4 4.2l.75 9.6h6.5L12 4.2M6.7 6.6v4.8M9.3 6.6v4.8"/>`,
+  info:   `<circle class="duo" cx="8" cy="8" r="6.2" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="6.2"/><path d="M8 7.2v4.2"/><circle cx="8" cy="4.9" r=".55" fill="currentColor"/>`,
+  sort:   `<path d="M5 13V3M2.6 5.4 5 3l2.4 2.4M11 3v10M8.6 10.6 11 13l2.4-2.4"/>`,
+  view:   `<rect x="2.4" y="2.8" width="11.2" height="4.4" rx="1.1"/><rect x="2.4" y="8.8" width="11.2" height="4.4" rx="1.1"/>`,
+  more:   `<circle cx="3.5" cy="8" r="1.15" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="1.15" fill="currentColor" stroke="none"/><circle cx="12.5" cy="8" r="1.15" fill="currentColor" stroke="none"/>`,
+};
+const svg = (k, cls = "glyph") =>
+  `<svg class="${cls}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${I[k]}</svg>`;
+const chev = `<svg class="chev" viewBox="0 0 8 8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 3 4 5.5 6.5 3"/></svg>`;
+
+const folderIcon = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 4c0-.8.6-1.4 1.4-1.4h3.3l1.4 1.5h5.5c.8 0 1.4.6 1.4 1.4v6.9c0 .8-.6 1.4-1.4 1.4H2.9c-.8 0-1.4-.6-1.4-1.4z" fill="var(--folder)"/><path d="M1.5 6h13" stroke="rgba(255,255,255,.45)" stroke-width=".8"/></svg>`;
+const docIcon = (c) => `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 1.5h6l3 3v10h-9z" fill="#fff" stroke="rgba(0,0,0,.25)" stroke-width=".7"/><path d="M9.5 1.5v3h3" fill="none" stroke="rgba(0,0,0,.25)" stroke-width=".7"/>${c ? `<rect x="5" y="9" width="6" height="3.2" rx=".6" fill="${c}"/>` : `<path d="M5.2 7.5h5.6M5.2 9.5h5.6M5.2 11.5h3.6" stroke="rgba(0,0,0,.3)" stroke-width=".7"/>`}</svg>`;
+
+/* ---------------- bar model ---------------- */
+const BAR = [
+  { k: "new", label: "New", icon: "plus", pd: true, needsSel: false },
+  { div: true },
+  { k: "cut", label: "Cut", icon: "cut", needsSel: true },
+  { k: "copy", label: "Copy", icon: "copy", needsSel: true },
+  { k: "paste", label: "Paste", icon: "paste", needsSel: false },
+  { k: "rename", label: "Rename", icon: "rename", needsSel: true },
+  { k: "share", label: "Share", icon: "share", needsSel: true },
+  { k: "trash", label: "Delete", icon: "trash", needsSel: true },
+  { div: true },
+  { k: "sort", label: "Sort", icon: "sort", pd: true, needsSel: false },
+  { k: "view", label: "View", icon: "view", pd: true, needsSel: false },
+  { k: "more", label: "", icon: "more", pd: true, needsSel: false },
+  { spacer: true },
+  { k: "info", label: "Properties", icon: "info", needsSel: false },
+];
+
+const SEMANTIC = { cut: "var(--orange)", copy: "var(--blue)", paste: "var(--teal)", rename: "var(--purple)",
+  share: "var(--cyan)", trash: "var(--red)", info: "var(--gray)" };
+const GROUPED  = { cut: "var(--blue)", copy: "var(--blue)", paste: "var(--blue)", rename: "var(--indigo)",
+  share: "var(--indigo)", trash: "var(--red)", info: "var(--gray)" };
+const MUTED = Object.fromEntries(Object.entries(SEMANTIC).map(([k, v]) => [k, `color-mix(in srgb, ${v} 72%, var(--label-2))`]));
+const TILES = { new: "var(--green)", sort: "var(--gray)", view: "var(--gray)", more: "var(--gray)", ...SEMANTIC, info: "var(--gray)" };
+
+/* Each option: icon colour per command, label colour, gap above the list, disabled treatment, bar surface. */
+const OPTIONS = [
+  { name: "Current", ref: true,
+    blurb: "What ships today, for comparison. Monochrome template symbols, the list right up against the bar, and AppKit's default dimming for disabled buttons.",
+    gap: 0, gapLabel: "0 pt (flush)", disabled: "AppKit default (~35%)",
+    icon: () => "var(--label-2)", text: "var(--label-2)", offIcon: "color-mix(in srgb, var(--label-2) 55%, transparent)", offText: "color-mix(in srgb, var(--label-2) 55%, transparent)",
+    code: "// no change" },
+
+  { name: "Accent tint",
+    blurb: "Every action icon picks up the user's system accent colour; labels stay plain. Disabled buttons drop to tertiary grey, so on and off differ by both colour and lightness.",
+    gap: 8, hair: true, gapLabel: "8 pt + hairline", disabled: "Tertiary label, no tint",
+    icon: (k) => ["more"].includes(k) ? "var(--label-2)" : "var(--accent)", text: "var(--label)", offIcon: "var(--label-3)", offText: "var(--label-3)",
+    code: "button.contentTintColor = button.isEnabled\n  ? .controlAccentColor : .tertiaryLabelColor\nstack.setCustomSpacing(8, after: commandBar)" },
+
+  { name: "Semantic colours",
+    blurb: "Each action gets its own hue: orange Cut, blue Copy, teal Paste, purple Rename, cyan Share, red Delete. Disabled buttons lose their colour entirely, so a selection visibly lights the bar up.",
+    gap: 8, gapLabel: "8 pt", disabled: "Grey, 40%",
+    icon: (k) => SEMANTIC[k] || "var(--label-2)", text: "var(--label)", offIcon: "color-mix(in srgb, var(--gray) 45%, transparent)", offText: "var(--label-3)",
+    code: "let tint: [Command: NSColor] = [.cut: .systemOrange, .copy: .systemBlue, …]\nbutton.contentTintColor = button.isEnabled ? tint[c] : .quaternaryLabelColor" },
+
+  { name: "Light up on select", duo: true,
+    blurb: "Same palette, louder switch. Off buttons are thin grey outlines at 25%. Selecting a file fills each icon with a soft second tone, so the change shows even out of the corner of your eye.",
+    gap: 10, gapLabel: "10 pt", disabled: "Outline grey, 25%",
+    icon: (k) => SEMANTIC[k] || "var(--label-2)", text: "var(--label)", offIcon: "color-mix(in srgb, var(--label) 25%, transparent)", offText: "color-mix(in srgb, var(--label) 25%, transparent)",
+    code: "button.image = symbol.withSymbolConfiguration(\n  button.isEnabled ? .init(hierarchicalColor: tint[c])\n                   : .init(paletteColors: [.quaternaryLabelColor]))" },
+
+  { name: "Duotone accent", duo: true,
+    blurb: "One colour, two tones: the accent stroke plus a 28% accent fill, like SF Symbols' hierarchical rendering. Less busy than per-action hues while still clearly coloured.",
+    gap: 8, hair: true, gapLabel: "8 pt + hairline", disabled: "Tertiary label, 26%",
+    icon: (k) => k === "trash" ? "var(--red)" : (["more"].includes(k) ? "var(--label-2)" : "var(--accent)"), text: "var(--label)", offIcon: "var(--label-3)", offText: "var(--label-3)",
+    code: "NSImage.SymbolConfiguration(hierarchicalColor: .controlAccentColor)\n// Delete keeps .systemRed" },
+
+  { name: "Tinted chips", chips: true,
+    blurb: "Enabled actions sit on a faint chip of their own colour, so what you can press has a visible shape. Disabled buttons have no chip and fade to grey. This option has the biggest gap between on and off.",
+    gap: 10, gapLabel: "10 pt", disabled: "No chip, grey 30%",
+    icon: (k) => SEMANTIC[k] || "var(--label-2)", text: "var(--label)", offIcon: "color-mix(in srgb, var(--label) 30%, transparent)", offText: "color-mix(in srgb, var(--label) 30%, transparent)",
+    code: "button.wantsLayer = true\nbutton.layer?.cornerRadius = 5\nbutton.layer?.backgroundColor = button.isEnabled\n  ? tint[c].withAlphaComponent(0.13).cgColor : nil" },
+
+  { name: "Grouped hues",
+    blurb: "Colour by job rather than by button: clipboard actions blue, editing actions indigo, Delete red, Properties grey. Three hues read calmer than six and match the dividers.",
+    gap: 8, gapLabel: "8 pt", disabled: "Grey, 35%",
+    icon: (k) => GROUPED[k] || "var(--label-2)", text: "var(--label)", offIcon: "color-mix(in srgb, var(--gray) 40%, transparent)", offText: "var(--label-3)",
+    code: "[.cut, .copy, .paste] → .systemBlue\n[.rename, .share] → .systemIndigo\n.moveToTrash → .systemRed" },
+
+  { name: "Quiet, red Delete", band: true, hair: true,
+    blurb: "Keeps the Finder-like restraint: icons in full-strength label colour, with only Delete in red as a warning. Disabled drops to 20%, so the on/off contrast comes from lightness alone.",
+    gap: 6, gapLabel: "6 pt, bar on a band", disabled: "Label colour, 20%",
+    icon: (k) => k === "trash" ? "var(--red)" : "var(--label)", text: "var(--label)", offIcon: "color-mix(in srgb, var(--label) 20%, transparent)", offText: "color-mix(in srgb, var(--label) 20%, transparent)",
+    code: "button.contentTintColor = c == .moveToTrash ? .systemRed : .labelColor\nbutton.alphaValue = button.isEnabled ? 1 : 0.2" },
+
+  { name: "Muted palette, tall gap", band: true, hair: true,
+    blurb: "Semantic hues mixed 28% toward grey, so they sit closer to native macOS chrome. The bar gets its own band and a 12 pt gap above the list.",
+    gap: 12, gapLabel: "12 pt, bar on a band", disabled: "Tertiary label",
+    icon: (k) => MUTED[k] || "var(--label-2)", text: "var(--label)", offIcon: "var(--label-3)", offText: "var(--label-3)",
+    code: "tint[c].blended(withFraction: 0.28, of: .secondaryLabelColor)\ncommandBar.layer?.backgroundColor = .underPageBackgroundColor" },
+
+  { name: "Icon tiles", tiles: true,
+    blurb: "Each icon is a white glyph on a small rounded tile, like System Settings. Disabled tiles go hollow. This option changes the bar's look the most and is the easiest to scan.",
+    gap: 10, gapLabel: "10 pt", disabled: "Hollow tile, 25%",
+    icon: (k) => TILES[k] || "var(--gray)", text: "var(--label)", offIcon: "var(--label-3)", offText: "var(--label-3)",
+    code: "// draw symbol in white over a 18×18, r=5 tile\nNSImage(size: 18×18, flipped: false) { tint[c].setFill(); path.fill(); glyph.draw(…) }" },
+];
+
+/* ---------------- render ---------------- */
+const rows = [
+  { n: "Projects", d: "Nov 6, 2026 at 4:52 PM", s: "--", k: "Folder", icon: folderIcon },
+  { n: "Invoice-2026-10.pdf", d: "Nov 5, 2026 at 11:08 AM", s: "214 KB", k: "PDF", icon: docIcon("#e5483e"), target: true },
+  { n: "notes.txt", d: "Nov 4, 2026 at 8:30 PM", s: "3 KB", k: "Plain Text", icon: docIcon() },
+  { n: "Screenshot 2026-11-06 at 9.14 AM.png", d: "Nov 6, 2026 at 9:14 AM", s: "1.2 MB", k: "PNG image", icon: docIcon("#4aa3e8") },
+  { n: "budget.numbers", d: "Oct 29, 2026 at 2:17 PM", s: "88 KB", k: "Numbers", icon: docIcon("#34c759") },
+];
+
+function barHTML(o) {
+  return BAR.map((b) => {
+    if (b.div) return `<span class="div"></span>`;
+    if (b.spacer) return `<span class="spacer"></span>`;
+    const iconColor = o.icon(b.k);
+    const glyph = o.tiles ? `<span class="tile">${svg(b.icon, "tg")}</span>` : svg(b.icon);
+    return `<span class="b${b.pd ? " pd" : ""}${b.label ? "" : " iconOnly"}" data-needs="${b.needsSel}" style="--b-icon:${iconColor};--b-text:${o.text}">${glyph}${b.label}${b.pd ? chev : ""}</span>`;
+  }).join("");
+}
+
+function windowHTML(o) {
+  return `
+  <div class="win" role="img" aria-label="${o.name} mock-up">
+    <div class="titlebar">
+      <div class="lights"><i></i><i></i><i></i></div>
+      <div class="nav"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 6l-5 5 5 5"/></svg><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="opacity:.45"><path d="M9 6l5 5-5 5"/></svg></div>
+      <div class="crumbs">roni <span>›</span> <b>Documents</b></div>
+      <div class="search">Search</div>
+    </div>
+    <div class="body">
+      <nav class="side">
+        <h4>Favourites</h4>
+        <div>${svg("view").replace('class="glyph"', '')}Desktop</div>
+        <div class="on">${svg("copy").replace('class="glyph"', '')}Documents</div>
+        <div>${svg("sort").replace('class="glyph"', '')}Downloads</div>
+      </nav>
+      <div class="content">
+        <div class="bar${o.band ? " band" : ""}${o.hair ? " hair" : ""}" style="--off-icon:${o.offIcon};--off-text:${o.offText}">${barHTML(o)}</div>
+        <div class="list">
+          <div class="gap" style="height:${o.gap}px"><div class="m"><span>${o.gap} pt</span></div></div>
+          <div class="th"><span>Name</span><span>Date Modified</span><span>Size</span><span>Kind</span></div>
+          <div class="rows">
+            ${rows.map((r) => `<div class="tr${r.target ? " target" : ""}"><span>${r.icon}${r.n}</span><span>${r.d}</span><span>${r.s}</span><span>${r.k}</span></div>`).join("")}
+          </div>
+          <div class="fill"></div>
+        </div>
+        <div class="status"><span class="st"></span></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+document.getElementById("opts").innerHTML = OPTIONS.map((o, i) => `
+  <section class="opt" id="opt-${i + 1}">
+    <div class="meta">
+      <h3><span class="n">${i + 1}</span>${o.name}${o.ref ? ' <span class="reference-tag">reference</span>' : ""}</h3>
+      <p>${o.blurb}</p>
+      <dl><dt>Gap</dt><dd>${o.gapLabel}</dd><dt>Disabled</dt><dd>${o.disabled}</dd></dl>
+      <code>${o.code.replace(/</g, "&lt;")}</code>
+    </div>
+    <div class="${[o.chips && "chips", o.duo && "duo-on", o.tiles && "tiles"].filter(Boolean).join(" ")}">${windowHTML(o)}</div>
+  </section>`).join("");
+
+/* ---------------- state ---------------- */
+let selected = false;
+function applySelection() {
+  document.querySelectorAll(".b").forEach((b) => b.classList.toggle("off", b.dataset.needs === "true" && !selected));
+  document.querySelectorAll(".tr.target").forEach((r) => r.classList.toggle("sel", selected));
+  document.querySelectorAll(".st").forEach((s) => (s.textContent = selected ? "1 of 5 selected, 214 KB" : "5 items"));
+  document.querySelectorAll("[data-sel]").forEach((b) => b.setAttribute("aria-pressed", String((b.dataset.sel === "file") === selected)));
+}
+document.querySelectorAll("[data-sel]").forEach((b) => b.addEventListener("click", () => { selected = b.dataset.sel === "file"; applySelection(); }));
+document.querySelectorAll(".list").forEach((l) => l.addEventListener("click", (e) => { selected = !!e.target.closest(".tr"); applySelection(); }));
+document.querySelectorAll("[data-theme-btn]").forEach((b) => b.addEventListener("click", () => {
+  document.body.dataset.theme = b.dataset.themeBtn;
+  document.querySelectorAll("[data-theme-btn]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+}));
+document.getElementById("measure").addEventListener("change", (e) => document.body.classList.toggle("measure", e.target.checked));
+if (matchMedia("(prefers-color-scheme: dark)").matches) document.querySelector('[data-theme-btn="dark"]').click();
+applySelection();
+</script>
+</body>
+</html>
