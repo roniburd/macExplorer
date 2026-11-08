@@ -87,9 +87,9 @@ public final class OperationsCenter {
     }
 
     private func scheduleReveal(_ id: JobID) {
-        let delay = revealDelay, sleep = revealSleep
+        let delay = revealDelay, waitOut = revealSleep
         Task { [weak self] in
-            await sleep(delay)
+            await waitOut(delay)
             guard let self, self.jobs.contains(where: { $0.id == id }) else { return }
             self.revealed.insert(id)
         }
