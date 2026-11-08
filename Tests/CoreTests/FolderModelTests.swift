@@ -226,7 +226,9 @@ final class FolderModelTests: XCTestCase {
             await reader.read(directory, generation: generation, options: options)
         }
         m.start()
-        try await w.waitUntil("lane read holding") { holding.withLock { $0 } }
+        // .partial: the model is iterating the read's stream (its first batch is on screen), so close() cancels a
+        // consumer mid-listing rather than one still waiting for the stream to open.
+        try await w.waitUntil("lane read holding, first batch shown") { holding.withLock { $0 } && m.state == .partial }
         let running = await reader.inFlightCount
         XCTAssertEqual(running, 1, "the read is still on its lane when the model closes")
         m.close()

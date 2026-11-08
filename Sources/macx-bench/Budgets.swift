@@ -30,6 +30,9 @@ enum Budgets {
             Budget(metric: "modelResort", sizes: [100_000], limit: 30, unit: "ms", spec: "§4.4 re-sort 100k by any column < 30 ms"),
             Budget(metric: "fsevent.incremental", sizes: nil, limit: 150, unit: "ms", spec: "§4.4 FSEvent → UI updated (incremental) < 150 ms"),
             Budget(metric: "fsevent.full", sizes: [100_000], limit: 400, unit: "ms", spec: "§4.4 FSEvent → UI updated (full re-read of 100k) < 400 ms"),
+            // The StoreDiff part of a full re-read on its own (was a debug-build timing in StoreDiffTests).
+            Budget(metric: "diff", sizes: [100_000], limit: 400, unit: "ms",
+                   spec: "§4.4 FSEvent → UI updated (full re-read of 100k) < 400 ms: diff of 100k with 1% of rows changed"),
             Budget(metric: "memory.steady", sizes: [100_000], limit: 20, unit: "MB", spec: "§4.4 memory, 100k-entry folder < 20 MB steady"),
             // Overview §4.4 pasteboard decision (2026-11-03): ≤10k < 300 ms, 100k < 1.5 s.
             Budget(metric: "pasteboard", sizes: [1_000, 10_000], limit: 300, unit: "ms", spec: "§4.4 copy of ≤10k items (pasteboard write) < 300 ms"),
