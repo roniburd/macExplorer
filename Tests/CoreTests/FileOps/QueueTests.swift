@@ -20,6 +20,20 @@ final class QueueTests: FileOpsTestCase {
         }
     }
 
+    /// Body that only ends once every job in `names` has started (or after 30 s, so serial scheduling shows up as a
+    /// failed ordering assertion rather than a hang): concurrent jobs always meet, serial ones never can.
+    private func rendezvousBody(_ log: EventLog, all names: [String]) -> @Sendable (JobContext) async -> Void {
+        { ctx in
+            let name = ctx.kind.allURLs.first?.lastPathComponent ?? "?"
+            log.add("start \(name)")
+            let deadline = ContinuousClock.now + .seconds(30)
+            while ContinuousClock.now < deadline, !names.allSatisfy({ log.all.contains("start \($0)") }) {
+                try? await Task.sleep(for: .milliseconds(5))
+            }
+            log.add("end \(name)")
+        }
+    }
+
     func testSameVolumeJobsRunFIFO() async throws {
         let log = EventLog()
         var tuning = FileOpTuning()
@@ -37,7 +51,7 @@ final class QueueTests: FileOpsTestCase {
         let mnt = try image(.hfsPlus, sizeMB: 16)
         let log = EventLog()
         var tuning = FileOpTuning()
-        tuning.bodyOverride = timedBody(log, .milliseconds(300))
+        tuning.bodyOverride = rendezvousBody(log, all: ["a", "b"])
         let (queue, _) = makeQueue(tuning: tuning)
         let a = try file("a"), d = try dir("d")
         let b = mnt.appending(path: "b"); try Data("b".utf8).write(to: b)
@@ -52,11 +66,23 @@ final class QueueTests: FileOpsTestCase {
 
     func testPauseResumeCancelRunningJob() async throws {
         var tuning = FileOpTuning()
+        let parked = EventLog()
         tuning.bodyOverride = { ctx in
             ctx.setTotals(items: 400, bytes: nil)
-            for _ in 0..<400 {
-                guard await ctx.checkpoint() else { return }
+            var done = 0
+            while done < 400 {
+                // Seen paused, the body marks "parked" and only then waits in checkpoint() until resume, so no
+                // progress lands after the mark. Progress is only added after a not-paused look; a pause that lands
+                // just after that look adds at most that one item and is parked on the next pass. (Marking before
+                // an unconditional checkpoint() would race: a pause landing between the two parks unmarked.)
+                if ctx.control.isPaused {
+                    if parked.all.isEmpty { parked.add("parked") }
+                    guard await ctx.checkpoint() else { return }
+                    continue
+                }
+                guard !ctx.control.isCancelled else { return }
                 ctx.addProgress(items: 1)
+                done += 1
                 try? await Task.sleep(for: .milliseconds(5))
             }
         }
@@ -64,10 +90,10 @@ final class QueueTests: FileOpsTestCase {
         let id = await queue.enqueue(request(.copy(sources: [try file("a")], destination: try dir("d"))))
         await waitUntil { await queue.snapshots().first?.progress.itemsDone ?? 0 > 5 }
         await queue.pause(id)
-        try await Task.sleep(for: .milliseconds(60))
+        await waitUntil { !parked.all.isEmpty }
         let paused = await queue.snapshots().first!
         XCTAssertEqual(paused.state, .paused)
-        try await Task.sleep(for: .milliseconds(150))
+        try await Task.sleep(for: .milliseconds(150))                    // negative check: nothing may move
         let stillPaused = await queue.snapshots().first!
         XCTAssertEqual(stillPaused.progress.itemsDone, paused.progress.itemsDone)
         await queue.resume(id)
@@ -141,12 +167,19 @@ final class QueueTests: FileOpsTestCase {
     func testCancelQueuedJobFinishesWithoutRunning() async throws {
         let log = EventLog()
         var tuning = FileOpTuning()
-        tuning.bodyOverride = timedBody(log, .milliseconds(200))
+        let release = Gate()
+        tuning.bodyOverride = { ctx in
+            let name = ctx.kind.allURLs.first?.lastPathComponent ?? "?"
+            log.add("start \(name)")
+            if name == "a" { await release.wait() }   // a holds the volume until b has been cancelled
+            log.add("end \(name)")
+        }
         let (queue, _) = makeQueue(tuning: tuning)
         let d = try dir("d")
         let ida = await queue.enqueue(request(.copy(sources: [try file("a")], destination: d)))
         let idb = await queue.enqueue(request(.copy(sources: [try file("b")], destination: d)))
         await queue.cancel(idb)
+        release.open()
         let ob = await queue.outcome(of: idb)
         XCTAssertTrue(ob.wasCancelled)
         _ = await queue.outcome(of: ida)

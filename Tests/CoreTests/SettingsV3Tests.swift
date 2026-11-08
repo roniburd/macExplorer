@@ -128,8 +128,8 @@ final class SettingsV3Tests: XCTestCase {
             let m = env.makeSearchResults(spec, plan: plan)
             defer { m.close() }
             m.start()
-            let end = Date().addingTimeInterval(5)
-            while Date() < end { if case .complete = m.state { break }; try await Task.sleep(for: .milliseconds(10)) }
+            let end = ContinuousClock.now + .seconds(30)   // generous for a loaded runner; the crawl has no time budget
+            while ContinuousClock.now < end { if case .complete = m.state { break }; try await Task.sleep(for: .milliseconds(10)) }
             guard case .complete = m.state else { XCTFail("crawl did not complete"); return -1 }
             return m.rowCount
         }

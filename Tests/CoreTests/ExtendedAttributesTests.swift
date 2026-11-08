@@ -8,6 +8,18 @@ import MacxFixtures
 final class ExtendedAttributesTests: XCTestCase {
     func plist(_ v: Any) -> Data { try! PropertyListSerialization.data(fromPropertyList: v, format: .binary, options: 0) }
 
+    /// Polls `condition` on main; fails here (naming `what`) if it does not hold within a deadline generous enough
+    /// for a loaded CI runner, rather than falling through to a confusing assertion.
+    @MainActor
+    private func eventually(_ what: String, timeout: Duration = .seconds(30), _ condition: () -> Bool,
+                            file: StaticString = #filePath, line: UInt = #line) async {
+        let deadline = ContinuousClock.now + timeout
+        while !condition() {
+            if ContinuousClock.now > deadline { return XCTFail("timed out waiting for \(what)", file: file, line: line) }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+    }
+
     func testParseTagsRealFinderFormat() {
         XCTAssertEqual(FinderMetadata.parseTags(plist(["Work\n6", "Home", "Red\n6"])), ["Work", "Home", "Red"])
         XCTAssertEqual(FinderMetadata.parseTags(Data("garbage".utf8)), [])
@@ -114,15 +126,13 @@ final class ExtendedAttributesTests: XCTestCase {
         let b = model.row(named: "b.txt")!
         XCTAssertNil(model.extendedAttributes(atRow: b), "nothing is read until asked")
         model.requestExtendedAttributes(rows: IndexSet([b, 99]), .tags)
-        let end = Date().addingTimeInterval(5)
-        while model.extendedAttributes(atRow: b) == nil && Date() < end { try await Task.sleep(for: .milliseconds(20)) }
+        await eventually("b's tags") { model.extendedAttributes(atRow: b) != nil }
         XCTAssertEqual(model.extendedAttributes(atRow: b)?.tags, ["Work"])
         XCTAssertEqual(emitted, [model.identity(atRow: b)])
         XCTAssertNil(model.extendedAttributes(atRow: model.row(named: "a.txt")!))
         model.requestExtendedAttributes(rows: IndexSet(integersIn: 0..<model.rowCount), .permissions)
-        let all = Date().addingTimeInterval(5)
-        while (0..<model.rowCount).contains(where: { model.extendedAttributes(atRow: $0)?.mode == nil }) && Date() < all {
-            try await Task.sleep(for: .milliseconds(20))
+        await eventually("every row's permissions") {
+            !(0..<model.rowCount).contains(where: { model.extendedAttributes(atRow: $0)?.mode == nil })
         }
         for row in 0..<model.rowCount {
             XCTAssertNotNil(model.extendedAttributes(atRow: row)?.mode, model.name(atRow: row))
@@ -140,17 +150,16 @@ final class ExtendedAttributesTests: XCTestCase {
         addTeardownBlock { @MainActor in model.close() }
         model.requestExtendedAttributes(rows: IndexSet(integersIn: 0..<model.rowCount), .tags)
         let row = model.row(named: "a.txt")!
-        var end = Date().addingTimeInterval(5)
-        while model.extendedAttributes(atRow: row) == nil && Date() < end { try await Task.sleep(for: .milliseconds(20)) }
+        await eventually("a's tags") { model.extendedAttributes(atRow: row) != nil }
         XCTAssertEqual(model.extendedAttributes(atRow: row)?.tags, [])
         var before = stat(); _ = stat(sandbox.url("a.txt").path(percentEncoded: false), &before)
         try sandbox.setFinderTags(["Home"], on: "a.txt")
         var after = stat(); _ = stat(sandbox.url("a.txt").path(percentEncoded: false), &after)
         XCTAssertEqual(before.st_mtimespec.tv_sec, after.st_mtimespec.tv_sec, "xattr-only change")
         XCTAssertEqual(before.st_mtimespec.tv_nsec, after.st_mtimespec.tv_nsec, "xattr-only change")
-        end = Date().addingTimeInterval(10)
-        while model.extendedAttributes(atRow: model.row(named: "a.txt")!)?.tags != ["Home"] && Date() < end {
-            try await Task.sleep(for: .milliseconds(20))
+        // Real FSEvents delivery of an xattr-only change (testItemWatchEventRereadsLastRequest covers the model side).
+        await eventually("the xattr-only change to arrive") {
+            model.extendedAttributes(atRow: model.row(named: "a.txt")!)?.tags == ["Home"]
         }
         XCTAssertEqual(model.extendedAttributes(atRow: model.row(named: "a.txt")!)?.tags, ["Home"])
     }
@@ -167,19 +176,16 @@ final class ExtendedAttributesTests: XCTestCase {
         addTeardownBlock { @MainActor in model.close() }
         let row = model.row(named: "a.txt")!
         model.requestExtendedAttributes(rows: IndexSet([row]), .comments)
-        var end = Date().addingTimeInterval(5)
-        while model.extendedAttributes(atRow: row)?.comment != "old" && Date() < end { try await Task.sleep(for: .milliseconds(20)) }
+        await eventually("the old comment") { model.extendedAttributes(atRow: row)?.comment == "old" }
         try sandbox.setFinderComment("new", on: "a.txt")
         model.handleWatch(.items(["a.txt"]))
         XCTAssertEqual(model.extendedAttributes(atRow: row)?.comment, "old", "kept until the re-read lands")
-        end = Date().addingTimeInterval(5)
-        while model.extendedAttributes(atRow: row)?.comment != "new" && Date() < end { try await Task.sleep(for: .milliseconds(20)) }
+        await eventually("the re-read comment") { model.extendedAttributes(atRow: row)?.comment == "new" }
         XCTAssertEqual(model.extendedAttributes(atRow: row)?.comment, "new")
         try sandbox.setFinderComment("rescanned", on: "a.txt")
         model.handleWatch(.fullRescan)
-        end = Date().addingTimeInterval(5)
-        while model.extendedAttributes(atRow: model.row(named: "a.txt")!)?.comment != "rescanned" && Date() < end {
-            try await Task.sleep(for: .milliseconds(20))
+        await eventually("the rescanned comment") {
+            model.extendedAttributes(atRow: model.row(named: "a.txt")!)?.comment == "rescanned"
         }
         XCTAssertEqual(model.extendedAttributes(atRow: model.row(named: "a.txt")!)?.comment, "rescanned")
     }

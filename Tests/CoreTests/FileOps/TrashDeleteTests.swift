@@ -181,8 +181,11 @@ final class TrashDeleteTests: FileOpsTestCase {
         let tuning = FileOpTuning(faultHook: { point, id in
             guard point == .modeBatchCheckpoint, holder.calls.withLock({ $0 += 1; return $0 }) == 2,
                   let queue = holder.queue.withLock({ $0 }) else { return }
-            Task { await queue.cancel(id) }
-            usleep(300_000)                                                // let the cancel land before the checkpoint
+            // The hook runs on the lane thread, so it can block: the cancel has landed before the checkpoint below
+            // by construction, however long the cooperative pool takes to run the Task.
+            let landed = DispatchSemaphore(value: 0)
+            Task { await queue.cancel(id); landed.signal() }
+            _ = landed.wait(timeout: .now() + 30)
         })
         let (queue, _) = makeQueue(tuning: tuning)
         holder.queue.withLock { $0 = queue }

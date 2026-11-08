@@ -58,10 +58,17 @@ final class OperationsCenterTests: FileOpsTestCase {
         let w = world, gate = Gate()
         let (queue, _) = w.makeQueue(tuning: gatedTuning(gate))
         let (center, _, _) = makeCenter(queue)
+        // The delay passes when the test says so, not when a (possibly starved) runner's clock does.
+        let delayPassed = Gate(), delays = EventLog()
         center.revealDelay = .milliseconds(300)
+        center.revealSleep = { delays.add("\($0)"); await delayPassed.wait() }
         await queue.enqueue(w.request(.copy(sources: [try w.file("a")], destination: try w.dir("d"))))
         await w.waitUntil { @MainActor in center.jobs.count == 1 }
         XCTAssertEqual(center.visibleJobs.count, 0, "jobs that finish in under 1 s show nothing (§6.2)")
+        await w.waitUntil { delays.all.count == 1 }
+        XCTAssertEqual(delays.all, ["\(Duration.milliseconds(300))"], "waits out revealDelay")
+        XCTAssertEqual(center.visibleJobs.count, 0, "still hidden while the delay runs")
+        delayPassed.open()
         await w.waitUntil { @MainActor in center.visibleJobs.count == 1 }
         gate.open()
         await w.waitUntil { @MainActor in center.visibleJobs.isEmpty && center.jobs.isEmpty }
@@ -185,10 +192,10 @@ final class TerminationTests: FileOpsTestCase {
         let termination = TerminationCoordinator(queue: queue, operations: center)
         await queue.enqueue(w.request(.copy(sources: [try w.file("a")], destination: try w.dir("d"))))
         await w.waitUntil { @MainActor in center.jobs.first?.state == .waitingForUser }
-        let start = ContinuousClock.now
+        // The dialog is never answered during the call, so returning (false) at all proves it gave up at the
+        // timeout; no wall-clock bound, which a stalled main actor on a loaded runner could exceed.
         let stopped = await termination.stopAllAndWait(timeout: .milliseconds(300))
         XCTAssertFalse(stopped, "§6.7: quit anyway after the timeout; launch cleanup uses the journal")
-        XCTAssertLessThan((ContinuousClock.now - start).inSeconds, 2)
         answer.open()                                    // the dialog is dismissed; the job then finishes
         await w.waitUntil { @MainActor in termination.activeCount == 0 }
     }

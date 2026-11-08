@@ -259,6 +259,18 @@ final class WorkspaceEjectorTests: XCTestCase {
         return info
     }
 
+    /// lsof walks every process and is slow on a loaded CI runner; it returns as soon as it is done, so a generous
+    /// limit costs nothing when it is fast and keeps a slow one from reporting "no holders".
+    private static let lsofTimeout: Duration = .seconds(30)
+
+    private func makeEjector() -> WorkspaceEjector { WorkspaceEjector(lanes: lanes, diagnosisTimeout: Self.lsofTimeout) }
+
+    private func makeCoordinator(_ volumes: Volumes) -> EjectCoordinator {
+        let coordinator = EjectCoordinator(volumes: volumes, ejector: makeEjector())
+        coordinator.diagnosisTimeout = Self.lsofTimeout
+        return coordinator
+    }
+
     private func ejectError(_ ejector: any Ejecting, _ url: URL) async -> EjectError? {
         do throws(EjectError) {
             try await ejector.eject(url)
@@ -270,7 +282,7 @@ final class WorkspaceEjectorTests: XCTestCase {
 
     func testEjectsAnIdleSandboxImage() async throws {
         let image = try image()
-        let error = await ejectError(WorkspaceEjector(lanes: lanes), image.mountPoint)
+        let error = await ejectError(makeEjector(), image.mountPoint)
         XCTAssertNil(error)
         XCTAssertFalse(isMounted(image))
     }
@@ -278,7 +290,7 @@ final class WorkspaceEjectorTests: XCTestCase {
     func testRefusesAPathThatIsNotAMountPoint() async throws {
         let image = try image()
         let inside = try sandbox.createDirectory(image.relativeMountPath + "/sub")
-        let error = await ejectError(WorkspaceEjector(lanes: lanes), inside)
+        let error = await ejectError(makeEjector(), inside)
         XCTAssertEqual(error, .failed(code: EINVAL, message: ""), "never ejects the volume that merely contains a path")
         XCTAssertTrue(isMounted(image))
     }
@@ -288,13 +300,13 @@ final class WorkspaceEjectorTests: XCTestCase {
         let fd = open(image.mountPoint.appending(path: "held.txt").path(percentEncoded: false), O_RDONLY)
         XCTAssertGreaterThanOrEqual(fd, 0)
         defer { close(fd) }
-        let ejector = WorkspaceEjector(lanes: lanes)
+        let ejector = makeEjector()
         let error = await ejectError(ejector, image.mountPoint)
         guard case .busy(let names) = error else { return XCTFail("expected busy, got \(String(describing: error))") }
         XCTAssertEqual(names, [], "our own PID is excluded")
-        let onlyOwn = await ejector.onlyOwnProcessHolds(image.mountPoint, timeout: .seconds(10))
+        let onlyOwn = await ejector.onlyOwnProcessHolds(image.mountPoint, timeout: Self.lsofTimeout)
         XCTAssertTrue(onlyOwn)
-        let blocking = await ejector.blockingProcesses(image.mountPoint, timeout: .seconds(10))
+        let blocking = await ejector.blockingProcesses(image.mountPoint, timeout: Self.lsofTimeout)
         XCTAssertEqual(blocking, [])
         XCTAssertTrue(isMounted(image))
     }
@@ -322,7 +334,7 @@ final class WorkspaceEjectorTests: XCTestCase {
             releases += 1
             if releases == 2, !closed { close(fd); closed = true }   // a reader that only lets go on the second release
         })
-        let coordinator = EjectCoordinator(volumes: volumes, ejector: WorkspaceEjector(lanes: lanes))
+        let coordinator = makeCoordinator(volumes)
         var failure: EjectError?
         do throws(EjectError) { try await coordinator.eject(info) } catch { failure = error }
         if !closed { close(fd) }
@@ -345,7 +357,7 @@ final class WorkspaceEjectorTests: XCTestCase {
         let info = try ourVolume(volumes, image)
         var releases = 0
         tokens.append(volumes.addReleaseHandler { _ in releases += 1 })
-        let coordinator = EjectCoordinator(volumes: volumes, ejector: WorkspaceEjector(lanes: lanes))
+        let coordinator = makeCoordinator(volumes)
         var failure: EjectError?
         do throws(EjectError) { try await coordinator.eject(info) } catch { failure = error }
         XCTAssertEqual(failure, .busy(processes: ["sleep"]))

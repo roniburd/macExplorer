@@ -116,6 +116,7 @@ class FileOpsTestCase: XCTestCase {
             if await condition() { return }
             try? await Task.sleep(for: .milliseconds(10))
         }
+        if await condition() { return }   // one last look: the deadline may have passed during the final sleep
         XCTFail("condition not met within \(timeout)", file: file, line: line)
     }
 }
@@ -171,6 +172,7 @@ struct FileOpsWorld: Sendable {
             if await condition() { return }
             try? await Task.sleep(for: .milliseconds(10))
         }
+        if await condition() { return }   // one last look: the deadline may have passed during the final sleep
         XCTFail("condition not met within \(timeout)", file: file, line: line)
     }
 }

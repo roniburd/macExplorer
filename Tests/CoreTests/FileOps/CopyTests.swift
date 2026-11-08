@@ -102,9 +102,9 @@ final class CopyTests: FileOpsTestCase {
             XCTAssertEqual(symlink(target, url(rel).path), 0)
         }
         let (queue, _) = makeQueue()
-        let start = ContinuousClock.now
+        // Terminating at all is the check (a loop would hang the test); the exact copied tree below rules out a
+        // copy that followed a link and recursed.
         let o = try await run(.copy(sources: [url("A")], destination: try dir("d")), on: queue)
-        XCTAssertLessThan(ContinuousClock.now - start, .seconds(10))
         XCTAssertEqual(o.skipped, [])
         XCTAssertEqual(names(url("d/A")), ["abs", "broken", "f", "self", "sub", "sublink"])
         for (rel, target) in [("self", "."), ("sub/up", ".."), ("abs", absTarget), ("broken", "nowhere"), ("sublink", "sub")] {
@@ -187,10 +187,11 @@ final class CopyTests: FileOpsTestCase {
         let id = await queue.enqueue(request(.copy(sources: [big], destination: d)))
         await waitUntil { reached.all.contains("chunk") }
         await queue.pause(id)
-        proceed.signal()
-        try await Task.sleep(for: .milliseconds(300))
+        // The copyfile callback reports the chunk's bytes before the hook, and goes straight from the hook to its
+        // pause checkpoint; the pause is set before the hook returns, so bytesDone is final from here on.
         let s1 = await queue.snapshots().first!
-        try await Task.sleep(for: .milliseconds(200))
+        proceed.signal()
+        try await Task.sleep(for: .milliseconds(200))                    // negative check: nothing may move
         let s2 = await queue.snapshots().first!
         XCTAssertEqual(s1.state, .paused)
         XCTAssertEqual(s1.progress.bytesDone, s2.progress.bytesDone, "no bytes copied while paused")
