@@ -81,16 +81,19 @@ final class IconsViewTests: XCTestCase {
         }
     }
 
-    func testTruncationIsFast() {
+    /// The cost of a truncation is its text measurements: one for the whole name, then a binary search over the kept
+    /// length (plus the cached two-line height once per font). Counted, not timed: wall time in a debug build on a
+    /// shared CI runner says nothing reliable about the 2 ms/name budget.
+    func testTruncationMeasuresLogarithmicallyOften() {
         let names = (0..<200).map { "document-\($0)-" + String(repeating: "x", count: 120) + ".pdf" }
-        // Best of 5 passes: the intrinsic cost, not scheduling noise when `swift test --parallel` loads every core.
-        var best = Duration.seconds(60)
-        for _ in 0..<5 {
-            let start = ContinuousClock.now
-            for name in names { _ = LabelTruncation.twoLineMiddle(name, width: 104, font: CellStyle.smallFont) }
-            best = min(best, ContinuousClock.now - start)
+        for name in names {
+            let before = LabelTruncation.measurements
+            let shown = LabelTruncation.twoLineMiddle(name, width: 104, font: CellStyle.smallFont)
+            let measured = LabelTruncation.measurements - before
+            XCTAssertTrue(shown.contains("…") && shown.hasSuffix(".pdf"), "'\(shown)' is middle-truncated")
+            let searchSteps = Int.bitWidth - name.count.leadingZeroBitCount   // ≥ ⌈log2(name.count)⌉
+            XCTAssertLessThanOrEqual(measured, 2 + searchSteps, "\(name.count) characters took \(measured) measurements")
         }
-        XCTAssertLessThan(best / names.count, .milliseconds(2))
     }
 
     // MARK: AppKit (offscreen window)

@@ -10,6 +10,9 @@ import MacxFS
 @MainActor
 enum LabelTruncation {
     private static var twoLineHeights: [NSFont: CGFloat] = [:]
+    /// Test hook: the number of text measurements made so far (the cost driver of `twoLineMiddle`), so tests can check
+    /// the binary search stays O(log n) per name without timing it. Only counted; nothing reads it in the app.
+    private(set) static var measurements = 0
     private static let measuring: NSTextField = {
         let field = NSTextField(wrappingLabelWithString: "")
         field.alignment = .center
@@ -44,6 +47,7 @@ enum LabelTruncation {
     }
 
     private static func height(of text: String, width: CGFloat, font: NSFont) -> CGFloat {
+        measurements += 1
         let field = measuring
         field.font = font
         field.stringValue = text

@@ -31,12 +31,14 @@ final class DragDropTests: XCTestCase {
         XCTAssertEqual(DragPasteboard.secondaryType.rawValue, DropPolicy.secondaryDragType)
     }
 
-    func testDragPasteboardWritesTenThousandQuickly() async throws {
+    /// The ≤10k-in-300 ms budget (overview §4.4 decision) is measured by macx-bench's `pasteboard` metric (release
+    /// build, same FileURLPasteboardItems path), not with wall time here: a debug build on a shared CI runner has no
+    /// reliable timing. This test checks the structure that keeps it fast: above the eager limit the items are promised.
+    func testDragPasteboardPromisesTenThousandAndReadsThemBack() async throws {
         let h = try await ContentTestHarness.make(self)
         let urls = (0..<10_000).map { h.url("f\($0).txt") }   // paths only; nothing is created
-        let start = ContinuousClock.now
+        XCTAssertGreaterThan(urls.count, FileURLPasteboardItems.eagerLimit, "exercises the promised (lazy) path")
         DragPasteboard.write(urls, secondary: false, to: pasteboard(h))
-        XCTAssertLessThan(ContinuousClock.now - start, .milliseconds(1_200), "budget: ≤10k in 300 ms release (overview §4.4 decision)")
         XCTAssertEqual(pasteboard(h).pasteboardItems?.count, 10_000)
         XCTAssertEqual(DragPasteboard.readURLs(from: pasteboard(h)).map(\.path), urls.map(\.path), "promised items read back")
     }

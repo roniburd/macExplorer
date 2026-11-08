@@ -51,15 +51,25 @@ final class FileGridLayoutTests: XCTestCase {
         XCTAssertEqual(layout(items: 0).indexes(in: NSRect(x: 0, y: 0, width: 600, height: 400)), 0..<0)
     }
 
-    func testLargeGridIsFast() {
+    /// What keeps a 100k grid fast, checked structurally instead of with wall time (a debug build on a shared CI
+    /// runner has no reliable timing): frames are closed-form (no per-item state), and a deep rect yields only the
+    /// items of the rows it crosses.
+    func testLargeGridIsClosedFormAndBoundedByTheRect() {
         let grid = layout(items: 100_000)
-        let start = ContinuousClock.now
-        var sum: CGFloat = 0
-        for index in 0..<100_000 { sum += grid.frame(forItem: index).minY }
-        let attributes = grid.layoutAttributesForElements(in: NSRect(x: 0, y: 1_000_000, width: 600, height: 800))
-        XCTAssertLessThan(ContinuousClock.now - start, .milliseconds(200))
-        XCTAssertGreaterThan(sum, 0)
+        let first = grid.frame(forItem: 0), second = grid.frame(forItem: 1), below = grid.frame(forItem: grid.columns)
+        for index in [0, 1, grid.columns - 1, grid.columns, 54_321, 99_999] {
+            let (row, column) = grid.rowColumn(of: index)
+            let frame = grid.frame(forItem: index)
+            XCTAssertEqual(frame.minX, first.minX + CGFloat(column) * (second.minX - first.minX), accuracy: 0.001, "item \(index)")
+            XCTAssertEqual(frame.minY, first.minY + CGFloat(row) * (below.minY - first.minY), accuracy: 0.001, "item \(index)")
+        }
+        let rect = NSRect(x: 0, y: 1_000_000, width: 600, height: 800)
+        let attributes = grid.layoutAttributesForElements(in: rect)
+        XCTAssertFalse(attributes.isEmpty)
         XCTAssertLessThanOrEqual(attributes.count, 9 * grid.columns)
+        let items = attributes.compactMap { $0.indexPath?.item }
+        XCTAssertEqual(items.count, attributes.count)
+        XCTAssertTrue(items.allSatisfy { grid.indexes(in: rect).contains($0) && grid.frame(forItem: $0).intersects(rect) })
     }
 
     func testNeighborNavigation() {
