@@ -6,7 +6,7 @@ tree, a command bar, Explorer keyboard conventions, cut and paste, right-drag me
 Open With / choose the default app. It is built to be fast: folders with 100,000 entries open within the budgets
 in the design spec (§4.4).
 
-Status: Phase 2 ("Views & Tabs"), version `0.x`. Design: `docs/superpowers/specs/2026-11-01-macexplorer-design.md`.
+Status: Phase 2 ("Views & Tabs"), version `0.x`.
 
 ## Requirements
 
