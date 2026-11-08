@@ -22,14 +22,16 @@ final class SearchControllerTests: XCTestCase {
         addTeardownBlock { @MainActor in shown.close() }
     }
 
-    private func waitUntil(_ what: String, timeout: TimeInterval = 5, _ condition: () -> Bool) async {
-        let end = Date().addingTimeInterval(timeout)
-        while Date() < end {
-            if condition() { return }
-            try? await Task.sleep(for: .milliseconds(5))
+    /// A condition wait with a deadline generous enough for a CPU-starved CI runner; a timeout fails at the caller's line.
+    private func waitUntil(_ what: String, timeout: Duration = .seconds(30), file: StaticString = #filePath,
+                           line: UInt = #line, _ condition: () -> Bool) async {
+        let deadline = ContinuousClock.now + timeout
+        while !condition() {
+            guard ContinuousClock.now < deadline else {
+                return XCTFail("timed out after \(timeout) waiting for: \(what)", file: file, line: line)
+            }
+            try? await Task.sleep(for: .milliseconds(10))
         }
-        if condition() { return }
-        XCTFail("timed out: \(what)")
     }
 
     func testThisFolderNameIsInstant() async {
@@ -47,8 +49,8 @@ final class SearchControllerTests: XCTestCase {
         let token = session.observe { if case .resultsChanged(let m?) = $0 { shown.append(m.title) } }
         defer { token.cancel() }
         for prefix in ["t", "ta", "tax"] { c.textDidChange(prefix) }
+        await c.settled()                          // the last keystroke's run; the earlier ones were cancelled
         await waitUntil("one search") { !shown.isEmpty }
-        try? await Task.sleep(for: .milliseconds(200))
         XCTAssertEqual(shown, ["tax"])
         XCTAssertEqual(env.settings.searchScope, .subfolders)
     }
@@ -119,7 +121,7 @@ final class SearchControllerTests: XCTestCase {
         XCTAssertEqual(c.text, "other")
         XCTAssertEqual(c.scope, .thisMac)
         XCTAssertEqual(c.mode, .contents)
-        try? await Task.sleep(for: .milliseconds(100))
+        await c.settled()                          // a run adopt started would be awaited here
         XCTAssertTrue(session.results === model, "adopt must not run a search")
     }
 
