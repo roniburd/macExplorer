@@ -215,6 +215,7 @@ final class SidebarSearchesTests: XCTestCase {
         prompter.answers = [nil]
         controller.perform(.renameSavedSearch, target: .savedSearch(env.settings.savedSearches[1]), sender: nil)
         await controller.namePromptTask?.value
+        XCTAssertEqual(prompter.asked.last, "Old taxes", "the cancelled rename still prompted")   // positive control
         XCTAssertEqual(env.settings.savedSearches.map(\.name), ["Taxes", "Old taxes"], "cancel renames nothing")
     }
 
