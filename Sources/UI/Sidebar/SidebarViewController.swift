@@ -46,6 +46,9 @@ final class SidebarViewController: CommandHandlingViewController {
     private var keyObserver: (any NSObjectProtocol)?
     private var revealGeneration = 0
     private var revealTask: Task<Void, Never>?
+    /// LOCATIONS refreshes still running, by serial (each removes itself when done).
+    private var locationRefreshes: [Int: Task<Void, Never>] = [:]
+    private var locationRefreshSerial = 0
     /// Programmatic selection/expansion: no navigation, no settings writes.
     var isSyncing = false
     /// P1-36 (§5.4, §5.6): drops onto a tree node, favorite or volume row go through DropTarget.
@@ -477,7 +480,7 @@ final class SidebarViewController: CommandHandlingViewController {
     }
 
     private func windowBecameKey() {
-        Task { await tree.refreshUnwatched() }
+        trackLocationRefresh(Task { await tree.refreshUnwatched() })
         refreshCloudStorage()  // a provider app may have signed in or out while another app was frontmost
     }
 
@@ -525,12 +528,12 @@ final class SidebarViewController: CommandHandlingViewController {
         let container = CloudStorageFolder.containerURL(home: settings.home)
         let volume = environment.volumes.volume(for: container)?.id ?? .unknown
         let lanes = environment.lanes
-        Task { [weak self] in
+        trackLocationRefresh(Task { [weak self] in
             let folders = (try? await lanes.perform(on: volume, .read) { _ in CloudStorageFolder.list(in: container) }) ?? []
             guard let self, folders != self.cloudStorage else { return }
             self.cloudStorage = folders
             self.rebuildLocations()
-        }
+        })
     }
 
     /// Whether the Trash folder exists, checked on a lane (never on main).
@@ -543,7 +546,7 @@ final class SidebarViewController: CommandHandlingViewController {
         let path = url.path(percentEncoded: false)
         let volume = environment.volumes.volume(for: url)?.id ?? .unknown
         let lanes = environment.lanes
-        Task { [weak self] in
+        trackLocationRefresh(Task { [weak self] in
             let exists = (try? await lanes.perform(on: volume, .read) { _ in
                 var info = stat()
                 return stat(path, &info) == 0 && (info.st_mode & S_IFMT) == S_IFDIR
@@ -551,6 +554,26 @@ final class SidebarViewController: CommandHandlingViewController {
             guard let self else { return }
             store(self, exists ? url : nil)
             self.rebuildLocations()
+        })
+    }
+
+    /// Keeps a LOCATIONS refresh until it ends, so `locationsSettled()` can await it.
+    private func trackLocationRefresh(_ task: Task<Void, Never>) {
+        locationRefreshSerial += 1
+        let serial = locationRefreshSerial
+        locationRefreshes[serial] = task
+        Task { [weak self] in
+            await task.value
+            self?.locationRefreshes[serial] = nil
+        }
+    }
+
+    /// Tests: waits for the LOCATIONS refreshes (iCloud Drive, cloud storage and Trash checks on lanes, the
+    /// unwatched-tree refresh) started so far, and any they start in turn.
+    func locationsSettled() async {
+        while let entry = locationRefreshes.first {
+            await entry.value.value
+            locationRefreshes[entry.key] = nil
         }
     }
 

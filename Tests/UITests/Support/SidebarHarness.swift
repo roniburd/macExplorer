@@ -131,11 +131,14 @@ final class SidebarHarness {
     @discardableResult func dir(_ relative: String) throws -> URL { try sandbox.createDirectory("boot/" + relative) }
     @discardableResult func file(_ relative: String) throws -> URL { try sandbox.createFile("boot/" + relative) }
 
-    /// Favorites resolved, reveal done, pending main-actor work run.
+    /// Favorites resolved, reveal and LOCATIONS refreshes (iCloud Drive, Trash, cloud storage stats on lanes) done,
+    /// pending main-actor work run. The short sleep only lets Settings observation hops land between rounds; every
+    /// background refresh is awaited.
     func settle() async {
         for _ in 0..<3 {
             await sidebar.favorites.settled()
             await sidebar.revealSettled()
+            await sidebar.locationsSettled()
             try? await Task.sleep(for: .milliseconds(20))
         }
     }
