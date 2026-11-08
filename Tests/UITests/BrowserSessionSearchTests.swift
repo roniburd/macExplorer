@@ -25,14 +25,17 @@ final class BrowserSessionSearchTests: XCTestCase {
 
     var work: URL { sandbox.url("work").standardizedFileURL }
 
-    private func waitUntil(_ what: String, timeout: TimeInterval = 5, _ condition: () -> Bool) async {
-        let end = Date().addingTimeInterval(timeout)
-        while Date() < end {
+    /// A pure condition wait: crawls run on the lane pool and stream to the main actor, which a CPU-starved CI runner
+    /// can delay for seconds, so the deadline is generous (it costs nothing when the condition comes true early).
+    private func waitUntil(_ what: String, timeout: Duration = .seconds(30), file: StaticString = #filePath, line: UInt = #line,
+                           _ condition: () -> Bool) async {
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline {
             if condition() { return }
             try? await Task.sleep(for: .milliseconds(10))
         }
         if condition() { return }
-        XCTFail("timed out: \(what)")
+        XCTFail("timed out after \(timeout) waiting for: \(what)", file: file, line: line)
     }
     func complete(_ m: SearchResultsModel?) -> Bool { if case .complete? = m?.state { true } else { false } }
     func spec(_ text: String, _ scope: SearchScope = .subfolders, _ mode: SearchMode = .name) -> SearchSpec {

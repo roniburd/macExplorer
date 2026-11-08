@@ -192,7 +192,7 @@ final class BrowserSessionTests: XCTestCase {
         let token = session.observe { if case .banner(let text) = $0 { banners.append(text) } }
         defer { token.cancel() }
         try h.sandbox.rename("files/parent/Old", to: "files/parent/New")
-        try await h.waitUntil("relocated to the parent", timeout: .seconds(10)) {
+        try await h.waitUntil("relocated to the parent") {
             session.folder.directory.lastPathComponent == "parent"
         }
         XCTAssertEqual(banners.last ?? nil, "'Old' was moved or deleted")
@@ -213,7 +213,7 @@ final class BrowserSessionTests: XCTestCase {
         try await h.waitUntil("root complete") { session.folder.state == .complete }
         try h.sandbox.rename("files/a/deep", to: "files/moved")
         session.goForward()
-        try await h.waitUntil("relocated to the nearest ancestor", timeout: .seconds(10)) {
+        try await h.waitUntil("relocated to the nearest ancestor") {
             session.folder.directory.lastPathComponent == "a" && session.folder.state == .complete
         }
         XCTAssertEqual(banners.last ?? nil, "'deep' was moved or deleted")
@@ -277,7 +277,7 @@ final class BrowserSessionTests: XCTestCase {
         session.navigate(to: h.url(""), selecting: "later.txt")
         try await h.waitUntil("listed") { session.folder.state == .complete }
         try h.file("later.txt")
-        try await h.waitUntil("later.txt listed", timeout: .seconds(10)) { session.folder.row(named: "later.txt") != nil }
+        try await h.waitUntil("later.txt listed") { session.folder.row(named: "later.txt") != nil }
         try await Task.sleep(for: .milliseconds(200))
         XCTAssertEqual(session.folder.selectedURLs, [])
     }
@@ -290,7 +290,7 @@ final class BrowserSessionTests: XCTestCase {
         let row = try XCTUnwrap(session.folder.row(named: "a.txt"))
         session.folder.select(.set(IndexSet(integer: row), cursor: row))
         try h.file("later.txt")
-        try await h.waitUntil("later.txt listed", timeout: .seconds(10)) { session.folder.row(named: "later.txt") != nil }
+        try await h.waitUntil("later.txt listed") { session.folder.row(named: "later.txt") != nil }
         try await Task.sleep(for: .milliseconds(200))
         XCTAssertEqual(session.folder.selectedURLs.map(\.lastPathComponent), ["a.txt"])
     }

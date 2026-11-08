@@ -129,7 +129,7 @@ final class AppLifecycleTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(300))
         XCTAssertEqual(r.replies, [], "still asking while the job runs")
         terminator.activeCount = 0                  // the job finished in the background
-        try await h.waitUntil("quit", timeout: .seconds(5)) { r.replies == [true] }
+        try await h.waitUntil("quit") { r.replies == [true] }
         XCTAssertEqual(prompts.dismissals, 1, "the prompt closed itself")
         XCTAssertEqual(terminator.stopCalls, [], "nothing to stop")
         await l.quitTask?.value
@@ -189,17 +189,19 @@ final class AppLifecycleTests: XCTestCase {
         for name in ["a", "b"] {
             _ = await environment.fileOps.enqueue(JobRequest(.copy(sources: [try sandbox.createFile(name)], destination: destination)))
         }
-        let deadline = ContinuousClock.now + .seconds(5)
-        while environment.termination.activeCount < 2, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
-        XCTAssertEqual(environment.termination.activeCount, 2)
+        // Each wait has its own generous deadline: planning and lane start-up are slow on a starved CI runner.
+        let started = ContinuousClock.now + .seconds(30)
+        while environment.termination.activeCount < 2, ContinuousClock.now < started { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(environment.termination.activeCount, 2, "both jobs running")
         let r = Recorder()
         let l = AppLifecycle(context: context, terminator: environment.termination, prompts: ScriptedQuitPrompts(.stopAndQuit),
                              reply: { r.replies.append($0) }, dockBadge: { r.badges.append($0) }, flushSettings: {})
         XCTAssertEqual(l.shouldTerminate(), .terminateLater)
         await l.quitTask?.value
         XCTAssertEqual(r.replies, [true])
-        while environment.termination.activeCount > 0, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
-        XCTAssertEqual(environment.termination.activeCount, 0)
+        let stopped = ContinuousClock.now + .seconds(30)
+        while environment.termination.activeCount > 0, ContinuousClock.now < stopped { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(environment.termination.activeCount, 0, "both jobs cancelled")
         await environment.fileOps.waitUntilIdle()
     }
 
@@ -312,10 +314,12 @@ final class DockBadgeTests: XCTestCase {
         controller.stop()
     }
 
-    private func waitUntil(_ condition: () -> Bool) async throws {
-        let deadline = ContinuousClock.now + .seconds(3)
+    /// A pure condition wait on the observation loop: a generous deadline, and a timeout fails at the caller's line.
+    private func waitUntil(timeout: Duration = .seconds(30), file: StaticString = #filePath, line: UInt = #line,
+                           _ condition: () -> Bool) async throws {
+        let deadline = ContinuousClock.now + timeout
         while !condition() {
-            guard ContinuousClock.now < deadline else { return XCTFail("timed out") }
+            guard ContinuousClock.now < deadline else { return XCTFail("timed out after \(timeout)", file: file, line: line) }
             try await Task.sleep(for: .milliseconds(10))
         }
     }

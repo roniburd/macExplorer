@@ -81,16 +81,19 @@ final class IconsViewTests: XCTestCase {
         }
     }
 
-    func testTruncationIsFast() {
+    /// The cost of a truncation is its text measurements: one for the whole name, then a binary search over the kept
+    /// length (plus the cached two-line height once per font). Counted, not timed: wall time in a debug build on a
+    /// shared CI runner says nothing reliable about the 2 ms/name budget.
+    func testTruncationMeasuresLogarithmicallyOften() {
         let names = (0..<200).map { "document-\($0)-" + String(repeating: "x", count: 120) + ".pdf" }
-        // Best of 5 passes: the intrinsic cost, not scheduling noise when `swift test --parallel` loads every core.
-        var best = Duration.seconds(60)
-        for _ in 0..<5 {
-            let start = ContinuousClock.now
-            for name in names { _ = LabelTruncation.twoLineMiddle(name, width: 104, font: CellStyle.smallFont) }
-            best = min(best, ContinuousClock.now - start)
+        for name in names {
+            let before = LabelTruncation.measurements
+            let shown = LabelTruncation.twoLineMiddle(name, width: 104, font: CellStyle.smallFont)
+            let measured = LabelTruncation.measurements - before
+            XCTAssertTrue(shown.contains("…") && shown.hasSuffix(".pdf"), "'\(shown)' is middle-truncated")
+            let searchSteps = Int.bitWidth - name.count.leadingZeroBitCount   // ≥ ⌈log2(name.count)⌉
+            XCTAssertLessThanOrEqual(measured, 2 + searchSteps, "\(name.count) characters took \(measured) measurements")
         }
-        XCTAssertLessThan(best / names.count, .milliseconds(2))
     }
 
     // MARK: AppKit (offscreen window)
@@ -180,15 +183,19 @@ final class IconsViewTests: XCTestCase {
         let (content, session, window) = try await h.makeContent(size: NSSize(width: 700, height: 500))
         content.setViewMode(.icons)
         let icons = try XCTUnwrap(content.icons)
-        try await Task.sleep(for: .milliseconds(100))
+        // Settle the first layout pass here (the window is offscreen, so no display cycle is guaranteed to run it in
+        // time): with legacy scrollers the vertical scroller takes a column, and a grid read before it is stale.
+        content.view.layoutSubtreeIfNeeded()
+        icons.view.layoutSubtreeIfNeeded()
         let columns = icons.layout.columns
         session.folder.select(.set(IndexSet(integer: 0), cursor: 0))
-        for _ in 0..<6 {
+        for step in 1...6 {
             icons.collectionView.keyDown(with: try key(.downArrow, window: window))
-            try await Task.sleep(for: .milliseconds(30))
+            try await h.waitUntil("row \(step) selected") { session.folder.selection.rows == IndexSet(integer: step * columns) }
+            try await Task.sleep(for: .milliseconds(30))   // a run-loop turn (layout passes, selection events) between keys
         }
         XCTAssertEqual(session.folder.selection.rows, IndexSet(integer: 6 * columns))
-        XCTAssertTrue(icons.visibleRows().contains(6 * columns), "visible \(icons.visibleRows())")
+        try await h.waitUntil("arrowed-to item scrolled into view") { icons.visibleRows().contains(6 * columns) }
     }
 
     func testSwitchingViewModeKeepsSelection() async throws {

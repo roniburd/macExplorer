@@ -38,7 +38,7 @@ final class IconCacheTests: XCTestCase {
         let app = try h.dir("Fake.app/Contents").deletingLastPathComponent()
         var image: CGImage?
         h.context.icons.fileIcon(for: app, rowID: .name("Fake.app"), points: 16, scale: 2) { image = $0 }
-        try await h.waitUntil("tier 1 icon", timeout: .seconds(3)) { image != nil }
+        try await h.waitUntil("tier 1 icon") { image != nil }
         XCTAssertEqual(image?.width, 32)
     }
 

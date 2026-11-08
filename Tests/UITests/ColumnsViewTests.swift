@@ -8,14 +8,6 @@ import MacxFixtures
 /// Columns (Miller) view UI (P2-19). Every file lives in the harness sandbox.
 @MainActor
 final class ColumnsViewTests: XCTestCase {
-    private func waitUntil(_ what: String, timeout: TimeInterval = 5, _ condition: () -> Bool) async throws {
-        let end = Date().addingTimeInterval(timeout)
-        while !condition() {
-            guard Date() < end else { throw HarnessError.timeout(what) }
-            try await Task.sleep(for: .milliseconds(10))
-        }
-    }
-
     private func makeChain(_ h: ContentTestHarness, _ relative: String) -> ColumnChain {
         let env = h.environment
         let chain = ColumnChain(root: h.url(relative)) { url in env.makeFolderModel(url) }
@@ -31,7 +23,7 @@ final class ColumnsViewTests: XCTestCase {
         try h.host(controller)
         let chain = makeChain(h, "")
         controller.bindChain(chain)
-        try await waitUntil("root listed") { chain.models[0].state == .complete }
+        try await h.waitUntil("root listed") { chain.models[0].state == .complete }
         chain.models[0].select(.names(["A"]))
         XCTAssertEqual(controller.columnControllers.count, 2)
         XCTAssertTrue(controller.folder === chain.activeModel)
@@ -49,7 +41,9 @@ final class ColumnsViewTests: XCTestCase {
         let first = controller.columnControllers[0]
         chain.activate(0)
         try h.file("r.txt")
-        try await waitUntil("r.txt listed") { chain.models[0].row(named: "r.txt") != nil }
+        // Announced like the app's own file operations do, so no FSEvents delivery is waited for.
+        chain.models[0].applyLocalChange(LocalChange(directory: h.url(""), added: ["r.txt"]))
+        try await h.waitUntil("r.txt listed") { chain.models[0].row(named: "r.txt") != nil }
         chain.models[0].select(.names(["r.txt"]))
         XCTAssertEqual(controller.columnControllers.count, 1)
         XCTAssertTrue(controller.columnControllers[0] === first, "kept columns keep their controller (and scroll)")
@@ -63,12 +57,14 @@ final class ColumnsViewTests: XCTestCase {
         try h.host(controller)
         let chain = makeChain(h, "")
         controller.bindChain(chain)
-        try await waitUntil("root listed") { chain.models[0].state == .complete }
+        try await h.waitUntil("root listed") { chain.models[0].state == .complete }
         chain.models[0].select(.names(["A"]))
         let child = controller.columnControllers[1]
-        try await waitUntil("A listed") { child.tableView.numberOfRows == 1 }
+        try await h.waitUntil("A listed") { child.tableView.numberOfRows == 1 }
         try h.file("A/y.txt")
-        try await waitUntil("watcher update reaches column 1") { child.tableView.numberOfRows == 2 }
+        // The column's own model patches the change (announced like the app's file operations, not via FSEvents).
+        child.model.applyLocalChange(LocalChange(directory: h.url("A"), added: ["y.txt"]))
+        try await h.waitUntil("update reaches column 1") { child.tableView.numberOfRows == 2 }
         let cell = try XCTUnwrap(child.tableView.view(atColumn: 0, row: 1, makeIfNecessary: true) as? ColumnCellView)
         XCTAssertEqual(cell.label.stringValue, "y.txt")
         XCTAssertTrue(cell.chevron.isHidden, "files have no chevron")
@@ -91,7 +87,7 @@ final class ColumnsViewTests: XCTestCase {
         let chain = makeChain(h, "")
         controller.bindChain(chain)
         let model = chain.models[0]
-        try await waitUntil("root listed with localized stems") {
+        try await h.waitUntil("root listed with localized stems") {
             model.state == .complete && (0..<model.rowCount).map { model.displayName(atRow: $0) }.contains("Projects")
         }
         let column = controller.columnControllers[0]
@@ -100,7 +96,7 @@ final class ColumnsViewTests: XCTestCase {
                 (column.tableView.view(atColumn: 0, row: $0, makeIfNecessary: true) as? ColumnCellView)?.label.stringValue
             })
         }
-        try await waitUntil("cells show display names") { labels() == [wide, "Projects"] }
+        try await h.waitUntil("cells show display names") { labels() == [wide, "Projects"] }
         column.autoFit()
         XCTAssertEqual(column.width, ColumnWidth.fit(names: [wide, "Projects"], font: CellStyle.font))
     }
@@ -113,9 +109,9 @@ final class ColumnsViewTests: XCTestCase {
         try h.host(controller)
         let chain = makeChain(h, "A")
         controller.bindChain(chain)
-        try await waitUntil("A listed") { chain.models[0].state == .complete }
+        try await h.waitUntil("A listed") { chain.models[0].state == .complete }
         chain.models[0].select(.names(["B"]))
-        try await waitUntil("B listed") { chain.models.count == 2 && chain.models[1].state == .complete }
+        try await h.waitUntil("B listed") { chain.models.count == 2 && chain.models[1].state == .complete }
         XCTAssertTrue(controller.handleColumnKey(KeyChord(.right)))
         XCTAssertEqual(chain.activeIndex, 1)
         XCTAssertEqual(chain.activeModel.selectedURLs.map(\.lastPathComponent), ["c.txt"])
@@ -139,9 +135,9 @@ final class ColumnsViewTests: XCTestCase {
         let window = try h.host(controller)
         let chain = makeChain(h, "A")
         controller.bindChain(chain)
-        try await waitUntil("A listed") { chain.models[0].state == .complete }
+        try await h.waitUntil("A listed") { chain.models[0].state == .complete }
         chain.models[0].select(.names(["B"]))
-        try await waitUntil("B listed") { chain.models.count == 2 && chain.models[1].state == .complete }
+        try await h.waitUntil("B listed") { chain.models.count == 2 && chain.models[1].state == .complete }
         window.makeFirstResponder(controller.columnControllers[0].tableView)
         let right = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
                                                    windowNumber: window.windowNumber, context: nil,
@@ -158,10 +154,10 @@ final class ColumnsViewTests: XCTestCase {
         let h = try await ContentTestHarness.make(self)
         try h.file("A/B/c.txt")
         let chain = makeChain(h, "A")
-        try await waitUntil("A listed") { chain.models[0].state == .complete }
+        try await h.waitUntil("A listed") { chain.models[0].state == .complete }
         chain.models[0].select(.names(["B"]))
         XCTAssertTrue(chain.moveRight(), "moving into a column that is still listing")
-        try await waitUntil("first row selected once listed") { chain.activeModel.selectedURLs.map(\.lastPathComponent) == ["c.txt"] }
+        try await h.waitUntil("first row selected once listed") { chain.activeModel.selectedURLs.map(\.lastPathComponent) == ["c.txt"] }
     }
 
     func testAutoFitWidthMeasuresNamesAndClamps() {
@@ -187,7 +183,7 @@ final class ColumnsViewTests: XCTestCase {
         try h.host(controller)
         let chain = makeChain(h, "")
         controller.bindChain(chain)
-        try await waitUntil("root listed") { chain.models[0].state == .complete }
+        try await h.waitUntil("root listed") { chain.models[0].state == .complete }
         let column = controller.columnControllers[0]
         XCTAssertEqual(column.width, CGFloat(h.environment.settings.columnWidth))
         column.setWidth(300, save: true)
@@ -232,7 +228,7 @@ final class ColumnsViewTests: XCTestCase {
         let columns = try XCTUnwrap(content.activeList as? ColumnsViewController)
         session.folder.select(.names(["E"]))
         let column = columns.columnControllers[1]
-        try await waitUntil("E listed") { column.model.state == .complete }
+        try await h.waitUntil("E listed") { column.model.state == .complete }
         XCTAssertEqual(column.emptyState.currentText, L10n.string("This folder is empty"))
         XCTAssertNil(columns.columnControllers[0].emptyState.currentText)
     }
@@ -250,7 +246,7 @@ final class ColumnsViewTests: XCTestCase {
         XCTAssertEqual(session.viewMode, .columns)
         let chain = try XCTUnwrap(session.columnChain)
         session.folder.select(.names(["A"]))
-        try await waitUntil("A listed") { chain.models.count == 2 && chain.models[1].state == .complete }
+        try await h.waitUntil("A listed") { chain.models.count == 2 && chain.models[1].state == .complete }
         handler.perform(.open, target: .contentSelection(session.folder), sender: nil)   // Return / ⌘↓ / double-click
         XCTAssertEqual(chain.activeIndex, 1, "open on the selected folder moves into its column")
         XCTAssertEqual(session.folder.directory.lastPathComponent, "A")
@@ -268,7 +264,7 @@ final class ColumnsViewTests: XCTestCase {
         let session = BrowserSession(environment: h.environment, initialURL: h.url(""))
         defer { session.close() }
         session.updateViewState { $0.mode = .columns }
-        try await waitUntil("root listed") { session.folder.state == .complete }
+        try await h.waitUntil("root listed") { session.folder.state == .complete }
         session.folder.select(.names(["A"]))
         XCTAssertTrue(session.columnChain!.moveRight())
         session.updateViewState { $0.mode = .details }
