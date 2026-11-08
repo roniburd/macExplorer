@@ -60,6 +60,23 @@ enum FoundUpdateStage: Sendable, Equatable { case notDownloaded, downloaded, ins
 /// The user driver's answer to `showUpdateFound` (SPUUserUpdateChoice without Sparkle).
 enum FoundUpdateReply: Sendable, Equatable { case install, dismiss }
 
+/// Sparkle's own "skipped version" (`SUSkippedVersion` in the app's defaults, pinned 2.10.1 SPUSkippedUpdate.m):
+/// background checks ignore every item whose build is ≤ it. Every release since beta.1 runs that Sparkle, so writing
+/// it before a rollback makes "skip until newer" hold even in an older build that doesn't know `updateSkipThroughBuild`.
+struct SparkleSkippedVersion: Sendable {
+    static let key = "SUSkippedVersion"
+    var get: @Sendable @MainActor () -> Int?
+    var set: @Sendable @MainActor (Int?) -> Void
+
+    static let inert = SparkleSkippedVersion(get: { nil }, set: { _ in })
+    /// The running app's standard defaults (Sparkle's SUHost reads the host bundle's standard defaults).
+    static let live = SparkleSkippedVersion(
+        get: { UserDefaults.standard.string(forKey: key).flatMap { Int($0) } },
+        set: { build in
+            if let build { UserDefaults.standard.set(String(build), forKey: key) } else { UserDefaults.standard.removeObject(forKey: key) }
+        })
+}
+
 /// Glue between Sparkle callbacks (forwarded by SparkleBridge) and `UpdateModel` (spec §3). No Sparkle types here:
 /// SparkleBridge only translates types, every decision is made (and unit-tested) here.
 @MainActor
@@ -74,6 +91,10 @@ public final class UpdateController {
     private let settings: Core.Settings
     private let engine: any UpdaterEngine
     private let installedVersion: String
+    /// CFBundleVersion as a number (nil when unknown): what rollbacks and "skip until newer" compare.
+    let installedBuild: Int?
+    /// Install Previous Version… (nil unless SparkleBridge built one for the live updater).
+    var rollback: RollbackService?
     private let terminate: @MainActor () -> Void
     /// Sparkle's "install and relaunch now" action. `reusable` blocks (silent install-on-quit handler, Sparkle >= 2.3;
     /// `retryTerminatingApplication`) may be invoked again after a cancelled quit; one-shot `reply` blocks may not.
@@ -86,17 +107,30 @@ public final class UpdateController {
     private(set) var rejectedVersions: Set<String> = []
 
     init(model: UpdateModel, settings: Core.Settings, engine: any UpdaterEngine, installedVersion: String,
+         installedBuild: Int? = nil, trash: @escaping @MainActor (URL) -> Void = { _ in },
+         sparkleSkip: SparkleSkippedVersion = .inert,
          terminate: @escaping @MainActor () -> Void) {
         self.model = model
         self.settings = settings
         self.engine = engine
         self.installedVersion = installedVersion
+        self.installedBuild = installedBuild
         self.terminate = terminate
         model.installedVersion = installedVersion
+        Self.reconcileRollback(settings: settings, installedBuild: installedBuild, trash: trash)
         engine.automaticallyChecksForUpdates = settings.checkForUpdatesAutomatically
         // Check and auto-check handlers hold the engine and settings directly, so they keep working however the
         // owner holds this controller; only restart needs the controller's pending install block.
-        model.checkHandler = { [engine] _ in engine.checkInBackground() }
+        // A user-initiated check ends "skip until newer" (install-previous-version spec): the user asked for updates.
+        // Our checks all go through Sparkle's background path, which honours its own skipped version, so that ends too.
+        model.checkHandler = { [engine, settings] user in
+            if user {
+                if settings.updateSkipThroughBuild != nil { settings.updateSkipThroughBuild = nil }
+                if sparkleSkip.get() != nil { sparkleSkip.set(nil) }
+            }
+            engine.checkInBackground()
+        }
+        model.rollbackHandler = { [weak self] in self?.rollback }
         model.restartHandler = { [weak self] in self?.restart() }
         model.automaticChecksHandler = { [settings, engine] on in
             settings.checkForUpdatesAutomatically = on
@@ -108,13 +142,39 @@ public final class UpdateController {
         }
     }
 
+    /// The first launch after a rollback: turn the pending record into "skip until newer" when this is the target
+    /// build, trash the replaced app, and drop the record either way.
+    static func reconcileRollback(settings: Core.Settings, installedBuild: Int?, trash: @MainActor (URL) -> Void) {
+        guard let pending = settings.pendingRollback else { return }
+        let result = RollbackSkip.reconcile(pending, installedBuild: installedBuild)
+        if let ceiling = result.skipThrough { settings.updateSkipThroughBuild = ceiling }
+        if let backup = result.trashBackup { trash(URL(filePath: backup, directoryHint: .isDirectory)) }
+        settings.pendingRollback = nil
+    }
+
+    /// `applicationWillTerminate` (before anything else): an armed Install Previous Version… swap starts now.
+    public func applicationWillTerminate() { rollback?.willTerminate() }
+
+    /// An update is downloading or staged: Sparkle would install it on the same quit a rollback needs.
+    var updateInFlight: Bool {
+        switch model.state {
+        case .downloading, .readyToRestart: true
+        default: false
+        }
+    }
+
     // MARK: Sparkle delegate → model (called by SparkleBridge.Forwarder)
 
     func allowedChannels() -> Set<String> { settings.updateChannel.sparkleChannels }
 
-    /// `shouldProceedWithUpdate`: false for a version rejected earlier this session, so Sparkle neither shows nor
-    /// downloads it again (the bridge then throws `suppressedError`, which comes back through `didAbort`).
-    func shouldProceed(version: String) -> Bool {
+    /// `shouldProceedWithUpdate`: false for a version rejected earlier this session, or for a build skipped after a
+    /// rollback, so Sparkle neither shows nor downloads it (the bridge then throws `suppressedError`, which comes back
+    /// through `didAbort` and reads as "no update" on a background check).
+    func shouldProceed(version: String, build: Int? = nil) -> Bool {
+        if RollbackSkip.shouldSkip(build: build, skipThrough: settings.updateSkipThroughBuild) {
+            NSLog("MacExplorer update %@ skipped: rolled back from build %ld", version, settings.updateSkipThroughBuild ?? 0)
+            return false
+        }
         guard rejectedVersions.contains(version) else { return true }
         foundVersion = version
         NSLog("MacExplorer update %@ failed verification earlier this session; not offering it again", version)

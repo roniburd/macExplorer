@@ -61,6 +61,10 @@ public final class Settings {
     public var showFullPathInTitle: Bool { didSet { save(showFullPathInTitle, Key.showFullPathInTitle) } }
     public var updateChannel: UpdateChannel { didSet { save(updateChannel, Key.updateChannel) } }
     public var checkForUpdatesAutomatically: Bool { didSet { save(checkForUpdatesAutomatically, Key.checkForUpdatesAutomatically) } }
+    /// Install Previous Version… "skip until newer": background update checks skip builds ≤ this. nil = no skip.
+    public var updateSkipThroughBuild: Int? { didSet { save(updateSkipThroughBuild, Key.updateSkipThroughBuild) } }
+    /// A rollback swap in flight across the quit/relaunch; the next launch reconciles and clears it.
+    public var pendingRollback: PendingRollback? { didSet { save(pendingRollback, Key.pendingRollback) } }
     public var offerToReportCrashes: Bool { didSet { save(offerToReportCrashes, Key.offerToReportCrashes) } }
     /// Settings › Shortcuts: the user's changes to the key table (sparse; `.empty` = all defaults). Not stored while empty.
     public var keyBindingOverrides: KeyBindingOverrides {
@@ -151,6 +155,8 @@ public final class Settings {
         updateChannel = Self.load(UpdateChannel.self, Key.updateChannel, from: storage) ?? .release
         checkForUpdatesAutomatically = Self.load(Bool.self, Key.checkForUpdatesAutomatically, from: storage) ?? true
         offerToReportCrashes = Self.load(Bool.self, Key.offerToReportCrashes, from: storage) ?? true
+        updateSkipThroughBuild = Self.load(Int.self, Key.updateSkipThroughBuild, from: storage)
+        pendingRollback = Self.load(PendingRollback.self, Key.pendingRollback, from: storage)
         lastReportedCrashes = Array((Self.load([String].self, Key.lastReportedCrashes, from: storage) ?? []).prefix(Self.lastReportedCrashesLimit))
         // Undecodable data: defaults are used and the data is left in place (assigning in init doesn't save).
         if let data = storage.data(forKey: Key.keyBindings) {
@@ -227,6 +233,7 @@ public final class Settings {
         static let offerToReportCrashes = "offerToReportCrashes", lastReportedCrashes = "lastReportedCrashes"
         static let keyBindings = "keyBindings", finderViewsIgnoredBefore = "finderViewsIgnoredBefore"
         static let builtInFolderViewsOff = "builtInFolderViewsOff"
+        static let updateSkipThroughBuild = "updateSkipThroughBuild", pendingRollback = "pendingRollback"
         static let savedSearches = "savedSearches", previewPaneVisible = "previewPaneVisible", previewPaneWidth = "previewPaneWidth"
         static let searchScope = "searchScope", searchMode = "searchMode", searchIncludesPackages = "searchIncludesPackages"
         static let resultsColumns = "resultsColumns"

@@ -685,6 +685,17 @@
         }
       }
     },
+    "An update is waiting to install. Restart to finish it, then install the previous version." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An update is waiting to install. Restart to finish it, then install the previous version."
+          }
+        }
+      }
+    },
     "Any" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -906,6 +917,17 @@
         }
       }
     },
+    "Cancel Install" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancel Install"
+          }
+        }
+      }
+    },
     "Cancel Operations" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1122,6 +1144,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Choose the new location of “%@”."
+          }
+        }
+      }
+    },
+    "Close" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close"
           }
         }
       }
@@ -1408,6 +1441,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Couldn't check for updates: %@"
+          }
+        }
+      }
+    },
+    "Couldn't download from the update server (%@)." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't download from the update server (%@)."
           }
         }
       }
@@ -2501,6 +2545,61 @@
         }
       }
     },
+    "Install Previous Version…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Install Previous Version…"
+          }
+        }
+      }
+    },
+    "Install an Older Version?" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Install an Older Version?"
+          }
+        }
+      }
+    },
+    "Install and Reopen" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Install and Reopen"
+          }
+        }
+      }
+    },
+    "Installed: %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Installed: %@"
+          }
+        }
+      }
+    },
+    "Install…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Install…"
+          }
+        }
+      }
+    },
     "Invert Selection" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2655,6 +2754,17 @@
         }
       }
     },
+    "Loading releases…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading releases…"
+          }
+        }
+      }
+    },
     "Loading…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2754,6 +2864,17 @@
         }
       }
     },
+    "MacExplorer can't replace itself at %@. Move it to the Applications folder and try again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MacExplorer can't replace itself at %@. Move it to the Applications folder and try again."
+          }
+        }
+      }
+    },
     "MacExplorer cleaned up after operations that were interrupted" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2772,6 +2893,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "MacExplorer quit unexpectedly last time"
+          }
+        }
+      }
+    },
+    "MacExplorer will quit and reopen as %@. Automatic updates skip versions up to %@ until you choose Check for Updates…." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MacExplorer will quit and reopen as %@. Automatic updates skip versions up to %@ until you choose Check for Updates…."
+          }
+        }
+      }
+    },
+    "MacExplorer will reopen as %@ when it quits." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MacExplorer will reopen as %@ when it quits."
           }
         }
       }
@@ -3293,6 +3436,17 @@
         }
       }
     },
+    "No earlier releases are available for %@ on your update channel." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No earlier releases are available for %@ on your update channel."
+          }
+        }
+      }
+    },
     "No items match '%@'" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3355,6 +3509,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Not enough space on the destination."
+          }
+        }
+      }
+    },
+    "Notes ↗" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notes ↗"
           }
         }
       }
@@ -3690,6 +3855,17 @@
         }
       }
     },
+    "Previous Versions" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Previous Versions"
+          }
+        }
+      }
+    },
     "Properties" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3763,6 +3939,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Quit MacExplorer"
+          }
+        }
+      }
+    },
+    "Quit Now" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quit Now"
           }
         }
       }
@@ -4922,6 +5109,39 @@
         }
       }
     },
+    "The download couldn't be unpacked (%@)." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The download couldn't be unpacked (%@)."
+          }
+        }
+      }
+    },
+    "The download failed its signature check and was deleted. Nothing was changed." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The download failed its signature check and was deleted. Nothing was changed."
+          }
+        }
+      }
+    },
+    "The downloaded app isn't a MacExplorer release signed like this one (%@). Nothing was changed." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The downloaded app isn't a MacExplorer release signed like this one (%@). Nothing was changed."
+          }
+        }
+      }
+    },
     "The file may open in a different app, or not at all." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4940,6 +5160,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The item will be hidden unless hidden items are shown."
+          }
+        }
+      }
+    },
+    "The list of releases couldn't be read." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The list of releases couldn't be read."
           }
         }
       }
@@ -5758,6 +5989,28 @@
         }
       }
     },
+    "build number" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "build number"
+          }
+        }
+      }
+    },
+    "bundle identifier" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "bundle identifier"
+          }
+        }
+      }
+    },
     "calculating…" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -5766,6 +6019,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "calculating…"
+          }
+        }
+      }
+    },
+    "code signature" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "code signature"
           }
         }
       }
@@ -5811,6 +6075,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "macOS is blocking access to '%@'."
+          }
+        }
+      }
+    },
+    "no single app in the archive" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "no single app in the archive"
           }
         }
       }

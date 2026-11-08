@@ -9,14 +9,18 @@ import Sparkle
 @MainActor
 enum SparkleBridge {
     static func makeController(model: UpdateModel, settings: Core.Settings, bundle: Bundle) -> UpdateController {
-        let installed = bundle.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
+        let info = bundle.infoDictionary ?? [:]
+        let installed = info["CFBundleShortVersionString"] as? String ?? "unknown"
+        let build = (info["CFBundleVersion"] as? String).flatMap { Int($0) }
         let forwarder = Forwarder()
         let driver = UserDriver(forwarder: forwarder, settings: settings)
         let updater = SPUUpdater(hostBundle: bundle, applicationBundle: bundle, userDriver: driver, delegate: forwarder)
         let engine = SparkleEngine(updater: updater, retained: [forwarder, driver])
         let controller = UpdateController(model: model, settings: settings, engine: engine, installedVersion: installed,
+                                          installedBuild: build, trash: RollbackService.trashQuietly, sparkleSkip: .live,
                                           terminate: { NSApp.terminate(nil) })
         forwarder.controller = controller
+        controller.rollback = RollbackService.live(controller: controller, settings: settings, bundle: bundle)
         return controller
     }
 
@@ -51,7 +55,7 @@ final class Forwarder: NSObject, SPUUpdaterDelegate {
     func updater(_ updater: SPUUpdater, shouldProceedWithUpdate updateItem: SUAppcastItem,
                  updateCheck: SPUUpdateCheck) throws {
         let version = updateItem.displayVersionString
-        guard let controller, !controller.shouldProceed(version: version) else { return }
+        guard let controller, !controller.shouldProceed(version: version, build: Int(updateItem.versionString)) else { return }
         throw UpdateController.suppressedError(version: version)
     }
 

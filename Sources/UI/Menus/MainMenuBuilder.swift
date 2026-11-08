@@ -76,6 +76,8 @@ import Core
             standard("About MacExplorer", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
             // AppDelegate implements macx_checkForUpdates: (disabled when no updater is configured).
             standard("Check for Updates…", UpdateCommands.checkForUpdates),
+            // AppDelegate implements macx_installPreviousVersion: (disabled with the updater).
+            standard("Install Previous Version…", UpdateCommands.installPreviousVersion),
             .separator(),
             // P1-30's AppDelegate implements macx_showSettings: (disabled until then).
             standard("Settings…", NSSelectorFromString("macx_showSettings:")),
