@@ -44,24 +44,18 @@
   .keys .or { color: var(--muted); font-size: 14px; }
 
   /* hero */
-  .hero { text-align: center; padding-block: 56px 0; }
+  .hero { text-align: center; padding-block-start: 56px; }
   .hero h1 { font-size: clamp(38px, 6.4vw, 68px); line-height: 1.02; letter-spacing: -.035em; font-weight: 800; margin: 0 auto 16px; max-width: 18ch; }
   .hero .sub { font-size: 20px; color: var(--muted); max-width: 40ch; margin: 0 auto; }
-  .actions { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 12px; margin: 30px 0 10px; }
   .dl { background: var(--graphite); color: #fff; text-decoration: none; font-weight: 650; padding: 13px 26px; border-radius: 12px; }
   .dl:hover { background: #3a3e45; }
-  .ghost { text-decoration: none; font-weight: 600; padding: 12px 22px; border-radius: 12px; background: var(--cap);
-           box-shadow: 0 0 0 .5px rgba(0,0,0,.14), 0 4px 10px rgba(38,41,46,.08); }
-  .ghost:hover { background: #fff; }
-  .hero small { color: var(--muted); font-size: 14px; }
-  .hero figure { margin: 36px auto 0; max-width: 900px; }
+  .hero { padding-block-end: 64px; }
+  .hero figure { margin: 40px auto 0; }
   .hero figure img { display: block; width: 100%; height: auto; }
+  .gh { display: inline-flex; align-items: center; gap: 7px; }
 
-  /* install, right under the hero */
-  .install { padding-block: 40px 64px; text-align: center; }
-  .install h2 { font-size: clamp(28px, 4vw, 38px); letter-spacing: -.025em; margin: 0 0 6px; }
-  .install > p { color: var(--muted); margin: 0 0 22px; }
-  .ways { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; text-align: left; }
+  /* install, in the hero */
+  .ways { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; text-align: left; margin-top: 32px; }
   .way { background: var(--cap); border-radius: 14px; padding: 18px 18px 20px; box-shadow: 0 0 0 .5px rgba(0,0,0,.12); min-width: 0; }
   .way h3 { margin: 0 0 4px; font-size: 18px; letter-spacing: -.01em; }
   .way p { margin: 0 0 14px; font-size: 15px; color: var(--muted); }
@@ -70,7 +64,7 @@
   .code code { min-width: 0; flex: 1; font-size: 13px; overflow-x: auto; white-space: nowrap; }
   .code button { border: 0; border-radius: 7px; background: #454a52; color: #fff; padding: 5px 10px; font: inherit; font-size: 13px; cursor: pointer; }
   .code button:hover { background: #575c65; }
-  .install .fine { color: var(--muted); font-size: 14px; max-width: 64ch; margin: 18px auto 0; }
+  .hero .fine { color: var(--muted); font-size: 14px; max-width: 64ch; margin: 16px auto 0; }
 
   /* why */
   .why { padding-block: 64px; border-top: 1px solid var(--line); }
@@ -108,7 +102,7 @@
   <nav aria-label="Page">
     <a href="#why">Why</a>
     <a href="#shortcuts">Shortcuts</a>
-    <a href="https://github.com/roniburd/macExplorer">GitHub</a>
+    <a class="gh" href="https://github.com/roniburd/macExplorer"><svg width="18" height="18" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>Source on GitHub</a>
   </nav>
 </header></div>
 
@@ -116,43 +110,29 @@
   <section class="hero col">
     <h1>Finder, with the good parts of Explorer.</h1>
     <p class="sub">A native file manager for macOS 26. Cut and paste that moves files, an address bar you can type in, a folder tree, and folder sizes.</p>
-    <div class="actions">
-      <a class="dl" href="https://github.com/roniburd/macExplorer/releases/latest">Download for macOS 26</a>
-      <a class="ghost" href="#install">Other ways to install</a>
+    <div class="ways" id="install">
+      <div class="way">
+        <h3>Download</h3>
+        <p>Open the .dmg and drag MacExplorer to Applications.</p>
+        <a class="dl" href="https://github.com/roniburd/macExplorer/releases/latest">Download for macOS 26</a>
+      </div>
+      <div class="way">
+        <h3>Homebrew</h3>
+        <p>Or one line in Terminal.</p>
+        <div class="code"><code id="brew">brew install --cask roniburd/macexplorer/macexplorer</code><button type="button" data-copy="brew">Copy</button></div>
+      </div>
     </div>
-    <small>Free and open source. Beta.</small>
+    <p class="fine">Free, open source, and it updates itself. Not notarized yet: if macOS won't open it the first time, run
+      <code>xattr -dr com.apple.quarantine /Applications/MacExplorer.app</code> once.</p>
     <figure><img src="assets/shots/details.png" width="1112" height="752"
       alt="MacExplorer showing a Documents folder with folder sizes, a folder tree in the sidebar and the selection size in the status bar."></figure>
   </section>
 
-  <section class="install wide" id="install" aria-labelledby="install-title">
-    <h2 id="install-title">Install</h2>
-    <p>Free, MIT-licensed, and it updates itself. Needs macOS 26 Tahoe.</p>
-    <div class="ways">
-      <div class="way">
-        <h3>Download</h3>
-        <p>Open the .dmg and drag MacExplorer to Applications.</p>
-        <a class="dl" href="https://github.com/roniburd/macExplorer/releases/latest">Download the .dmg</a>
-      </div>
-      <div class="way">
-        <h3>Homebrew</h3>
-        <p>One line in Terminal.</p>
-        <div class="code"><code id="brew">brew install --cask roniburd/macexplorer/macexplorer</code><button type="button" data-copy="brew">Copy</button></div>
-      </div>
-      <div class="way">
-        <h3>Source</h3>
-        <p>Build it yourself with Xcode 27 and SwiftPM.</p>
-        <div class="code"><code id="clone">git clone https://github.com/roniburd/macExplorer.git</code><button type="button" data-copy="clone">Copy</button></div>
-      </div>
-    </div>
-    <p class="fine">MacExplorer isn't notarized yet. If macOS won't open it the first time, run
-      <code>xattr -dr com.apple.quarantine /Applications/MacExplorer.app</code> once.</p>
-  </section>
-
   <section class="why col" id="why">
     <h2>Why we built it</h2>
-    <p>Lots of people move between a Windows PC at work and a Mac at home, or switched after years of File Explorer. Finder does a lot well, but a few things you do every day are harder than they need to be: moving files, typing a path, seeing where you are in the tree.</p>
-    <p>We kept the Mac parts (Quick Look, tags, the sidebar, Liquid Glass, the ⌘ shortcuts) and borrowed the Explorer ideas that make those everyday jobs quicker. It's a native AppKit app, and it opens folders with 100,000 files without stalling.</p>
+    <p>A file manager should make everyday jobs quick: moving files, getting to a folder, seeing where you are and what's taking space. MacExplorer is a native AppKit app that does those well and stays fast in folders with 100,000 files.</p>
+    <p>Finder gets a lot right, so we kept it: Quick Look, tags, the sidebar, Liquid Glass, the ⌘ shortcuts. Where Finder makes those jobs harder than they need to be, we borrowed the ideas Windows File Explorer got right: cut and paste, an address bar you can type in, a folder tree, folder sizes.</p>
+    <p>That also makes the Mac easier if you move between a Windows PC at work and a Mac at home, or switched after years of File Explorer.</p>
   </section>
 
   <div class="col">
@@ -181,8 +161,8 @@
     </section>
 
     <section class="feature">
-      <h2>Downloads, sorted out.</h2>
-      <p>Group any folder by date, kind, size or name. Each folder remembers its own view.</p>
+      <h2>Group any folder.</h2>
+      <p>Group by date to see what changed today, by kind to find every PDF, or by size to see what's big. Collapse the groups you don't need. Each folder remembers its own view.</p>
       <figure><img src="assets/shots/group-by-date.png" width="1112" height="752" loading="lazy" alt="Downloads grouped into Today, Yesterday, Last week, Last month and Earlier this year."></figure>
     </section>
   </div>
