@@ -47,6 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        updateController?.applicationWillTerminate()   // an armed rollback records itself before settings flush
         lifecycle?.willTerminate()
         sessionMarker?.end()
     }
@@ -93,6 +94,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         context.updates.checkNow()
     }
 
+    /// macExplorer › Install Previous Version…: the release picker window.
+    @objc func macx_installPreviousVersion(_ sender: Any?) {
+        context?.updates.showInstallPreviousVersion()
+    }
+
     /// Help › Report a Bug… and the toolbar's Send Feedback menu: the prefilled GitHub bug form.
     @objc func macx_reportBug(_ sender: Any?) { if let context { FeedbackActions.open(.bug, context: context) } }
 
@@ -101,6 +107,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func validateMenuItem(_ item: NSMenuItem) -> Bool {
         if item.action == UpdateCommands.checkForUpdates { return context?.updates.isAvailable ?? false }
+        if item.action == UpdateCommands.installPreviousVersion { return context?.updates.canInstallPreviousVersion ?? false }
         return true
     }
 

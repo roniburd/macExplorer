@@ -613,6 +613,7 @@ final class ListBackgroundSpacer: NSView {
     override var isOpaque: Bool { true }
     override func draw(_ dirtyRect: NSRect) {
         NSColor.controlBackgroundColor.setFill()
-        dirtyRect.fill()
+        // Not `dirtyRect`: views don't clip to bounds (macOS 14+), so it can span the whole pane and blank the list.
+        bounds.intersection(dirtyRect).fill()
     }
 }
