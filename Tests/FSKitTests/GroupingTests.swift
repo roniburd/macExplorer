@@ -120,7 +120,9 @@ final class GroupingTests: XCTestCase {
     /// under `swift test --parallel` on a shared runner measures the runner. The budget is `macx-bench
     /// --check-budgets` (`resort.grouped.*` and `resort.grouped.nameFirstLetter.nonASCII`, 30 ms, release build).
     func testPartition100kIsAStablePermutationIntoKeyedRuns() {
-        let items = (0..<100_000).map { (name: "file \($0 % 977) \($0).\(["txt", "png", "swift", "md"][$0 % 4])", kind: Kind.file, size: Int64($0 * 37), mtime: Int64($0) * 86_400_000_000_000) }
+        // Several first letters (F, P, N, 0–9 and #), so Name groups have more than one run to tile and order.
+        let firstWords = ["file", "Photo", "notes", "2026", "_draft"]
+        let items = (0..<100_000).map { (name: "\(firstWords[$0 % 5]) \($0 % 977) \($0).\(["txt", "png", "swift", "md"][$0 % 4])", kind: Kind.file, size: Int64($0 * 37), mtime: Int64($0) * 86_400_000_000_000) }
         let store = makeStore(items)
         let b = DateBuckets(now: Date(timeIntervalSince1970: 100_000 * 86_400), calendar: utc)
         func key(_ g: GroupBy, _ index: UInt32) -> GroupKey {
