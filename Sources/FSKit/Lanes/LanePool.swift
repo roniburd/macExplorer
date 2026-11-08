@@ -118,6 +118,13 @@ public actor LanePool {
 
     public nonisolated var healthChanges: AsyncStream<(VolumeID, VolumeHealth)> { hub.stream() }
 
+    /// Test hook (`@testable`): marks `volume` unresponsive now, exactly as reaching poisonCap would, so a test can
+    /// fake a hung volume without a short real-clock stallTimeout that would also govern its healthy work. The app
+    /// never calls this; `resetVolume` undoes it.
+    func markUnresponsive(_ volume: VolumeID) {
+        if unresponsive.insert(volume).inserted { hub.send((volume, .unresponsive)) }
+    }
+
     // MARK: Internals
 
     private func dispatch(_ item: IOLane.Item) {

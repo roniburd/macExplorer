@@ -1,6 +1,6 @@
 import Foundation
 import MacxFixtures
-import MacxFS
+@testable import MacxFS
 import XCTest
 @testable import Core
 
@@ -150,39 +150,31 @@ final class AddressResolverTests: XCTestCase {
         try sandbox.setMode("closed", 0o755)
     }
 
+    /// A pool whose watchdog never fires within a test (no real-clock stall can poison healthy work), with the
+    /// hung volume marked unresponsive by hand, as the watchdog would after poisonCap stalls.
+    private func poolWithUnresponsive(_ volume: VolumeID) async -> LanePool {
+        let pool = LanePool(config: WatchdogConfig(stallTimeout: .seconds(600), lanesPerClass: 1, poisonCap: 1))
+        await pool.markUnresponsive(volume)
+        return pool
+    }
+
     func testResolveUnresponsiveVolumeIsNoAccess() async throws {
-        let pool = LanePool(config: WatchdogConfig(stallTimeout: .milliseconds(60), tick: .milliseconds(10), lanesPerClass: 1, poisonCap: 1))
         let volume = VolumeID(raw: "test-hung")
-        let gate = DispatchSemaphore(value: 0)
-        let hung = Task { try? await pool.perform(on: volume, .read) { _ in _ = gate.wait(timeout: .now() + 3) } }
-        defer { gate.signal(); hung.cancel() }
-        var health = await pool.health(of: volume)
-        for _ in 0..<200 where health != .unresponsive {
-            try await Task.sleep(for: .milliseconds(10))
-            health = await pool.health(of: volume)
-        }
-        try XCTSkipIf(health != .unresponsive, "watchdog did not mark the volume unresponsive in time")
+        let pool = await poolWithUnresponsive(volume)
+        let health = await pool.health(of: volume)
+        XCTAssertEqual(health, .unresponsive)
         let r = await AddressResolver.resolve("/", current: sandbox.root, home: sandbox.root, lanes: pool, volume: volume)
         XCTAssertEqual(r, .noAccess("/"))
     }
     /// The lane follows the typed path's volume: a hung volume elsewhere doesn't affect local input, and input on
     /// the hung volume never touches (or poisons) the current folder's lanes.
     func testResolveRoutesTheLaneByTheTargetsVolume() async throws {
-        let pool = LanePool(config: WatchdogConfig(stallTimeout: .milliseconds(60), tick: .milliseconds(10), lanesPerClass: 1, poisonCap: 1))
         try sandbox.createDirectory("local/a")
         try sandbox.createDirectory("share/x")
         let hungID = VolumeID(raw: "test-hung-share"), localID = VolumeID(raw: "test-local")
         let mounts = MountTable([Self.volume(localID, at: URL(filePath: "/", directoryHint: .isDirectory)),
                                  Self.volume(hungID, at: sandbox.url("share"))])
-        let gate = DispatchSemaphore(value: 0)
-        let hung = Task { try? await pool.perform(on: hungID, .read) { _ in _ = gate.wait(timeout: .now() + 3) } }
-        defer { gate.signal(); hung.cancel() }
-        var health = await pool.health(of: hungID)
-        for _ in 0..<200 where health != .unresponsive {
-            try await Task.sleep(for: .milliseconds(10))
-            health = await pool.health(of: hungID)
-        }
-        try XCTSkipIf(health != .unresponsive, "watchdog did not mark the volume unresponsive in time")
+        let pool = await poolWithUnresponsive(hungID)
         let current = sandbox.url("local")
         let onShare = sandbox.url("share/x").path(percentEncoded: false)
         let r = await AddressResolver.resolve(onShare, current: current, home: sandbox.root, lanes: pool, mounts: mounts)
