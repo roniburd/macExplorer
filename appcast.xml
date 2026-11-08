@@ -5,6 +5,16 @@
     <link>https://roniburd.github.io/macExplorer/appcast.xml</link>
     <language>en</language>
     <item>
+      <title>MacExplorer 0.2.0-beta.16</title>
+      <pubDate>Sun, 08 Nov 2026 09:40:18 GMT</pubDate>
+      <sparkle:version>216</sparkle:version>
+      <sparkle:shortVersionString>0.2.0-beta.16</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:releaseNotesLink>https://github.com/roniburd/macExplorer/releases/tag/v0.2.0-beta.16</sparkle:releaseNotesLink>
+      <sparkle:channel>beta</sparkle:channel>
+      <enclosure url="https://github.com/roniburd/macExplorer/releases/download/v0.2.0-beta.16/MacExplorer-0.2.0-beta.16.zip" length="9730411" type="application/octet-stream" sparkle:edSignature="EGwYhONFao8MDtjXoTS1BePvVmRZ2drOu5k2f453+IMBX+pt61aPTYctubtpnnhG5MQJEeCQq3r7I00BDz4vBw==" />
+    </item>
+    <item>
       <title>MacExplorer 0.2.0-beta.15</title>
       <pubDate>Sun, 08 Nov 2026 07:32:05 GMT</pubDate>
       <sparkle:version>214</sparkle:version>
