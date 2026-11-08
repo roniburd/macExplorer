@@ -19,6 +19,9 @@ enum CellStyle {
 
 final class NameCellView: NSTableCellView {
     static let reuseID = NSUserInterfaceItemIdentifier("macx.cell.name")
+    /// Layout the Details rubber band mirrors to tell the name from blank space without a cell view.
+    static let iconLeading: CGFloat = 2
+    static let iconTextGap: CGFloat = 6
     let iconView = NSImageView()
     let label = NSTextField(labelWithString: "")
     let cloudBadge = NSImageView()
@@ -41,11 +44,11 @@ final class NameCellView: NSTableCellView {
         textField = label
         iconSide = iconView.widthAnchor.constraint(equalToConstant: 16)
         NSLayoutConstraint.activate([
-            iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2),
+            iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Self.iconLeading),
             iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
             iconSide,
             iconView.heightAnchor.constraint(equalTo: iconView.widthAnchor),
-            label.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 6),
+            label.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: Self.iconTextGap),
             label.centerYAnchor.constraint(equalTo: centerYAnchor),
             cloudBadge.leadingAnchor.constraint(greaterThanOrEqualTo: label.trailingAnchor, constant: 4),
             cloudBadge.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),

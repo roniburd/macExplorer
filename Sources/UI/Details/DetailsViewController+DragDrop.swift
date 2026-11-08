@@ -5,6 +5,7 @@ import MacxFS
 /// Drag source, right-drag and drop destination for the Details list (§5.6, P1-36).
 extension DetailsViewController {
     func handleMouseDragged(_ event: NSEvent) {
+        if isTrackingRubberBand { return dragRubberBand(event) }
         guard let source, let start = mouse.mouseDownWindowPoint, let row = mouse.mouseDownRow, !dragSource.isDragging,
               RightDragTracker.exceedsThreshold(from: start, to: event.locationInWindow) else { return }
         mouse.cancelPendingForDrag()

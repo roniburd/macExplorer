@@ -192,6 +192,8 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     lazy var dragSource = DragSourceController(icons: context.icons)
     var rightDrag = RightDragTracker()
     var rightDownEvent: NSEvent?
+    /// A press on blank space that a drag turns into a selection box (DetailsViewController+RubberBand).
+    var bandDrag: DetailsBandDrag?
 
     var focusView: NSView { tableView }
     var iconPoints: Double { density == .comfortable ? 20 : 16 }
@@ -509,19 +511,26 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
 
     func handleMouseDown(_ event: NSEvent) {
         view.window?.makeFirstResponder(tableView)
+        endRubberBand()
         guard let source else { return }
-        let row = tableView.hitRow(at: tableView.convert(event.locationInWindow, from: nil))
+        let point = tableView.convert(event.locationInWindow, from: nil)
+        let row = tableView.hitRow(at: point)
         if let group = mapping.groupIndex(forTableRow: row) {      // a header: toggle, never select (P2-10)
             if event.clickCount == 1 { toggleGroup(group) }
             return
         }
         let mapping = self.mapping
-        mouse.mouseDown(row: mapping.modelRow(forTableRow: row), event: event, source: source, from: tableView,
-                        hidden: mapping.hiddenModelRows)
+        let modelRow = mapping.modelRow(forTableRow: row)
+        // Blank space clicks as before; a drag from it draws a box over the selection from before the click.
+        let base = source.selection.rows
+        let armsBand = event.clickCount == 1 && !pressIsOnItem(modelRow: modelRow, tableRow: row, at: point)
+        mouse.mouseDown(row: modelRow, event: event, source: source, from: tableView, hidden: mapping.hiddenModelRows)
+        if armsBand { armRubberBand(at: point, event: event, base: base) }
         reloadSelectionDrawing()
     }
 
     func handleMouseUp(_ event: NSEvent) {
+        endRubberBand()
         guard let source else { return }
         mouse.mouseUp(source: source)
         reloadSelectionDrawing()
