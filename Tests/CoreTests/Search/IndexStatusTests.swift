@@ -1,6 +1,7 @@
 import XCTest
 @testable import Core
 @testable import MacxFS
+import Synchronization
 
 final class IndexStatusTests: XCTestCase {
     func testParse() {
@@ -20,13 +21,40 @@ final class IndexStatusTests: XCTestCase {
         XCTAssertEqual(status, .disabled)
     }
 
-    /// Read-only: `mdutil -s /` only reports status.
+    /// Read-only: `mdutil -s /` only reports status. A smoke test of the real command, with no time budget.
     func testLiveStatusOfRootIsCached() async {
         let provider = MdutilIndexStatus(lanes: LanePool())
         let first = await provider.status(ofVolumeAt: URL(filePath: "/"))
-        let start = ContinuousClock.now
         let second = await provider.status(ofVolumeAt: URL(filePath: "/"))
         XCTAssertEqual(first, second)
-        XCTAssertLessThan(ContinuousClock.now - start, .milliseconds(20), "second answer comes from the cache")
     }
+
+    /// The cache is proven by counting command runs, not by how fast the second answer comes.
+    func testSecondStatusComesFromTheCache() async {
+        let runs = RunLog()
+        let provider = MdutilIndexStatus(lanes: LanePool()) { path, _, _ in
+            runs.record(path)
+            return .disabled
+        }
+        let first = await provider.status(ofVolumeAt: URL(filePath: "/Volumes/X"))
+        let second = await provider.status(ofVolumeAt: URL(filePath: "/Volumes/X/"))
+        XCTAssertEqual(first, .disabled)
+        XCTAssertEqual(second, .disabled)
+        XCTAssertEqual(runs.paths, ["/Volumes/X"], "second answer comes from the cache")
+        let expired = MdutilIndexStatus(lanes: LanePool(), cacheLifetime: .zero) { path, _, _ in
+            runs.record(path)
+            return .enabled
+        }
+        _ = await expired.status(ofVolumeAt: URL(filePath: "/Volumes/Y"))
+        let again = await expired.status(ofVolumeAt: URL(filePath: "/Volumes/Y"))
+        XCTAssertEqual(again, .enabled)
+        XCTAssertEqual(runs.paths, ["/Volumes/X", "/Volumes/Y", "/Volumes/Y"], "an expired entry runs the command again")
+    }
+}
+
+/// The mount points a stand-in status command was run for, from any lane.
+private final class RunLog: Sendable {
+    private let log = Mutex<[String]>([])
+    func record(_ path: String) { log.withLock { $0.append(path) } }
+    var paths: [String] { log.withLock { $0 } }
 }
