@@ -2,15 +2,15 @@
  "fixture": {"files": ["a/needle-1.txt", "b/needle-2.txt", "b/needle-3.txt", "keep.txt"], "dirs": []},
  "steps": [
    {"key": "cmd+f"}, {"waitFor": {"focus": "fieldEditor"}}, {"type": "needle"}, {"setSearchScope": "subfolders"},
-   {"waitFor": {"searchState": "complete", "resultCount": 3}, "timeoutMs": 5000},
+   {"waitFor": {"searchState": "complete", "resultCount": 3}},
    {"click": "needle-2.txt"}, {"key": "cmd+delete"},
-   {"waitFor": {"rows": ["needle-1.txt", "needle-3.txt"]}, "timeoutMs": 3000},
+   {"waitFor": {"rows": ["needle-1.txt", "needle-3.txt"]}},
    {"expect": {"filesAbsent": ["b/needle-2.txt"], "filesExist": ["a/needle-1.txt", "b/needle-3.txt", "keep.txt"], "searchState": "complete"}},
    {"key": "cmd+z"},
-   {"waitFor": {"rows": ["needle-1.txt", "needle-2.txt", "needle-3.txt"], "filesExist": ["b/needle-2.txt"]}, "timeoutMs": 5000},
+   {"waitFor": {"rows": ["needle-1.txt", "needle-2.txt", "needle-3.txt"], "filesExist": ["b/needle-2.txt"]}},
    {"click": "needle-2.txt"}, {"key": "cmd+delete"},
-   {"waitFor": {"rows": ["needle-1.txt", "needle-3.txt"], "filesAbsent": ["b/needle-2.txt"]}, "timeoutMs": 3000},
+   {"waitFor": {"rows": ["needle-1.txt", "needle-3.txt"], "filesAbsent": ["b/needle-2.txt"]}},
    {"click": "needle-3.txt"}, {"key": "F2"}, {"type": "renamed-3"}, {"key": "return"},
-   {"waitFor": {"rows": ["needle-1.txt", "renamed-3.txt"]}, "timeoutMs": 3000},
+   {"waitFor": {"rows": ["needle-1.txt", "renamed-3.txt"]}},
    {"expect": {"filesExist": ["b/renamed-3.txt"], "filesAbsent": ["b/needle-3.txt"], "rowPaths": ["a", "b"], "selection": ["renamed-3.txt"]}}
  ]}

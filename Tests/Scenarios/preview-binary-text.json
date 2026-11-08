@@ -1,9 +1,9 @@
 {"name": "preview-binary-text",
  "fixture": {"files": [], "dirs": [], "binary": {"huge.txt": 4000000, "data.log": 4096}, "contents": {"small.txt": "hello preview\n"}},
  "steps": [
-  {"key": "opt+p"}, {"waitFor": {"previewState": "nothing"}, "timeoutMs": 2000},
-  {"click": "huge.txt"}, {"waitFor": {"previewState": "binary"}, "timeoutMs": 3000},
-  {"click": "small.txt"}, {"waitFor": {"previewState": "text", "previewTextPrefix": "hello preview"}, "timeoutMs": 3000},
-  {"click": "data.log"}, {"waitFor": {"previewState": "binary"}, "timeoutMs": 3000},
-  {"key": "opt+p"}, {"waitFor": {"previewState": "hidden"}, "timeoutMs": 2000}
+  {"key": "opt+p"}, {"waitFor": {"previewState": "nothing"}},
+  {"click": "huge.txt"}, {"waitFor": {"previewState": "binary"}},
+  {"click": "small.txt"}, {"waitFor": {"previewState": "text", "previewTextPrefix": "hello preview"}},
+  {"click": "data.log"}, {"waitFor": {"previewState": "binary"}},
+  {"key": "opt+p"}, {"waitFor": {"previewState": "hidden"}}
  ]}

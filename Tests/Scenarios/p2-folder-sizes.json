@@ -5,13 +5,13 @@
   {"waitFor": {"rows": ["big", "small"], "state": "complete"}},
   {"expect": {"cells": {"big": {"size": "--"}}}},
   {"menu": ["View", "Calculate Folder Sizes"]},
-  {"waitFor": {"cells": {"big": {"size": "5 MB"}, "small": {"size": "1 KB"}}}, "timeoutMs": 5000},
+  {"waitFor": {"cells": {"big": {"size": "5 MB"}, "small": {"size": "1 KB"}}}},
   {"menu": ["View", "Sort By", "Size"]},
   {"waitFor": {"rows": ["small", "big"]}},
   {"fsWrite": {"path": "big/deep/new.bin", "bytes": 4000000}},
-  {"waitFor": {"cells": {"big": {"size": "9 MB"}}}, "timeoutMs": 6000},
+  {"waitFor": {"cells": {"big": {"size": "9 MB"}}}},
   {"doubleClick": "small"},
   {"waitFor": {"folder": "small"}},
   {"key": "cmd+["},
-  {"waitFor": {"cells": {"big": {"size": "9 MB"}}}, "timeoutMs": 1000}
+  {"waitFor": {"cells": {"big": {"size": "9 MB"}}}}
  ]}

@@ -3,14 +3,14 @@
  "steps": [
   {"key": "cmd+f"}, {"waitFor": {"focus": "fieldEditor"}},
   {"type": "needle"}, {"setSearchScope": "subfolders"},
-  {"waitFor": {"searchState": "complete", "resultCount": 2}, "timeoutMs": 5000},
+  {"waitFor": {"searchState": "complete", "resultCount": 2}},
   {"command": "saveSearch"}, {"waitFor": {"sheetPresent": true}},
   {"type": "Needles"}, {"answerAlert": "OK"},
   {"waitFor": {"sidebarSearches": ["Needles"]}},
   {"clickSidebar": "searches:Needles"},
   {"waitFor": {"focus": "sidebarSavedSearch"}},
   {"key": "fn+delete"},
-  {"waitFor": {"sidebarSearches": []}, "timeoutMs": 3000},
+  {"waitFor": {"sidebarSearches": []}},
   {"sleepMs": 300},
   {"expect": {"sidebarSearches": [], "filesExist": ["needle-1.txt", "a/needle-2.txt", "other.txt", "a"], "sheetPresent": false}}
  ]}

@@ -11,7 +11,7 @@
   {"key": "cmd+]"},
   {"waitFor": {"folder": "A", "viewMode": "icons"}},
   {"menu": ["View", "Apply to All Folders…"]},
-  {"answerAlert": "Apply", "timeoutMs": 3000},
+  {"answerAlert": "Apply"},
   {"key": "cmd+["},
   {"waitFor": {"folder": "", "viewMode": "icons"}},
   {"key": "cmd+1"},

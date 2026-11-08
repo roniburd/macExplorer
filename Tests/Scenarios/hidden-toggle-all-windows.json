@@ -2,9 +2,9 @@
  "fixture": {"files": ["top.txt", ".dot", "d/.x", "d/y"], "dirs": ["d"]},
  "steps": [
   {"expect": {"rowCount": 2}},
-  {"key": "cmd+n"}, {"waitFor": {"windowCount": 2, "rowCount": 2}},
-  {"key": "cmd+shift+."}, {"waitFor": {"rowCount": 3}},
+  {"key": "cmd+n"}, {"waitFor": {"windowCount": 2, "windowStates": ["complete", "complete"], "rowCount": 2}},
+  {"key": "cmd+shift+."}, {"waitFor": {"showHidden": true, "rowCount": 3}},
   {"key": "cmd+w"}, {"waitFor": {"windowCount": 1}},
   {"waitFor": {"rowCount": 3, "rowsContain": [".dot"]}},
-  {"key": "cmd+shift+."}, {"waitFor": {"rowCount": 2}, "timeoutMs": 2000}
+  {"key": "cmd+shift+."}, {"waitFor": {"showHidden": false, "rowCount": 2}}
  ]}

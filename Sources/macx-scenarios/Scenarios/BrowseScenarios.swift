@@ -68,11 +68,14 @@ enum BrowseScenarios {
                 await Task.yield()
             }
             let final = try ctx.unwrap(last, "final model")
-            try await ctx.waitUntil("small folder completes", timeout: .seconds(10)) { final.state == .complete }
-            try await Task.sleep(for: .milliseconds(300))
+            try await ctx.waitUntil("small folder completes") { final.state == .complete }
+            try await Task.sleep(for: .milliseconds(300))      // a negative check: a stale result could land late
             try ctx.expectEqual(ctx.names(final), ["a.txt", "b.txt", "c.txt"], "only the small folder's rows")
-            let fresh = try await ctx.open(small, timeout: .seconds(3))
-            try ctx.expectEqual(fresh.state, .complete, "lanes still healthy after 20 cancelled reads")
+            // Lane health is the volume's state, not how fast a read gets a lane while cancelled reads still drain.
+            let health = await ctx.env.lanes.health(of: final.volume?.id ?? .unknown)
+            try ctx.expectEqual(health, .healthy, "lanes still healthy after 20 cancelled reads")
+            let fresh = try await ctx.open(small)
+            try ctx.expectEqual(fresh.state, .complete, "a fresh read still completes")
         },
     ]
 }

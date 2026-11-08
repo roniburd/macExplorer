@@ -12,7 +12,7 @@
   {"waitFor": {"cells": {"a.txt": {"tags": "Work", "permissions": "-rw-r--r--", "owner": "{user}", "dateLastOpened": "--"},
                          "b.txt": {"comments": "hello", "tags": ""}}}},
   {"fsTags": {"path": "b.txt", "tags": ["Home", "Red"]}},
-  {"waitFor": {"cells": {"b.txt": {"tags": "Home, Red"}}}, "timeoutMs": 3000},
+  {"waitFor": {"cells": {"b.txt": {"tags": "Home, Red"}}}},
   {"click": "header:tags"},
   {"waitFor": {"sort": "tags.asc", "rows": ["b.txt", "a.txt"]}},
   {"click": "header:tags"},

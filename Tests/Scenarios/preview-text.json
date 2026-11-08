@@ -2,8 +2,8 @@
  "fixture": {"files": ["big.txt"], "dirs": [], "sizes": {"big.txt": 300000}, "contents": {"small.txt": "hello preview\nsecond line\n"}},
  "steps": [
   {"expect": {"previewState": "hidden"}},
-  {"key": "opt+p"}, {"waitFor": {"previewState": "nothing"}, "timeoutMs": 2000},
-  {"click": "small.txt"}, {"waitFor": {"previewState": "text", "previewTextPrefix": "hello preview"}, "timeoutMs": 3000},
-  {"click": "big.txt"}, {"waitFor": {"previewState": "text", "previewTextPrefix": "xxxxxxxxxx"}, "timeoutMs": 3000},
-  {"key": "opt+p"}, {"waitFor": {"previewState": "hidden"}, "timeoutMs": 2000}
+  {"key": "opt+p"}, {"waitFor": {"previewState": "nothing"}},
+  {"click": "small.txt"}, {"waitFor": {"previewState": "text", "previewTextPrefix": "hello preview"}},
+  {"click": "big.txt"}, {"waitFor": {"previewState": "text", "previewTextPrefix": "xxxxxxxxxx"}},
+  {"key": "opt+p"}, {"waitFor": {"previewState": "hidden"}}
  ]}

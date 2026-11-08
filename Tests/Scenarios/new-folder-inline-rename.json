@@ -1,7 +1,7 @@
 {"name": "new-folder-inline-rename",
  "fixture": {"files": ["a.txt"], "dirs": []},
  "steps": [
-  {"key": "cmd+shift+n"}, {"waitFor": {"renameText": "New Folder", "filesExist": ["New Folder"]}, "timeoutMs": 5000},
+  {"key": "cmd+shift+n"}, {"waitFor": {"renameText": "New Folder", "filesExist": ["New Folder"]}},
   {"type": "Projects"}, {"key": "return"},
-  {"waitFor": {"rowsContain": ["Projects"], "filesExist": ["Projects"], "filesAbsent": ["New Folder"], "selection": ["Projects"]}, "timeoutMs": 5000}
+  {"waitFor": {"rowsContain": ["Projects"], "filesExist": ["Projects"], "filesAbsent": ["New Folder"], "selection": ["Projects"]}}
  ]}

@@ -4,12 +4,12 @@
  "steps": [
   {"key": "cmd+f"}, {"waitFor": {"focus": "fieldEditor"}},
   {"type": "kind:pdf size:>1KB"},
-  {"waitFor": {"rows": ["big.pdf"], "notices": []}, "timeoutMs": 2000},
+  {"waitFor": {"rows": ["big.pdf"], "notices": []}},
   {"setSearchScope": "subfolders"},
-  {"waitFor": {"searchState": "complete", "rows": ["big.pdf", "deep.pdf"], "rowPaths": ["", "sub"]}, "timeoutMs": 5000},
+  {"waitFor": {"searchState": "complete", "rows": ["big.pdf", "deep.pdf"], "rowPaths": ["", "sub"]}},
   {"setSearchScope": "thisFolder"},
-  {"waitFor": {"searchState": "none", "rows": ["big.pdf"]}, "timeoutMs": 3000},
+  {"waitFor": {"searchState": "none", "rows": ["big.pdf"]}},
   {"key": "esc"}, {"waitFor": {"rowCount": 4}},
   {"type": "size:big"},
-  {"waitFor": {"notices": ["diagnostic:size:big"]}, "timeoutMs": 2000}
+  {"waitFor": {"notices": ["diagnostic:size:big"]}}
  ]}

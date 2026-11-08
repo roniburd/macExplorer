@@ -4,7 +4,7 @@
   {"key": "cmd+f"}, {"waitFor": {"focus": "fieldEditor"}},
   {"type": "needle"}, {"waitFor": {"rows": ["needle-top.txt"]}},
   {"setSearchScope": "subfolders"},
-  {"waitFor": {"searchState": "complete", "resultCount": 3}, "timeoutMs": 5000},
+  {"waitFor": {"searchState": "complete", "resultCount": 3}},
   {"expect": {"rows": ["needle-a.txt", "needle-deep.txt", "needle-top.txt"], "rowPaths": ["a", "a/b", ""],
               "visibleColumnsContain": ["name", "path"], "folder": ""}}
  ]}

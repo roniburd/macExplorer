@@ -4,14 +4,13 @@
   {"expect": {"sidebarSearches": []}},
   {"key": "cmd+f"}, {"waitFor": {"focus": "fieldEditor"}},
   {"type": "needle"}, {"setSearchScope": "subfolders"},
-  {"waitFor": {"searchState": "complete", "resultCount": 2}, "timeoutMs": 5000},
+  {"waitFor": {"searchState": "complete", "resultCount": 2}},
   {"command": "saveSearch"}, {"waitFor": {"sheetPresent": true}},
   {"type": "Needles"}, {"answerAlert": "OK"},
   {"waitFor": {"sidebarSearches": ["Needles"], "sheetPresent": false}},
   {"key": "cmd+f"}, {"waitFor": {"focus": "fieldEditor"}}, {"key": "esc"},
-  {"waitFor": {"searchState": "none", "rowCount": 3}, "timeoutMs": 3000},
+  {"waitFor": {"searchState": "none", "rowCount": 3}},
   {"doubleClick": "a"}, {"waitFor": {"folder": "a", "rows": ["needle-2.txt"]}},
   {"clickSidebar": "searches:Needles"},
-  {"waitFor": {"searchState": "complete", "resultCount": 2, "rowsContain": ["needle-1.txt", "needle-2.txt"], "rowPaths": ["", "a"]},
-   "timeoutMs": 5000}
+  {"waitFor": {"searchState": "complete", "resultCount": 2, "rowsContain": ["needle-1.txt", "needle-2.txt"], "rowPaths": ["", "a"]}}
  ]}

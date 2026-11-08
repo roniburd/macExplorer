@@ -8,9 +8,9 @@
  "steps": [
   {"key": "cmd+f"}, {"waitFor": {"focus": "fieldEditor"}},
   {"type": "file"}, {"setSearchScope": "subfolders"},
-  {"waitFor": {"searchState": "searching"}, "timeoutMs": 3000},
+  {"waitFor": {"searchState": "searching"}},
   {"command": "stopSearch"},
-  {"waitFor": {"searchState": "stopped"}, "timeoutMs": 3000},
+  {"waitFor": {"searchState": "stopped"}},
   {"sleepMs": 300},
   {"expect": {"searchState": "stopped", "folder": ""}}
  ]}

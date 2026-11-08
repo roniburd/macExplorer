@@ -10,5 +10,5 @@
   {"key": "cmd+l"}, {"waitFor": {"editingAddress": true}},
   {"key": "cmd+z"}, {"sleepMs": 500}, {"expect": {"filesAbsent": ["a.txt"]}},
   {"key": "esc"}, {"waitFor": {"editingAddress": false}},
-  {"key": "cmd+z"}, {"waitFor": {"filesExist": ["a.txt"]}, "timeoutMs": 5000}
+  {"key": "cmd+z"}, {"waitFor": {"filesExist": ["a.txt"]}}
  ]}

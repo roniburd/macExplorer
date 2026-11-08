@@ -28,6 +28,12 @@ struct DriverError: Error, CustomStringConvertible {
 @MainActor
 final class ScenarioDriver {
     static let fenceSubtype: Int16 = 0x4D58
+    /// Ceiling of a condition wait (waitFor, answerAlert, answerConflict, a row lookup) whose step gives no
+    /// timeoutMs. Polling returns as soon as the condition holds, so the bound only matters on a slow or CPU-starved
+    /// runner, where a short one failed passing scenarios; latency budgets belong in macx-bench.
+    static let defaultWaitMs = 20_000
+    /// How long a fence waits for its event before the step fails (a nested loop that holds events releases it).
+    static let fenceTimeout: Duration = .seconds(30)
     private let context: UIContext
     private let file: URL
     private let output: URL
@@ -39,6 +45,8 @@ final class ScenarioDriver {
     private var nextFence = 1
     private var monitor: Any?
     private var knownWindows: Set<ObjectIdentifier> = []
+    private var menuTracking = false
+    private var timedOutFences: Set<Int> = []
 
     init(context: UIContext, file: URL, output: URL) {
         self.context = context
@@ -167,7 +175,7 @@ final class ScenarioDriver {
         let window = try browserWindow()
         window.session.reload()
         let expected = ScenarioFixtures.topLevelVisibleNames(fixture)
-        try await waitUntil("the fixture is listed", timeout: .seconds(5)) {
+        try await waitUntil("the fixture is listed", timeout: .seconds(30)) {
             Set(window.probeRowNames) == expected && window.probeFolderState == .complete
         }
         focusList(in: window)
@@ -189,12 +197,17 @@ final class ScenarioDriver {
         self.decorator = decorator
         NotificationCenter.default.addObserver(self, selector: #selector(menuDidBeginTracking(_:)),
                                                name: NSMenu.didBeginTrackingNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(menuDidEndTracking(_:)),
+                                               name: NSMenu.didEndTrackingNotification, object: nil)
     }
 
     @objc private func menuDidBeginTracking(_ note: Notification) {
+        menuTracking = true
         // A real popUpContextMenu (e.g. from a key or tracker) becomes the menu chooseMenuItem acts on.
         if let menu = note.object as? NSMenu, menu !== NSApp.mainMenu { contextMenu = menu }
     }
+
+    @objc private func menuDidEndTracking(_ note: Notification) { menuTracking = false }
 
     private func teardown() {
         if let monitor { NSEvent.removeMonitor(monitor) }
@@ -211,16 +224,18 @@ final class ScenarioDriver {
 
     // MARK: windows
 
-    /// Pins a window that appeared since the last step (a Properties window opened by ⌘I), or re-picks the
+    /// Pins a window that appeared since the last check (a Properties window opened by ⌘I), or re-picks the
     /// frontmost one when the pinned window went away. Otherwise the pinned window stays: a click step focused
-    /// it on purpose, and a closing alert sheet or a window ordered above it must not steal the keys.
+    /// it on purpose, and a closing alert sheet or a window ordered above it must not steal the keys. Runs before
+    /// each step and on every waitFor poll. A window counts as known only once it was seen visible, so one listed
+    /// before it is ordered in (⌘N on a slow runner) is still pinned when it shows.
     private func refreshKeyWindow() {
         let windows = NSApp.orderedWindows
         let candidates = windows.map {
             KeyCandidate(isVisible: $0.isVisible, isSheet: $0.sheetParent != nil, canBecomeKey: $0.canBecomeKey, isPanel: $0 is NSPanel)
         }
         let fresh = windows.indices.filter { !knownWindows.contains(ObjectIdentifier(windows[$0])) }
-        knownWindows = Set(windows.map(ObjectIdentifier.init))
+        knownWindows = Set(windows.filter { $0.isVisible || knownWindows.contains(ObjectIdentifier($0)) }.map(ObjectIdentifier.init))
         if let index = Self.pickKeyWindow(fresh.map { candidates[$0] }) {
             MacxApplication.scenarioKeyWindow = windows[fresh[index]]
             return
@@ -283,8 +298,14 @@ final class ScenarioDriver {
 
     private func releaseFence(_ id: Int) { fenceWaiters.removeValue(forKey: id)?.resume() }
 
-    /// Waits until every event posted before it has been dispatched (or 2 s, e.g. a modal loop swallowed it).
-    private func fence() async {
+    /// A modal loop (an app-modal alert) or menu tracking (a context menu a key opened) holds the fence event
+    /// until the loop ends, which only a later step (answerAlert, chooseMenuItem) does.
+    private var nestedLoopHoldsEvents: Bool { NSApp.modalWindow != nil || menuTracking }
+
+    /// Waits until every event posted before it has been dispatched. Released early while a nested loop runs
+    /// (nestedLoopHoldsEvents); otherwise a fence not reached within fenceTimeout fails the step, so a following
+    /// `expect` never reads the state from before the events were handled.
+    private func fence() async throws {
         guard let number = try? keyWindowNumber() else { return }
         let id = nextFence
         nextFence += 1
@@ -292,7 +313,17 @@ final class ScenarioDriver {
                                              windowNumber: number, context: nil, subtype: Self.fenceSubtype,
                                              data1: id, data2: 0) else { return }
         let timer = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(2))
+            let clock = ContinuousClock()
+            let deadline = clock.now + Self.fenceTimeout
+            while clock.now < deadline {
+                try? await Task.sleep(for: .milliseconds(20))
+                guard let self, !Task.isCancelled else { return }
+                if self.nestedLoopHoldsEvents {
+                    self.releaseFence(id)
+                    return
+                }
+            }
+            self?.timedOutFences.insert(id)
             self?.releaseFence(id)
         }
         await withCheckedContinuation { continuation in
@@ -300,6 +331,9 @@ final class ScenarioDriver {
             NSApp.postEvent(event, atStart: false)
         }
         timer.cancel()
+        if timedOutFences.remove(id) != nil {
+            throw DriverError("posted events were not dispatched within \(Self.fenceTimeout) (main thread starved, or a nested loop held them)")
+        }
     }
 
     private func waitUntil(_ what: String, timeout: Duration, _ condition: () -> Bool) async throws {
@@ -320,24 +354,24 @@ final class ScenarioDriver {
         if let key = step.key { try await sendKey(key) }
         else if let mouse = step.mouse { try await sendMouse(mouse) }
         else if let text = step.type { try await typeText(text) }
-        else if let path = step.menu { try performMenu(path: path); await fence() }
-        else if let command = step.command { try performCommand(command); await fence() }
+        else if let path = step.menu { try performMenu(path: path); try await fence() }
+        else if let command = step.command { try performCommand(command); try await fence() }
         else if let name = step.click { try await click(name, modifiers: step.modifiers ?? []) }
-        else if let name = step.doubleClick { try await doubleClick(name); await fence() }
+        else if let name = step.doubleClick { try await doubleClick(name); try await fence() }
         else if let name = step.rightClick { try await openContextMenu(on: name) }
-        else if let target = step.middleClick { try await middleClick(target); await fence() }
-        else if let index = step.selectTab { try selectTab(index); await fence() }
+        else if let target = step.middleClick { try await middleClick(target); try await fence() }
+        else if let index = step.selectTab { try selectTab(index); try await fence() }
         else if let write = step.fsWrite { try await fsWrite(write) }
         else if let tags = step.fsTags { try await fsTags(tags) }
-        else if let target = step.clickSidebar { try await clickSidebar(target); await fence() }
-        else if let scope = step.setSearchScope { try setSearchScope(scope); await fence() }
-        else if let title = step.chooseMenuItem { try chooseMenuItem(title); await fence() }
+        else if let target = step.clickSidebar { try await clickSidebar(target); try await fence() }
+        else if let scope = step.setSearchScope { try setSearchScope(scope); try await fence() }
+        else if let title = step.chooseMenuItem { try chooseMenuItem(title); try await fence() }
         else if let drop = step.drop { try await performDrop(drop, modifiers: step.modifiers ?? []) }
         else if let action = step.answerConflict {
-            try await answerConflict(action, all: step.applyToAll ?? false, timeout: milliseconds(step.timeoutMs, default: 5_000))
+            try await answerConflict(action, all: step.applyToAll ?? false, timeout: milliseconds(step.timeoutMs, default: Self.defaultWaitMs))
         }
-        else if let title = step.answerAlert { try await answerAlert(title, timeout: milliseconds(step.timeoutMs, default: 3_000)) }
-        else if let expectation = step.waitFor { try await waitFor(expectation, timeout: milliseconds(step.timeoutMs, default: 3_000)) }
+        else if let title = step.answerAlert { try await answerAlert(title, timeout: milliseconds(step.timeoutMs, default: Self.defaultWaitMs)) }
+        else if let expectation = step.waitFor { try await waitFor(expectation, timeout: milliseconds(step.timeoutMs, default: Self.defaultWaitMs)) }
         else if let raw = step.expect {
             let expectation = substituted(raw)
             let problems = ExpectationMatcher.mismatches(expectation, try await snapshot(for: expectation))
@@ -364,7 +398,7 @@ final class ScenarioDriver {
         guard let chord = KeyChord(parsing: text), let key = KeySynth.spec(for: chord) else { throw DriverError("cannot synthesize '\(text)'") }
         try await toSheetIfPresent {
             try post([key])
-            await fence()
+            try await fence()
         }
     }
 
@@ -390,13 +424,13 @@ final class ScenarioDriver {
                                mouseButton: CGMouseButton(rawValue: UInt32(button.number))!),
               let event = NSEvent(cgEvent: cg) else { throw DriverError("cannot synthesize '\(text)'") }
         NSApp.sendEvent(event)
-        await fence()
+        try await fence()
     }
 
     private func typeText(_ text: String) async throws {
         try await toSheetIfPresent {
             try post(KeySynth.typingSpecs(text))
-            await fence()
+            try await fence()
         }
     }
 
@@ -440,11 +474,11 @@ final class ScenarioDriver {
         try invoke(item, in: menu)
     }
 
-    /// The row's index, waiting up to 3 s for it: after a navigation `waitFor {"folder"}` can pass before the
-    /// new folder's rows are listed.
+    /// The row's index, waiting up to defaultWaitMs for it: after a navigation `waitFor {"folder"}` can pass
+    /// before the new folder's rows are listed.
     private func row(named name: String, in controller: BrowserWindowController) async throws -> Int {
         let clock = ContinuousClock()
-        let deadline = clock.now + .seconds(3)
+        let deadline = clock.now + .milliseconds(Self.defaultWaitMs)
         while true {
             if let row = controller.probeRowNames.firstIndex(of: name) { return row }
             if clock.now >= deadline { throw DriverError("no row named '\(name)' in \(controller.probeRowNames)") }
@@ -460,7 +494,7 @@ final class ScenarioDriver {
                 throw DriverError("click '\(target)': ScenarioHooks.clickTarget is not installed")
             }
             guard await hook(target, modifiers) else { throw DriverError("click target '\(target)' not found") }
-            await fence()
+            try await fence()
             return
         }
         let row = try await row(named: name, in: controller)
@@ -575,7 +609,7 @@ final class ScenarioDriver {
         _ = try Self.confinedDropDestination(real, onto: drop.onto, roots: rootPrefixes)
         await controller.probePerformDrop(sources: sources, onto: drop.onto,
                                           modifiers: mods, secondary: drop.secondary ?? false, menuChoice: choice)
-        await fence()
+        try await fence()
     }
 
     private func middleClick(_ target: String) async throws {
@@ -629,12 +663,12 @@ final class ScenarioDriver {
         guard let action = ConflictAction(rawValue: raw), let decorator else { throw DriverError("bad conflict answer '\(raw)'") }
         try await waitUntil("a conflict to be asked", timeout: timeout) { decorator.pendingCount > 0 }
         let controller = try browserWindow()
-        try await waitUntil("the conflict dialog on the origin window", timeout: .seconds(3)) {
+        try await waitUntil("the conflict dialog on the origin window", timeout: .milliseconds(Self.defaultWaitMs)) {
             controller.window?.attachedSheet != nil
         }
         _ = decorator.answer(all ? .all(action) : .one(action))
         if let window = controller.window, let sheet = window.attachedSheet { window.endSheet(sheet) }
-        await fence()
+        try await fence()
     }
 
     private func buttons(in view: NSView) -> [NSButton] {
@@ -655,7 +689,7 @@ final class ScenarioDriver {
                 found = candidates.map(\.title)
                 if let button = candidates.first(where: { $0.title == title && $0.isEnabled }) {
                     button.performClick(nil)
-                    await fence()
+                    try await fence()
                     return
                 }
             }
@@ -670,6 +704,7 @@ final class ScenarioDriver {
         let deadline = clock.now + timeout
         var problems: [String] = []
         repeat {
+            refreshKeyWindow()     // a window that showed since the step began (⌘N) is the one probed
             problems = ExpectationMatcher.mismatches(expectation, try await snapshot(for: expectation))
             if problems.isEmpty { return }
             try await Task.sleep(for: .milliseconds(20))
@@ -750,6 +785,8 @@ final class ScenarioDriver {
             $0.isVisible && ($0.identifier?.rawValue == AXID.propertiesWindow || $0.accessibilityIdentifier() == AXID.propertiesWindow)
         }.count
         s.windowCount = context.windows.windows.count
+        s.windowStates = context.windows.windows.map { ScenarioStrings.state($0.probeFolderState) }
+        s.showHidden = context.environment.settings.showHidden
         addPhase2(to: &s, from: w, for: expectation)
         addPhase3(to: &s, from: w)
         let paths = ExpectationMatcher.requestedPaths(expectation).filter(ScenarioPath.isSafeRelative)

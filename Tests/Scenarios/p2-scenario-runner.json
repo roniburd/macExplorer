@@ -7,7 +7,7 @@
   {"expect": {"tabs": [""], "activeTab": 0, "viewMode": "details", "sort": "name.asc", "iconSize": "medium", "groupBy": "none"}},
   {"selectTab": 0},
   {"fsWrite": {"path": "new.bin", "bytes": 10}},
-  {"waitFor": {"rowsContain": ["new.bin"], "fileSizes": {"new.bin": 10}}, "timeoutMs": 3000},
+  {"waitFor": {"rowsContain": ["new.bin"], "fileSizes": {"new.bin": 10}}},
   {"fsTags": {"path": "a.txt", "tags": ["Home"]}},
   {"fsWrite": {"path": "A/n.bin", "bytes": 3}},
   {"doubleClick": "A"},

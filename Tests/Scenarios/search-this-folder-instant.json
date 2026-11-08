@@ -3,11 +3,11 @@
  "steps": [
   {"key": "cmd+f"}, {"waitFor": {"focus": "fieldEditor"}},
   {"type": "tax"},
-  {"waitFor": {"rowCount": 3, "rowsContain": ["tax-2024.pdf", "tax-notes.txt", "Taxonomy.pdf"]}, "timeoutMs": 2000},
+  {"waitFor": {"rowCount": 3, "rowsContain": ["tax-2024.pdf", "tax-notes.txt", "Taxonomy.pdf"]}},
   {"expect": {"searchState": "none", "folder": "", "notices": []}},
   {"key": "esc"}, {"waitFor": {"rowCount": 6}},
   {"type": "*.pdf"},
-  {"waitFor": {"rowCount": 3, "rowsContain": ["tax-2024.pdf", "Taxonomy.pdf", "report.pdf"]}, "timeoutMs": 2000},
+  {"waitFor": {"rowCount": 3, "rowsContain": ["tax-2024.pdf", "Taxonomy.pdf", "report.pdf"]}},
   {"key": "esc"}, {"waitFor": {"rowCount": 6, "rowsContain": ["sub", "notes.txt"]}},
   {"expect": {"searchState": "none", "folder": ""}}
  ]}
