@@ -113,7 +113,9 @@ final class TypeSelectTests: XCTestCase {
         let h = try await ContentTestHarness.make(self)
         for i in 0..<2_500 { try h.file(String(format: "a%04d", i)) }
         try h.file("zebra")
-        let folder = try await h.openFolder()
+        // No FSEvents: late deliveries for the 2,501 creations patched the store mid-search at random (CI, Nov 5).
+        // testLargeFolderSearchRerunsWhenTheFolderChangesMidSearch covers a mid-search patch, gated.
+        let folder = try await h.openFolder(makeWatcher: { _, _, _ in NoopWatcher() })
         let details = DetailsViewController(context: h.context)
         _ = details.view
         details.bind(folder)
