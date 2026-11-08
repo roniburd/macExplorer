@@ -70,6 +70,6 @@ final class StatusBarTests: XCTestCase {
         content.session.folder.select(.set(IndexSet([0, 1]), cursor: 1))
         try await h.waitUntil("selection") { content.statusBar.selectionText.hasPrefix("2 selected") }
         let free = try label(AXID.statusFree, in: content.statusBar)
-        try await h.waitUntil("free space", timeout: .seconds(10)) { free.stringValue.hasSuffix("available") }
+        try await h.waitUntil("free space") { free.stringValue.hasSuffix("available") }
     }
 }
