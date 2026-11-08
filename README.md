@@ -5,6 +5,8 @@
 <p align="center">Finder, with the good parts of Windows File Explorer.<br>
 Cut and paste. An address bar you can type in. A folder tree. Folder sizes.</p>
 
+<p align="center"><a href="https://roniburd.github.io/macExplorer/"><b>roniburd.github.io/macExplorer</b></a></p>
+
 <p align="center"><img src="site/assets/shots/details.png" width="760" alt="MacExplorer showing a Documents folder with folder sizes, a folder tree in the sidebar and the selection size in the status bar."></p>
 
 ## Install
