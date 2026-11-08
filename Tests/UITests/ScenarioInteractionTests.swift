@@ -40,7 +40,9 @@ final class ScenarioInteractionTests: XCTestCase {
         let outcome = await q.outcome(of: id)
         XCTAssertFalse(outcome.wasCancelled, "the scenario's answer wins over the presenter's")
         XCTAssertEqual(try Data(contentsOf: sandbox.url("dst/a.txt")), Data("hello".utf8))
-        let presented = clock.now + .seconds(2)
+        // The presenter runs in its own task on the cooperative pool, which a loaded runner can starve for seconds
+        // after the job finished: the same generous condition wait as the conflict above.
+        let presented = clock.now + .seconds(60)
         while presenter.askedConflicts().isEmpty && clock.now < presented { try await Task.sleep(for: .milliseconds(20)) }
         XCTAssertEqual(presenter.askedConflicts().count, 1, "the real dialog path was still invoked")
         XCTAssertEqual(scenario.askedCount, 1)
