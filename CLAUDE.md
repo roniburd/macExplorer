@@ -15,7 +15,7 @@ Small fixes, questions, and doc tweaks the user explicitly wants done in place a
 
 ## Run things in parallel whenever possible
 
-- Full test runs: always `swift test --parallel` (as `scripts/verify-phase1.sh`, CI and the README do). It takes about 2 minutes; serial `swift test` takes 6–7. Use plain `swift test --filter <Class or Class/test>` only for a targeted run of a few tests.
+- Full test runs: always `swift test --parallel` (as `scripts/verify-phase1.sh`, CI and DEVELOPMENT.md do). It takes about 2 minutes; serial `swift test` takes 6–7. Use plain `swift test --filter <Class or Class/test>` only for a targeted run of a few tests.
 - Don't run the full suite repeatedly while iterating: run the affected test classes with `--filter`, and do one `swift test --parallel` at the end.
 - Independent work (separate tasks, reviews, research, checks) runs concurrently: several tool calls or subagents in one message, or `parallel()`/`pipeline()` in workflows, never one after another.
 - Exception: UI scenarios (`scripts/ui-scenarios.sh`, the UI gate of `verify-phase1.sh`) need keyboard focus, so only one can run on the Mac at a time, across all worktrees. Wait until no other `macExplorer-scenarios.app` is running.

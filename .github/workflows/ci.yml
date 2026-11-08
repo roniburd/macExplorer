@@ -1,7 +1,7 @@
 # macExplorer CI (spec §9 and §10, P1-42). Pull requests and main: layering, build, test, bundle, both scenario
 # runners, and macx-bench with the relative gate against a baseline from main on the same runner image.
 # The §4.4 absolute budgets appear only as warning annotations here; they are gated by
-# `macx-bench --check-budgets` on Apple Silicon as part of the release checklist (README).
+# `macx-bench --check-budgets` on Apple Silicon as part of the release checklist (DEVELOPMENT.md).
 name: CI
 
 on:
