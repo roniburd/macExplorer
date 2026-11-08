@@ -62,6 +62,8 @@ final class FolderTreeController {
     private var loads: [ObjectIdentifier: Task<Void, Never>] = [:]
     /// Nodes asked to load again while a read was running: one more read follows it (as FolderModel does).
     private var pendingLoads: Set<ObjectIdentifier> = []
+    /// Tests: how many load(_:) calls joined a running read (so a test knows they arrived before it resumes the read).
+    private(set) var joinedLoads = 0
     /// The revealed path's nodes stay visible even when hidden (e.g. /private on the way to a temp folder).
     private var pinned: [ObjectIdentifier: FolderTreeNode] = [:]
 
@@ -188,6 +190,7 @@ final class FolderTreeController {
     func load(_ node: FolderTreeNode) async {
         let id = ObjectIdentifier(node)
         if let running = loads[id] {
+            joinedLoads += 1
             pendingLoads.insert(id)
             return await running.value
         }

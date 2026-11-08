@@ -35,14 +35,16 @@ final class SidebarSearchesTests: XCTestCase {
         addTeardownBlock { @MainActor in bar.close(); shown.close() }
     }
 
-    private func waitUntil(_ what: String, timeout: TimeInterval = 5, _ condition: () -> Bool) async {
-        let end = Date().addingTimeInterval(timeout)
-        while Date() < end {
-            if condition() { return }
+    /// A condition wait with a deadline generous enough for a CPU-starved CI runner; a timeout fails at the caller's line.
+    private func waitUntil(_ what: String, timeout: Duration = .seconds(30), file: StaticString = #filePath,
+                           line: UInt = #line, _ condition: () -> Bool) async {
+        let deadline = ContinuousClock.now + timeout
+        while !condition() {
+            guard ContinuousClock.now < deadline else {
+                return XCTFail("timed out after \(timeout) waiting for: \(what)", file: file, line: line)
+            }
             try? await Task.sleep(for: .milliseconds(10))
         }
-        if condition() { return }
-        XCTFail("timed out: \(what)")
     }
 
     func savedRows() -> [String] {
@@ -200,7 +202,7 @@ final class SidebarSearchesTests: XCTestCase {
         controller.perform(.saveSearch, target: .currentFolder(window.session.folder), sender: nil)
         await waitUntil("second saved unique") { self.env.settings.savedSearches.map(\.name) == ["Taxes", "Taxes 2"] }
         controller.perform(.saveSearch, target: .currentFolder(window.session.folder), sender: nil)   // cancelled
-        try? await Task.sleep(for: .milliseconds(100))
+        await controller.namePromptTask?.value
         XCTAssertEqual(env.settings.savedSearches.count, 2)
         XCTAssertEqual(prompter.asked, ["tax", "tax", "tax"])
         XCTAssertEqual(prompter.titles.first, "Save Search")
@@ -212,7 +214,8 @@ final class SidebarSearchesTests: XCTestCase {
         XCTAssertEqual(prompter.titles.last, "Rename Saved Search")
         prompter.answers = [nil]
         controller.perform(.renameSavedSearch, target: .savedSearch(env.settings.savedSearches[1]), sender: nil)
-        try? await Task.sleep(for: .milliseconds(100))
+        await controller.namePromptTask?.value
+        XCTAssertEqual(prompter.asked.last, "Old taxes", "the cancelled rename still prompted")   // positive control
         XCTAssertEqual(env.settings.savedSearches.map(\.name), ["Taxes", "Old taxes"], "cancel renames nothing")
     }
 

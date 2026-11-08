@@ -197,6 +197,19 @@ final class PreviewPaneController: NSViewController {
         }
     }
 
+    /// Tests: waits for the latest scheduled update (debounce, resolve, show) and the details load it started, so a
+    /// test can assert what did not happen without a sleep.
+    func settled() async {
+        while let task = pending {
+            await task.value
+            if task == pending { break }
+        }
+        while let task = detailsTask {
+            await task.value
+            if task == detailsTask { return }
+        }
+    }
+
     private func selectionKey(_ source: any RowSource, rows: [Int]) -> SelectionKey {
         if rows.isEmpty { return .empty }
         if rows.count > 1 { return .multiple(rows.count, source.selectionSummary.bytes) }

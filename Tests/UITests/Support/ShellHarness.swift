@@ -62,10 +62,16 @@ final class ShellHarness {
         return controller
     }
 
-    func waitUntil(_ what: String, timeout: Duration = .seconds(30), _ condition: () -> Bool) async throws {
+    /// A timeout is also recorded with XCTFail at the caller's line (as in ContentTestHarness.waitUntil): the thrown
+    /// error alone was reported at this helper's line, or as an unrelated InvalidTransition while views unwound.
+    func waitUntil(_ what: String, timeout: Duration = .seconds(30), file: StaticString = #filePath, line: UInt = #line,
+                   _ condition: () -> Bool) async throws {
         let deadline = ContinuousClock.now + timeout
         while !condition() {
-            guard ContinuousClock.now < deadline else { throw ShellHarnessError.timeout(what) }
+            guard ContinuousClock.now < deadline else {
+                XCTFail("timed out after \(timeout) waiting for: \(what)", file: file, line: line)
+                throw ShellHarnessError.timeout(what)
+            }
             try await Task.sleep(for: .milliseconds(10))
         }
     }

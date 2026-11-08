@@ -105,6 +105,15 @@ final class SearchController {
         pending = nil
     }
 
+    /// Tests: waits for the latest run (its debounce and `session.search`, plan included), so a test can assert that
+    /// no further search ran without a sleep.
+    func settled() async {
+        while let task = pending {
+            await task.value
+            if task == pending { return }
+        }
+    }
+
     private func run(now: Bool) {
         pending?.cancel()
         pending = nil

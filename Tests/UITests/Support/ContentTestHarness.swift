@@ -99,6 +99,20 @@ final class ContentTestHarness {
         return model
     }
 
+    /// `openFolder` with the model's watcher from `makeWatcher` instead of FSEvents: a test that just created many
+    /// files gets no late fseventsd patch at an unpredictable time (pass a watcher the test fires to script one).
+    func openFolder(_ relative: String = "", query: ViewQuery = ViewQuery(),
+                    makeWatcher: @escaping @MainActor (URL, UInt64, @escaping @Sendable (WatchEvent) -> Void) -> any ContentWatching)
+        async throws -> FolderModel {
+        var folderContext = environment.folderContext()
+        folderContext.makeWatcher = makeWatcher
+        let model = FolderModel(directory: url(relative), context: folderContext, query: query)
+        models.append(model)
+        model.start()
+        try await waitUntil("folder '\(relative)' complete") { model.state == .complete }
+        return model
+    }
+
     /// An offscreen window (never ordered front) hosting `controller`.
     @discardableResult
     func host(_ controller: NSViewController, size: NSSize = NSSize(width: 900, height: 600)) throws -> NSWindow {

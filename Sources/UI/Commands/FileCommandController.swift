@@ -150,6 +150,9 @@ final class FileCommandController: CommandHandler {
         session.openContainingFolder(of: results.url(atRow: row))
     }
 
+    /// Tests: the latest Save Search… / Rename… prompt and the settings write after it; await its value.
+    private(set) var namePromptTask: Task<Void, Never>?
+
     /// File › Save Search…: asks for a name (initially the query text), then adds the search shown to SEARCHES (made
     /// unique). Cancel saves nothing.
     func saveSearch() {
@@ -157,7 +160,7 @@ final class FileCommandController: CommandHandler {
         let prompter = context.namePrompter
         let settings = environment.settings
         let host = window?.window
-        Task {
+        namePromptTask = Task {
             guard let name = await prompter.promptForName(title: SearchStrings.savedSearchSaveTitle, initial: spec.text,
                                                           on: host) else { return }
             settings.addSavedSearch(name: name, spec: spec)
@@ -172,7 +175,7 @@ final class FileCommandController: CommandHandler {
         let prompter = context.namePrompter
         let settings = environment.settings
         let host = window?.window
-        Task {
+        namePromptTask = Task {
             guard let name = await prompter.promptForName(title: SearchStrings.savedSearchRenameTitle, initial: saved.name,
                                                           on: host) else { return }
             settings.renameSavedSearch(saved.id, to: name)

@@ -24,10 +24,14 @@ final class RowSourceBindingTests: XCTestCase {
         context = UIContext(environment: env, options: options)
     }
 
-    private func waitUntil(_ what: String, timeout: TimeInterval = 5, _ condition: () -> Bool) async {
-        let end = Date().addingTimeInterval(timeout)
+    /// A condition wait with a deadline generous enough for a CPU-starved CI runner; a timeout fails at the caller's line.
+    private func waitUntil(_ what: String, timeout: Duration = .seconds(30), file: StaticString = #filePath,
+                           line: UInt = #line, _ condition: () -> Bool) async {
+        let deadline = ContinuousClock.now + timeout
         while !condition() {
-            guard Date() < end else { return XCTFail("timed out: \(what)") }
+            guard ContinuousClock.now < deadline else {
+                return XCTFail("timed out after \(timeout) waiting for: \(what)", file: file, line: line)
+            }
             try? await Task.sleep(for: .milliseconds(10))
         }
     }

@@ -228,7 +228,7 @@ final class FolderTreeTests: XCTestCase {
     }
 
     func testARequestDuringAReadRunsOneMoreRead() async throws {
-        let (_, tree) = try await make()
+        let (h, tree) = try await make()
         let usb = tree.roots[1]
         let script = ScriptedLister(results: [])
         script.listing = []
@@ -243,7 +243,7 @@ final class FolderTreeTests: XCTestCase {
         script.listing = [("late", false)]            // created after the first read listed the folder
         let second = Task { await tree.load(usb) }
         let third = Task { await tree.load(usb) }
-        for _ in 0..<10 { await Task.yield() }
+        try await h.waitUntil("both requests joined the running read") { tree.joinedLoads >= 2 }
         script.gate?.resume()
         await first.value
         await second.value
