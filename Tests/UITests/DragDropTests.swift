@@ -2,6 +2,7 @@
 import XCTest
 import AppKit
 import Darwin
+import Synchronization
 @testable import UI
 import Core
 import MacxFS
@@ -190,11 +191,32 @@ final class DragDropTests: XCTestCase {
         XCTAssertTrue(h.exists("a.txt"))
     }
 
-    /// Answers conflicts only after `delay`, like a user looking at the sheet.
-    private final class SlowInteraction: FileOpInteraction {
+    /// Answers conflicts only once the test opens it, like a user looking at the sheet; records that it was asked.
+    private final class GatedInteraction: FileOpInteraction {
         let inner = ScriptedInteraction(conflicts: [.one(.keepBoth)])
+        private let state = Mutex<(asked: Bool, open: Bool, waiting: [CheckedContinuation<Void, Never>])>((false, false, []))
+
+        var asked: Bool { state.withLock { $0.asked } }
+
+        func open() {
+            let waiting = state.withLock { s -> [CheckedContinuation<Void, Never>] in
+                s.open = true
+                defer { s.waiting = [] }
+                return s.waiting
+            }
+            for c in waiting { c.resume() }
+        }
+
         func resolveConflict(_ conflict: ConflictInfo, job: JobSnapshot) async -> ConflictResolution {
-            try? await Task.sleep(for: .seconds(2))
+            await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+                let resume = state.withLock { s -> Bool in
+                    s.asked = true
+                    if s.open { return true }
+                    s.waiting.append(c)
+                    return false
+                }
+                if resume { c.resume() }
+            }
             return await inner.resolveConflict(conflict, job: job)
         }
         func resolveError(_ error: FileOpError, job: JobSnapshot) async -> ErrorResolution { .skip }
@@ -203,14 +225,20 @@ final class DragDropTests: XCTestCase {
     }
 
     /// QA round 1: the scenario drop step returns once the job is started, so a later answerConflict step can run.
+    /// The answer is held by a gate the test opens only after the drop step has returned, so the step provably did
+    /// not wait for it (no wall-clock comparison).
     func testScenarioDropReturnsWhileTheJobAsksAQuestion() async throws {
         let h = try await ContentTestHarness.make(self)
         try h.file("a.txt"); try h.file("sub/a.txt")
-        h.environment.interaction.setTarget(SlowInteraction())
+        let interaction = GatedInteraction()
+        h.environment.interaction.setTarget(interaction)
+        defer { interaction.open() }   // never leave the job suspended on a failed assertion
         let browser = try await h.openBrowserWindow()
-        let clock = ContinuousClock(), started = clock.now
         await browser.probePerformDrop(sources: [h.url("a.txt")], onto: "sub", modifiers: [], secondary: false, menuChoice: nil)
-        XCTAssertLessThan(clock.now - started, .seconds(1), "the drop step did not wait for the conflict answer")
-        try await h.waitUntil("kept both", timeout: .seconds(10)) { h.exists("sub/a 2.txt") && !h.exists("a.txt") }
+        XCTAssertTrue(h.exists("a.txt"), "the drop step returned before the conflict was answered")
+        try await h.waitUntil("the job asked about the conflict") { interaction.asked }
+        XCTAssertTrue(h.exists("a.txt"), "nothing moves until the question is answered")
+        interaction.open()
+        try await h.waitUntil("kept both") { h.exists("sub/a 2.txt") && !h.exists("a.txt") }
     }
 }
