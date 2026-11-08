@@ -32,6 +32,9 @@ enum AXID {
     static let automaticUpdateChecks = "macx.settings.automaticUpdateChecks"
     static let checkForUpdatesNow = "macx.settings.checkForUpdatesNow"
     static let offerCrashReports = "macx.settings.offerCrashReports"
+    static let rollbackWindow = "macx.rollback"
+    static let rollbackList = "macx.rollback.list"
+    static let rollbackInstall = "macx.rollback.install"
     // Phase 2 (plan P2-03)
     static func groupHeader(_ title: String) -> String { "macx.group.\(title)" }
     static let columnsView = "macx.columns"

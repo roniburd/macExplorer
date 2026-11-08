@@ -14,6 +14,8 @@ import Core
 /// open, so a badge is there to show the result). The menu item and Settings › Check Now both send it.
 public enum UpdateCommands {
     public static let checkForUpdates = NSSelectorFromString("macx_checkForUpdates:")
+    /// macExplorer › Install Previous Version… (AppDelegate; enabled when a live updater has a rollback service).
+    public static let installPreviousVersion = NSSelectorFromString("macx_installPreviousVersion:")
 }
 
 /// What the toolbar badge, the menu and Settings read (spec §3). `UpdateController` installs the handlers; without
@@ -29,11 +31,15 @@ public final class UpdateModel {
     @ObservationIgnored var checkHandler: (@MainActor (Bool) -> Void)?
     @ObservationIgnored var restartHandler: (@MainActor () -> Void)?
     @ObservationIgnored var automaticChecksHandler: (@MainActor (Bool) -> Void)?
+    @ObservationIgnored var rollbackHandler: (@MainActor () -> RollbackService?)?
     @ObservationIgnored private var observers: [UUID: @MainActor (UpdateState) -> Void] = [:]
 
     public init() {}
 
     public var isAvailable: Bool { checkHandler != nil }
+    /// Install Previous Version… can run (a live updater with a feed, a key and a replaceable app).
+    public var canInstallPreviousVersion: Bool { isAvailable && rollbackService != nil }
+    var rollbackService: RollbackService? { rollbackHandler?() }
 
     public func send(_ event: UpdateEvent) {
         // Spec §2.1: illegal transitions are ignored *and logged* (review of Task 1).
