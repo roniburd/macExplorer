@@ -124,6 +124,8 @@ final class FolderTestWorld {
     let volumes: Volumes
     let readers: DirectoryReaders
     let bus = ChangeBus()
+    /// Frames advance on real time. A test that asserts an intermediate state ("nothing presented yet", "not
+    /// complete yet") sets a ManualFramePacer and a ScriptedReads source, so the read cannot finish first.
     var pacer: any FramePacer = TimerFramePacer(interval: .milliseconds(1))
     /// true: models get a real FSEvents Watcher (50 ms latency) instead of a RecordingWatcher.
     var realWatcher = false
@@ -145,7 +147,10 @@ final class FolderTestWorld {
 
     private init(caps: VolumeCapabilities) throws {
         sandbox = try Sandbox(prefix: "macx-tests")
-        lanes = LanePool()
+        // A long stall timeout: on a starved CI runner a healthy sandbox read can go 2 s (the default) without a
+        // heartbeat, and .stalled/.resumed would break the exact state sequences tests assert. Stall tests script
+        // `.stalled` through ScriptedReads instead.
+        lanes = LanePool(config: WatchdogConfig(stallTimeout: .seconds(120)))
         scanner = RootVolumeScanner(caps)
         volumes = Volumes(lanes: lanes, scanner: scanner, events: nil)
         readers = DirectoryReaders(lanes: lanes, mountTable: volumes.mountTableStore)
@@ -213,6 +218,9 @@ final class FolderTestWorld {
 
     func keep(_ token: ObserverToken) { tokens.append(token) }
 
+    /// Polls `condition` until it holds; throws (the test fails) after `timeout`. A condition wait proves that
+    /// something happened, never that something is still in progress: a condition like "rows arrived or the read
+    /// ended" also passes once the read completed. Gate the source instead (ScriptedReads, ManualFramePacer).
     func waitUntil(_ what: String, timeout: Duration = .seconds(30), _ condition: () -> Bool) async throws {
         let deadline = ContinuousClock.now + timeout
         while !condition() {
@@ -221,7 +229,19 @@ final class FolderTestWorld {
         }
     }
 
-    /// Lets queued main-actor work run.
+    /// `waitUntil` for a condition that awaits (an actor's state, e.g. `model.worker.loadingEntryCount`).
+    func waitUntilAsync(_ what: String, timeout: Duration = .seconds(30), _ condition: () async -> Bool) async throws {
+        let deadline = ContinuousClock.now + timeout
+        while !(await condition()) {
+            if ContinuousClock.now >= deadline { throw WaitTimeout(what: what) }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+    }
+
+    /// Lets queued main-actor work run. A fixed sleep: use it only before a negative check ("nothing happened"),
+    /// which it can only let pass early, never fail. Work that crosses the cooperative pool (the load feeder, the
+    /// worker, a read source's return hop) may take longer on a loaded runner, so wait for a condition before a
+    /// positive check.
     func settle(_ duration: Duration = .milliseconds(50)) async {
         try? await Task.sleep(for: duration)
     }

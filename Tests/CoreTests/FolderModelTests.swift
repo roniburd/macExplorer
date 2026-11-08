@@ -145,18 +145,36 @@ final class FolderModelTests: XCTestCase {
 
     // MARK: Review Focus 3
 
-    /// Overview Review Focus 3: open a 100k folder, immediately open a 3-item folder 20 times. Nothing from the
-    /// old reads reaches the newer models, the big read is cancelled, and the final rows are the 3 items.
+    /// Overview Review Focus 3: open a large folder and, while its listing still streams, open a 3-item folder 20
+    /// times. Nothing from the old reads reaches the newer models, the big listing never completes into its closed
+    /// model, its read stream is cancelled, and the final rows are the 3 items. The big read is scripted so it is
+    /// known to be in progress when the model closes (a real 100k read could finish first: CI, beta.14), and it
+    /// answers late with more rows and `.completed`. testClosingAModelCancelsItsLaneRead covers the real reader.
     func testRapidNavigationDropsStaleGenerations() async throws {
         let w = try await FolderTestWorld.make(self)
-        try FixtureTree.flat(in: w.sandbox, at: "big", count: 100_000)
+        let pacer = ManualFramePacer()
+        w.pacer = pacer
+        try w.dir("big")
         try w.dir("small")
         for name in ["x", "y", "z"] { try w.file("small/" + name) }
 
+        let reads = ScriptedReads()
         let big = w.model(w.url("big"))
         let bigLog = FolderEventLog(big)
+        big.readSource = reads.source()
         big.start()
-        try await w.waitUntil("big streaming") { big.rowCount > 0 || big.state != .loading }
+        try await w.waitUntil("big read started") { reads.reads.count == 1 }
+        let bigRead = reads.last
+        let bigReadEnded = Mutex(false)
+        bigRead.continuation.onTermination = { _ in bigReadEnded.withLock { $0 = true } }
+        bigRead.continuation.yield(.batch(TestBatch.files(bigRead.generation, (0..<1_000).map { "b\($0)" })))
+        try await w.waitUntilAsync("first big batch ingested") {
+            await big.worker.loadingEntryCount(bigRead.generation) == 1_000
+        }
+        try await w.waitUntil("pacer waiting") { pacer.waiting > 0 }
+        pacer.tick()
+        try await w.waitUntil("big streaming") { big.state == .partial }
+
         var previous = big
         var logs: [FolderEventLog] = []
         var current = big
@@ -168,18 +186,53 @@ final class FolderModelTests: XCTestCase {
             previous = current
         }
         let closedBigEvents = bigLog.events.count
+        // The big read answers after the close, as a slow volume would.
+        bigRead.continuation.yield(.batch(TestBatch.files(bigRead.generation, (0..<1_000).map { "c\($0)" }, firstID: 10_000)))
+        bigRead.continuation.yield(.completed(ReadSummary(entryCount: 2_000, degradedCount: 0, usedFallback: false, elapsed: .zero)))
         try await w.waitUntil("small complete") { current.state == .complete }
+        try await w.waitUntil("big read stream cancelled") { bigReadEnded.withLock { $0 } }
         await w.settle(.milliseconds(200))
         XCTAssertEqual(current.rowNames, ["x", "y", "z"])
         XCTAssertEqual(bigLog.events.count, closedBigEvents, "a closed model emits nothing")
-        XCTAssertNotEqual(big.state, .complete, "the big read never completed into the closed model")
+        XCTAssertEqual(big.state, .partial, "the big read never completed into the closed model")
+        XCTAssertEqual(big.rowCount, 1_000, "late rows never reach the closed model")
         for log in logs.dropLast() {
             XCTAssertFalse(log.states.contains(.complete), "closed models never complete")
         }
         let reader = w.readers.reader(for: VolumeID(raw: "test-root"))
-        let idle = try await waitAsync { await reader.inFlightCount == 0 }
-        XCTAssertTrue(idle, "the old reads were cancelled")
+        try await w.waitUntilAsync("the small reads finished or were cancelled") { await reader.inFlightCount == 0 }
         XCTAssertEqual(logs.last?.states.last, .complete)
+    }
+
+    /// The real reader's half of Review Focus 3: closing a model whose listing is still on a lane cancels that lane
+    /// read. The read emits one batch, then holds its lane (heartbeating) until it sees the cancellation.
+    func testClosingAModelCancelsItsLaneRead() async throws {
+        let w = try await FolderTestWorld.make(self)
+        let holding = Mutex(false)
+        let sawCancel = Mutex(false)
+        let reader = DirectoryReader(volume: VolumeID(raw: "test-root"), lanes: w.lanes, types: .shared) { _, gen, _, _, ctx, emit in
+            _ = emit(TestBatch.files(gen, ["a", "b"]))
+            holding.withLock { $0 = true }
+            let deadline = ContinuousClock.now + .seconds(60)        // never outlives a failed test
+            while !ctx.isCancelled && ContinuousClock.now < deadline {
+                ctx.heartbeat()
+                usleep(1_000)
+            }
+            sawCancel.withLock { $0 = ctx.isCancelled }
+            return ReadSummary(entryCount: 2, degradedCount: 0, usedFallback: false, elapsed: .zero)
+        }
+        let m = w.model(w.url(""))
+        m.readSource = { directory, generation, options in
+            await reader.read(directory, generation: generation, options: options)
+        }
+        m.start()
+        try await w.waitUntil("lane read holding") { holding.withLock { $0 } }
+        let running = await reader.inFlightCount
+        XCTAssertEqual(running, 1, "the read is still on its lane when the model closes")
+        m.close()
+        try await w.waitUntilAsync("lane read ended") { await reader.inFlightCount == 0 }
+        XCTAssertTrue(sawCancel.withLock { $0 }, "the lane work was cancelled, not run to the end")
+        XCTAssertNotEqual(m.state, .complete)
     }
 
     func testStaleGenerationBatchesAreIgnored() async throws {
@@ -245,6 +298,7 @@ final class FolderModelTests: XCTestCase {
         let r = reads.last
         r.continuation.yield(.batch(TestBatch.files(r.generation, ["m", "c", "x"], firstID: 1)))
         r.continuation.yield(.batch(TestBatch.files(r.generation, ["b", "y"], firstID: 10)))
+        try await w.waitUntilAsync("both batches ingested") { await m.worker.loadingEntryCount(r.generation) == 5 }
         try await w.waitUntil("pacer waiting") { pacer.waiting > 0 }
         await w.settle()
         XCTAssertEqual(log.resets, 0, "nothing is presented between frames")
@@ -257,6 +311,7 @@ final class FolderModelTests: XCTestCase {
 
         r.continuation.yield(.batch(TestBatch.files(r.generation, ["a"], firstID: 20)))
         r.continuation.yield(.batch(TestBatch.files(r.generation, ["n", "d"], firstID: 30)))
+        try await w.waitUntilAsync("both new batches ingested") { await m.worker.loadingEntryCount(r.generation) == 8 }
         try await w.waitUntil("pacer waiting again") { pacer.waiting > 0 }
         await w.settle()
         XCTAssertEqual(log.resets, 1)
@@ -291,8 +346,9 @@ final class FolderModelTests: XCTestCase {
             return stream
         }
         m.start()
-        let deadline = ContinuousClock.now + .milliseconds(500)
-        while !started.withLock({ $0 }) && ContinuousClock.now < deadline {}   // main stays busy (a navigation turn)
+        // Main stays busy (a navigation turn) until the read starts; the deadline only bounds a failing run.
+        let deadline = ContinuousClock.now + .seconds(30)
+        while !started.withLock({ $0 }) && ContinuousClock.now < deadline {}
         XCTAssertTrue(started.withLock { $0 }, "the read began without waiting for the main actor")
         continuation.finish()
     }
@@ -326,12 +382,13 @@ final class FolderModelTests: XCTestCase {
         try await w.waitUntil("read started") { !reads.reads.isEmpty }
         let r = reads.last
         r.continuation.yield(.batch(TestBatch.files(r.generation, ["a", "b", "c"])))
+        try await w.waitUntilAsync("batch ingested") { await m.worker.loadingEntryCount(r.generation) == 3 }
         try await w.waitUntil("pacer waiting") { pacer.waiting > 0 }
-        await w.settle()
         pacer.tick()
         try await w.waitUntil("first frame") { log.resets == 1 }
-        m.setQuery(ViewQuery(sort: SortDescriptor(field: .name, ascending: false)))
-        await w.settle()
+        let descending = ViewQuery(sort: SortDescriptor(field: .name, ascending: false))
+        m.setQuery(descending)
+        try await w.waitUntilAsync("query reached the worker") { await m.worker.loadingQuery(r.generation) == descending }
         try await w.waitUntil("pacer waiting") { pacer.waiting > 0 }
         pacer.tick()
         try await w.waitUntil("re-sorted frame") { m.rowNames == ["c", "b", "a"] }
@@ -500,7 +557,7 @@ final class FolderModelTests: XCTestCase {
         try await w.waitUntil("re-read started") { reads.reads.count == 1 }
         let hung = reads.last
         hung.continuation.yield(.stalled)
-        await w.settle()
+        try await w.waitUntil("stall seen") { m.rereadStalled }
         XCTAssertEqual(m.state, .complete, "the rows on screen stay")
         m.refresh()
         try await w.waitUntil("a new re-read replaces the stalled one") { reads.reads.count == 2 }
@@ -529,8 +586,9 @@ final class FolderModelTests: XCTestCase {
         m.refresh()
         try await w.waitUntil("re-read started") { reads.reads.count == 1 }
         reads.last.continuation.yield(.stalled)
+        try await w.waitUntil("stall seen") { m.rereadStalled }
         reads.last.continuation.yield(.resumed)
-        await w.settle()
+        try await w.waitUntil("resume seen") { !m.rereadStalled }
         m.refresh()
         m.refresh()
         await w.settle()
@@ -847,17 +905,6 @@ final class FolderModelTests: XCTestCase {
         w.start()
         w.stop()
         XCTAssertEqual(w.lastEventID, 0)
-    }
-
-    // MARK: helpers
-
-    private func waitAsync(timeout: Duration = .seconds(30), _ condition: () async -> Bool) async throws -> Bool {
-        let deadline = ContinuousClock.now + timeout
-        while ContinuousClock.now < deadline {
-            if await condition() { return true }
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        return await condition()
     }
 }
 
