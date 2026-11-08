@@ -75,6 +75,8 @@ SIZES = [{"menu": ["View", "Calculate Folder Sizes"]}, {"sleepMs": 1500}]
 
 # name -> (steps, which window: "main" | "properties")
 SHOTS = {
+    "tree": (into("Documents/Projects/Website") + [{"click": "index.html"}] + KEY, "main"),
+    "sizes": (into("Documents/Projects") + SIZES + [{"sleepMs": 800}, {"click": "Website"}] + KEY, "main"),
     "details": (into("Documents") + SIZES + [{"click": "Budget 2027.xlsx"}] + KEY, "main"),
     "cut": (into("Documents") + [{"click": "Lease agreement.pdf"}, {"click": "Budget 2027.xlsx", "modifiers": ["cmd"]},
              {"key": "cmd+x"}, {"waitFor": {"cut": ["Budget 2027.xlsx", "Lease agreement.pdf"]}}] + KEY, "main"),

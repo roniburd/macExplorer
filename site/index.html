@@ -55,13 +55,16 @@
   .gh { display: inline-flex; align-items: center; gap: 7px; }
 
   /* install, in the hero */
-  .ways { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; text-align: left; margin-top: 32px; }
-  .way { background: var(--cap); border-radius: 14px; padding: 18px 18px 20px; box-shadow: 0 0 0 .5px rgba(0,0,0,.12); min-width: 0; }
+  .ways { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; text-align: left; margin: 32px -9% 0; }
+  .way { display: flex; flex-direction: column; align-items: flex-start; background: var(--cap); border-radius: 14px; padding: 18px 18px 20px;
+         box-shadow: 0 0 0 .5px rgba(0,0,0,.12); min-width: 0; }
   .way h3 { margin: 0 0 4px; font-size: 18px; letter-spacing: -.01em; }
   .way p { margin: 0 0 14px; font-size: 15px; color: var(--muted); }
-  .way .dl { display: inline-block; padding: 10px 18px; font-size: 15px; }
-  .code { display: flex; align-items: center; gap: 8px; background: var(--graphite); color: #fff; border-radius: 10px; padding: 8px 8px 8px 12px; }
-  .code code { min-width: 0; flex: 1; font-size: 13px; overflow-x: auto; white-space: nowrap; }
+  .way .dl, .way .code { margin-top: auto; }   /* the button and the command line up at the bottom of both cards */
+  .way .dl { display: inline-block; padding: 10px 18px; font-size: 15px; line-height: 1.6; }
+  .code { align-self: stretch; display: flex; align-items: center; gap: 8px; background: var(--graphite); color: #fff; border-radius: 10px; padding: 8px 8px 8px 12px; }
+  .code code { min-width: 0; flex: 1; font-size: 13px; line-height: 1.5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .code code .line { display: block; }
   .code button { border: 0; border-radius: 7px; background: #454a52; color: #fff; padding: 5px 10px; font: inherit; font-size: 13px; cursor: pointer; }
   .code button:hover { background: #575c65; }
   .hero .fine { color: var(--muted); font-size: 14px; max-width: 64ch; margin: 16px auto 0; }
@@ -69,15 +72,17 @@
   /* why */
   .why { padding-block: 64px; border-top: 1px solid var(--line); }
   .why h2 { font-size: clamp(28px, 4vw, 38px); letter-spacing: -.025em; margin: 0 0 16px; }
-  .why p { max-width: 62ch; margin: 0 0 14px; }
+  .why p { margin: 0 0 14px; }
+  .why p, .feature p { text-align: justify; hyphens: auto; -webkit-hyphens: auto; text-wrap: pretty; }
 
   /* features: small title, short explanation, screenshot */
   .feature { padding-block: 56px; border-top: 1px solid var(--line); }
   .feature h2 { font-size: clamp(28px, 4vw, 38px); line-height: 1.1; letter-spacing: -.025em; margin: 0 0 10px; font-weight: 750; }
-  .feature p { margin: 0 0 10px; max-width: 60ch; }
+  .feature p { margin: 0 0 10px; }
   .feature figure { margin: 28px -6% 0; }
   .feature figure img { display: block; width: 100%; height: auto; }
-  .feature figure.narrow { margin: 28px 0 0; max-width: 460px; }
+  .pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 28px -20% 0; }
+  .feature .pair figure { margin: 0; }
 
   /* shortcuts */
   .shortcuts { padding-block: 56px 64px; border-top: 1px solid var(--line); }
@@ -91,7 +96,9 @@
 
   @media (max-width: 760px) {
     .ways, .grid { grid-template-columns: 1fr; }
+    .ways { margin-inline: 0; }
     .feature figure { margin: 24px 0 0; }
+    .pair { grid-template-columns: 1fr; margin: 24px 0 0; }
     header.top nav a:not(:last-child) { display: none; }
   }
 </style>
@@ -119,7 +126,7 @@
       <div class="way">
         <h3>Homebrew</h3>
         <p>Or one line in Terminal.</p>
-        <div class="code"><code id="brew">brew install --cask roniburd/macexplorer/macexplorer</code><button type="button" data-copy="brew">Copy</button></div>
+        <div class="code"><code id="brew"><span class="line">brew install --cask</span><span class="line">roniburd/macexplorer/macexplorer</span></code><button type="button" data-copy="brew">Copy</button></div>
       </div>
     </div>
     <p class="fine">Free, open source, and it updates itself. Not notarized yet: if macOS won't open it the first time, run
@@ -151,7 +158,10 @@
     <section class="feature">
       <h2>A folder tree, and folder sizes.</h2>
       <p>The tree under the sidebar always shows where you are. Turn on View › Calculate Folder Sizes and every folder shows how much it holds.</p>
-      <figure class="narrow"><img src="assets/shots/properties.png" width="552" height="500" loading="lazy" alt="Properties window for the Projects folder: 6.5 MB, 4 files and 3 folders."></figure>
+      <div class="pair">
+        <figure><img src="assets/shots/tree.png" width="1112" height="752" loading="lazy" alt="The folder tree open to alex › Documents › Projects › Website, the folder being shown."></figure>
+        <figure><img src="assets/shots/sizes.png" width="1112" height="752" loading="lazy" alt="Projects in Details view with folder sizes: Garden plan 830 KB, Kitchen remodel 310 KB, Website 5.4 MB."></figure>
+      </div>
     </section>
 
     <section class="feature">
@@ -199,7 +209,7 @@
 
 <script>
   document.querySelectorAll("[data-copy]").forEach(btn => btn.addEventListener("click", async () => {
-    try { await navigator.clipboard.writeText(document.getElementById(btn.dataset.copy).textContent); btn.textContent = "Copied"; }
+    try { await navigator.clipboard.writeText([...document.getElementById(btn.dataset.copy).querySelectorAll('.line')].map(l => l.textContent).join(' ') || document.getElementById(btn.dataset.copy).textContent); btn.textContent = "Copied"; }
     catch { btn.textContent = "Select and copy"; }
     setTimeout(() => btn.textContent = "Copy", 1600);
   }));
