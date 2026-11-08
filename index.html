@@ -79,6 +79,13 @@
   .code button { border: 0; border-radius: 7px; background: #454a52; color: #fff; padding: 5px 10px; font: inherit; font-size: 13px; cursor: pointer; }
   .code button:hover { background: #575c65; }
   .hero .fine { color: var(--muted); font-size: 14px; max-width: 64ch; margin: 16px auto 0; }
+  .first-launch { display: flex; gap: 14px; align-items: flex-start; text-align: left; margin: 16px -9% 0; padding: 16px 18px;
+                  background: #FFF6DC; border: 1.5px solid var(--yellow); border-radius: 14px; }
+  .fl-icon { flex: none; margin-top: 2px; }
+  .fl-body { min-width: 0; flex: 1; }
+  .first-launch h3 { margin: 0 0 4px; font-size: 17px; letter-spacing: -.01em; }
+  .first-launch p { margin: 0 0 12px; font-size: 15px; color: #4A4E55; }
+  .first-launch .code code { white-space: normal; }
 
   /* why */
   .why { padding-block: 64px; border-top: 1px solid var(--line); }
@@ -138,6 +145,8 @@
   @media (max-width: 760px) {
     .ways, .grid { grid-template-columns: 1fr; }
     .ways { margin-inline: 0; }
+    .first-launch { margin-inline: 0; }
+    .code code, .code code .line { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
     .feature figure { margin: 24px 0 0; }
     .pair { grid-template-columns: 1fr; margin: 24px 0 0; }
     .zooms, .tree-sizes { margin-inline: 0; }
@@ -173,8 +182,15 @@
         <div class="code"><code id="brew"><span class="line">brew install --cask</span><span class="line">roniburd/macexplorer/macexplorer</span></code><button type="button" data-copy="brew">Copy</button></div>
       </div>
     </div>
-    <p class="fine">Free, open source, and it updates itself. Not notarized yet: if macOS won't open it the first time, run
-      <code>xattr -dr com.apple.quarantine /Applications/MacExplorer.app</code> once.</p>
+    <div class="first-launch" role="note" aria-labelledby="fl-title">
+      <svg class="fl-icon" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 1.8 20.5h20.4z" fill="#F2B632" stroke="#26292E" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 9v5.2" stroke="#26292E" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="17.3" r="1.2" fill="#26292E"/></svg>
+      <div class="fl-body">
+        <h3 id="fl-title">First launch: macOS may block it</h3>
+        <p>MacExplorer isn't notarized by Apple yet. If macOS says it can't be opened, run this once in Terminal, then open it again:</p>
+        <div class="code"><code id="xattr">xattr -dr com.apple.quarantine /Applications/MacExplorer.app</code><button type="button" data-copy="xattr">Copy</button></div>
+      </div>
+    </div>
+    <p class="fine">Free, open source, and it updates itself.</p>
     <figure><img src="assets/shots/details.png" width="1112" height="752"
       alt="MacExplorer showing a Documents folder with folder sizes, a folder tree in the sidebar and the selection size in the status bar."></figure>
   </section>
