@@ -45,6 +45,8 @@ struct ProbeSnapshot: Equatable {
     var previewState = "hidden"
     var previewText: String?
     var sidebarSearches: [String] = []
+    var windowStates: [String] = []          // every browser window's folder state, in window-list order
+    var showHidden = false
 }
 
 enum ScenarioStrings {
@@ -231,5 +233,7 @@ extension ExpectationMatcher {
             m.append("previewTextPrefix: expected '\(want)', got \(s.previewText.map { "'\($0)'" } ?? "no text preview")")
         }
         check("sidebarSearches", e.sidebarSearches, s.sidebarSearches)
+        check("windowStates", e.windowStates, s.windowStates)
+        check("showHidden", e.showHidden, s.showHidden)
     }
 }

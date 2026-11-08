@@ -137,6 +137,10 @@ struct ScenarioFile: Codable {
         var previewState: String?             // PreviewPaneController.probeState; "hidden" = pane collapsed
         var previewTextPrefix: String?
         var sidebarSearches: [String]?        // SEARCHES rows, in order
+        // Scenario robustness: every window, and the setting a hidden-files toggle flips (tells "key not
+        // delivered" apart from "reload still running").
+        var windowStates: [String]?           // each browser window's folder state, in window-list order
+        var showHidden: Bool?                 // Settings.showHidden
     }
     var name: String
     var indexStatus: String?                  // P3-13: --index-status for this file ("enabled" | "disabled" | "unknown")
