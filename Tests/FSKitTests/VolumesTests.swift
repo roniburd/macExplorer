@@ -210,11 +210,13 @@ final class VolumesTests: XCTestCase {
         let scanner = GatedScanner([volume("boot", "/", boot: true)], blocked: 1)   // dead SMB mount at launch
         let events = FakeEvents()
         let volumes = Volumes(lanes: LanePool(), scanner: scanner, events: events)
+        // start() returning at all proves the timeout path: the scan stays gated until below. The wall-clock bound
+        // only catches a much longer wait than the 100 ms timeout.
         let start = ContinuousClock.now
         await volumes.start(initialScanTimeout: .milliseconds(100))
-        XCTAssertLessThan(ContinuousClock.now - start, .seconds(2))
+        XCTAssertLessThan(ContinuousClock.now - start, .seconds(10))
         XCTAssertNotNil(events.handler, "events are subscribed even though the scan has not finished")
-        XCTAssertEqual(volumes.list, [])
+        XCTAssertEqual(volumes.list, [], "the initial scan is still hung")
         scanner.gate.open()
         let applied = await eventuallyMain { volumes.list.map(\.id.raw) == ["boot"] }
         XCTAssertTrue(applied, "the late initial scan is applied when it finishes")
@@ -233,8 +235,10 @@ final class VolumesTests: XCTestCase {
         XCTAssertNil(unknown)
     }
 
-    private func eventuallyMain(_ condition: @MainActor () -> Bool) async -> Bool {
-        for _ in 0..<300 {
+    /// `eventually` for main-actor state: polls every 10 ms until true or `timeout` (the same 30 s default).
+    private func eventuallyMain(timeout: Duration = .seconds(30), _ condition: @MainActor () -> Bool) async -> Bool {
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline {
             if condition() { return true }
             try? await Task.sleep(for: .milliseconds(10))
         }

@@ -56,6 +56,9 @@ enum Budgets {
             Budget(metric: "resort.grouped.\($0.rawValue)", sizes: [100_000], limit: 30, unit: "ms",
                    spec: "§4.4 re-sort 100k by any column < 30 ms, including the Group by partition")
         }
+        // P2-09 review: Name groups of non-ASCII first letters (was a debug-build timing in GroupingTests).
+        t.append(Budget(metric: "resort.grouped.nameFirstLetter.nonASCII", sizes: [100_000], limit: 30, unit: "ms",
+                        spec: "§4.4 re-sort 100k by any column < 30 ms, including the Group by partition (non-ASCII names)"))
         // P2-16 review fix: extended string columns, every value distinct, loaded (identity map + sort).
         t += ["resort.tags", "resort.comments"].map {
             Budget(metric: $0, sizes: [100_000], limit: 30, unit: "ms", spec: "§4.4 re-sort 100k by any column < 30 ms")

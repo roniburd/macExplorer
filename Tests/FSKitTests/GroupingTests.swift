@@ -115,45 +115,57 @@ final class GroupingTests: XCTestCase {
         XCTAssertEqual(runs.count, 2)
     }
 
-    /// The best of up to 15 passes, stopping at the first one within `budget`: the intrinsic cost, not scheduling
-    /// noise when `swift test --parallel` loads every core (best of 5 still missed by a few ms under full parallel
-    /// load). `partition` keeps no state between calls, so later passes are not warmed by earlier ones. The release
-    /// gate is `macx-bench --check-budgets` (`resort-grouped-*`).
-    private static func best(within budget: Duration, _ body: () -> Void) -> Duration {
-        var best = Duration.seconds(60)
-        for _ in 0..<15 {
-            let start = ContinuousClock.now
-            body()
-            best = min(best, ContinuousClock.now - start)
-            if best < budget { break }
-        }
-        return best
-    }
-
-    /// 4x the 30 ms re-sort budget in debug; GitHub's shared runners (CI=true) are about 1.5x slower, so they get 2x that.
-    static let debugBudget: Duration = ProcessInfo.processInfo.environment["CI"] == "true" ? .milliseconds(240) : .milliseconds(120)
-
-    func testPartition100kWithinDebugBudget() {
-        let items = (0..<100_000).map { (name: "file \($0 % 977) \($0).\(["txt", "png", "swift", "md"][$0 % 4])", kind: Kind.file, size: Int64($0 * 37), mtime: Int64($0) * 86_400_000_000_000) }
+    /// 100k rows by every Group by: the partition is a permutation whose runs tile the rows in group order, one run
+    /// per key, stable within each run, and every row is in the run of its own key. No timing here: a debug build
+    /// under `swift test --parallel` on a shared runner measures the runner. The budget is `macx-bench
+    /// --check-budgets` (`resort.grouped.*` and `resort.grouped.nameFirstLetter.nonASCII`, 30 ms, release build).
+    func testPartition100kIsAStablePermutationIntoKeyedRuns() {
+        // Several first letters (F, P, N, 0–9 and #), so Name groups have more than one run to tile and order.
+        let firstWords = ["file", "Photo", "notes", "2026", "_draft"]
+        let items = (0..<100_000).map { (name: "\(firstWords[$0 % 5]) \($0 % 977) \($0).\(["txt", "png", "swift", "md"][$0 % 4])", kind: Kind.file, size: Int64($0 * 37), mtime: Int64($0) * 86_400_000_000_000) }
         let store = makeStore(items)
         let b = DateBuckets(now: Date(timeIntervalSince1970: 100_000 * 86_400), calendar: utc)
+        func key(_ g: GroupBy, _ index: UInt32) -> GroupKey {
+            let e = store.entry(index)
+            switch g {
+            case .kind: return .kind(TypeRegistry.shared.localizedDescription(e.typeIndex), isFolder: false)
+            case .dateModified: return .date(b.bucket(forNanoseconds: e.mtime))
+            case .size: return .size(Grouping.sizeBucket(bytes: e.size, isFolder: false))
+            case .nameFirstLetter, .none: return .letter(Grouping.letterKey(store.name(index)))
+            }
+        }
         for g in [GroupBy.kind, .dateModified, .size, .nameFirstLetter] {
-            let elapsed = Self.best(within: Self.debugBudget) { _ = Grouping.partition(store.order, store: store, by: g, dateBuckets: b, types: .shared) }
-            XCTAssertLessThan(elapsed, Self.debugBudget, "\(g): 4x the 30 ms re-sort budget in debug")
+            let (order, runs) = Grouping.partition(store.order, store: store, by: g, dateBuckets: b, types: .shared)
+            XCTAssertEqual(order.count, items.count, "\(g)")
+            XCTAssertEqual(Set(order).count, items.count, "\(g): a permutation")
+            XCTAssertGreaterThan(runs.count, 1, "\(g)")
+            XCTAssertEqual(runs.first?.rows.lowerBound, 0, "\(g)")
+            XCTAssertEqual(runs.last?.rows.upperBound, items.count, "\(g)")
+            XCTAssertTrue(zip(runs, runs.dropFirst()).allSatisfy { pair in pair.0.rows.upperBound == pair.1.rows.lowerBound },
+                          "\(g): runs tile the rows")
+            XCTAssertTrue(zip(runs, runs.dropFirst()).allSatisfy { pair in Grouping.groupOrder(pair.0.key, pair.1.key) },
+                          "\(g): runs in group order")
+            XCTAssertEqual(Set(runs.map(\.key)).count, runs.count, "\(g): one run per key")
+            for run in runs {
+                let rows = order[run.rows]
+                XCTAssertTrue(zip(rows, rows.dropFirst()).allSatisfy { pair in pair.0 < pair.1 }, "\(g) \(run.key): stable")
+                for row in stride(from: run.rows.lowerBound, to: run.rows.upperBound, by: 101) {
+                    XCTAssertEqual(key(g, order[row]), run.key, "\(g): \(store.name(order[row]))")
+                }
+            }
         }
     }
 
     /// Review (P2-09): non-ASCII first letters (CJK, Cyrillic, precomposed and decomposed accents, an ASCII letter
-    /// followed by a non-ASCII byte) stay within budget: the key is cached by the first grapheme's bytes.
-    func testPartition100kNonASCIIWithinDebugBudget() {
+    /// followed by a non-ASCII byte) over 100k rows get the groups `letterKey` gives (the key is cached by the first
+    /// grapheme's bytes). The 30 ms budget is `resort.grouped.nameFirstLetter.nonASCII` in macx-bench.
+    func testPartition100kNonASCIIFirstLetters() {
         let prefixes = ["日本語", "中文", "한국어", "Привет", "Ωmega", "Äpfel", "A\u{0308}pfel", "e\u{0301}clair", "éclair", "aé", "Ａbc", "１x"]
         let items = (0..<100_000).map { (name: "\(prefixes[$0 % prefixes.count])\(["", " ", "-", "x"][$0 % 4])\($0).txt",
                                          kind: Kind.file, size: Int64($0), mtime: Int64($0)) }
         let store = makeStore(items)
         let b = DateBuckets(now: Date(timeIntervalSince1970: 0), calendar: utc)
-        let elapsed = Self.best(within: Self.debugBudget) { _ = Grouping.partition(store.order, store: store, by: .nameFirstLetter, dateBuckets: b, types: .shared) }
         let (order, runs) = Grouping.partition(store.order, store: store, by: .nameFirstLetter, dateBuckets: b, types: .shared)
-        XCTAssertLessThan(elapsed, Self.debugBudget, "4x the 30 ms re-sort budget in debug")
         for run in runs {
             for row in run.rows { XCTAssertEqual(.letter(Grouping.letterKey(store.name(order[row]))), run.key) }
         }

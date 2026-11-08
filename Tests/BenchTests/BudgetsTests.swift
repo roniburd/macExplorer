@@ -57,6 +57,9 @@ final class BudgetsTests: XCTestCase {
         }
         let checks = Budgets.evaluate([MetricResult(name: "resort.grouped.kind", size: 100_000, samples: [31])])
         XCTAssertEqual(checks.map(\.passed), [false])
+        let nonASCII = Budgets.table.first { $0.metric == "resort.grouped.nameFirstLetter.nonASCII" }   // P2-09 review
+        XCTAssertEqual(nonASCII?.limit, 30)
+        XCTAssertEqual(nonASCII?.sizes, [100_000])
     }
 
     /// P2-20: the folder-size scan and extended-attribute read are reported, not gated.

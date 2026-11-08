@@ -5,7 +5,10 @@ import MacxFixtures
 @testable import MacxFS
 import XCTest
 
+/// Stall tests: a job without a heartbeat for 200 ms is overdue.
 private let fast = WatchdogConfig(stallTimeout: .milliseconds(200), tick: .milliseconds(20), lanesPerClass: 2, poisonCap: 4)
+/// Tests that do not test stalls: on a slow, shared runner a descheduled lane thread must not be poisoned.
+private let calm = WatchdogConfig(stallTimeout: .seconds(60), tick: .milliseconds(20), lanesPerClass: 2, poisonCap: 4)
 private let volume = VolumeID(raw: "mnt:/test")
 
 final class LaneTests: XCTestCase {
@@ -20,7 +23,7 @@ final class LaneTests: XCTestCase {
     private func gate() -> Gate { let g = Gate(); gates.append(g); return g }
 
     func testWorkRunsOnNamedLaneThreadOffMain() async throws {
-        let pool = LanePool(config: fast)
+        let pool = LanePool(config: calm)
         let (isMain, name) = try await pool.perform(on: volume) { _ in
             assertOffMain()
             return (Thread.isMainThread, Thread.current.name ?? "")
@@ -30,7 +33,7 @@ final class LaneTests: XCTestCase {
     }
 
     func testScanClassHasItsOwnLanes() async throws {
-        let pool = LanePool(config: fast)
+        let pool = LanePool(config: calm)
         _ = try await pool.perform(on: .unknown, .scan) { _ in 1 }
         let scan = await pool.liveLaneCount(of: .unknown, .scan)
         let read = await pool.liveLaneCount(of: .unknown, .read)
@@ -39,7 +42,7 @@ final class LaneTests: XCTestCase {
 
     func testErrorsPropagate() async {
         struct Boom: Error {}
-        let pool = LanePool(config: fast)
+        let pool = LanePool(config: calm)
         do {
             _ = try await pool.perform(on: volume) { _ -> Int in throw Boom() }
             XCTFail("expected throw")
@@ -115,23 +118,89 @@ final class LaneTests: XCTestCase {
         }
     }
 
-    func testHeartbeatingWorkIsNotPoisoned() async throws {
-        let pool = LanePool(config: fast)
+    /// The manual watchdog clock: time passes only when the test advances it, and the watchdog looks only when the
+    /// test runs a pass. A job without heartbeats is overdue at exactly the stall timeout, not a moment before.
+    func testManualWatchdogClockReportsAStallOnlyAtTheTimeout() async throws {
+        let clock = ManualClock()
+        let pool = LanePool(config: fast, manualClock: { clock.now })
         let notices = Recorder<StallNotice>()
-        try await pool.perform(on: volume, onStall: { notices.append($0) }) { ctx in
-            for _ in 0..<12 { usleep(50_000); ctx.heartbeat() }   // 600 ms total, beats every 50 ms
+        let started = Recorder<Bool>()
+        let hung = gate()
+        let work = Task {
+            try await pool.perform(on: volume, onStall: { notices.append($0) }) { _ in
+                started.append(true)
+                hung.wait()                    // no heartbeat
+            }
         }
+        let running = await eventually { started.values == [true] }
+        XCTAssertTrue(running)
+        clock.advance(by: .milliseconds(199))
+        await pool.runWatchdogPass()
+        XCTAssertEqual(notices.values, [], "1 ms before the stall timeout")
+        clock.advance(by: .milliseconds(1))
+        await pool.runWatchdogPass()
+        XCTAssertEqual(notices.values, [.stalled])
+        let poisonedCount = await pool.poisonedCount(of: volume)
+        XCTAssertEqual(poisonedCount, 1)
+        hung.open()
+        try await work.value
+        XCTAssertEqual(notices.values, [.stalled, .resumed])
+    }
+
+    /// 12 heartbeats, each followed by 150 ms (under the 200 ms stall timeout) and a watchdog pass: 1.8 s of work
+    /// without a stall notice. Time is the manual clock, so a descheduled lane thread cannot look like a stall.
+    func testHeartbeatingWorkIsNotPoisoned() async throws {
+        let clock = ManualClock()
+        let pool = LanePool(config: fast, manualClock: { clock.now })
+        let notices = Recorder<StallNotice>()
+        let beats = Recorder<Int>()
+        let step = gate()
+        let work = Task {
+            try await pool.perform(on: volume, onStall: { notices.append($0) }) { ctx in
+                for i in 0..<12 {
+                    ctx.heartbeat()
+                    beats.append(i)
+                    step.wait()
+                }
+            }
+        }
+        for i in 0..<12 {
+            let beat = await eventually { beats.values.count == i + 1 }
+            XCTAssertTrue(beat, "heartbeat \(i)")
+            clock.advance(by: .milliseconds(150))
+            await pool.runWatchdogPass()
+            XCTAssertEqual(notices.values, [], "after heartbeat \(i)")
+            step.open()
+        }
+        try await work.value
         XCTAssertEqual(notices.values, [])
         let count = await pool.poisonedCount(of: volume)
         XCTAssertEqual(count, 0)
     }
 
     func testAwaitingPermissionReportsWaitingAndNeverPoisons() async throws {
-        let pool = LanePool(config: fast)
+        let clock = ManualClock()
+        let pool = LanePool(config: fast, manualClock: { clock.now })
         let notices = Recorder<StallNotice>()
-        try await pool.perform(on: volume, stallPolicy: .awaitingPermission, onStall: { notices.append($0) }) { _ in
-            usleep(500_000)          // the TCC prompt is up
+        let started = Recorder<Bool>()
+        let prompt = gate()
+        let work = Task {
+            try await pool.perform(on: volume, stallPolicy: .awaitingPermission, onStall: { notices.append($0) }) { _ in
+                started.append(true)
+                prompt.wait()            // the TCC prompt is up: no heartbeat
+            }
         }
+        let running = await eventually { started.values == [true] }
+        XCTAssertTrue(running)
+        for _ in 0..<3 {                 // well past the stall timeout, several watchdog passes
+            clock.advance(by: .milliseconds(250))
+            await pool.runWatchdogPass()
+        }
+        XCTAssertEqual(notices.values, [.waitingForPermission], "one notice per wait")
+        let lanesWhileWaiting = await pool.liveLaneCount(of: volume, .read)
+        XCTAssertEqual(lanesWhileWaiting, 1)
+        prompt.open()
+        try await work.value
         XCTAssertEqual(notices.values, [.waitingForPermission, .resumed])
         let count = await pool.poisonedCount(of: volume)
         let lanes = await pool.liveLaneCount(of: volume, .read)
@@ -175,14 +244,27 @@ final class LaneTests: XCTestCase {
 
     func testJobsQueuedBehindAHungJobMoveToAFreshLane() async throws {
         let config = WatchdogConfig(stallTimeout: .milliseconds(150), tick: .milliseconds(20), lanesPerClass: 1, poisonCap: 4)
-        let pool = LanePool(config: config)
+        let clock = ManualClock()
+        let pool = LanePool(config: config, manualClock: { clock.now })
         let hung = gate()
-        let a = Task { try await pool.perform(on: volume) { _ in hung.wait() } }
-        try await Task.sleep(for: .milliseconds(30))
-        let start = ContinuousClock.now
-        let b = try await pool.perform(on: volume) { _ in "b" }            // queued behind `a` on the only lane
-        XCTAssertEqual(b, "b")
-        XCTAssertLessThan(ContinuousClock.now - start, .seconds(2))
+        let hungLane = Recorder<UInt64>()
+        let a = Task {
+            try await pool.perform(on: volume) { ctx in
+                hungLane.append(ctx.laneID.raw)
+                hung.wait()
+            }
+        }
+        let aRunning = await eventually { hungLane.values.count == 1 }
+        XCTAssertTrue(aRunning, "a occupies the only lane")
+        let b = Task { try await pool.perform(on: volume) { ctx in ctx.laneID.raw } }
+        let bQueued = await eventually { await pool.inFlightJobCount == 2 }
+        XCTAssertTrue(bQueued, "b is queued behind a")
+        clock.advance(by: .milliseconds(150))
+        await pool.runWatchdogPass()                                       // poisons a's lane, re-dispatches b
+        let bLane = try await b.value
+        XCTAssertNotEqual(bLane, hungLane.values.first, "b ran on a fresh lane")
+        let poisonedCount = await pool.poisonedCount(of: volume)
+        XCTAssertEqual(poisonedCount, 1)
         hung.open()
         _ = try await a.value
     }
@@ -192,10 +274,18 @@ final class LaneTests: XCTestCase {
         let pool = LanePool(config: config)
         let busy = gate()
         let ran = Recorder<Bool>()
-        let a = Task { try await pool.perform(on: volume) { _ in busy.wait() } }
-        try await Task.sleep(for: .milliseconds(30))
+        let started = Recorder<Bool>()
+        let a = Task {
+            try await pool.perform(on: volume) { _ in
+                started.append(true)
+                busy.wait()
+            }
+        }
+        let aRunning = await eventually { started.values == [true] }
+        XCTAssertTrue(aRunning, "a occupies the only lane")
         let b = Task { try await pool.perform(on: volume) { _ in ran.append(true) } }
-        try await Task.sleep(for: .milliseconds(30))
+        let bQueued = await eventually { await pool.inFlightJobCount == 2 }
+        XCTAssertTrue(bQueued, "b is queued behind a")
         b.cancel()
         do {
             try await b.value
@@ -209,7 +299,7 @@ final class LaneTests: XCTestCase {
     }
 
     func testRunningJobSeesCancellation() async throws {
-        let pool = LanePool(config: fast)
+        let pool = LanePool(config: calm)
         let started = Recorder<Bool>()
         let task = Task {
             try await pool.perform(on: volume) { ctx -> Bool in
@@ -225,7 +315,7 @@ final class LaneTests: XCTestCase {
     }
 
     func testNoMaterializationAppliesOnlyInsideBody() async throws {
-        let pool = LanePool(config: fast)
+        let pool = LanePool(config: calm)
         let (inside, after) = try await pool.perform(on: volume) { _ in
             let inside = withNoMaterialization {
                 getiopolicy_np(IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES, IOPOL_SCOPE_THREAD)

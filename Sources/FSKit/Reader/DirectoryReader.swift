@@ -14,6 +14,8 @@ public actor DirectoryReader {
     private let implementation: ReadImplementation
     private var inFlight: [UUID: Task<Void, Never>] = [:]
     private var idleWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
+    /// How `cancelAll` waits out its timeout: `Task.sleep` in the app; a test seam controls it (@testable init).
+    private let idleTimeoutSleep: @Sendable (Duration) async -> Void
 
     public init(volume: VolumeID, lanes: LanePool, types: TypeRegistry = .shared) {
         self.init(volume: volume, lanes: lanes, types: types) { dir, gen, options, types, ctx, emit in
@@ -21,10 +23,12 @@ public actor DirectoryReader {
         }
     }
 
-    init(volume: VolumeID, lanes: LanePool, types: TypeRegistry, implementation: @escaping ReadImplementation) {
+    init(volume: VolumeID, lanes: LanePool, types: TypeRegistry, implementation: @escaping ReadImplementation,
+         idleTimeoutSleep: @escaping @Sendable (Duration) async -> Void = { try? await Task.sleep(for: $0) }) {
         self.volume = volume
         self.lanes = lanes
         self.types = types
+        self.idleTimeoutSleep = idleTimeoutSleep
         self.implementation = implementation
     }
 
@@ -91,10 +95,11 @@ public actor DirectoryReader {
     private func waitForIdle(timeout: Duration) async {
         guard !inFlight.isEmpty else { return }
         let id = UUID()
+        let sleep = idleTimeoutSleep
         await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
             idleWaiters[id] = c
             Task {
-                try? await Task.sleep(for: timeout)
+                await sleep(timeout)
                 self.resumeWaiter(id)
             }
         }

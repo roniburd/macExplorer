@@ -55,9 +55,24 @@ public actor LanePool {
     private var nextLaneID: UInt64 = 0
     private var watchdog: Task<Void, Never>?
     private nonisolated let hub = HealthHub()
+    /// Uptime nanoseconds for heartbeats and watchdog passes.
+    private let clock: @Sendable () -> UInt64
+    /// Test seam (`init(config:manualClock:)`): no watchdog task; the test runs each pass with `runWatchdogPass()`.
+    private let manualWatchdog: Bool
 
     public init(config: WatchdogConfig = .default) {
         self.config = config
+        self.clock = { LaneJob.now() }
+        self.manualWatchdog = false
+    }
+
+    /// Test seam: a pool whose watchdog never runs on its own. Heartbeats and watchdog passes read `clock` (uptime
+    /// nanoseconds, never 0) instead of the system clock, so a test decides when time passes and when the watchdog
+    /// looks (`runWatchdogPass()`), and lane-thread scheduling on a slow machine cannot cause or hide a stall.
+    init(config: WatchdogConfig, manualClock clock: @escaping @Sendable () -> UInt64) {
+        self.config = config
+        self.clock = clock
+        self.manualWatchdog = true
     }
 
     deinit {
@@ -74,7 +89,7 @@ public actor LanePool {
     ) async throws -> T {
         if unresponsive.contains(volume) { throw LaneError.volumeUnresponsive(volume) }
         nextJobID += 1
-        let job = LaneJob(id: nextJobID, volume: volume, laneClass: laneClass, policy: stallPolicy, onStall: onStall)
+        let job = LaneJob(id: nextJobID, volume: volume, laneClass: laneClass, policy: stallPolicy, onStall: onStall, clock: clock)
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<T, any Error>) in
                 let once = ResumeOnce(continuation)
@@ -124,6 +139,12 @@ public actor LanePool {
 
     public nonisolated var healthChanges: AsyncStream<(VolumeID, VolumeHealth)> { hub.stream() }
 
+    /// Test seam: jobs dispatched and not yet finished (queued on a lane or running).
+    var inFlightJobCount: Int { active.count }
+
+    /// Test seam for `init(config:manualClock:)`: one watchdog pass at the clock's current time.
+    func runWatchdogPass() { _ = tickWatchdog() }
+
     // MARK: Internals
 
     private func dispatch(_ item: IOLane.Item) {
@@ -162,7 +183,7 @@ public actor LanePool {
     }
 
     private func startWatchdogIfNeeded() {
-        guard watchdog == nil else { return }
+        guard watchdog == nil, !manualWatchdog else { return }
         let tick = config.tick
         watchdog = Task { [weak self] in
             while true {
@@ -174,7 +195,7 @@ public actor LanePool {
 
     /// One watchdog pass. Returns false (and clears `watchdog`) when nothing is in flight.
     private func tickWatchdog() -> Bool {
-        let now = LaneJob.now()
+        let now = clock()
         let limit = config.stallNanoseconds
         for entry in active.values {
             let job = entry.job

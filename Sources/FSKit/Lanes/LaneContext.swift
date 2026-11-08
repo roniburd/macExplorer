@@ -13,20 +13,23 @@ final class LaneJob: Sendable {
     private let stall = Mutex<StallState>(.running)
     let everStalled = Atomic<Bool>(false)     // .poison jobs report .stalled at most once
     let laneID = Atomic<UInt64>(0)
+    /// Heartbeat clock (uptime nanoseconds): `LaneJob.now` in the app, a manual clock in watchdog tests.
+    private let clock: @Sendable () -> UInt64
 
     init(id: UInt64, volume: VolumeID, laneClass: LaneClass, policy: StallPolicy,
-         onStall: (@Sendable (StallNotice) -> Void)?) {
+         onStall: (@Sendable (StallNotice) -> Void)?, clock: @escaping @Sendable () -> UInt64 = { LaneJob.now() }) {
         self.id = id
         self.volume = volume
         self.laneClass = laneClass
         self.policy = policy
         self.onStall = onStall
+        self.clock = clock
     }
 
     static func now() -> UInt64 { DispatchTime.now().uptimeNanoseconds }
 
     func beat() {
-        lastBeat.store(LaneJob.now(), ordering: .relaxed)
+        lastBeat.store(clock(), ordering: .relaxed)
         stall.withLock { state in
             guard state == .stalled else { return }
             state = .running

@@ -14,6 +14,7 @@ final class BenchSmokeTests: XCTestCase {
         expected.formUnion(["resort.tags", "resort.comments"])     // P2-16 review fix: extended columns, distinct values
         expected.formUnion(["memory.extendedSort.tags", "memory.extendedSort.owner"])   // P2-16 review fix: §4.4 memory
         for g in GroupBy.allCases where g != .none { expected.insert("resort.grouped.\(g.rawValue)") }   // P2-20
+        expected.insert("resort.grouped.nameFirstLetter.nonASCII")                           // P2-09 review
         expected.formUnion(["folderSize.scan", "extattrs.read"])                            // P2-20, reported only
         expected.formUnion(Self.searchMetrics.keys)                                          // P3-13
         XCTAssertEqual(Set(report.metrics.map(\.name)), expected)
@@ -54,7 +55,7 @@ final class BenchSmokeTests: XCTestCase {
     func testPhase2FamiliesRunOnTheirOwn() async throws {
         let report = try await Bench.run(BenchOptions(sizes: [50], warmups: 0, iterations: 1,
                                                       metrics: ["resort.grouped", "folderSize", "extattrs"]))
-        var expected: Set<String> = ["folderSize.scan", "extattrs.read"]
+        var expected: Set<String> = ["folderSize.scan", "extattrs.read", "resort.grouped.nameFirstLetter.nonASCII"]
         for g in GroupBy.allCases where g != .none { expected.insert("resort.grouped.\(g.rawValue)") }
         XCTAssertEqual(Set(report.metrics.map(\.name)), expected)
         XCTAssertTrue(report.sandboxRemoved)

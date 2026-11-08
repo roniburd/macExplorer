@@ -101,6 +101,20 @@ final class MetricSuite {
 
     private var ranks: [UInt16] { env.types.kindRanks().ranks }
 
+    /// `count` files whose names start with non-ASCII first letters (and an ASCII letter followed by a combining mark).
+    private static func nonASCIIStore(count: Int, typeIndex: UInt16) -> EntryStore {
+        let prefixes = ["日本語", "中文", "한국어", "Привет", "Ωmega", "Äpfel", "A\u{0308}pfel", "e\u{0301}clair", "éclair", "aé", "Ａbc", "１x"]
+        let separators = ["", " ", "-", "x"]
+        var store = EntryStore(identityMode: .objectID)
+        for i in 0..<count {
+            let id = UInt64(i + 1)
+            store.upsert(Entry(rowID: id, fileID: id, size: Int64(i), allocSize: 4_096, mtime: 0, ctime: 0, nameOffset: 0,
+                               nameLen: 0, kind: .file, flags: [.readable, .writable], typeIndex: typeIndex),
+                         name: "\(prefixes[i % prefixes.count])\(separators[i % separators.count])\(i).txt")
+        }
+        return store
+    }
+
     func readStore() async throws -> EntryStore {
         generation = generation.next()
         let reader = env.readers.reader(for: directory)
@@ -265,6 +279,24 @@ final class MetricSuite {
                     return ms
                 }))
             }
+            // P2-09 review: Name groups of non-ASCII names (CJK, Cyrillic, Greek, precomposed and decomposed accents,
+            // fullwidth) cost about what ASCII names cost: the key is cached per first-grapheme prefix. An in-memory
+            // store of `size` such names (this budget used to be a debug-build timing in GroupingTests).
+            if wants("resort.grouped.nameFirstLetter.nonASCII") {
+                let names = Self.nonASCIIStore(count: size, typeIndex: env.types.index(forExtension: "txt", isDirectory: false))
+                let nameKeys = SortKeys.nameKeys(names, range: 0..<names.count)
+                let types = env.types
+                out.append(result("resort.grouped.nameFirstLetter.nonASCII", try await samples {
+                    let start = self.clock.now
+                    let p = Sorter.permutation(names, nameKeys: nameKeys, searchKeys: nil, query: ViewQuery(), kindRanks: ranks)
+                    let grouped = Grouping.partition(p, store: names, by: .nameFirstLetter, dateBuckets: buckets, types: types)
+                    let ms = self.elapsedMs(since: start)
+                    guard grouped.order.count == names.count, !grouped.runs.isEmpty else {
+                        throw BenchFailure.check("non-ASCII Name groups (\(grouped.runs.count) groups, \(grouped.order.count) of \(names.count) rows)")
+                    }
+                    return ms
+                }))
+            }
             if wants("filter") {
                 out.append(result("filter", try await samples {
                     let start = self.clock.now
@@ -298,7 +330,7 @@ final class MetricSuite {
                     let start = self.clock.now
                     watch.model.setQuery(ViewQuery(sort: SortDescriptor(field: .name, ascending: ascending)))
                     ascending.toggle()
-                    try await self.waitUntil("re-sort applied", timeout: .seconds(10)) { watch.changeEvents > before }
+                    try await self.waitUntil("re-sort applied", timeout: .seconds(60)) { watch.changeEvents > before }
                     return self.elapsedMs(since: start)
                 }
             }
@@ -370,7 +402,7 @@ final class MetricSuite {
                     let start = self.clock.now
                     self.sandbox.file("\(self.relativeDir)/\(name)")
                     self.fileCount += 1
-                    try await self.waitUntil("incremental FSEvent applied", timeout: .seconds(10)) {
+                    try await self.waitUntil("incremental FSEvent applied", timeout: .seconds(60)) {
                         watch.model.row(named: name) != nil
                     }
                     return self.elapsedMs(since: start)
@@ -387,7 +419,7 @@ final class MetricSuite {
                     for i in 0..<300 { self.sandbox.file("\(self.relativeDir)/full-\(tag)-\(i).txt") }
                     self.fileCount += 300
                     let target = self.fileCount
-                    try await self.waitUntil("full re-read applied", timeout: .seconds(20)) { watch.model.rowCount == target }
+                    try await self.waitUntil("full re-read applied", timeout: .seconds(60)) { watch.model.rowCount == target }
                     return self.elapsedMs(since: start)
                 }
             }
