@@ -220,6 +220,20 @@ python3 -I site/tools/shots.py              # all shots, or name some: shots.py 
 - Full windows go to `site/assets/shots/`.
 - Cropped snippets for the user guide go to `site/assets/shots/guide/`.
 - It needs keyboard focus, like the UI scenarios.
+- The website's zoomed snippets in `site/assets/shots/crops/` are cut from these with `sips -c <h> <w> --cropOffset <y> <x>`.
+
+---
+
+## Website
+
+The website is `site/` and is published to https://roniburd.github.io/macExplorer/ by `.github/workflows/site.yml`
+on every push to `main` that changes `site/`. It copies `site/` (minus `tools/`) onto the `gh-pages` branch next to
+`appcast.xml`, which it never touches, and stops if `appcast.xml` is missing. The early design concepts are kept under
+`site/concepts/`.
+
+```bash
+python3 -m http.server 8000 --bind 127.0.0.1 --directory site   # preview at http://127.0.0.1:8000/
+```
 
 ---
 

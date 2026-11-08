@@ -28,7 +28,7 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin gh-pages:gh-pages || { echo "::error::no gh-pages branch (README › Releasing)"; exit 1; }
+          git fetch origin gh-pages:gh-pages || { echo "::error::no gh-pages branch (DEVELOPMENT.md › Releasing)"; exit 1; }
           git worktree add "$RUNNER_TEMP/pages" gh-pages
           # appcast.xml and .git belong to the branch, tools/ only makes screenshots.
           rsync -a --delete --exclude .git --exclude appcast.xml --exclude tools/ site/ "$RUNNER_TEMP/pages/"
