@@ -116,7 +116,11 @@ final class ScenarioContext {
     func keep(_ token: ObserverToken) { tokens.append(token) }
     func names(_ model: FolderModel) -> [String] { (0..<model.rowCount).map { model.name(atRow: $0) } }
 
-    func open(_ dir: URL, query: ViewQuery = ViewQuery(), timeout: Duration = .seconds(15)) async throws -> FolderModel {
+    /// Ceiling of a condition wait. Polling returns as soon as the condition holds, so it only matters when FSEvents
+    /// delivery or a lane read is slow: a CPU-starved CI runner (or `swift test --parallel`) took more than 5 s.
+    nonisolated static let defaultWait: Duration = .seconds(30)
+
+    func open(_ dir: URL, query: ViewQuery = ViewQuery(), timeout: Duration = ScenarioContext.defaultWait) async throws -> FolderModel {
         let model = env.makeFolderModel(dir, query: query)
         track(model)
         model.start()
@@ -126,7 +130,7 @@ final class ScenarioContext {
         return model
     }
 
-    func waitUntil(_ what: String, timeout: Duration = .seconds(5), _ condition: () -> Bool) async throws {
+    func waitUntil(_ what: String, timeout: Duration = ScenarioContext.defaultWait, _ condition: () -> Bool) async throws {
         let clock = ContinuousClock()
         let deadline = clock.now + timeout
         while !condition() {
@@ -135,7 +139,7 @@ final class ScenarioContext {
         }
     }
 
-    func waitUntilAsync(_ what: String, timeout: Duration = .seconds(5), _ condition: () async -> Bool) async throws {
+    func waitUntilAsync(_ what: String, timeout: Duration = ScenarioContext.defaultWait, _ condition: () async -> Bool) async throws {
         let clock = ContinuousClock()
         let deadline = clock.now + timeout
         while !(await condition()) {

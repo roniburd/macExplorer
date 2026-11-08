@@ -34,7 +34,7 @@ enum WatcherScenarios {
             let id = m.identity(atRow: try ctx.unwrap(m.row(named: "keep.txt"), "row of keep.txt"))
             let paths = (0..<10_000).map { ctx.path(String(format: "burst-%05d.txt", $0)).path }
             await ctx.background { createEmptyFiles(paths) }
-            try await ctx.waitUntil("model reaches 10,001 rows", timeout: .seconds(30)) { m.rowCount == 10_001 }
+            try await ctx.waitUntil("model reaches 10,001 rows", timeout: .seconds(60)) { m.rowCount == 10_001 }
             let fresh = try await ctx.open(ctx.work)
             try ctx.expectEqual(ctx.names(m), ctx.names(fresh), "watched model equals a fresh read")
             try ctx.expect(m.selection.ids == [id], "selection kept by identity")
@@ -78,7 +78,7 @@ enum WatcherScenarios {
             let box = RelocationBox()
             ctx.keep(m.observe { if case .relocate(let to, let reason) = $0 { box.value = (to, reason) } })
             try ctx.removeTreeRaw(ctx.path("sub"))
-            try await ctx.waitUntil("relocate event", timeout: .seconds(5)) { box.value != nil }
+            try await ctx.waitUntil("relocate event") { box.value != nil }
             try ctx.expectEqual(box.value?.0.standardizedFileURL.path, ctx.work.standardizedFileURL.path, "nearest existing ancestor")
             try ctx.expectEqual(box.value?.1, .movedOrDeleted(name: "sub"), "banner reason")
         },
@@ -89,7 +89,7 @@ enum WatcherScenarios {
             ctx.track(m)
             m.start()
             await ctx.background { createEmptyFiles([late]) }
-            try await ctx.waitUntil("complete with the late file", timeout: .seconds(20)) {
+            try await ctx.waitUntil("complete with the late file", timeout: .seconds(60)) {
                 m.state == .complete && m.row(named: "zz-late.txt") != nil
             }
             try ctx.expectEqual(m.rowCount, 20_001, "no entry lost or duplicated")
