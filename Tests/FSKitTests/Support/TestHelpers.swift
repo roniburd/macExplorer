@@ -24,3 +24,33 @@ func eventually(timeout: Duration = .seconds(30), _ condition: @Sendable () asyn
     }
     return await condition()
 }
+
+/// Uptime nanoseconds for `LanePool(config:manualClock:)`: time passes only when the test calls `advance(by:)`,
+/// so a slow or descheduled lane thread can neither cause nor hide a stall. Starts above 0 (a 0 heartbeat means
+/// "not started").
+final class ManualClock: Sendable {
+    private let nanoseconds = Mutex<UInt64>(1_000_000_000)
+    var now: UInt64 { nanoseconds.withLock { $0 } }
+    func advance(by duration: Duration) {
+        let c = duration.components
+        let delta = UInt64(c.seconds) * 1_000_000_000 + UInt64(c.attoseconds / 1_000_000_000)
+        nanoseconds.withLock { $0 += delta }
+    }
+}
+
+/// An async wait the test ends: `wait()` suspends (without blocking a thread) until `release()`.
+actor TimeoutLatch {
+    private var released = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        if released { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func release() {
+        released = true
+        for waiter in waiters { waiter.resume() }
+        waiters.removeAll()
+    }
+}
