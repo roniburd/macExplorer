@@ -199,6 +199,7 @@ final class DragDropTests: XCTestCase {
         private let state = Mutex<(asked: Bool, open: Bool, waiting: [CheckedContinuation<Void, Never>])>((false, false, []))
 
         var asked: Bool { state.withLock { $0.asked } }
+        var isOpen: Bool { state.withLock { $0.open } }
 
         func open() {
             let waiting = state.withLock { s -> [CheckedContinuation<Void, Never>] in
@@ -236,7 +237,15 @@ final class DragDropTests: XCTestCase {
         h.environment.interaction.setTarget(interaction)
         defer { interaction.open() }   // never leave the job suspended on a failed assertion
         let browser = try await h.openBrowserWindow()
+        // If the drop step wrongly waited for the answer it would never return; this opens the gate after a generous
+        // deadline so that regression fails the assertion below instead of hanging the run.
+        let watchdog = Task { @MainActor in
+            do { try await Task.sleep(for: .seconds(30)) } catch { return }
+            interaction.open()
+        }
         await browser.probePerformDrop(sources: [h.url("a.txt")], onto: "sub", modifiers: [], secondary: false, menuChoice: nil)
+        watchdog.cancel()
+        XCTAssertFalse(interaction.isOpen, "the drop step returned without waiting for the conflict answer")
         XCTAssertTrue(h.exists("a.txt"), "the drop step returned before the conflict was answered")
         try await h.waitUntil("the job asked about the conflict") { interaction.asked }
         XCTAssertTrue(h.exists("a.txt"), "nothing moves until the question is answered")
