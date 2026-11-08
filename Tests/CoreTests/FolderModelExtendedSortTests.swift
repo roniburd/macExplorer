@@ -8,9 +8,28 @@ import MacxFixtures
 final class FolderModelExtendedSortTests: XCTestCase {
     private func names(_ model: FolderModel) -> [String] { (0..<model.rowCount).map(model.name(atRow:)) }
 
-    private func wait(_ timeout: TimeInterval = 5, _ condition: () -> Bool) async throws {
-        let end = Date().addingTimeInterval(timeout)
-        while !condition() && Date() < end { try await Task.sleep(for: .milliseconds(20)) }
+    /// Fails the test at the caller when `condition` does not hold within `timeout` (a slow xattr read is a timeout,
+    /// not a wrong value further down).
+    private func wait(_ timeout: Duration = .seconds(30), file: StaticString = #filePath, line: UInt = #line,
+                      _ condition: () -> Bool) async throws {
+        let deadline = ContinuousClock.now + timeout
+        while !condition() {
+            guard ContinuousClock.now < deadline else { return XCTFail("timed out after \(timeout)", file: file, line: line) }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+    }
+
+    /// A model of `sandbox` with no real folder watcher (the tests deliver watcher events themselves: a real
+    /// FSEvents delivery of their own xattr writes would re-read at an unpredictable time).
+    private func unwatchedModel(_ sandbox: Sandbox) async throws -> FolderModel {
+        let env = CoreEnvironment.sandboxed(root: sandbox.root); _ = await env.start()
+        var ctx = env.folderContext(); ctx.resortCoalescing = .zero
+        ctx.makeWatcher = { _, _, _ in NoopWatcher() }
+        let model = FolderModel(directory: sandbox.root, context: ctx, query: ViewQuery())
+        model.start()
+        addTeardownBlock { @MainActor in model.close() }
+        try await wait { model.state == .complete }
+        return model
     }
 
     func testSortByCommentsFoldersFirstMissingLastBothDirections() async throws {
@@ -86,12 +105,7 @@ final class FolderModelExtendedSortTests: XCTestCase {
         let sandbox = try Sandbox(); defer { sandbox.destroy() }
         for n in ["a.txt", "b.txt"] { try sandbox.createFile(n) }
         try sandbox.setFinderTags(["beta"], on: "a.txt"); try sandbox.setFinderTags(["delta"], on: "b.txt")
-        let env = CoreEnvironment.sandboxed(root: sandbox.root); _ = await env.start()
-        var ctx = env.folderContext(); ctx.resortCoalescing = .zero
-        let model = FolderModel(directory: sandbox.root, context: ctx, query: ViewQuery())
-        model.start()
-        addTeardownBlock { @MainActor in model.close() }
-        try await wait { model.state == .complete }
+        let model = try await unwatchedModel(sandbox)
         model.setQuery(ViewQuery(sort: SortDescriptor(field: .tags, ascending: true)))
         try await wait { model.extendedSortTask == nil && model.sortColumn?.count == 2 }
         XCTAssertEqual(names(model), ["a.txt", "b.txt"])
@@ -134,12 +148,7 @@ final class FolderModelExtendedSortTests: XCTestCase {
         let sandbox = try Sandbox(); defer { sandbox.destroy() }
         for n in ["a.txt", "b.txt"] { try sandbox.createFile(n) }
         try sandbox.setFinderComment("one", on: "a.txt")
-        let env = CoreEnvironment.sandboxed(root: sandbox.root); _ = await env.start()
-        var ctx = env.folderContext(); ctx.resortCoalescing = .zero
-        let model = FolderModel(directory: sandbox.root, context: ctx, query: ViewQuery())
-        model.start()
-        addTeardownBlock { @MainActor in model.close() }
-        try await wait { model.state == .complete }
+        let model = try await unwatchedModel(sandbox)
         model.setQuery(ViewQuery(sort: SortDescriptor(field: .comments, ascending: true)))
         try await wait { model.extendedSortTask == nil && model.sortColumn?.count == 2 }
         let builds = model.sortColumnBuilds
@@ -198,7 +207,8 @@ final class FolderModelExtendedSortTests: XCTestCase {
         XCTAssertEqual(model.sortValueReads, reads, "the toggle reads nothing")
         model.refresh()
         try await wait { !model.rereadInFlight && model.extendedSortTask == nil && model.sortValueReads > reads }
-        try await Task.sleep(for: .milliseconds(200))
+        await model.drainQueuedWork()                    // the load's re-sort lands
+        try await Task.sleep(for: .milliseconds(200))    // negative check below: no second read of any row
         XCTAssertEqual(model.sortValueReads, reads + 3, "F5 re-reads each row once")
         XCTAssertEqual(model.sortColumn?.key(model.identity(atRow: model.row(named: "a.txt")!)),
                        SortKeys.nameKey("zulu", isFolder: false))
