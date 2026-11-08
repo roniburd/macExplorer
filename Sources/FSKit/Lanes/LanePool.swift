@@ -116,6 +116,12 @@ public actor LanePool {
         if unresponsive.remove(volume) != nil { hub.send((volume, .healthy)) }
     }
 
+    /// Test seam (@testable): marks `volume` unresponsive as reaching the poison cap does, so tests of what callers
+    /// do with an unresponsive volume need neither a hung lane call nor a short watchdog for their healthy work.
+    func markUnresponsive(_ volume: VolumeID) {
+        if unresponsive.insert(volume).inserted { hub.send((volume, .unresponsive)) }
+    }
+
     public nonisolated var healthChanges: AsyncStream<(VolumeID, VolumeHealth)> { hub.stream() }
 
     // MARK: Internals

@@ -153,6 +153,17 @@ actor FolderWorker {
         return Ordered(order: order, runs: runs, revision: group.revision)
     }
 
+    /// Test seam (@testable): entries of read `generation` ingested so far (nil when it is not the read in
+    /// progress). Tests wait for this before ticking a manual frame instead of sleeping.
+    func loadingEntryCount(_ generation: Generation) -> Int? {
+        building?.generation == generation ? building?.store.count : nil
+    }
+
+    /// Test seam (@testable): the query the read in progress sorts by (nil when `generation` is not that read).
+    func loadingQuery(_ generation: Generation) -> ViewQuery? {
+        building?.generation == generation ? building?.query : nil
+    }
+
     /// Initial load or retry finished: main's store holds the same batches in the same order. Returns the final
     /// permutation for `query` and adopts the read's keys; the read's store copy is dropped.
     func finishLoad(_ generation: Generation, query: ViewQuery, group: GroupSpec = .none, values: SortValues = .none)

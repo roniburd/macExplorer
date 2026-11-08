@@ -258,9 +258,11 @@ final class StoreDiffTests: XCTestCase {
         return StoreBuilder.store(rows, order: visible.map { UInt32($0) }, mode: mode)
     }
 
-    // MARK: performance smoke (debug build; the gate is macx-bench)
+    // MARK: 100k (the time budget is macx-bench's "diff" metric, on a release build)
 
-    func testDiffOf100kWithOnePercentChangesIsFast() {
+    /// Only the changed rows are touched. No wall-clock assertion: a debug build on a shared CI runner has no fixed
+    /// ceiling (macx-bench reports the time against its budget as a CI warning).
+    func testDiffOf100kWithOnePercentChangesTouchesOnlyThoseRows() {
         let n = 100_000
         let rows = (0..<n).map { Row(UInt64($0 + 1), String(format: "file-%06d.txt", $0), mtime: 1) }
         let old = StoreBuilder.store(rows)
@@ -269,11 +271,8 @@ final class StoreDiffTests: XCTestCase {
         for i in stride(from: 50, to: n, by: 200) { newRows[i].hidden = true }                    // 0.5% removed
         newRows += (0..<500).map { Row(UInt64(n + 10 + $0), "added-\($0).txt") }                  // 0.5% added
         let new = StoreBuilder.store(newRows)
-        let start = ContinuousClock.now
         let r = StoreDiff.diff(old: old, new: new)
-        let elapsed = ContinuousClock.now - start
         XCTAssertEqual(r.changes.touchedRowCount, 1_000 + 500 + 500)
-        XCTAssertLessThan(elapsed, .milliseconds(1_600), "4x the 400 ms full re-read budget")
     }
 }
 
