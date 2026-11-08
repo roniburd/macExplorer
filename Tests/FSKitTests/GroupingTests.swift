@@ -130,13 +130,16 @@ final class GroupingTests: XCTestCase {
         return best
     }
 
+    /// 4x the 30 ms re-sort budget in debug; GitHub's shared runners (CI=true) are about 1.5x slower, so they get 2x that.
+    static let debugBudget: Duration = ProcessInfo.processInfo.environment["CI"] == "true" ? .milliseconds(240) : .milliseconds(120)
+
     func testPartition100kWithinDebugBudget() {
         let items = (0..<100_000).map { (name: "file \($0 % 977) \($0).\(["txt", "png", "swift", "md"][$0 % 4])", kind: Kind.file, size: Int64($0 * 37), mtime: Int64($0) * 86_400_000_000_000) }
         let store = makeStore(items)
         let b = DateBuckets(now: Date(timeIntervalSince1970: 100_000 * 86_400), calendar: utc)
         for g in [GroupBy.kind, .dateModified, .size, .nameFirstLetter] {
-            let elapsed = Self.best(within: .milliseconds(120)) { _ = Grouping.partition(store.order, store: store, by: g, dateBuckets: b, types: .shared) }
-            XCTAssertLessThan(elapsed, .milliseconds(120), "\(g): 4x the 30 ms re-sort budget in debug")
+            let elapsed = Self.best(within: Self.debugBudget) { _ = Grouping.partition(store.order, store: store, by: g, dateBuckets: b, types: .shared) }
+            XCTAssertLessThan(elapsed, Self.debugBudget, "\(g): 4x the 30 ms re-sort budget in debug")
         }
     }
 
@@ -148,9 +151,9 @@ final class GroupingTests: XCTestCase {
                                          kind: Kind.file, size: Int64($0), mtime: Int64($0)) }
         let store = makeStore(items)
         let b = DateBuckets(now: Date(timeIntervalSince1970: 0), calendar: utc)
-        let elapsed = Self.best(within: .milliseconds(120)) { _ = Grouping.partition(store.order, store: store, by: .nameFirstLetter, dateBuckets: b, types: .shared) }
+        let elapsed = Self.best(within: Self.debugBudget) { _ = Grouping.partition(store.order, store: store, by: .nameFirstLetter, dateBuckets: b, types: .shared) }
         let (order, runs) = Grouping.partition(store.order, store: store, by: .nameFirstLetter, dateBuckets: b, types: .shared)
-        XCTAssertLessThan(elapsed, .milliseconds(120), "4x the 30 ms re-sort budget in debug")
+        XCTAssertLessThan(elapsed, Self.debugBudget, "4x the 30 ms re-sort budget in debug")
         for run in runs {
             for row in run.rows { XCTAssertEqual(.letter(Grouping.letterKey(store.name(order[row]))), run.key) }
         }

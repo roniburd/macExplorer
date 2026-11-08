@@ -77,7 +77,9 @@ enum SearchScenarios {
             try ctx.expect(m.plan?.diagnostics.isEmpty ?? false, "no syntax diagnostics: \(String(describing: m.plan?.diagnostics))")
         },
         CoreScenario("search.cancelStopsCrawl") { ctx in
-            for i in 0..<20 { ctx.flat("bulk/d\(i)", count: 1_000) }
+            // 500 folders of 40 files: the crawl reads one folder at a time per lane, so 20,000 rows arrive over hundreds of
+            // batches instead of ~20 big ones that a fast runner delivers in a single frame.
+            for i in 0..<500 { ctx.flat("bulk/d\(i)", count: 40) }
             let spec = SearchSpec(text: "file", scope: .subfolders, root: ctx.work)
             let plan = await ctx.env.planSearch(spec)
             // Stop is pressed from the first frame that shows rows (polling raced the crawler: it can finish in
