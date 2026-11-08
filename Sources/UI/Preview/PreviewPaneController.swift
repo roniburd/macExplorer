@@ -14,6 +14,8 @@ final class PreviewPaneController: NSViewController {
         case hidden, nothing, loading
         case multiple(Int, Int64)
         case text(String, truncated: Bool)
+        /// A Markdown file's text: rendered or as source, per `Settings.previewRendersMarkdown`.
+        case markdown(String, truncated: Bool, url: URL)
         case quickLook(URL), folder(URL), cloud(URL), downloading(URL), downloadFailed(URL), broken(URL)
         /// A text file with no content: a message, not a blank text area (QA polish).
         case empty(URL)
@@ -55,6 +57,15 @@ final class PreviewPaneController: NSViewController {
     private var pending: Task<Void, Never>?
     private var detailsTask: Task<Void, Never>?
     private var downloadTask: Task<Void, Never>?
+    /// Loads the rendered Markdown's local images (cancelled when the pane shows anything else).
+    private var imageTask: Task<Void, Never>?
+    private var markdownImages: [MarkdownImage] = []
+    /// Shows a file a relative Markdown link points to (the window selects it in its folder).
+    var onRevealFile: ((URL) -> Void)?
+    /// Opens a web or mail link (tests replace it; the default is NSWorkspace).
+    var openExternal: (URL) -> Void = { NSWorkspace.shared.open($0) }
+    /// Fetches a remote image after the user clicks its placeholder (tests replace it).
+    var fetchRemoteImage: @Sendable (URL) async -> Data? = { url in await PreviewPaneController.download(url) }
     private var generation = 0
     private var lastKey: SelectionKey?
     /// The Finder display name of the single subject (the folder message shows it).
@@ -125,6 +136,8 @@ final class PreviewPaneController: NSViewController {
         stack.setAccessibilityIdentifier(AXID.previewPane)
         stack.setAccessibilityLabel(L10n.string("preview.pane"))
         messageView.onButton = { [weak self] in self?.performDownload() }
+        textView.onModeChange = { [weak self] rendered in self?.setMarkdownRendered(rendered) }
+        textView.onLink = { [weak self] url in self?.followLink(url) ?? false }
         view = container
         render(displayState)
     }
@@ -284,7 +297,13 @@ final class PreviewPaneController: NSViewController {
                 let preview = try await TextPreviewLoader.load(url, lanes: env.lanes, volume: volume)
                 guard gen == generation else { return }
                 host.show(nil)
-                render(preview.text.isEmpty && !preview.truncated ? .empty(url) : .text(preview.text, truncated: preview.truncated))
+                if preview.text.isEmpty && !preview.truncated {
+                    render(.empty(url))
+                } else if MarkdownFiles.isMarkdown(url) {
+                    render(.markdown(preview.text, truncated: preview.truncated, url: url))
+                } else {
+                    render(.text(preview.text, truncated: preview.truncated))
+                }
             } catch {
                 guard gen == generation else { return }
                 switch error {
@@ -347,11 +366,23 @@ final class PreviewPaneController: NSViewController {
         host.view.isHidden = { if case .quickLook = state { false } else { true } }()
         textView.isHidden = true
         messageView.isHidden = true
+        imageTask?.cancel(); imageTask = nil
+        markdownImages = []
         switch state {
         case .hidden, .loading, .quickLook:
             break
         case .text(let text, let truncated):
             textView.show(text, truncated: truncated)
+            textView.isHidden = false
+        case .markdown(let text, let truncated, let url):
+            if context.environment.settings.previewRendersMarkdown {
+                let rendering = MarkdownRenderer.render(text, fileURL: url)
+                textView.showRendered(rendering.text, truncated: truncated)
+                markdownImages = rendering.images
+                loadLocalImages(rendering.images)
+            } else {
+                textView.show(text, truncated: truncated, markdown: true)
+            }
             textView.isHidden = false
         case .nothing:
             message(symbol: "eye.slash", title: L10n.string("preview.nothing"))
@@ -388,7 +419,7 @@ final class PreviewPaneController: NSViewController {
     }
 
     /// Scenario probe text: "hidden", "nothing", "loading", "multiple:2", "text", "quickLook", "folder", "cloud",
-    /// "downloading", "downloadFailed", "broken", "unavailable", "binary", "empty".
+    /// "downloading", "downloadFailed", "broken", "unavailable", "binary", "empty", "markdown", "markdownSource".
     var probeState: String {
         switch displayState {
         case .hidden: "hidden"
@@ -396,6 +427,7 @@ final class PreviewPaneController: NSViewController {
         case .loading: "loading"
         case .multiple(let n, _): "multiple:\(n)"
         case .text: "text"
+        case .markdown: context.environment.settings.previewRendersMarkdown ? "markdown" : "markdownSource"
         case .quickLook: "quickLook"
         case .folder: "folder"
         case .cloud: "cloud"
@@ -414,5 +446,99 @@ final class PreviewPaneController: NSViewController {
         return messageView.convert(messageView.contentFrame, to: view)
     }
 
-    var probeText: String? { if case .text(let t, _) = displayState { String(t.prefix(200)) } else { nil } }
+    var probeText: String? {
+        switch displayState {
+        case .text(let t, _), .markdown(let t, _, _): String(t.prefix(200))
+        default: nil
+        }
+    }
+
+    /// The text the text view shows (rendered Markdown's visible text; tests).
+    var shownText: String { textView.text }
+    var markdownModeHidden: Bool { textView.modeControlHidden }
+    /// Image placeholders still waiting (tests).
+    var pendingImageCount: Int {
+        guard let storage = textView.textView.textStorage else { return 0 }
+        var n = 0
+        storage.enumerateAttribute(.macxImage, in: NSRange(location: 0, length: storage.length)) { v, _, _ in if v != nil { n += 1 } }
+        return n
+    }
+    var imageAttachmentCount: Int {
+        guard let storage = textView.textView.textStorage else { return 0 }
+        var n = 0
+        storage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: storage.length)) { v, _, _ in if v != nil { n += 1 } }
+        return n
+    }
+
+    // MARK: Markdown
+
+    /// The Rendered | Source switch (remembered for every Markdown file).
+    func setMarkdownRendered(_ rendered: Bool) {
+        let settings = context.environment.settings
+        if settings.previewRendersMarkdown != rendered { settings.previewRendersMarkdown = rendered }
+        if case .markdown = displayState { render(displayState) }
+    }
+
+    /// A click on a link in rendered Markdown. Web and mail links open in their app, `#heading` scrolls, a relative
+    /// path selects that item in the window, and a remote image placeholder loads that image.
+    @discardableResult
+    func followLink(_ url: URL) -> Bool {
+        switch url.scheme?.lowercased() {
+        case MarkdownRenderer.anchorScheme:
+            let slug = url.absoluteString.dropFirst(MarkdownRenderer.anchorScheme.count + 1)
+            return textView.scrollToAnchor(String(slug).removingPercentEncoding ?? String(slug))
+        case MarkdownRenderer.loadImageScheme:
+            guard let index = Int(url.absoluteString.dropFirst(MarkdownRenderer.loadImageScheme.count + 1)),
+                  index < markdownImages.count else { return false }
+            loadRemoteImage(markdownImages[index])
+            return true
+        case "http", "https", "mailto":
+            openExternal(url)
+            return true
+        case "file":
+            onRevealFile?(url)
+            return onRevealFile != nil
+        default:
+            return false
+        }
+    }
+
+    private func loadLocalImages(_ images: [MarkdownImage]) {
+        let local = images.filter { !$0.isRemote }
+        guard !local.isEmpty else { return }
+        let env = context.environment
+        let gen = generation
+        imageTask = Task { [weak self] in
+            for image in local {
+                let volume = env.volumes.volume(for: image.url)?.id ?? .unknown
+                let data = await MarkdownFiles.loadImage(image.url, lanes: env.lanes, volume: volume)
+                guard let self, !Task.isCancelled, gen == self.generation else { return }
+                if let data, let picture = NSImage(data: data) { self.textView.replaceImage(image.index, with: picture) }
+            }
+        }
+    }
+
+    private func loadRemoteImage(_ image: MarkdownImage) {
+        let gen = generation
+        let fetch = fetchRemoteImage
+        Task { [weak self] in
+            let data = await fetch(image.url)
+            guard let self, gen == self.generation, case .markdown = self.displayState else { return }
+            if let data, let picture = NSImage(data: data) { self.textView.replaceImage(image.index, with: picture) }
+        }
+    }
+
+    /// One remote image, only after a click: an ephemeral session (no cookies or cache), http(s) only, ≤ 16 MB.
+    nonisolated static func download(_ url: URL) async -> Data? {
+        guard ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return nil }
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 20
+        config.httpCookieAcceptPolicy = .never
+        let session = URLSession(configuration: config)
+        defer { session.finishTasksAndInvalidate() }
+        guard let (data, response) = try? await session.data(from: url),
+              (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? false,
+              data.count <= MarkdownFiles.imageByteLimit else { return nil }
+        return data
+    }
 }

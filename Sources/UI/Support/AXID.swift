@@ -58,6 +58,7 @@ enum AXID {
     static let previewPane = "macx.preview"
     static let previewText = "macx.preview.text"
     static let previewTruncation = "macx.preview.truncation"
+    static let previewMarkdownMode = "macx.preview.markdownMode"
     static let previewMessage = "macx.preview.message"
     static let previewDownload = "macx.preview.download"
     static let previewDetails = "macx.preview.details"

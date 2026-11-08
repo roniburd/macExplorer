@@ -14,6 +14,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.1"),
+        .package(url: "https://github.com/swiftlang/swift-markdown", exact: "0.9.0"),
     ],
     targets: [
         .target(
@@ -24,7 +25,10 @@ let package = Package(
         .target(name: "Core", dependencies: ["MacxFS"], swiftSettings: strict),
         .target(
             name: "UI",
-            dependencies: ["Core", "MacxFS", .product(name: "Sparkle", package: "Sparkle")],
+            dependencies: [
+                "Core", "MacxFS", .product(name: "Sparkle", package: "Sparkle"),
+                .product(name: "Markdown", package: "swift-markdown"),
+            ],
             resources: [.process("Resources")],
             swiftSettings: strict
         ),

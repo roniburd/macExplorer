@@ -66,6 +66,8 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
         installQuickLook()
         sessionToken = session.observe { [weak self] event in self?.handle(event) }
         splitViewController.previewPane.bind(session.results ?? session.folder)
+        // A relative link in a Markdown preview selects its target in its folder (never opens it).
+        splitViewController.previewPane.onRevealFile = { [weak self] url in self?.revealLinkedFile(url) }
         folderDidChange()
         titleLoop = ObservationLoop({ [weak self] in _ = self?.context.environment.settings.showFullPathInTitle },
                                     onChange: { [weak self] in self?.updateTitle() })
@@ -78,6 +80,19 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
 
     public func navigate(to url: URL, selecting name: String? = nil, folderID: UInt64? = nil) {
         session.navigate(to: url, selecting: name, folderID: folderID)
+    }
+
+    /// A relative link in a Markdown preview: selects its target, in place when it is in the shown folder (no
+    /// re-read, no history entry), otherwise by opening its folder.
+    func revealLinkedFile(_ url: URL) {
+        let folder = url.deletingLastPathComponent()
+        let shown = session.folder.directory
+        if session.results == nil, session.columnChain == nil,
+           LexicalPath.standardize(folder.path(percentEncoded: false)) == LexicalPath.standardize(shown.path(percentEncoded: false)) {
+            session.selectWhenListed(url.lastPathComponent)
+        } else {
+            navigate(to: folder, selecting: url.lastPathComponent)
+        }
     }
 
     /// ⌘T and the tab bar's "+" (NSWindow sends newWindowForTab: up the responder chain; the panes never implement

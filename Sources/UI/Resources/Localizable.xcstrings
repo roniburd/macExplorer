@@ -12,6 +12,17 @@
         }
       }
     },
+    "%@ (click to load)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (click to load)"
+          }
+        }
+      }
+    },
     "%@ (default)" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4174,6 +4185,17 @@
         }
       }
     },
+    "Rendered" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rendered"
+          }
+        }
+      }
+    },
     "Replace" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4918,6 +4940,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sort By"
+          }
+        }
+      }
+    },
+    "Source" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Source"
           }
         }
       }
