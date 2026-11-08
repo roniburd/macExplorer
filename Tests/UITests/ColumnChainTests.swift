@@ -40,19 +40,36 @@ final class ColumnChainTests: XCTestCase {
         }
     }
 
-    func settle(_ chain: ColumnChain, _ timeout: TimeInterval = 3) async {
-        let end = Date().addingTimeInterval(timeout)
-        while chain.models.contains(where: { $0.state != .complete }) && Date() < end { try? await Task.sleep(for: .milliseconds(20)) }
+    struct WaitTimeout: Error { let what: String }
+
+    /// A condition wait with its own generous deadline (real reads go through the lane pool and the main actor, which
+    /// a CPU-starved CI runner can delay for seconds). A timeout fails the test at the caller's line and throws, so
+    /// the test stops there instead of indexing a column that never opened.
+    func waitUntil(_ what: String, timeout: Duration = .seconds(30), file: StaticString = #filePath, line: UInt = #line,
+                   _ condition: () -> Bool) async throws {
+        let deadline = ContinuousClock.now + timeout
+        while !condition() {
+            guard ContinuousClock.now < deadline else {
+                XCTFail("timed out after \(timeout) waiting for: \(what)", file: file, line: line)
+                throw WaitTimeout(what: what)
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+    }
+
+    /// Every column of `chain` listed.
+    func settle(_ chain: ColumnChain, file: StaticString = #filePath, line: UInt = #line) async throws {
+        try await waitUntil("every column listed", file: file, line: line) { chain.models.allSatisfy { $0.state == .complete } }
     }
 
     func names(_ chain: ColumnChain) -> [String] { chain.models.map { $0.directory.standardizedFileURL.lastPathComponent } }
 
-    func testSingleFolderSelectionOpensChildAndFileTruncates() async {
+    func testSingleFolderSelectionOpensChildAndFileTruncates() async throws {
         let chain = ColumnChain(root: sandbox.root, makeModel: factory())
-        await settle(chain)
+        try await settle(chain)
         chain.models[0].select(.names(["A"]))
         XCTAssertEqual(names(chain), [sandbox.root.standardizedFileURL.lastPathComponent, "A"])
-        await settle(chain)
+        try await settle(chain)
         chain.models[1].select(.names(["B"]))
         XCTAssertEqual(names(chain).suffix(2), ["A", "B"])
         chain.models[1].select(.names(["x.txt"]))
@@ -61,20 +78,20 @@ final class ColumnChainTests: XCTestCase {
         XCTAssertEqual(chain.models.count, 1, "multi-selection closes deeper columns")
     }
 
-    func testReselectingTheSameFolderKeepsItsColumn() async {
+    func testReselectingTheSameFolderKeepsItsColumn() async throws {
         let chain = ColumnChain(root: sandbox.root, makeModel: factory())
-        await settle(chain)
+        try await settle(chain)
         chain.models[0].select(.names(["A"]))
         let child = chain.models[1]
         chain.models[0].select(.set(IndexSet(integer: chain.models[0].row(named: "A")!), cursor: nil))
         XCTAssertTrue(chain.models[1] === child, "the same folder keeps its column")
     }
 
-    func testMoveRightLeftAndUp() async {
+    func testMoveRightLeftAndUp() async throws {
         let chain = ColumnChain(root: sandbox.url("A"), makeModel: factory())
-        await settle(chain)
+        try await settle(chain)
         chain.models[0].select(.names(["B"]))
-        await settle(chain)
+        try await settle(chain)
         XCTAssertTrue(chain.moveRight())
         XCTAssertEqual(chain.activeIndex, 1)
         XCTAssertEqual(chain.activeModel.selectedURLs.map(\.lastPathComponent), ["c.txt"], "first row selected on entry")
@@ -82,17 +99,17 @@ final class ColumnChainTests: XCTestCase {
         XCTAssertTrue(chain.moveLeft())
         XCTAssertEqual(chain.activeIndex, 0)
         chain.up()
-        await settle(chain)
+        try await settle(chain)
         XCTAssertEqual(chain.models[0].directory.standardizedFileURL, sandbox.root.standardizedFileURL)
         XCTAssertEqual(chain.models[0].selectedURLs.map(\.lastPathComponent), ["A"])
         XCTAssertEqual(names(chain).last, "A", "old root reopens as column 1")
     }
 
-    func testDetachActiveClosesOthersAndKeepsActive() async {
+    func testDetachActiveClosesOthersAndKeepsActive() async throws {
         let chain = ColumnChain(root: sandbox.root, makeModel: factory())
-        await settle(chain)
+        try await settle(chain)
         chain.models[0].select(.names(["A"]))
-        await settle(chain)
+        try await settle(chain)
         chain.moveRight()
         let active = chain.activeModel
         let kept = chain.detachActive()
@@ -104,12 +121,12 @@ final class ColumnChainTests: XCTestCase {
     func testRapidSelectionInColumnClosesIntermediateModels() async throws {
         for i in 0..<50 { try sandbox.createDirectory(String(format: "many/d%02d", i)) }
         let chain = ColumnChain(root: sandbox.url("many"), makeModel: factory())
-        await settle(chain)
+        try await settle(chain)
         for row in 0..<50 { chain.models[0].select(.set(IndexSet(integer: row), cursor: row)) }   // held ↓
         XCTAssertEqual(chain.models.count, 2)
         XCTAssertEqual(names(chain).last, "d49")
         XCTAssertEqual(created.count, 51, "root + one model per visited folder")
-        await settle(chain)
+        try await settle(chain)
         try await Task.sleep(for: .milliseconds(300))           // let any late batches arrive
         XCTAssertEqual(chain.models[0].selectedURLs.map(\.lastPathComponent), ["d49"], "active column untouched")
         XCTAssertEqual(chain.models.count, 2)
@@ -119,16 +136,15 @@ final class ColumnChainTests: XCTestCase {
 }
 
 extension ColumnChainTests {
-    func testSessionColumnsModeAdoptsAndDetachesTheModel() async {
+    func testSessionColumnsModeAdoptsAndDetachesTheModel() async throws {
         let session = BrowserSession(environment: env, initialURL: sandbox.root)
         defer { session.close() }
         let original = session.folder
         session.updateViewState { $0.mode = .columns }
         XCTAssertTrue(session.columnChain?.models.first === original, "entering columns re-reads nothing")
-        let end = Date().addingTimeInterval(3)
-        while session.folder.state != .complete && Date() < end { try? await Task.sleep(for: .milliseconds(20)) }
+        try await waitUntil("root column listed") { session.folder.state == .complete }
         session.columnChain!.models[0].select(.names(["A"]))
-        while session.columnChain!.models.count < 2 && Date() < end { try? await Task.sleep(for: .milliseconds(20)) }
+        try await waitUntil("column A opened") { (session.columnChain?.models.count ?? 0) >= 2 }
         session.columnChain!.moveRight()
         XCTAssertEqual(session.folder.directory.lastPathComponent, "A", "session follows the active column")
         session.updateViewState { $0.mode = .details }
@@ -140,15 +156,14 @@ extension ColumnChainTests {
         XCTAssertEqual(session.columnChain?.models.count, 1)
     }
 
-    func testSessionColumnsSortAppliesToEveryColumnAndNavigationReroots() async {
+    func testSessionColumnsSortAppliesToEveryColumnAndNavigationReroots() async throws {
         let session = BrowserSession(environment: env, initialURL: sandbox.url("A"))
         defer { session.close() }
         session.updateViewState { $0.mode = .columns }        // A remembers Columns
         session.navigate(to: sandbox.root)
         XCTAssertNil(session.columnChain, "the root has no record: the default mode")
         session.updateViewState { $0.mode = .columns }
-        let end = Date().addingTimeInterval(3)
-        while session.folder.state != .complete && Date() < end { try? await Task.sleep(for: .milliseconds(20)) }
+        try await waitUntil("root column listed") { session.folder.state == .complete }
         session.columnChain!.models[0].select(.names(["A"]))
         var sort = session.viewState.sort
         sort.ascending.toggle()
@@ -159,7 +174,7 @@ extension ColumnChainTests {
         XCTAssertTrue(session.columnChain === chain, "navigation in Columns reroots the same chain")
         XCTAssertEqual(session.columnChain!.models.first?.directory.lastPathComponent, "A")
         XCTAssertTrue(session.folder === session.columnChain!.models.first)
-        while session.columnChain!.models.count < 2 && Date() < end { try? await Task.sleep(for: .milliseconds(20)) }
+        try await waitUntil("column B opened") { (session.columnChain?.models.count ?? 0) >= 2 }
         XCTAssertEqual(session.columnChain!.models.last?.directory.lastPathComponent, "B", "selecting: applies once listed")
         session.navigate(to: sandbox.url("A/B"))
         XCTAssertNil(session.columnChain, "a folder without a Columns record leaves Columns")
@@ -167,7 +182,7 @@ extension ColumnChainTests {
         XCTAssertEqual(session.folder.directory.lastPathComponent, "B")
     }
 
-    func testChainRerootAtTheRootRetargetsTheSessionAndRecordsHistory() async {
+    func testChainRerootAtTheRootRetargetsTheSessionAndRecordsHistory() async throws {
         let session = BrowserSession(environment: env, initialURL: sandbox.url("A"))
         defer { session.close() }
         session.updateViewState { $0.mode = .columns }
@@ -176,8 +191,7 @@ extension ColumnChainTests {
         XCTAssertEqual(session.viewMode, .columns)
         XCTAssertTrue(session.folder === session.columnChain!.models.first)
         XCTAssertEqual(session.history.current.standardizedFileURL, sandbox.root.standardizedFileURL)
-        let end = Date().addingTimeInterval(3)
-        while session.columnChain!.models.count < 2 && Date() < end { try? await Task.sleep(for: .milliseconds(20)) }
+        try await waitUntil("old root reopened as column 1") { (session.columnChain?.models.count ?? 0) >= 2 }
         XCTAssertEqual(session.columnChain!.models.last?.directory.lastPathComponent, "A")
     }
 
@@ -185,14 +199,13 @@ extension ColumnChainTests {
     // no `.selection` is sent; the child column must still follow the new name.
     func testRenamingTheSelectedFolderInPlaceRetargetsItsColumn() async throws {
         let chain = ColumnChain(root: sandbox.url("A"), makeModel: factory())
-        await settle(chain)
+        try await settle(chain)
         chain.models[0].select(.names(["B"]))
-        await settle(chain)
+        try await settle(chain)
         XCTAssertEqual(names(chain), ["A", "B"])
         try FileManager.default.moveItem(at: sandbox.url("A/B"), to: sandbox.url("A/B2"))   // sandbox only
         chain.models[0].refresh()                     // the counting watcher sends no events: re-read by hand
-        let end = Date().addingTimeInterval(3)
-        while names(chain).last != "B2" && Date() < end { try await Task.sleep(for: .milliseconds(20)) }
+        try await waitUntil("child column follows B2") { names(chain).last == "B2" }
         XCTAssertEqual(chain.models[0].selectedURLs.map(\.lastPathComponent), ["B2"])
         XCTAssertEqual(names(chain), ["A", "B2"], "the child column follows the renamed folder")
         XCTAssertEqual(chain.models.last?.directory.resolvingSymlinksInPath().path,
@@ -228,12 +241,11 @@ extension ColumnChainTests {
     }
 
     // Review fix (P2-18): the search filter follows the active column and clears on the column it leaves.
-    func testActivationChangeClearsThePreviousColumnsFilter() async {
+    func testActivationChangeClearsThePreviousColumnsFilter() async throws {
         let session = BrowserSession(environment: env, initialURL: sandbox.root)
         defer { session.close() }
         session.updateViewState { $0.mode = .columns }
-        let end = Date().addingTimeInterval(3)
-        while session.folder.state != .complete && Date() < end { try? await Task.sleep(for: .milliseconds(20)) }
+        try await waitUntil("root column listed") { session.folder.state == .complete }
         let chain = session.columnChain!
         chain.models[0].select(.names(["A"]))
         let root = chain.models[0]
@@ -247,13 +259,13 @@ extension ColumnChainTests {
 
     // Review fix (P2-18): a deeper column whose folder is gone closes (with every column after it); the active
     // column falls back to its parent column.
-    func testRelocatingAChildColumnClosesItAndDeeperColumns() async {
+    func testRelocatingAChildColumnClosesItAndDeeperColumns() async throws {
         let chain = ColumnChain(root: sandbox.root, makeModel: factory())
-        await settle(chain)
+        try await settle(chain)
         chain.models[0].select(.names(["A"]))
-        await settle(chain)
+        try await settle(chain)
         chain.models[1].select(.names(["B"]))
-        await settle(chain)
+        try await settle(chain)
         XCTAssertTrue(chain.moveRight())
         XCTAssertTrue(chain.moveRight())
         XCTAssertEqual(chain.activeIndex, 2)
@@ -264,7 +276,7 @@ extension ColumnChainTests {
 
     // Review fix (P2-18): the root column's relocate reaches the session even while a deeper column is active
     // (the root's model relocates only once, so it would otherwise be lost).
-    func testRootColumnRelocateWhileADeeperColumnIsActiveNavigatesTheSession() async {
+    func testRootColumnRelocateWhileADeeperColumnIsActiveNavigatesTheSession() async throws {
         let session = BrowserSession(environment: env, initialURL: sandbox.root)
         defer { session.close() }
         session.updateViewState { $0.mode = .columns }
@@ -272,14 +284,11 @@ extension ColumnChainTests {
         let token = session.observe { if case .banner(let text) = $0 { banners.append(text) } }
         defer { token.cancel() }
         let chain = session.columnChain!
-        let end = Date().addingTimeInterval(3)
-        while chain.models.first?.state != .complete && Date() < end { try? await Task.sleep(for: .milliseconds(20)) }
+        try await waitUntil("root column listed") { chain.models.first?.state == .complete }
         chain.models[0].select(.names(["A"]))
-        while (chain.models.count < 2 || chain.models[1].state != .complete) && Date() < end {
-            try? await Task.sleep(for: .milliseconds(20))
-        }
+        try await waitUntil("column A listed") { chain.models.count >= 2 && chain.models[1].state == .complete }
         chain.models[1].select(.names(["B"]))
-        while chain.models.count < 3 && Date() < end { try? await Task.sleep(for: .milliseconds(20)) }
+        try await waitUntil("column B opened") { chain.models.count >= 3 }
         XCTAssertTrue(chain.moveRight())
         XCTAssertTrue(chain.moveRight())
         XCTAssertEqual(session.folder.directory.lastPathComponent, "B")

@@ -44,8 +44,7 @@ final class ExtendedColumnsTests: XCTestCase {
         XCTAssertEqual(ExtendedColumns.text(.tags, row: row, in: model, dateStyle: .absolute), "", "not loaded yet: empty, no I/O")
         XCTAssertEqual(ExtendedColumns.text(.owner, row: row, in: model, dateStyle: .absolute), "")
         model.requestExtendedAttributes(rows: IndexSet(integersIn: 0..<model.rowCount), .all)
-        let end = Date().addingTimeInterval(5)
-        while model.extendedAttributes(atRow: row) == nil && Date() < end { try await Task.sleep(for: .milliseconds(20)) }
+        try await waitUntil("extended attributes loaded") { model.extendedAttributes(atRow: row) != nil }
         XCTAssertEqual(ExtendedColumns.text(.tags, row: row, in: model, dateStyle: .absolute), "Work, Home")
         XCTAssertEqual(ExtendedColumns.text(.permissions, row: row, in: model, dateStyle: .absolute), "-rw-r-----")
         XCTAssertEqual(ExtendedColumns.text(.owner, row: row, in: model, dateStyle: .absolute), NSUserName())
@@ -65,8 +64,7 @@ final class ExtendedColumnsTests: XCTestCase {
         defer { model.close() }
         let row = try XCTUnwrap(model.row(named: "a.txt"))
         model.requestExtendedAttributes(rows: IndexSet(integer: row), .lastOpened)
-        let end = Date().addingTimeInterval(5)
-        while model.extendedAttributes(atRow: row) == nil && Date() < end { try await Task.sleep(for: .milliseconds(20)) }
+        try await waitUntil("last opened date loaded") { model.extendedAttributes(atRow: row) != nil }
         XCTAssertEqual(ExtendedColumns.text(.dateLastOpened, row: row, in: model, dateStyle: .absolute),
                        Formatters.date(date, style: .absolute))
     }
@@ -82,8 +80,7 @@ final class ExtendedColumnsTests: XCTestCase {
         model.setQuery(ViewQuery(sort: SortDescriptor(field: .tags, ascending: true)))
         XCTAssertEqual(model.query.sort.field, .tags, "query (header indicator) updates immediately")
         XCTAssertEqual((0..<2).map(model.name(atRow:)), ["a.txt", "b.txt"], "rows keep their order until the load finishes")
-        let end = Date().addingTimeInterval(5)
-        while model.name(atRow: 0) != "b.txt" && Date() < end { try await Task.sleep(for: .milliseconds(20)) }
+        try await waitUntil("sorted by tags once loaded") { model.name(atRow: 0) == "b.txt" }
         XCTAssertEqual((0..<2).map(model.name(atRow:)), ["b.txt", "a.txt"])
     }
 
@@ -155,6 +152,20 @@ final class ExtendedColumnsTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(10))
         }
         return model
+    }
+
+    /// Extended attributes are read off-main on lanes and applied on the main actor, which a CPU-starved CI runner
+    /// can delay for seconds: a generous deadline, and a timeout fails at the caller's line (not as a wrong text).
+    private func waitUntil(_ what: String, timeout: Duration = .seconds(30), file: StaticString = #filePath, line: UInt = #line,
+                           _ condition: () -> Bool) async throws {
+        let deadline = ContinuousClock.now + timeout
+        while !condition() {
+            guard ContinuousClock.now < deadline else {
+                XCTFail("timed out after \(timeout) waiting for: \(what)", file: file, line: line)
+                throw LoadTimeout()
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
     }
 }
 

@@ -108,7 +108,7 @@ final class KeyBindingsRoutingTests: XCTestCase {
         let controller = KeyBindingsController(settings: s, menu: { menu })
         XCTAssertEqual(ActiveKeyBindings.current, .defaults)
         s.keyBindingOverrides.setPrimary(KeyChord(parsing: "opt+cmd+b"), for: .back)
-        let deadline = ContinuousClock.now + .seconds(5)
+        let deadline = ContinuousClock.now + .seconds(30)   // condition wait: generous on a starved runner
         while ActiveKeyBindings.current.primary(.back) != KeyChord(parsing: "opt+cmd+b") {
             guard ContinuousClock.now < deadline else { return XCTFail("bindings never updated") }
             try await Task.sleep(for: .milliseconds(10))
