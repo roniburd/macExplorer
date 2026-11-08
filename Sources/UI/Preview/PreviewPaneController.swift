@@ -16,6 +16,8 @@ final class PreviewPaneController: NSViewController {
         case text(String, truncated: Bool)
         /// A Markdown file's text: rendered or as source, per `Settings.previewRendersMarkdown`.
         case markdown(String, truncated: Bool, url: URL)
+        /// A Word or OpenDocument file: its text reflowed to the pane (`reflowed`) or Quick Look's page view.
+        case document(URL, reflowed: Bool)
         case quickLook(URL), folder(URL), cloud(URL), downloading(URL), downloadFailed(URL), broken(URL)
         /// A text file with no content: a message, not a blank text area (QA polish).
         case empty(URL)
@@ -60,6 +62,10 @@ final class PreviewPaneController: NSViewController {
     /// Loads the rendered Markdown's local images (cancelled when the pane shows anything else).
     private var imageTask: Task<Void, Never>?
     private var markdownImages: [MarkdownImage] = []
+    /// The reflowed text of the `.document` being shown.
+    private var documentText: NSAttributedString?
+    /// Rendered | Source (Markdown) or Reflowed | Original (documents), above the preview.
+    private let modeControl = NSSegmentedControl(labels: ["", ""], trackingMode: .selectOne, target: nil, action: nil)
     /// Shows a file a relative Markdown link points to (the window selects it in its folder).
     var onRevealFile: ((URL) -> Void)?
     /// Opens a web or mail link (tests replace it; the default is NSWorkspace).
@@ -119,6 +125,12 @@ final class PreviewPaneController: NSViewController {
         stack.edgeInsets = NSEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
         let hostView = host.view
         hostView.translatesAutoresizingMaskIntoConstraints = false
+        modeControl.controlSize = .small
+        modeControl.target = self
+        modeControl.action = #selector(modeChanged)
+        modeControl.setAccessibilityIdentifier(AXID.previewMode)
+        modeControl.isHidden = true
+        stack.addArrangedSubview(modeControl)
         for v in [hostView, textView, messageView, detailsView] {
             stack.addArrangedSubview(v)
             v.isHidden = true
@@ -136,7 +148,6 @@ final class PreviewPaneController: NSViewController {
         stack.setAccessibilityIdentifier(AXID.previewPane)
         stack.setAccessibilityLabel(L10n.string("preview.pane"))
         messageView.onButton = { [weak self] in self?.performDownload() }
-        textView.onModeChange = { [weak self] rendered in self?.setMarkdownRendered(rendered) }
         textView.onLink = { [weak self] url in self?.followLink(url) ?? false }
         view = container
         render(displayState)
@@ -286,6 +297,8 @@ final class PreviewPaneController: NSViewController {
             // keeps showing what it loaded unless asked to reload (QA polish).
             if host.shownURL == url { host.refresh() } else { host.show(url) }
             render(.quickLook(url))
+        case .document(let url):
+            await showDocument(url, gen: gen)
         case .cloudPlaceholder(let url): host.show(nil); render(.cloud(url))
         case .brokenLink(let url): host.show(nil); render(.broken(url))
         case .unavailable(let url, let code): host.show(nil); render(.unavailable(url, code))
@@ -322,7 +335,7 @@ final class PreviewPaneController: NSViewController {
             details = nil
             detailsView.isHidden = true
             return
-        case .folder, .text, .quickLook, .cloudPlaceholder:
+        case .folder, .text, .quickLook, .document, .cloudPlaceholder:
             break
         }
         let env = context.environment
@@ -363,11 +376,25 @@ final class PreviewPaneController: NSViewController {
     private func render(_ state: DisplayState) {
         displayState = state
         guard isViewLoaded else { return }
-        host.view.isHidden = { if case .quickLook = state { false } else { true } }()
+        host.view.isHidden = {
+            switch state {
+            case .quickLook, .document(_, reflowed: false): false
+            default: true
+            }
+        }()
         textView.isHidden = true
         messageView.isHidden = true
         imageTask?.cancel(); imageTask = nil
         markdownImages = []
+        switch state {
+        case .markdown:
+            showModeControl(L10n.string("Rendered"), L10n.string("Source"), first: context.environment.settings.previewRendersMarkdown)
+        case .document:
+            showModeControl(L10n.string("Reflowed"), L10n.string("Original"), first: context.environment.settings.previewReflowsDocuments)
+        default:
+            modeControl.isHidden = true
+        }
+        if case .document = state {} else { documentText = nil }
         switch state {
         case .hidden, .loading, .quickLook:
             break
@@ -381,9 +408,14 @@ final class PreviewPaneController: NSViewController {
                 markdownImages = rendering.images
                 loadLocalImages(rendering.images)
             } else {
-                textView.show(text, truncated: truncated, markdown: true)
+                textView.show(text, truncated: truncated)
             }
             textView.isHidden = false
+        case .document(_, let reflowed):
+            if reflowed, let text = documentText {
+                textView.showRendered(text, truncated: false)
+                textView.isHidden = false
+            }
         case .nothing:
             message(symbol: "eye.slash", title: L10n.string("preview.nothing"))
         case .multiple(let n, let bytes):
@@ -428,6 +460,7 @@ final class PreviewPaneController: NSViewController {
         case .multiple(let n, _): "multiple:\(n)"
         case .text: "text"
         case .markdown: context.environment.settings.previewRendersMarkdown ? "markdown" : "markdownSource"
+        case .document(_, let reflowed): reflowed ? "document" : "documentOriginal"
         case .quickLook: "quickLook"
         case .folder: "folder"
         case .cloud: "cloud"
@@ -455,7 +488,8 @@ final class PreviewPaneController: NSViewController {
 
     /// The text the text view shows (rendered Markdown's visible text; tests).
     var shownText: String { textView.text }
-    var markdownModeHidden: Bool { textView.modeControlHidden }
+    var modeControlHidden: Bool { modeControl.isHidden }
+    var modeLabels: [String] { (0..<modeControl.segmentCount).map { modeControl.label(forSegment: $0) ?? "" } }
     /// Image placeholders still waiting (tests).
     var pendingImageCount: Int {
         guard let storage = textView.textView.textStorage else { return 0 }
@@ -468,6 +502,57 @@ final class PreviewPaneController: NSViewController {
         var n = 0
         storage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: storage.length)) { v, _, _ in if v != nil { n += 1 } }
         return n
+    }
+
+    // MARK: Rendered | Source, Reflowed | Original
+
+    private func showModeControl(_ first: String, _ second: String, first selected: Bool) {
+        modeControl.setLabel(first, forSegment: 0)
+        modeControl.setLabel(second, forSegment: 1)
+        modeControl.selectedSegment = selected ? 0 : 1
+        modeControl.isHidden = false
+    }
+
+    @objc private func modeChanged() {
+        let first = modeControl.selectedSegment == 0
+        switch displayState {
+        case .markdown: setMarkdownRendered(first)
+        case .document: setDocumentReflowed(first)
+        default: break
+        }
+    }
+
+    /// The Reflowed | Original switch (remembered for every document): shows the selected item again.
+    func setDocumentReflowed(_ reflowed: Bool) {
+        let settings = context.environment.settings
+        if settings.previewReflowsDocuments != reflowed { settings.previewReflowsDocuments = reflowed }
+        if case .document = displayState { scheduleUpdate(immediate: true, force: true) }
+    }
+
+    /// Reads the document on the read lanes, converts it off the main thread and shows its text reflowed; Quick
+    /// Look when the switch says Original or AppKit can't read it.
+    private func showDocument(_ url: URL, gen: Int) async {
+        guard context.environment.settings.previewReflowsDocuments else {
+            if host.shownURL == url { host.refresh() } else { host.show(url) }
+            render(.document(url, reflowed: false))
+            return
+        }
+        render(.loading)
+        let env = context.environment
+        let volume = env.volumes.volume(for: url)?.id ?? .unknown
+        let data = await PreviewFiles.read(url, limit: Int(PreviewPlanner.documentByteLimit), lanes: env.lanes, volume: volume)
+        let type = env.types.type(at: env.types.index(forExtension: Substring(url.pathExtension), isDirectory: false))
+        let text: NSAttributedString? = if let data { await DocumentReflow.convert(data, type: type) } else { nil }
+        guard gen == generation, isActive else { return }
+        guard let text, text.length > 0 else {
+            // Not readable as text (or empty): Quick Look's view, without a switch to flip.
+            if host.shownURL == url { host.refresh() } else { host.show(url) }
+            render(.quickLook(url))
+            return
+        }
+        host.show(nil)
+        documentText = text
+        render(.document(url, reflowed: true))
     }
 
     // MARK: Markdown

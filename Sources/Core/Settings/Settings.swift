@@ -81,6 +81,9 @@ public final class Settings {
     public var previewPaneWidth: Double { didSet { save(previewPaneWidth, Key.previewPaneWidth) } }
     /// The preview pane's Rendered | Source switch for Markdown files: true shows them formatted. On by default.
     public var previewRendersMarkdown: Bool { didSet { save(previewRendersMarkdown, Key.previewRendersMarkdown) } }
+    /// The preview pane's Reflowed | Original switch for Word documents: true reflows their text to the pane's
+    /// width, false shows Quick Look's page view. On by default.
+    public var previewReflowsDocuments: Bool { didSet { save(previewReflowsDocuments, Key.previewReflowsDocuments) } }
     /// The scope and mode a new search starts with (the last ones the user picked).
     public var searchScope: SearchScope { didSet { save(searchScope, Key.searchScope) } }
     public var searchMode: SearchMode { didSet { save(searchMode, Key.searchMode) } }
@@ -144,6 +147,7 @@ public final class Settings {
         previewPaneVisible = Self.load(Bool.self, Key.previewPaneVisible, from: storage) ?? false
         previewPaneWidth = Self.load(Double.self, Key.previewPaneWidth, from: storage) ?? 320
         previewRendersMarkdown = Self.load(Bool.self, Key.previewRendersMarkdown, from: storage) ?? true
+        previewReflowsDocuments = Self.load(Bool.self, Key.previewReflowsDocuments, from: storage) ?? true
         searchScope = Self.load(SearchScope.self, Key.searchScope, from: storage) ?? .thisFolder
         searchMode = Self.load(SearchMode.self, Key.searchMode, from: storage) ?? .name
         searchIncludesPackages = Self.load(Bool.self, Key.searchIncludesPackages, from: storage) ?? false
@@ -240,6 +244,7 @@ public final class Settings {
         static let savedSearches = "savedSearches", previewPaneVisible = "previewPaneVisible", previewPaneWidth = "previewPaneWidth"
         static let searchScope = "searchScope", searchMode = "searchMode", searchIncludesPackages = "searchIncludesPackages"
         static let resultsColumns = "resultsColumns", previewRendersMarkdown = "previewRendersMarkdown"
+        static let previewReflowsDocuments = "previewReflowsDocuments"
     }
 
     private struct TCCRecord: Codable {

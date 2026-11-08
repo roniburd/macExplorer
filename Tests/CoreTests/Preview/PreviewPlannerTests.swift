@@ -45,6 +45,25 @@ final class PreviewPlannerTests: XCTestCase {
         XCTAssertEqual(PreviewPlanner.classify(UTType(filenameExtension: "zzqq")!), .sniff)
     }
 
+    func testWordDocumentsAreReflowedAndPreviewableTypes() async throws {
+        for ext in ["docx", "docm", "dotx", "doc", "odt"] {
+            XCTAssertEqual(PreviewPlanner.classify(UTType(filenameExtension: ext)!), .document, ext)
+        }
+        XCTAssertEqual(PreviewPlanner.classify(UTType(filenameExtension: "xlsx")!), .quickLook)
+        for ext in ["md", "txt", "swift", "png", "pdf", "docx", "doc", "xlsx", "pptx", "key", "pages", "mp4", "mp3", "rtf", "html"] {
+            XCTAssertTrue(PreviewPlanner.isPreviewable(UTType(filenameExtension: ext)!), ext)
+        }
+        for ext in ["zip", "dmg", "zzqq", "app"] {
+            XCTAssertFalse(PreviewPlanner.isPreviewable(UTType(filenameExtension: ext)!), ext)
+        }
+        XCTAssertFalse(PreviewPlanner.isPreviewable(.folder))
+
+        try sandbox.createFile("a.docx", contents: Data("PK".utf8))
+        try sandbox.createSparseFile("big.docx", size: PreviewPlanner.documentByteLimit + 1)
+        let doc = await resolve(subject("a.docx")); XCTAssertEqual(doc, .document(sandbox.url("a.docx")))
+        let big = await resolve(subject("big.docx")); XCTAssertEqual(big, .quickLook(sandbox.url("big.docx")), "too big to reflow")
+    }
+
     func testResolveRealFiles() async throws {
         try sandbox.createFile("a.txt", contents: Data("hi".utf8))
         try sandbox.writePNG("p.png")

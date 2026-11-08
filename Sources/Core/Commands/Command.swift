@@ -36,6 +36,8 @@ public enum Command: String, Sendable, Codable, CaseIterable {
     case togglePreviewPane, openContainingFolder, saveSearch, stopSearch
     case searchScopeThisFolder, searchScopeSubfolders, searchScopeThisMac, searchModeName, searchModeContents
     case renameSavedSearch, removeSavedSearch, downloadForPreview
+    // Preview: show the selected item in the preview pane (opening the pane if needed)
+    case showInPreview
 
     /// "cut:", "copy:", "paste:", "selectAll:", "undo:", "redo:", "cancelOperation:" for the standard ones;
     /// AppKit's NSWindow tab actions ("newWindowForTab:", "selectNextTab:", "selectPreviousTab:", "toggleTabBar:",
@@ -84,7 +86,7 @@ public enum Command: String, Sendable, Codable, CaseIterable {
              .copyPathTilde, .copyPathFileURL, .copyName, .copyPathShellQuoted,
              .togglePreviewPane, .openContainingFolder, .saveSearch, .stopSearch,
              .searchScopeThisFolder, .searchScopeSubfolders, .searchScopeThisMac, .searchModeName, .searchModeContents,
-             .renameSavedSearch, .removeSavedSearch, .downloadForPreview:
+             .renameSavedSearch, .removeSavedSearch, .downloadForPreview, .showInPreview:
             false
         }
     }

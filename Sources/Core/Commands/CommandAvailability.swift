@@ -78,6 +78,7 @@ public enum CommandAvailability {
         case .openContainingFolder:
             return state.showingResults && state.selectionCount >= 1 && (focus == .searchResults || focus == .content)
         case .saveSearch: return state.hasSearchQuery
+        case .showInPreview: return (focus == .content || focus == .searchResults) && state.selectionCount == 1
         case .viewAsIcons, .viewAsColumns: return !state.showingResults   // results show only in Details (§11)
         case .stopSearch: return state.isSearching
         case .renameSavedSearch, .removeSavedSearch: return focus == .sidebarSavedSearch
@@ -145,7 +146,7 @@ public enum CommandAvailability {
             return isEnabled(.copyAsPath, focus: focus, state: state)
         case .togglePreviewPane, .openContainingFolder, .saveSearch, .stopSearch,
              .searchScopeThisFolder, .searchScopeSubfolders, .searchScopeThisMac, .searchModeName, .searchModeContents,
-             .renameSavedSearch, .removeSavedSearch, .downloadForPreview, .viewAsIcons, .viewAsColumns:
+             .renameSavedSearch, .removeSavedSearch, .downloadForPreview, .showInPreview, .viewAsIcons, .viewAsColumns:
             return false   // decided above
         }
     }

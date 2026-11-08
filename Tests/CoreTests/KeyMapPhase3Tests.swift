@@ -9,8 +9,12 @@ final class KeyMapPhase3Tests: XCTestCase {
         .searchScopeThisMac, .searchModeName, .searchModeContents, .renameSavedSearch, .removeSavedSearch, .downloadForPreview,
     ]
 
+    /// Added after Phase 3 (Preview in the item context menu).
+    static let later: [Command] = [.showInPreview]
+
     func testPhase3CommandsExistInOrder() {
-        XCTAssertEqual(Array(Command.allCases.suffix(Self.phase3.count)), Self.phase3)
+        XCTAssertEqual(Array(Command.allCases.suffix(Self.phase3.count + Self.later.count)), Self.phase3 + Self.later)
+        XCTAssertNil(KeyMap.primary(.showInPreview), "Preview has no default shortcut")
     }
 
     func testPrimaries() {

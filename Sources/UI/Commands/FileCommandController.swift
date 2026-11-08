@@ -133,6 +133,7 @@ final class FileCommandController: CommandHandler {
         case .searchModeName: window?.searchController.mode = .name
         case .searchModeContents: window?.searchController.mode = .contents
         case .togglePreviewPane: window?.splitController?.togglePreviewPane()
+        case .showInPreview: window?.splitController?.showPreviewPane()   // the pane follows the selection
         case .downloadForPreview: window?.splitController?.previewPane.performDownload()
         case .newTab, .nextTab, .previousTab, .showTabBar, .showAllTabs, .moveTabToNewWindow, .mergeAllWindows:
             break   // pendingCommands: canPerform is false, so perform beeps above

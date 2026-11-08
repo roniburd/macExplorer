@@ -39,6 +39,9 @@ struct PreviewProbe: Sendable {
         guard fd >= 0 else { return .failure(ProbeError(code: errno)) }
         defer { close(fd) }
         if let refused = refuseNonRegular(fd) { return .failure(refused) }
+        // Size the buffer to the file (+1 to notice growth): whole-file reads pass a large `count` (images, documents).
+        var info = Darwin.stat()
+        let count = fstat(fd, &info) == 0 && info.st_size >= 0 ? min(count, Int(info.st_size) + 1) : count
         var buffer = [UInt8](repeating: 0, count: count)
         var filled = 0
         while filled < count {
@@ -63,7 +66,30 @@ public enum PreviewPlanner {
         return textGenerated && size > quickLookTextLimit ? .unavailable(url, code: EFBIG) : .quickLook(url)
     }
 
+    /// Word-processing documents AppKit's text system reads (.docx/.docm/.dotx, .doc, .odt): reflowed to the
+    /// pane's width instead of Quick Look's shrunken pages.
+    public static let documentTypes: [UTType] = [
+        "org.openxmlformats.wordprocessingml.document", "org.openxmlformats.wordprocessingml.document.macroenabled",
+        "org.openxmlformats.wordprocessingml.template", "com.microsoft.word.doc", "org.oasis-open.opendocument.text",
+    ].compactMap { UTType($0) }
+    /// Larger documents go straight to Quick Look (reading one lays out the whole file).
+    public static let documentByteLimit: Int64 = 32 << 20
+
+    /// Types the item context menu offers Preview for: whatever the pane shows as text or a document, and the
+    /// rendered kinds Quick Look shows well. Folders, archives and unknown data get no Preview item.
+    public static func isPreviewable(_ type: UTType) -> Bool {
+        switch classify(type) {
+        case .text, .document: return true
+        case .sniff: return false
+        case .quickLook:
+            let rendered: [UTType] = [.image, .pdf, .rtf, .rtfd, .flatRTFD, .html, .audiovisualContent, .presentation, .spreadsheet]
+                + ["com.apple.iwork.pages.sffpages", "com.apple.iwork.pages.pages", "org.idpf.epub-container"].compactMap { UTType($0) }
+            return rendered.contains { type.conforms(to: $0) }
+        }
+    }
+
     public static func classify(_ type: UTType) -> PreviewClass {
+        if documentTypes.contains(where: { type.conforms(to: $0) }) { return .document }
         // Images (SVG conforms to public.xml) and HTML (public.text) are rendered, not shown as source (QA polish).
         if [UTType.rtf, .rtfd, .flatRTFD, .pdf, .image, .html].contains(where: { type.conforms(to: $0) }) { return .quickLook }
         if type.conforms(to: .propertyList) { return .sniff }
@@ -127,6 +153,9 @@ public enum PreviewPlanner {
         let type = types.type(at: typeIndex)
         switch classify(type) {
         case .text: return .text(contentURL)
+        case .document:
+            if case .failure(let e) = probe.readPrefix(readPath, 0) { return .unavailable(url, code: e.code) }
+            return st.size > documentByteLimit ? .quickLook(contentURL) : .document(contentURL)
         case .quickLook:
             // Quick Look shows a generic icon for a file it can't read: check here, as text loads do (QA polish).
             if case .failure(let e) = probe.readPrefix(readPath, 0) { return .unavailable(url, code: e.code) }

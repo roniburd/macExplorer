@@ -15,7 +15,9 @@ public struct PreviewSubject: Sendable, Equatable {
 public enum PreviewContent: Sendable, Equatable {
     case nothingSelected, multiple(count: Int, bytes: Int64)
     case folder(URL), text(URL), quickLook(URL)
+    /// A word-processing document (Word, OpenDocument) the pane can reflow to its width; Quick Look is the fallback.
+    case document(URL)
     case cloudPlaceholder(URL), brokenLink(URL), unavailable(URL, code: Int32)
 }
 
-public enum PreviewClass: Sendable, Equatable { case text, quickLook, sniff }
+public enum PreviewClass: Sendable, Equatable { case text, quickLook, sniff, document }

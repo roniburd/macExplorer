@@ -88,6 +88,7 @@ import Core
         case .copyPathShellQuoted: L10n.string("Quoted for Shell")
         // Phase 3 (menu items land in P3-10 / P3-12; Settings › Shortcuts lists them now).
         case .togglePreviewPane: L10n.string("Show Preview Pane")
+        case .showInPreview: L10n.string("Show in Preview Pane")
         case .openContainingFolder: L10n.string("Open Containing Folder")
         case .saveSearch: L10n.string("Save Search…")
         case .stopSearch: L10n.string("Stop Search")

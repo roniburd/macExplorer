@@ -56,7 +56,7 @@ public enum KeyMap {
              .toggleFolderSizes, .applyViewToAllFolders, .useViewAsDefault, .resetFolderView,
              .copyPathTilde, .copyPathFileURL, .copyName, .copyPathShellQuoted,
              .saveSearch, .stopSearch, .searchScopeThisFolder, .searchScopeSubfolders, .searchScopeThisMac,
-             .searchModeName, .searchModeContents, .renameSavedSearch, .removeSavedSearch, .downloadForPreview:
+             .searchModeName, .searchModeContents, .renameSavedSearch, .removeSavedSearch, .downloadForPreview, .showInPreview:
             nil
         }
     }
@@ -101,7 +101,7 @@ public enum KeyMap {
              .copyPathTilde, .copyPathFileURL, .copyName, .copyPathShellQuoted,
              .togglePreviewPane, .openContainingFolder, .saveSearch, .stopSearch,
              .searchScopeThisFolder, .searchScopeSubfolders, .searchScopeThisMac, .searchModeName, .searchModeContents,
-             .renameSavedSearch, .removeSavedSearch, .downloadForPreview:
+             .renameSavedSearch, .removeSavedSearch, .downloadForPreview, .showInPreview:
             []
         }
     }

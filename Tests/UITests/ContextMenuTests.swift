@@ -55,11 +55,50 @@ final class ContextMenuTests: XCTestCase {
         try h.file("a.txt")
         let content = try h.content(of: try await h.openBrowserWindow())
         XCTAssertEqual(ids(content.contextMenu(forRow: 0)), [
-            "macx.menu.open", "macx.menu.openWith", "macx.menu.quickLook", "macx.menu.cut", "macx.menu.copy", "macx.menu.copyAsPath",
+            "macx.menu.showInPreview", "macx.menu.open", "macx.menu.openWith", "macx.menu.quickLook", "macx.menu.cut", "macx.menu.copy", "macx.menu.copyAsPath",
             "macx.menu.copyPathAs", "macx.menu.duplicate", "macx.menu.makeAlias", "macx.menu.makeSymlink", "macx.menu.rename",
             "macx.menu.moveToTrash", "macx.menu.deletePermanently", "macx.menu.new", "macx.menu.revealInFinder",
             "macx.menu.openInTerminal", "macx.menu.share", "macx.menu.properties",
         ])
+    }
+
+    func testPreviewHeadsTheMenuForPreviewableFilesOnly() async throws {
+        let h = try await ContentTestHarness.make(self)
+        for name in ["a.md", "b.docx", "c.png", "d.pdf", "e.zip", "f.zzqq"] { _ = try h.file(name) }
+        _ = try h.dir("g")
+        let window = try await h.openBrowserWindow()
+        let content = try h.content(of: window)
+        let folder = content.session.folder
+        try await h.waitUntil("listed") { folder.rowCount == 7 }
+        func row(_ name: String) -> Int { (0..<folder.rowCount).first { folder.url(atRow: $0).lastPathComponent == name }! }
+        for name in ["a.md", "b.docx", "c.png", "d.pdf"] {
+            let menu = content.contextMenu(forRow: row(name))
+            XCTAssertEqual(menu?.items.first?.identifier?.rawValue, "macx.menu.showInPreview", name)
+            XCTAssertEqual(menu?.items.first?.title, "Preview")
+            XCTAssertTrue(menu?.items[1].isSeparatorItem ?? false, "a separator under Preview")
+        }
+        for name in ["e.zip", "f.zzqq", "g"] {
+            XCTAssertNil(item(content.contextMenu(forRow: row(name)), .showInPreview), name)
+        }
+        folder.select(.set(IndexSet([row("a.md"), row("c.png")]), cursor: row("c.png")))
+        XCTAssertNil(item(content.contextMenu(forRow: row("a.md")), .showInPreview), "one item only")
+    }
+
+    func testPreviewOpensThePreviewPane() async throws {
+        let h = try await ContentTestHarness.make(self)
+        _ = try h.file("a.md")
+        let window = try await h.openBrowserWindow()
+        let content = try h.content(of: window)
+        let split = try XCTUnwrap(window.splitController)
+        XCTAssertFalse(split.isPreviewPaneVisible)
+        let menu = content.contextMenu(forRow: 0)
+        let preview = try XCTUnwrap(box(menu, .showInPreview))
+        XCTAssertTrue(preview.validateMenuItem(try XCTUnwrap(item(menu, .showInPreview))))
+        preview.run(nil)
+        XCTAssertTrue(split.isPreviewPaneVisible)
+        preview.run(nil)
+        XCTAssertTrue(split.isPreviewPaneVisible, "Preview never hides the pane")
+        try await h.waitUntil("previewed") { split.previewPane.probeState == "markdown" }
     }
 
     func testCopyPathAsSubmenuActsOnTheSelection() async throws {

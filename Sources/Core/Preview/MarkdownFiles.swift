@@ -14,9 +14,16 @@ public enum MarkdownFiles {
     /// The bytes of a local image a Markdown file references, read on the read lanes without downloading a
     /// dataless (iCloud) item. nil when it is missing, unreadable, not a regular file or over `imageByteLimit`.
     public static func loadImage(_ url: URL, lanes: LanePool, volume: VolumeID) async -> Data? {
+        await PreviewFiles.read(url, limit: imageByteLimit, lanes: lanes, volume: volume)
+    }
+}
+
+/// Whole-file reads for previews (images, documents): on the read lanes, never downloading a dataless item.
+public enum PreviewFiles {
+    /// nil when the file is missing, unreadable, not a regular file, empty or over `limit` bytes.
+    public static func read(_ url: URL, limit: Int, lanes: LanePool, volume: VolumeID) async -> Data? {
         guard url.isFileURL else { return nil }
         let path = url.path(percentEncoded: false)
-        let limit = imageByteLimit
         let result = try? await lanes.perform(on: volume) { _ in
             withNoMaterialization { PreviewProbe.read(path, count: limit + 1) }
         }

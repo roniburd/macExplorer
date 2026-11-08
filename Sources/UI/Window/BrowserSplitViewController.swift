@@ -88,6 +88,11 @@ final class BrowserSplitViewController: NSSplitViewController {
         splitView.setPosition(splitView.bounds.width - clamped - splitView.dividerThickness, ofDividerAt: index)
     }
 
+    /// Preview (item context menu, View › Show in Preview Pane): opens the pane if it is hidden; it shows the selection.
+    func showPreviewPane() {
+        if previewItem.isCollapsed { togglePreviewPane() }
+    }
+
     /// View › Show / Hide Preview Pane (⌥P): animated when the window is on screen; persists the visibility.
     func togglePreviewPane() {
         let show = previewItem.isCollapsed

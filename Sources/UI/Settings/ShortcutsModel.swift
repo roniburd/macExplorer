@@ -38,7 +38,7 @@ enum ShortcutApply: Equatable {
                       commands: [.viewAsDetails, .viewAsIcons, .viewAsColumns, .iconSizeSmall, .iconSizeMedium, .iconSizeLarge,
                                  .densityCompact, .densityRegular, .densityComfortable, .toggleFolderSizes,
                                  .useViewAsDefault, .applyViewToAllFolders, .resetFolderView, .toggleHidden, .toggleCommandBar,
-                                 .togglePreviewPane, .downloadForPreview]),
+                                 .togglePreviewPane, .showInPreview, .downloadForPreview]),
         ShortcutGroup(id: "search", title: L10n.string("Search"),
                       commands: [.searchScopeThisFolder, .searchScopeSubfolders, .searchScopeThisMac,
                                  .searchModeName, .searchModeContents, .stopSearch, .saveSearch]),

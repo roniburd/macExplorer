@@ -3711,6 +3711,17 @@
         }
       }
     },
+    "Original" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Original"
+          }
+        }
+      }
+    },
     "Other" : {
       "extractionState" : "manual",
       "generatesSymbol" : false,
@@ -3851,6 +3862,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Preparing…"
+          }
+        }
+      }
+    },
+    "Preview" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preview"
           }
         }
       }
@@ -4038,6 +4060,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Redoing changes to %@"
+          }
+        }
+      }
+    },
+    "Reflowed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reflowed"
           }
         }
       }
@@ -4797,6 +4830,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Show hidden files and folders"
+          }
+        }
+      }
+    },
+    "Show in Preview Pane" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show in Preview Pane"
           }
         }
       }

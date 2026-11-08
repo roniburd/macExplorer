@@ -74,7 +74,8 @@ final class SearchWindowTests: XCTestCase {
         let content = try content(controller)
         _ = try await searchSubfolders("tax", in: controller, h)
         let item = ids(content.contextMenu(forRow: 0))
-        XCTAssertEqual(Array(item.prefix(2)), ["macx.menu.open", "macx.menu.openContainingFolder"])
+        XCTAssertEqual(Array(item.prefix(3)), ["macx.menu.showInPreview", "macx.menu.open", "macx.menu.openContainingFolder"],
+                       "a single PDF result gets Preview first")
         XCTAssertFalse(item.contains("macx.menu.paste"))
         XCTAssertTrue(item.contains("macx.menu.moveToTrash"))
         let empty = ids(content.contextMenu(forRow: nil))

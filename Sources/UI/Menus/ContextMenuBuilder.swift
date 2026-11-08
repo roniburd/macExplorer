@@ -43,6 +43,7 @@ enum ContextMenuTitles {
         case .openInNewTab: L10n.string("Open in New Tab")
         case .showPackageContents: L10n.string("Show Package Contents")
         case .quickLook: L10n.string("Quick Look")
+        case .showInPreview: L10n.string("Preview")
         case .cut: L10n.string("Cut")
         case .copy: L10n.string("Copy")
         case .paste: L10n.string("Paste")
@@ -111,6 +112,10 @@ final class ContextMenuBuilder {
         let target = CommandTarget.contentSelection(folder)
         let valid = rows.filteredIndexSet { $0 < folder.rowCount }
         let kinds = valid.map { folder.entry(atRow: $0).kind }
+        if previewable(valid, entry: folder.entry(atRow:)) {
+            add(.showInPreview, target, handler, to: menu)
+            menu.addItem(.separator())
+        }
         add(.open, target, handler, to: menu)
         if let openWith = openWithItem(rows: valid, folder: folder, handler: handler) { menu.addItem(openWith) }
         add(.quickLook, target, handler, to: menu)
@@ -151,6 +156,10 @@ final class ContextMenuBuilder {
         let menu = NSMenu()
         let target = CommandTarget.resultsSelection(results)
         let valid = rows.filteredIndexSet { $0 < results.rowCount }
+        if previewable(valid, entry: results.entry(atRow:)) {
+            add(.showInPreview, target, handler, to: menu)
+            menu.addItem(.separator())
+        }
         add(.open, target, handler, to: menu)
         add(.openContainingFolder, target, handler, to: menu)
         if valid.contains(where: { MiddleClickRouter.folderTarget(row: $0, in: results) != nil }) {
@@ -240,6 +249,15 @@ final class ContextMenuBuilder {
     }
 
     // MARK: private
+
+    /// Preview heads the menu for one file of a type the preview pane shows well (text, Markdown, Word, PDF,
+    /// images, media, Office/iWork documents). From the in-memory entry only: nothing is read.
+    private func previewable(_ rows: IndexSet, entry: (Int) -> Entry) -> Bool {
+        guard rows.count == 1, let row = rows.first else { return false }
+        let e = entry(row)
+        guard e.kind == .file || e.kind == .alias || e.kind == .symlink else { return false }
+        return PreviewPlanner.isPreviewable(context.environment.types.type(at: e.typeIndex))
+    }
 
     @discardableResult
     private func add(_ command: Command, _ target: CommandTarget, _ handler: CommandHandler, to menu: NSMenu) -> NSMenuItem {

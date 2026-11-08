@@ -81,6 +81,7 @@ extension CommandHandlingViewController {
     @objc func macx_copyPathShellQuoted(_ sender: Any?) { run(.copyPathShellQuoted, sender: sender) }
     // Phase 3
     @objc func macx_togglePreviewPane(_ sender: Any?) { run(.togglePreviewPane, sender: sender) }
+    @objc func macx_showInPreview(_ sender: Any?) { run(.showInPreview, sender: sender) }
     @objc func macx_openContainingFolder(_ sender: Any?) { run(.openContainingFolder, sender: sender) }
     @objc func macx_saveSearch(_ sender: Any?) { run(.saveSearch, sender: sender) }
     @objc func macx_stopSearch(_ sender: Any?) { run(.stopSearch, sender: sender) }

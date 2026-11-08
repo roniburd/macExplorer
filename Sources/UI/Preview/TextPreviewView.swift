@@ -1,24 +1,20 @@
 import AppKit
 
 /// The fast text preview (§11: "Text and code use a fast text preview of the first 256 KB"): a read-only, selectable
-/// monospaced text view and a footer when the file was longer than the loaded prefix. Markdown files also get a
-/// Rendered | Source switch and show formatted (`showRendered`), with clickable links.
+/// monospaced text view and a footer when the file was longer than the loaded prefix. Rendered Markdown and reflowed
+/// documents show as attributed text (`showRendered`), with clickable links.
 @MainActor
 final class TextPreviewView: NSView, NSTextViewDelegate {
     private let scrollView = NSScrollView()
-    let textView = NSTextView()
+    /// TextKit 1: Word documents' tables are NSTextTable blocks, which TextKit 2 lays out as one cell per line.
+    let textView = NSTextView(usingTextLayoutManager: false)
     private let footer = NSTextField(labelWithString: L10n.string("preview.truncated"))
-    let modeControl = NSSegmentedControl(labels: [L10n.string("Rendered"), L10n.string("Source")],
-                                         trackingMode: .selectOne, target: nil, action: nil)
-    /// The switch changed: true = Rendered.
-    var onModeChange: ((Bool) -> Void)?
     /// A link in rendered Markdown was clicked; returns whether it was handled.
     var onLink: ((URL) -> Bool)?
     private static let plainFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
 
     var footerHidden: Bool { footer.isHidden }
     var text: String { textView.string }
-    var modeControlHidden: Bool { modeControl.isHidden }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -60,14 +56,7 @@ final class TextPreviewView: NSView, NSTextViewDelegate {
         footer.translatesAutoresizingMaskIntoConstraints = false
         footer.isHidden = true
 
-        modeControl.selectedSegment = 0
-        modeControl.controlSize = .small
-        modeControl.target = self
-        modeControl.action = #selector(modeChanged)
-        modeControl.setAccessibilityIdentifier(AXID.previewMarkdownMode)
-        modeControl.isHidden = true
-
-        let stack = NSStackView(views: [modeControl, scrollView, footer])
+        let stack = NSStackView(views: [scrollView, footer])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 4
@@ -86,10 +75,8 @@ final class TextPreviewView: NSView, NSTextViewDelegate {
 
     required init?(coder: NSCoder) { fatalError("TextPreviewView is created in code") }
 
-    /// Plain text (Source, or any text file). `markdown` shows the switch, set to Source.
-    func show(_ text: String, truncated: Bool, markdown: Bool = false) {
-        modeControl.isHidden = !markdown
-        if markdown { modeControl.selectedSegment = 1 }
+    /// Plain text (a text file, or Markdown as source).
+    func show(_ text: String, truncated: Bool) {
         if textView.isRichText || textView.string != text {
             textView.isRichText = false
             textView.textStorage?.setAttributedString(NSAttributedString(string: text, attributes: [
@@ -99,10 +86,8 @@ final class TextPreviewView: NSView, NSTextViewDelegate {
         reset(truncated: truncated)
     }
 
-    /// Rendered Markdown, with the switch set to Rendered.
+    /// Attributed text: rendered Markdown or a reflowed document.
     func showRendered(_ text: NSAttributedString, truncated: Bool) {
-        modeControl.isHidden = false
-        modeControl.selectedSegment = 0
         textView.isRichText = true
         textView.textStorage?.setAttributedString(text)
         reset(truncated: truncated)
@@ -118,7 +103,6 @@ final class TextPreviewView: NSView, NSTextViewDelegate {
         textView.isRichText = false
         textView.string = ""
         footer.isHidden = true
-        modeControl.isHidden = true
     }
 
     /// The width an inline image may take.
@@ -163,8 +147,6 @@ final class TextPreviewView: NSView, NSTextViewDelegate {
         textView.showFindIndicator(for: range)
         return true
     }
-
-    @objc private func modeChanged() { onModeChange?(modeControl.selectedSegment == 0) }
 
     func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
         let url = (link as? URL) ?? (link as? String).flatMap { URL(string: $0) }

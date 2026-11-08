@@ -73,7 +73,7 @@ final class MarkdownPreviewTests: XCTestCase {
         m.select(.names(["README.md"]))
         await waitUntil("rendered") { p.probeState == "markdown" }
         XCTAssertEqual(p.shownText, "Hello\nSome bold text.")
-        XCTAssertFalse(p.markdownModeHidden)
+        XCTAssertFalse(p.modeControlHidden)
         XCTAssertEqual(p.probeText, "# Hello\n\nSome **bold** text.\n", "the probe reports the file's text")
 
         p.setMarkdownRendered(false)
@@ -83,7 +83,7 @@ final class MarkdownPreviewTests: XCTestCase {
 
         m.select(.names(["plain.txt"]))
         await waitUntil("plain") { p.probeState == "text" }
-        XCTAssertTrue(p.markdownModeHidden, "only Markdown files get the switch")
+        XCTAssertTrue(p.modeControlHidden, "only Markdown files get the switch")
         XCTAssertEqual(p.shownText, "# not markdown")
 
         m.select(.names(["README.md"]))
@@ -92,6 +92,67 @@ final class MarkdownPreviewTests: XCTestCase {
         p.setMarkdownRendered(true)
         XCTAssertEqual(p.shownText, "Hello\nSome bold text.")
         XCTAssertTrue(env.settings.previewRendersMarkdown)
+    }
+
+    // MARK: Word documents (Reflowed | Original)
+
+    private func writeDocument(_ rel: String, _ text: String, type: NSAttributedString.DocumentType = .officeOpenXML) throws {
+        let source = NSAttributedString(string: text, attributes: [.font: NSFont(name: "Times New Roman", size: 14)!,
+                                                                   .foregroundColor: NSColor.black])
+        let data = try source.data(from: NSRange(location: 0, length: source.length), documentAttributes: [.documentType: type])
+        try sandbox.createFile(rel, contents: data)
+    }
+
+    func testWordDocumentReflowsAndTheSwitchShowsQuickLook() async throws {
+        try writeDocument("d/report.docx", "Quarterly report\nRevenue grew.")
+        try writeDocument("d/old.doc", "Legacy document", type: .docFormat)
+        try writeDocument("d/open.odt", "Open document", type: .openDocument)
+        try sandbox.createFile("d/broken.docx", contents: Data("not a zip".utf8))
+        let host = FakeQuickLookHost()
+        let p = PreviewPaneController(context: context, makeHost: { host }, debounce: .milliseconds(20))
+        p.view.frame = NSRect(x: 0, y: 0, width: 320, height: 600)
+        p.isActive = true
+        addTeardownBlock { @MainActor in p.close() }
+        let m = await folder("d")
+        p.bind(m)
+
+        m.select(.names(["report.docx"]))
+        await waitUntil("reflowed") { p.probeState == "document" }
+        XCTAssertEqual(p.shownText.trimmingCharacters(in: .whitespacesAndNewlines), "Quarterly report\nRevenue grew.")
+        XCTAssertEqual(p.modeLabels, ["Reflowed", "Original"])
+        XCTAssertFalse(p.modeControlHidden)
+        XCTAssertNil(host.shownURL, "Quick Look is not used while reflowed")
+
+        p.setDocumentReflowed(false)
+        await waitUntil("original") { p.probeState == "documentOriginal" }
+        XCTAssertEqual(host.shownURL, sandbox.url("d/report.docx"))
+        XCTAssertFalse(env.settings.previewReflowsDocuments, "the choice is saved")
+        XCTAssertFalse(p.modeControlHidden, "the switch stays over Quick Look")
+        p.setDocumentReflowed(true)
+        await waitUntil("reflowed again") { p.probeState == "document" }
+        XCTAssertNil(host.shownURL)
+
+        for (name, text) in [("old.doc", "Legacy document"), ("open.odt", "Open document")] {
+            m.select(.names([name]))
+            await waitUntil(name) { p.probeState == "document" && p.shownText.trimmingCharacters(in: .whitespacesAndNewlines) == text }
+        }
+
+        m.select(.names(["broken.docx"]))
+        await waitUntil("fallback") { p.probeState == "quickLook" }
+        XCTAssertEqual(host.shownURL, sandbox.url("d/broken.docx"), "unreadable documents fall back to Quick Look")
+        XCTAssertTrue(p.modeControlHidden)
+    }
+
+    func testReflowedTextFollowsTheSystemTextColor() {
+        let text = NSMutableAttributedString(string: "black red")
+        text.addAttribute(.foregroundColor, value: NSColor.black, range: NSRange(location: 0, length: 5))
+        text.addAttribute(.foregroundColor, value: NSColor.systemRed, range: NSRange(location: 6, length: 3))
+        text.addAttribute(.backgroundColor, value: NSColor.white, range: NSRange(location: 0, length: 9))
+        let adapted = DocumentReflow.adapted(text)
+        XCTAssertEqual(adapted.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor, .textColor)
+        XCTAssertEqual(adapted.attribute(.foregroundColor, at: 6, effectiveRange: nil) as? NSColor, .systemRed)
+        XCTAssertNil(adapted.attribute(.backgroundColor, at: 0, effectiveRange: nil))
+        XCTAssertNotNil(adapted.attribute(.font, at: 0, effectiveRange: nil))
     }
 
     func testLocalImagesLoadRemoteOnlyOnClick() async throws {
