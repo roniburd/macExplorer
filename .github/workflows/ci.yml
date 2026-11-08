@@ -30,8 +30,6 @@ jobs:
         run: |
           sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
           swift --version
-      - name: Resolve packages (retries GitHub download errors)
-        run: scripts/resolve-packages.sh
       - name: Layering checks
         run: scripts/check-layering.sh && scripts/test-check-layering.sh
       - name: Build (release, warnings fail)
@@ -68,8 +66,6 @@ jobs:
       - uses: actions/checkout@v4
       - name: Select Xcode
         run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
-      - name: Resolve packages (retries GitHub download errors)
-        run: scripts/resolve-packages.sh
       - name: Core scenarios (disk images, crash recovery)
         run: scripts/run-scenarios.sh release
       - name: UI scenarios (bundled app, sandboxed)
@@ -94,8 +90,6 @@ jobs:
           fetch-depth: 0
       - name: Select Xcode
         run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
-      - name: Resolve packages (retries GitHub download errors)
-        run: scripts/resolve-packages.sh
       - name: Baseline cache key (runner image + architecture)
         id: key
         run: |
