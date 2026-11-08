@@ -20,6 +20,9 @@ public final class OperationsCenter {
     @ObservationIgnored private var performsInFlight = 0
     /// §6.2: jobs that finish sooner show nothing.
     @ObservationIgnored var revealDelay: Duration = .seconds(1)
+    /// Waits out `revealDelay` before a job is revealed. Test hook: a test swaps in a gate it opens by hand, so the
+    /// "hidden until the delay passes" window does not depend on how quickly a loaded runner polls.
+    @ObservationIgnored var revealSleep: @Sendable (Duration) async -> Void = { try? await Task.sleep(for: $0) }
 
     public init(queue: FileOpQueue, undo: FileOpUndoStack, changeBus: ChangeBus,
                 actionName: @escaping @MainActor (JobDescription) -> String) {
@@ -84,9 +87,9 @@ public final class OperationsCenter {
     }
 
     private func scheduleReveal(_ id: JobID) {
-        let delay = revealDelay
+        let delay = revealDelay, sleep = revealSleep
         Task { [weak self] in
-            try? await Task.sleep(for: delay)
+            await sleep(delay)
             guard let self, self.jobs.contains(where: { $0.id == id }) else { return }
             self.revealed.insert(id)
         }
