@@ -241,19 +241,24 @@ python3 -m http.server 8000 --bind 127.0.0.1 --directory site   # preview at htt
 
 ### Each release
 
+Versions follow semantic versioning, `vMAJOR.MINOR.PATCH`. While the major version is 0 the app is in beta, so tags
+carry no `-beta` suffix:
+
+- new features or bigger changes bump the minor version: `v0.4.0` → `v0.5.0`
+- bug fixes bump the patch version: `v0.4.0` → `v0.4.1`
+
 Tag the commit on `main` and push the tag:
 
 ```bash
-git tag -a v0.3.0-beta.1 -m "v0.3.0-beta.1
+git tag -a v0.4.1 -m "v0.4.1
 
 - What changed, for users"
-git push origin v0.3.0-beta.1
+git push origin v0.4.1
 ```
 
-| Tag | Channel |
-|---|---|
-| `v0.3.0-beta.1` | Beta |
-| `v0.3.0` | Release |
+`vX.Y.Z` tags publish on the Release channel (cask `macexplorer`). Copies set to the Beta channel get them too.
+The workflow still accepts `vX.Y.Z-beta.N` tags (the Beta channel and the `macexplorer@beta` cask, used up to
+`v0.2.0-beta.24`), but new releases don't use them.
 
 The tag message becomes the release notes.
 
