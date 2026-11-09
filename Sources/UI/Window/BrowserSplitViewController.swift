@@ -77,6 +77,10 @@ final class BrowserSplitViewController: NSSplitViewController {
         item.isCollapsed = !settings.previewPaneVisible
         addSplitViewItem(item)
         previewItem = item
+        previewPane.onClose = { [weak self] in
+            guard let self, !self.previewItem.isCollapsed else { return }
+            self.togglePreviewPane()
+        }
         previewPane.isActive = !item.isCollapsed
     }
 

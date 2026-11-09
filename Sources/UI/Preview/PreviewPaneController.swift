@@ -51,6 +51,9 @@ final class PreviewPaneController: NSViewController {
     private let messageView = PreviewMessageView()
     private let detailsView = PreviewDetailsView()
     private let stack = NSStackView()
+    private let closeButton = NSButton()
+    /// The pane's close button: the split view hides the pane, as View › Hide Preview Pane (⌥P) does.
+    var onClose: (() -> Void)?
     private weak var source: (any RowSource)?
     private var sourceToken: ObserverToken?
     private var busToken: ObserverToken?
@@ -163,7 +166,8 @@ final class PreviewPaneController: NSViewController {
         spacer.setContentHuggingPriority(.init(1), for: .horizontal)
         topBar.orientation = .horizontal
         topBar.spacing = 6
-        topBar.setViews([modeControl, spacer, zoomButton, expandButton], in: .leading)
+        configureCloseButton()
+        topBar.setViews([modeControl, spacer, zoomButton, expandButton, closeButton], in: .leading)
         topBar.isHidden = true
         stack.addArrangedSubview(topBar)
         topBar.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -16).isActive = true
@@ -190,6 +194,30 @@ final class PreviewPaneController: NSViewController {
         view = container
         render(displayState)
     }
+
+    private func configureCloseButton() {
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+        closeButton.widthAnchor.constraint(equalToConstant: 16).isActive = true
+        closeButton.heightAnchor.constraint(equalToConstant: 16).isActive = true
+        let title = L10n.string("Hide Preview Pane")
+        closeButton.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: title)?
+            .withSymbolConfiguration(.init(pointSize: 10, weight: .semibold))
+        closeButton.imagePosition = .imageOnly
+        closeButton.isBordered = false
+        closeButton.bezelStyle = .accessoryBarAction
+        closeButton.showsBorderOnlyWhileMouseInside = true
+        closeButton.contentTintColor = .secondaryLabelColor
+        closeButton.toolTip = title
+        closeButton.setAccessibilityLabel(title)
+        closeButton.setAccessibilityIdentifier(AXID.previewClose)
+        closeButton.target = self
+        closeButton.action = #selector(closeClicked(_:))
+    }
+
+    @objc private func closeClicked(_ sender: Any?) { onClose?() }
+
+    /// Tests: clicks the close button.
+    func performCloseClick() { closeButton.performClick(nil) }
 
     /// The rows the window shows (its folder or its search results); nil when the window closes.
     func bind(_ source: (any RowSource)?) {
@@ -439,7 +467,7 @@ final class PreviewPaneController: NSViewController {
         }
         expandButton.isHidden = !quickLookContent || onOpenQuickLook == nil
         updateZoomButton(for: state)
-        topBar.isHidden = modeControl.isHidden && expandButton.isHidden && zoomButton.isHidden
+        topBar.isHidden = state == .hidden            // the close button always shows while the pane does
         if quickLookContent != showsQuickLookContent {
             showsQuickLookContent = quickLookContent
             onQuickLookContentChange?(quickLookContent)
@@ -582,7 +610,6 @@ final class PreviewPaneController: NSViewController {
         guard isViewLoaded else { return }
         textView.setZoom(CGFloat(clamped))
         updateZoomButton(for: displayState)
-        topBar.isHidden = modeControl.isHidden && expandButton.isHidden && zoomButton.isHidden
     }
 
     private func updateZoomButton(for state: DisplayState) {

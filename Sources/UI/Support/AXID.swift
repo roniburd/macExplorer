@@ -64,4 +64,5 @@ enum AXID {
     static let previewMessage = "macx.preview.message"
     static let previewDownload = "macx.preview.download"
     static let previewDetails = "macx.preview.details"
+    static let previewClose = "macx.preview.close"
 }

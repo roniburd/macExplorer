@@ -464,6 +464,23 @@ final class PreviewPaneTests: XCTestCase {
         XCTAssertEqual(content.midX, safe.midX, accuracy: 2)
     }
 
+    // The pane's own close button hides it, like View › Hide Preview Pane (⌥P), and persists that.
+    func testCloseButtonHidesThePane() async throws {
+        try requireGUISession()
+        let window = BrowserWindowController(context: context, initialURL: sandbox.root)
+        window.showWindow(nil)
+        defer { window.close() }
+        let split = try XCTUnwrap(window.splitController)
+        split.togglePreviewPane()
+        await waitUntil("shown") { !split.previewItem.isCollapsed && !split.isAnimatingPreview }
+        split.previewPane.performCloseClick()
+        await waitUntil("hidden") { split.previewItem.isCollapsed && !split.isAnimatingPreview }
+        XCTAssertFalse(env.settings.previewPaneVisible)
+        XCTAssertFalse(split.previewPane.isActive)
+        split.previewPane.performCloseClick()
+        XCTAssertTrue(split.previewItem.isCollapsed, "a click on a hidden pane never shows it")
+    }
+
     // QA polish: the menu title and Download for Preview read the global setting; each window has its own pane.
     func testPreviewPaneStateIsPerWindow() async throws {
         try requireGUISession()
