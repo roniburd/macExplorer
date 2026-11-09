@@ -66,6 +66,19 @@ final class PreviewPaneController: NSViewController {
     private var documentText: NSAttributedString?
     /// Rendered | Source (Markdown) or Reflowed | Original (documents), above the preview.
     private let modeControl = NSSegmentedControl(labels: ["", ""], trackingMode: .selectOne, target: nil, action: nil)
+    /// The zoom when it isn't 100% (click: back to 100%).
+    private let zoomButton = NSButton(title: "", target: nil, action: nil)
+    /// Opens the Quick Look window (resizable, full screen, zoom) over what the pane shows.
+    private let expandButton = NSButton(image: NSImage(systemSymbolName: "arrow.up.left.and.arrow.down.right",
+                                                       accessibilityDescription: nil) ?? NSImage(), target: nil, action: nil)
+    private let topBar = NSStackView()
+    /// The pane shows Quick Look content (true) or text (false); the split view widens its cap for Quick Look.
+    var onQuickLookContentChange: ((Bool) -> Void)?
+    private var showsQuickLookContent = false
+    /// Opens the Quick Look window (the window controller's QuickLookController).
+    var onOpenQuickLook: (() -> Void)?
+    /// Zoom steps for ⌘= / ⌘−.
+    static let zoomSteps: [Double] = [0.5, 0.67, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3]
     /// Shows a file a relative Markdown link points to (the window selects it in its folder).
     var onRevealFile: ((URL) -> Void)?
     /// Opens a web or mail link (tests replace it; the default is NSWorkspace).
@@ -130,7 +143,30 @@ final class PreviewPaneController: NSViewController {
         modeControl.action = #selector(modeChanged)
         modeControl.setAccessibilityIdentifier(AXID.previewMode)
         modeControl.isHidden = true
-        stack.addArrangedSubview(modeControl)
+        zoomButton.bezelStyle = .inline
+        zoomButton.controlSize = .small
+        zoomButton.target = self
+        zoomButton.action = #selector(macx_previewActualSize(_:))
+        zoomButton.toolTip = L10n.string("Actual Size")
+        zoomButton.setAccessibilityIdentifier(AXID.previewZoom)
+        zoomButton.isHidden = true
+        expandButton.bezelStyle = .inline
+        expandButton.isBordered = false
+        expandButton.controlSize = .small
+        expandButton.target = self
+        expandButton.action = #selector(openQuickLookWindow)
+        expandButton.toolTip = L10n.string("Open in Quick Look")
+        expandButton.setAccessibilityLabel(L10n.string("Open in Quick Look"))
+        expandButton.setAccessibilityIdentifier(AXID.previewExpand)
+        expandButton.isHidden = true
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.init(1), for: .horizontal)
+        topBar.orientation = .horizontal
+        topBar.spacing = 6
+        topBar.setViews([modeControl, spacer, zoomButton, expandButton], in: .leading)
+        topBar.isHidden = true
+        stack.addArrangedSubview(topBar)
+        topBar.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -16).isActive = true
         for v in [hostView, textView, messageView, detailsView] {
             stack.addArrangedSubview(v)
             v.isHidden = true
@@ -149,6 +185,8 @@ final class PreviewPaneController: NSViewController {
         stack.setAccessibilityLabel(L10n.string("preview.pane"))
         messageView.onButton = { [weak self] in self?.performDownload() }
         textView.onLink = { [weak self] url in self?.followLink(url) ?? false }
+        textView.onPinchZoom = { [weak self] zoom in self?.setZoom(Double(zoom)) }
+        textView.setZoom(CGFloat(context.environment.settings.previewZoom))
         view = container
         render(displayState)
     }
@@ -395,6 +433,17 @@ final class PreviewPaneController: NSViewController {
             modeControl.isHidden = true
         }
         if case .document = state {} else { documentText = nil }
+        let quickLookContent: Bool = switch state {
+        case .quickLook, .document(_, reflowed: false): true
+        default: false
+        }
+        expandButton.isHidden = !quickLookContent || onOpenQuickLook == nil
+        updateZoomButton(for: state)
+        topBar.isHidden = modeControl.isHidden && expandButton.isHidden && zoomButton.isHidden
+        if quickLookContent != showsQuickLookContent {
+            showsQuickLookContent = quickLookContent
+            onQuickLookContentChange?(quickLookContent)
+        }
         switch state {
         case .hidden, .loading, .quickLook:
             break
@@ -503,6 +552,52 @@ final class PreviewPaneController: NSViewController {
         storage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: storage.length)) { v, _, _ in if v != nil { n += 1 } }
         return n
     }
+
+    // MARK: Zoom (text, Markdown, reflowed documents)
+
+    /// The preview shows text the zoom commands apply to.
+    var canZoom: Bool {
+        guard isActive, isViewLoaded else { return false }
+        return Self.zooms(displayState)
+    }
+
+    private static func zooms(_ state: DisplayState) -> Bool {
+        switch state {
+        case .text, .markdown, .document(_, reflowed: true): true
+        default: false
+        }
+    }
+
+    var zoom: Double { context.environment.settings.previewZoom }
+
+    func zoomIn() { setZoom(Self.zoomSteps.first { $0 > zoom + 0.001 } ?? Self.zoomSteps.last!) }
+    func zoomOut() { setZoom(Self.zoomSteps.last { $0 < zoom - 0.001 } ?? Self.zoomSteps.first!) }
+    func resetZoom() { setZoom(1) }
+
+    /// Sets and remembers the zoom (every text preview, every window).
+    func setZoom(_ value: Double) {
+        let clamped = min(max(value, Double(TextPreviewView.minimumZoom)), Double(TextPreviewView.maximumZoom))
+        let settings = context.environment.settings
+        if abs(settings.previewZoom - clamped) > 0.001 { settings.previewZoom = clamped }
+        guard isViewLoaded else { return }
+        textView.setZoom(CGFloat(clamped))
+        updateZoomButton(for: displayState)
+        topBar.isHidden = modeControl.isHidden && expandButton.isHidden && zoomButton.isHidden
+    }
+
+    private func updateZoomButton(for state: DisplayState) {
+        let zoom = context.environment.settings.previewZoom
+        zoomButton.title = NumberFormatter.localizedString(from: NSNumber(value: zoom), number: .percent)
+        zoomButton.isHidden = !Self.zooms(state) || abs(zoom - 1) < 0.001
+    }
+
+    var zoomLabel: String? { zoomButton.isHidden ? nil : zoomButton.title }
+    var expandButtonHidden: Bool { expandButton.isHidden }
+
+    @objc func macx_previewZoomIn(_ sender: Any?) { zoomIn() }
+    @objc func macx_previewZoomOut(_ sender: Any?) { zoomOut() }
+    @objc func macx_previewActualSize(_ sender: Any?) { resetZoom() }
+    @objc private func openQuickLookWindow() { onOpenQuickLook?() }
 
     // MARK: Rendered | Source, Reflowed | Original
 
@@ -625,5 +720,15 @@ final class PreviewPaneController: NSViewController {
               (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? false,
               data.count <= MarkdownFiles.imageByteLimit else { return nil }
         return data
+    }
+}
+
+/// The zoom items when the preview's text has focus (the pane is then in the responder chain before any browser pane).
+extension PreviewPaneController: NSMenuItemValidation {
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        switch menuItem.action {
+        case #selector(macx_previewZoomIn(_:)), #selector(macx_previewZoomOut(_:)), #selector(macx_previewActualSize(_:)): canZoom
+        default: true
+        }
     }
 }

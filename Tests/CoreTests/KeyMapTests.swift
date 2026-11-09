@@ -126,6 +126,8 @@ final class KeyMapTests: XCTestCase {
             .viewAsDetails: "cmd+1", .viewAsIcons: "cmd+2", .viewAsColumns: "cmd+3",
             // Phase 3 (P3-07)
             .togglePreviewPane: "opt+p", .openContainingFolder: "cmd+opt+r",
+            // Preview pane zoom
+            .previewZoomIn: "cmd+=", .previewZoomOut: "cmd+-", .previewActualSize: "cmd+0",
         ]
         for c in Command.allCases {
             if let text = expected[c] {

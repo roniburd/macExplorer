@@ -68,6 +68,10 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
         splitViewController.previewPane.bind(session.results ?? session.folder)
         // A relative link in a Markdown preview selects its target in its folder (never opens it).
         splitViewController.previewPane.onRevealFile = { [weak self] url in self?.revealLinkedFile(url) }
+        splitViewController.previewPane.onOpenQuickLook = { [weak self] in
+            guard let self, !self.quickLook.isVisible else { return }
+            self.quickLook.toggle()
+        }
         folderDidChange()
         titleLoop = ObservationLoop({ [weak self] in _ = self?.context.environment.settings.showFullPathInTitle },
                                     onChange: { [weak self] in self?.updateTitle() })

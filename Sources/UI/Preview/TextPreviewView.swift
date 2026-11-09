@@ -12,6 +12,10 @@ final class TextPreviewView: NSView, NSTextViewDelegate {
     /// A link in rendered Markdown was clicked; returns whether it was handled.
     var onLink: ((URL) -> Bool)?
     private static let plainFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+    static let minimumZoom: CGFloat = 0.5, maximumZoom: CGFloat = 3
+    /// A pinch ended at this zoom (the pane saves it).
+    var onPinchZoom: ((CGFloat) -> Void)?
+    var zoom: CGFloat { scrollView.magnification }
 
     var footerHidden: Bool { footer.isHidden }
     var text: String { textView.string }
@@ -48,6 +52,15 @@ final class TextPreviewView: NSView, NSTextViewDelegate {
         scrollView.borderType = .noBorder
         scrollView.drawsBackground = false
         scrollView.translatesAutoresizingMaskIntoConstraints = false
+        // Zoom (⌘= / ⌘− / ⌘0 and pinch): the text reflows to the visible width at every magnification.
+        scrollView.allowsMagnification = true
+        scrollView.minMagnification = Self.minimumZoom
+        scrollView.maxMagnification = Self.maximumZoom
+        NotificationCenter.default.addObserver(self, selector: #selector(pinchEnded),
+                                               name: NSScrollView.didEndLiveMagnifyNotification, object: scrollView)
+        scrollView.contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(self, selector: #selector(clipBoundsChanged),
+                                               name: NSView.boundsDidChangeNotification, object: scrollView.contentView)
 
         footer.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
         footer.textColor = .secondaryLabelColor
@@ -105,9 +118,35 @@ final class TextPreviewView: NSView, NSTextViewDelegate {
         footer.isHidden = true
     }
 
+    /// Sets the zoom (clamped), keeping the top of what is visible in place.
+    func setZoom(_ value: CGFloat) {
+        let clamped = min(max(value, Self.minimumZoom), Self.maximumZoom)
+        guard abs(scrollView.magnification - clamped) > 0.001 else { return }
+        let visible = scrollView.contentView.bounds
+        scrollView.setMagnification(clamped, centeredAt: NSPoint(x: 0, y: visible.minY))
+        fitTextWidth()
+    }
+
+    /// Magnification shrinks the visible width in document points; the text view must match it so lines wrap to
+    /// what is on screen instead of running off the right edge.
+    private func fitTextWidth() {
+        let width = scrollView.contentView.bounds.width
+        guard width > 0, abs(textView.frame.width - width) >= 0.5 else { return }
+        textView.setFrameSize(NSSize(width: width, height: textView.frame.height))
+    }
+
+    override func layout() {
+        super.layout()
+        fitTextWidth()
+    }
+
+    @objc private func clipBoundsChanged(_ note: Notification) { fitTextWidth() }
+
+    @objc private func pinchEnded(_ note: Notification) { onPinchZoom?(scrollView.magnification) }
+
     /// The width an inline image may take.
     var imageWidthLimit: CGFloat {
-        let width = scrollView.contentSize.width - textView.textContainerInset.width * 2 - 12
+        let width = scrollView.contentView.bounds.width - textView.textContainerInset.width * 2 - 12
         return max(width, 80)
     }
 

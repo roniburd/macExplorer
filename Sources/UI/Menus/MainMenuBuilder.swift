@@ -133,6 +133,7 @@ import Core
             item(.toggleHidden), item(.toggleCommandBar),
             standard("Show Sidebar", #selector(NSSplitViewController.toggleSidebar(_:))),
             item(.togglePreviewPane), item(.showInPreview), item(.downloadForPreview),
+            item(.previewZoomIn), item(.previewZoomOut), item(.previewActualSize),
             .separator(),
             submenu(L10n.string("Search"), id: "search", [
                 item(.searchScopeThisFolder), item(.searchScopeSubfolders), item(.searchScopeThisMac), .separator(),

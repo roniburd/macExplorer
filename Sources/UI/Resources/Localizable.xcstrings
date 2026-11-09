@@ -619,6 +619,17 @@
         }
       }
     },
+    "Actual Size" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actual Size"
+          }
+        }
+      }
+    },
     "Add a key or mouse button" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3678,6 +3689,17 @@
         }
       }
     },
+    "Open in Quick Look" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open in Quick Look"
+          }
+        }
+      }
+    },
     "Open in Terminal" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6018,6 +6040,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Zoom"
+          }
+        }
+      }
+    },
+    "Zoom In" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zoom In"
+          }
+        }
+      }
+    },
+    "Zoom Out" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zoom Out"
           }
         }
       }

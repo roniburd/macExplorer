@@ -43,6 +43,9 @@ public enum KeyMap {
         // `KeyBindings.collidesWithTextEditing`) and Settings › Shortcuts would not accept it as a new primary.
         case .togglePreviewPane: KeyChord(.character("p"), .option)
         case .openContainingFolder: KeyChord(.character("r"), [.command, .option])
+        case .previewZoomIn: cmd("=")
+        case .previewZoomOut: cmd("-")
+        case .previewActualSize: cmd("0")
         case .openInNewWindow, .showPackageContents, .openInTerminal, .revealInFinder,
              .selectNone, .invertSelection, .makeAlias, .makeSymlink, .newTextFile, .newEmptyFile, .share,
              .cycleFocusForward, .cycleFocusBackward, .showOperations,
@@ -101,7 +104,8 @@ public enum KeyMap {
              .copyPathTilde, .copyPathFileURL, .copyName, .copyPathShellQuoted,
              .togglePreviewPane, .openContainingFolder, .saveSearch, .stopSearch,
              .searchScopeThisFolder, .searchScopeSubfolders, .searchScopeThisMac, .searchModeName, .searchModeContents,
-             .renameSavedSearch, .removeSavedSearch, .downloadForPreview, .showInPreview:
+             .renameSavedSearch, .removeSavedSearch, .downloadForPreview, .showInPreview,
+             .previewZoomIn, .previewZoomOut, .previewActualSize:
             []
         }
     }

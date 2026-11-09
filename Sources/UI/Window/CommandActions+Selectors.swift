@@ -82,6 +82,9 @@ extension CommandHandlingViewController {
     // Phase 3
     @objc func macx_togglePreviewPane(_ sender: Any?) { run(.togglePreviewPane, sender: sender) }
     @objc func macx_showInPreview(_ sender: Any?) { run(.showInPreview, sender: sender) }
+    @objc func macx_previewZoomIn(_ sender: Any?) { run(.previewZoomIn, sender: sender) }
+    @objc func macx_previewZoomOut(_ sender: Any?) { run(.previewZoomOut, sender: sender) }
+    @objc func macx_previewActualSize(_ sender: Any?) { run(.previewActualSize, sender: sender) }
     @objc func macx_openContainingFolder(_ sender: Any?) { run(.openContainingFolder, sender: sender) }
     @objc func macx_saveSearch(_ sender: Any?) { run(.saveSearch, sender: sender) }
     @objc func macx_stopSearch(_ sender: Any?) { run(.stopSearch, sender: sender) }

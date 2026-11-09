@@ -79,6 +79,10 @@ public final class Settings {
     public var savedSearches: [SavedSearch] { didSet { save(savedSearches, Key.savedSearches) } }
     public var previewPaneVisible: Bool { didSet { save(previewPaneVisible, Key.previewPaneVisible) } }
     public var previewPaneWidth: Double { didSet { save(previewPaneWidth, Key.previewPaneWidth) } }
+    /// The user has dragged the pane to a width (otherwise it opens at a share of the window).
+    public var hasStoredPreviewPaneWidth: Bool { storage.data(forKey: Key.previewPaneWidth) != nil }
+    /// Text, Markdown and reflowed-document zoom in the preview pane (1 = 100%).
+    public var previewZoom: Double { didSet { save(previewZoom, Key.previewZoom) } }
     /// The preview pane's Rendered | Source switch for Markdown files: true shows them formatted. On by default.
     public var previewRendersMarkdown: Bool { didSet { save(previewRendersMarkdown, Key.previewRendersMarkdown) } }
     /// The preview pane's Reflowed | Original switch for Word documents: true reflows their text to the pane's
@@ -146,6 +150,7 @@ public final class Settings {
         savedSearches = Self.load([SavedSearch].self, Key.savedSearches, from: storage) ?? []
         previewPaneVisible = Self.load(Bool.self, Key.previewPaneVisible, from: storage) ?? false
         previewPaneWidth = Self.load(Double.self, Key.previewPaneWidth, from: storage) ?? 320
+        previewZoom = Self.load(Double.self, Key.previewZoom, from: storage) ?? 1
         previewRendersMarkdown = Self.load(Bool.self, Key.previewRendersMarkdown, from: storage) ?? true
         previewReflowsDocuments = Self.load(Bool.self, Key.previewReflowsDocuments, from: storage) ?? true
         searchScope = Self.load(SearchScope.self, Key.searchScope, from: storage) ?? .thisFolder
@@ -244,7 +249,7 @@ public final class Settings {
         static let savedSearches = "savedSearches", previewPaneVisible = "previewPaneVisible", previewPaneWidth = "previewPaneWidth"
         static let searchScope = "searchScope", searchMode = "searchMode", searchIncludesPackages = "searchIncludesPackages"
         static let resultsColumns = "resultsColumns", previewRendersMarkdown = "previewRendersMarkdown"
-        static let previewReflowsDocuments = "previewReflowsDocuments"
+        static let previewReflowsDocuments = "previewReflowsDocuments", previewZoom = "previewZoom"
     }
 
     private struct TCCRecord: Codable {

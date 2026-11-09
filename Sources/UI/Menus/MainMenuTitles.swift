@@ -89,6 +89,9 @@ import Core
         // Phase 3 (menu items land in P3-10 / P3-12; Settings › Shortcuts lists them now).
         case .togglePreviewPane: L10n.string("Show Preview Pane")
         case .showInPreview: L10n.string("Show in Preview Pane")
+        case .previewZoomIn: L10n.string("Zoom In")
+        case .previewZoomOut: L10n.string("Zoom Out")
+        case .previewActualSize: L10n.string("Actual Size")
         case .openContainingFolder: L10n.string("Open Containing Folder")
         case .saveSearch: L10n.string("Save Search…")
         case .stopSearch: L10n.string("Stop Search")

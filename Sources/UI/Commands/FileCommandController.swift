@@ -64,6 +64,8 @@ final class FileCommandController: CommandHandler {
                                               previewPaneVisible: window?.splitController?.isPreviewPaneVisible ?? false,
                                               needsFolderCount: effective == .openInNewTab)
         if effective == .quickLook { state.quickLookVisible = window?.quickLook.isVisible ?? false }
+        if [.previewZoomIn, .previewZoomOut, .previewActualSize].contains(effective),
+           window?.splitController?.previewPane.canZoom != true { return false }
         return CommandAvailability.isEnabled(effective, focus: focus, state: state,
                                              collidesWithTextEditing: ActiveKeyBindings.current.collidesWithTextEditing)
     }
@@ -134,6 +136,9 @@ final class FileCommandController: CommandHandler {
         case .searchModeContents: window?.searchController.mode = .contents
         case .togglePreviewPane: window?.splitController?.togglePreviewPane()
         case .showInPreview: window?.splitController?.showPreviewPane()   // the pane follows the selection
+        case .previewZoomIn: window?.splitController?.previewPane.zoomIn()
+        case .previewZoomOut: window?.splitController?.previewPane.zoomOut()
+        case .previewActualSize: window?.splitController?.previewPane.resetZoom()
         case .downloadForPreview: window?.splitController?.previewPane.performDownload()
         case .newTab, .nextTab, .previousTab, .showTabBar, .showAllTabs, .moveTabToNewWindow, .mergeAllWindows:
             break   // pendingCommands: canPerform is false, so perform beeps above

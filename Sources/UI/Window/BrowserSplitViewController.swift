@@ -2,7 +2,12 @@ import AppKit
 import Core
 
 /// Sidebar + content + the preview pane (§5.1; P3-12: the inspector item, toggled with ⌥P, collapsed unless
-/// `Settings.previewPaneVisible`, its width persisted in `Settings.previewPaneWidth`).
+/// `Settings.previewPaneVisible`, its dragged width persisted in `Settings.previewPaneWidth`).
+///
+/// Sizing: the pane never takes more than a share of the window (`textMaximumShare`, or `quickLookMaximumShare`
+/// while it shows Quick Look content, which benefits from room). Until the user drags it, it opens at
+/// `defaultShare` of the window. Whenever the window (or its screen) changes size, the pane re-fits: the user's
+/// width when it fits under the cap, the cap otherwise, so it never crowds the file list.
 @MainActor
 final class BrowserSplitViewController: NSSplitViewController {
     let context: UIContext
@@ -17,13 +22,20 @@ final class BrowserSplitViewController: NSSplitViewController {
     private var settings: Settings { context.environment.settings }
 
     static let previewMinimumWidth: CGFloat = 220
-    static let previewMaximumWidth: CGFloat = 600
+    static let defaultShare: CGFloat = 0.3
+    static let textMaximumShare: CGFloat = 0.45
+    static let quickLookMaximumShare: CGFloat = 0.65
+    /// The pane shows Quick Look content (images, PDFs, Original documents): the wider cap applies.
+    private(set) var previewShowsQuickLook = false
+    private var lastSplitWidth: CGFloat = 0
+    private var refitScheduled = false
 
     init(context: UIContext, session: BrowserSession) {
         self.context = context
         self.session = session
         self.previewPane = PreviewPaneController(context: context)
         super.init(nibName: nil, bundle: nil)
+        previewPane.onQuickLookContentChange = { [weak self] quickLook in self?.setPreviewShowsQuickLook(quickLook) }
         let tracking = DividerTrackingSplitView()
         tracking.isVertical = splitView.isVertical
         tracking.dividerStyle = splitView.dividerStyle
@@ -60,7 +72,7 @@ final class BrowserSplitViewController: NSSplitViewController {
     private func installPreviewItem() {
         let item = NSSplitViewItem(inspectorWithViewController: previewPane)
         item.minimumThickness = Self.previewMinimumWidth
-        item.maximumThickness = Self.previewMaximumWidth
+        item.maximumThickness = Self.previewMinimumWidth / Self.textMaximumShare   // until the window has a width
         item.canCollapse = true
         item.isCollapsed = !settings.previewPaneVisible
         addSplitViewItem(item)
@@ -74,8 +86,22 @@ final class BrowserSplitViewController: NSSplitViewController {
         // Settings owns the pane's state; the divider autosave (non-sandboxed runs) may have restored another.
         if previewItem.isCollapsed == settings.previewPaneVisible { previewItem.isCollapsed = !settings.previewPaneVisible }
         previewPane.isActive = !previewItem.isCollapsed
-        if !previewItem.isCollapsed { setPreviewWidth(settings.previewPaneWidth) }
+        if !previewItem.isCollapsed { setPreviewWidth(preferredPreviewWidth()) }
         previewWidthRestored = true
+    }
+
+    /// The widest the pane may be in a window this wide (never under the minimum).
+    func maximumPreviewWidth(splitWidth: CGFloat? = nil) -> CGFloat {
+        let width = splitWidth ?? splitView.bounds.width
+        let share = previewShowsQuickLook ? Self.quickLookMaximumShare : Self.textMaximumShare
+        return max(Self.previewMinimumWidth, (width * share).rounded(.down))
+    }
+
+    /// The width the pane opens and re-fits at: the dragged width, or `defaultShare` of the window, within limits.
+    func preferredPreviewWidth(splitWidth: CGFloat? = nil) -> Double {
+        let width = splitWidth ?? splitView.bounds.width
+        let wanted = settings.hasStoredPreviewPaneWidth ? CGFloat(settings.previewPaneWidth) : (width * Self.defaultShare).rounded()
+        return Double(min(max(wanted, Self.previewMinimumWidth), maximumPreviewWidth(splitWidth: width)))
     }
 
     /// Moves the divider before the inspector so the pane is `width` points wide (clamped by the item's limits,
@@ -83,9 +109,54 @@ final class BrowserSplitViewController: NSSplitViewController {
     /// drag stores a width.
     func setPreviewWidth(_ width: Double) {
         let index = splitViewItems.count - 2
-        let clamped = min(max(CGFloat(width), Self.previewMinimumWidth), Self.previewMaximumWidth)
         view.layoutSubtreeIfNeeded()          // an item just un-collapsed has no frame until layout runs
+        updatePreviewLimits()
+        let clamped = min(max(CGFloat(width), Self.previewMinimumWidth), previewItem.maximumThickness)
         splitView.setPosition(splitView.bounds.width - clamped - splitView.dividerThickness, ofDividerAt: index)
+        lastSplitWidth = splitView.bounds.width
+    }
+
+    private func updatePreviewLimits() {
+        let maximum = maximumPreviewWidth()
+        if previewItem.maximumThickness != maximum { previewItem.maximumThickness = maximum }
+    }
+
+    /// Quick Look content gets the wider cap; text goes back to the narrower one (and the pane re-fits).
+    func setPreviewShowsQuickLook(_ quickLook: Bool) {
+        guard quickLook != previewShowsQuickLook else { return }
+        previewShowsQuickLook = quickLook
+        scheduleRefit(force: true)
+    }
+
+    /// The window resized (a screen change, a zoom, a drag of its edge): re-fit the pane after this layout pass.
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        if abs(splitView.bounds.width - lastSplitWidth) >= 1 { scheduleRefit(force: false) }
+    }
+
+    private func scheduleRefit(force: Bool) {
+        guard !refitScheduled else { return }
+        refitScheduled = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.refitScheduled = false
+            self.refitPreview(force: force)
+        }
+    }
+
+    private func refitPreview(force: Bool) {
+        guard previewWidthRestored, !isAnimatingPreview, let item = previewItem, !item.isCollapsed,
+              (splitView as? DividerTrackingSplitView)?.isTrackingDivider != true else {
+            if previewItem != nil { updatePreviewLimits() }
+            return
+        }
+        let width = splitView.bounds.width
+        guard force || abs(width - lastSplitWidth) >= 1 else { return }
+        let target = preferredPreviewWidth(splitWidth: width)
+        if abs(Double(previewPane.view.frame.width) - target) >= 1 || item.maximumThickness != maximumPreviewWidth() {
+            setPreviewWidth(target)
+        }
+        lastSplitWidth = width
     }
 
     /// Preview (item context menu, View › Show in Preview Pane): opens the pane if it is hidden; it shows the selection.
@@ -130,7 +201,7 @@ final class BrowserSplitViewController: NSSplitViewController {
         isAnimatingPreview = false
         previewWidthRestored = true
         guard show, !previewItem.isCollapsed else { return }
-        let width = settings.previewPaneWidth
+        let width = preferredPreviewWidth()
         if abs(Double(previewPane.view.frame.width) - width) >= 1 { setPreviewWidth(width) }
     }
 

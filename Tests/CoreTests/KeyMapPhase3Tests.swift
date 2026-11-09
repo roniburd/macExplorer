@@ -10,7 +10,7 @@ final class KeyMapPhase3Tests: XCTestCase {
     ]
 
     /// Added after Phase 3 (Preview in the item context menu).
-    static let later: [Command] = [.showInPreview]
+    static let later: [Command] = [.showInPreview, .previewZoomIn, .previewZoomOut, .previewActualSize]
 
     func testPhase3CommandsExistInOrder() {
         XCTAssertEqual(Array(Command.allCases.suffix(Self.phase3.count + Self.later.count)), Self.phase3 + Self.later)
