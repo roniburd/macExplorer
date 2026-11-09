@@ -68,6 +68,12 @@ final class PreviewPaneTests: XCTestCase {
     }
     private func select(_ m: FolderModel, _ names: [String]) { m.select(.names(names)) }
 
+    /// The pane has the list's background up under the toolbar, so the toolbar strip is one colour across the window
+    /// (v0.2.0-beta.22: white over the list, grey over the pane).
+    func testPaneUsesTheListBackground() {
+        XCTAssertTrue(pane().view is ListBackgroundSpacer)
+    }
+
     func testNothingTextAndTruncation() async throws {
         try sandbox.createFile("d/big.txt", contents: Data(repeating: UInt8(ascii: "a"), count: 300_000))
         try sandbox.createFile("d/small.txt", contents: Data("hello".utf8))

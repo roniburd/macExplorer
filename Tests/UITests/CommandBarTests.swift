@@ -186,25 +186,43 @@ final class CommandBarTests: XCTestCase {
         XCTAssertEqual(h.environment.settings.commandBarVisible, !before)
     }
 
-    /// A bar wide enough for every control shows every title in full (v0.2.0-beta.22 showed "+ N" and "Propert…"
-    /// with 200 pt of empty bar between ⋯ and Properties).
+    /// A bar wide enough for every title shows every title in full, also after being laid out narrow (v0.2.0-beta.22
+    /// showed "+ N" and "Propert…" with 200 pt of empty bar between ⋯ and Properties).
     func testWideBarNeverTruncatesTitles() {
         let bar = CommandBarView()
-        bar.update(state: CommandState(), focus: .content, shiftHeld: false)
-        let needed = bar.controls.reduce(CGFloat(0)) { $0 + $1.intrinsicContentSize.width } + 200
         bar.frame = NSRect(x: 0, y: 0, width: 360, height: 28)   // laid out narrow first, as a window opening small
         bar.layoutSubtreeIfNeeded()
         bar.update(state: CommandState(selectionCount: 1, canPaste: true), focus: .content, shiftHeld: false)
         bar.layoutSubtreeIfNeeded()
         bar.update(state: CommandState(), focus: .content, shiftHeld: false)
-        for width in [needed, 828, 1200] where width >= needed {
+        for width in [bar.titledWidth, 828, 1200] where width >= bar.titledWidth {
             bar.frame = NSRect(x: 0, y: 0, width: width, height: 28)
             bar.layoutSubtreeIfNeeded()
+            XCTAssertFalse(bar.isCompact, "titles fit at \(width)")
             for control in bar.controls {
                 XCTAssertGreaterThanOrEqual(control.frame.width, control.intrinsicContentSize.width - 0.5,
                                             "\(control.accessibilityLabel() ?? "?") is truncated at bar width \(width)")
+                if let button = control as? NSButton, !button.title.isEmpty { XCTAssertEqual(button.imagePosition, .imageLeading) }
             }
         }
+    }
+
+    /// Too narrow for the titles: every button shows its icon alone (title kept for tool tip and VoiceOver) rather
+    /// than one title cut to a letter.
+    func testNarrowBarShowsIconsOnly() {
+        let bar = CommandBarView()
+        bar.frame = NSRect(x: 0, y: 0, width: bar.titledWidth - 40, height: 28)
+        bar.layoutSubtreeIfNeeded()
+        XCTAssertTrue(bar.isCompact)
+        for control in bar.controls {
+            guard let button = control as? NSButton, !button.title.isEmpty else { continue }
+            XCTAssertEqual(button.imagePosition, .imageOnly, button.title)
+            XCTAssertGreaterThanOrEqual(button.frame.width, button.intrinsicContentSize.width - 0.5, "\(button.title) icon is cut")
+        }
+        XCTAssertEqual(bar.newButton.title, "New")
+        bar.frame = NSRect(x: 0, y: 0, width: bar.titledWidth + 1, height: 28)
+        bar.layoutSubtreeIfNeeded()
+        XCTAssertFalse(bar.isCompact, "titles come back once they fit")
     }
 
     /// Opening with the preview pane squeezes the bar for a moment during layout; the titles must come back in full

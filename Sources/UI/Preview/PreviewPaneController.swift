@@ -122,7 +122,9 @@ final class PreviewPaneController: NSViewController {
     required init?(coder: NSCoder) { fatalError("PreviewPaneController is created in code") }
 
     override func loadView() {
-        let container = NSView()
+        // The list's background, up under the toolbar like the content pane's, so the toolbar strip doesn't change
+        // colour where the pane starts.
+        let container = ListBackgroundSpacer()
         stack.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(stack)
         // The inspector runs under the window toolbar: lay out in the visible area (QA polish: messages sat under

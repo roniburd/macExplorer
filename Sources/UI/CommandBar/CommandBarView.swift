@@ -28,6 +28,9 @@ final class CommandBarView: NSView {
     private var buttons: [Command: NSButton] = [:]
     private var deleteCommand: Command = .moveToTrash
     private let stack = NSStackView()
+    /// Titled buttons show only their icons (tool tips and accessibility labels keep the titles): the bar is
+    /// narrower than it needs with titles, which would otherwise cut one button's title to a letter ("+ N").
+    private(set) var isCompact = false
     private let hairline = NSBox()
     /// Per control: its SF Symbol, its enabled tint, and the enabled state its look was last drawn for.
     private var looks: [ObjectIdentifier: Look] = [:]
@@ -105,11 +108,42 @@ final class CommandBarView: NSView {
         applyLooks()
     }
 
+    // MARK: compact
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        updateCompact()
+    }
+
+    /// The width the bar needs to show every title, whichever mode it is in now.
+    var titledWidth: CGFloat {
+        let views = stack.arrangedSubviews.filter { !$0.isHidden }
+        let content = views.reduce(CGFloat(0)) { sum, view in
+            guard let button = view as? NSButton else { return sum + (view is NSBox ? 1 : 0) }
+            guard let cell = button.cell?.copy() as? NSButtonCell else { return sum + button.intrinsicContentSize.width }
+            if !button.title.isEmpty { cell.imagePosition = .imageLeading }
+            return sum + ceil(cell.cellSize.width)
+        }
+        return content + stack.spacing * CGFloat(max(views.count - 1, 0)) + stack.edgeInsets.left + stack.edgeInsets.right
+    }
+
+    private func updateCompact() {
+        guard bounds.width > 0 else { return }
+        let compact = bounds.width < titledWidth
+        guard compact != isCompact else { return }
+        isCompact = compact
+        for control in controls {
+            guard let button = control as? NSButton, !button.title.isEmpty else { continue }
+            button.imagePosition = compact ? .imageOnly : .imageLeading
+        }
+    }
+
     // MARK: look
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         applyLooks(force: true)
+        updateCompact()
     }
 
     @objc private func systemColorsChanged(_ note: Notification) { applyLooks(force: true) }   // accent colour changed
@@ -150,6 +184,8 @@ final class CommandBarView: NSView {
         guard command != deleteCommand else { return }
         deleteCommand = command
         Self.configure(deleteButton, command)
+        if isCompact { deleteButton.imagePosition = .imageOnly }
+        updateCompact()                     // "Delete Permanently" is wider
         looks[ObjectIdentifier(deleteButton)]?.symbol = CommandBarTitles.symbol(command)
         looks[ObjectIdentifier(deleteButton)]?.drawnEnabled = nil   // configure reset the image and title
     }

@@ -607,7 +607,8 @@ extension NSViewController {
     }
 }
 
-/// A plain strip filled with the list background (`controlBackgroundColor`), so the list appears to start lower.
+/// A plain view filled with the list background (`controlBackgroundColor`): the strip that makes the list appear to
+/// start lower, and the preview pane's backdrop.
 @MainActor
 final class ListBackgroundSpacer: NSView {
     override var isOpaque: Bool { true }
