@@ -131,9 +131,18 @@ final class CommandBarView: NSView {
             button.attributedTitle = NSAttributedString(string: button.title, attributes: [
                 .foregroundColor: enabled ? NSColor.labelColor : NSColor.tertiaryLabelColor,
                 .font: button.font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize),
+                .paragraphStyle: Self.singleLine,
             ])
         }
     }
+
+    /// Attributed titles word-wrap by default: squeezed for a moment (the preview pane sliding open), a button then
+    /// reports a wrapped, narrow intrinsic size that sticks once the bar widens again ("+ N", v0.2.0-beta.22).
+    private static let singleLine: NSParagraphStyle = {
+        let style = NSMutableParagraphStyle()
+        style.lineBreakMode = .byTruncatingTail
+        return style
+    }()
 
     // MARK: building
 

@@ -185,4 +185,47 @@ final class CommandBarTests: XCTestCase {
         _ = content.perform(Selector(Command.toggleCommandBar.selectorName), with: nil)
         XCTAssertEqual(h.environment.settings.commandBarVisible, !before)
     }
+
+    /// A bar wide enough for every control shows every title in full (v0.2.0-beta.22 showed "+ N" and "Propert…"
+    /// with 200 pt of empty bar between ⋯ and Properties).
+    func testWideBarNeverTruncatesTitles() {
+        let bar = CommandBarView()
+        bar.update(state: CommandState(), focus: .content, shiftHeld: false)
+        let needed = bar.controls.reduce(CGFloat(0)) { $0 + $1.intrinsicContentSize.width } + 200
+        bar.frame = NSRect(x: 0, y: 0, width: 360, height: 28)   // laid out narrow first, as a window opening small
+        bar.layoutSubtreeIfNeeded()
+        bar.update(state: CommandState(selectionCount: 1, canPaste: true), focus: .content, shiftHeld: false)
+        bar.layoutSubtreeIfNeeded()
+        bar.update(state: CommandState(), focus: .content, shiftHeld: false)
+        for width in [needed, 828, 1200] where width >= needed {
+            bar.frame = NSRect(x: 0, y: 0, width: width, height: 28)
+            bar.layoutSubtreeIfNeeded()
+            for control in bar.controls {
+                XCTAssertGreaterThanOrEqual(control.frame.width, control.intrinsicContentSize.width - 0.5,
+                                            "\(control.accessibilityLabel() ?? "?") is truncated at bar width \(width)")
+            }
+        }
+    }
+
+    /// Opening with the preview pane squeezes the bar for a moment during layout; the titles must come back in full
+    /// (v0.2.0-beta.22 kept New at 30 pt, "+ N", because its attributed title wrapped).
+    func testBarInTheBrowserWindowWithThePreviewPaneShowsFullTitles() async throws {
+        let h = try await ShellHarness.make(self)
+        try h.file("a.txt")
+        h.environment.settings.previewPaneVisible = true
+        h.environment.settings.previewPaneWidth = 370
+        let controller = try await h.openWindow()
+        let content = try XCTUnwrap(controller.contentPane as? ContentViewController)
+        let window = try XCTUnwrap(controller.window)
+        window.setContentSize(NSSize(width: 1529, height: 914))
+        window.layoutIfNeeded()
+        let bar = content.commandBar
+        try await h.waitUntil("bar laid out wide") { bar.frame.width > 800 }
+        window.layoutIfNeeded()
+        for control in bar.controls {
+            XCTAssertGreaterThanOrEqual(control.frame.width, control.intrinsicContentSize.width - 0.5,
+                                        "\(control.accessibilityLabel() ?? "?") is truncated at bar width \(bar.frame.width)")
+            XCTAssertLessThanOrEqual(control.intrinsicContentSize.height, 28, "\(control.accessibilityLabel() ?? "?") wraps")
+        }
+    }
 }
