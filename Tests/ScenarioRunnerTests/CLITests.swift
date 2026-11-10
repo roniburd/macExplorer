@@ -37,4 +37,20 @@ final class CLITests: XCTestCase {
         XCTAssertThrowsError(try CrashHelperOptions.parse(["--mode", "copy"])) { XCTAssertEqual($0 as? ScenarioCLIError, .missingOption("--source")) }
         XCTAssertThrowsError(try CrashHelperOptions.parse(["--mode", "explode"]))
     }
+
+    /// P4-23: batchRename mode renames items of the --source folder (--destination is the same folder) by --names
+    /// ("old/new" per line; plain names only) and stops after phase 1.
+    func testCrashHelperBatchRenameOptions() throws {
+        let base = "/tmp/macx-scenario-1"
+        let args = ["--mode", "batchRename", "--source", "\(base)/w", "--destination", "\(base)/w", "--journal", "\(base)/j.json",
+                    "--trash", "\(base)/t", "--ready", "\(base)/r"]
+        let o = try CrashHelperOptions.parse(args + ["--names", "a.txt/b.txt\nb.txt/a.txt"])
+        XCTAssertEqual(o.mode, .batchRename)
+        XCTAssertEqual(o.renames.map(\.0), ["a.txt", "b.txt"])
+        XCTAssertEqual(o.renames.map(\.1), ["b.txt", "a.txt"])
+        XCTAssertThrowsError(try CrashHelperOptions.parse(args)) { XCTAssertEqual($0 as? ScenarioCLIError, .missingOption("--names")) }
+        for bad in ["a.txt", "a.txt/../x", "../a/b", "a/", "/b"] {
+            XCTAssertThrowsError(try CrashHelperOptions.parse(args + ["--names", bad]), bad)
+        }
+    }
 }

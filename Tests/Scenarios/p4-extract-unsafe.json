@@ -1,0 +1,13 @@
+{"name": "p4-extract-unsafe",
+ "fixture": {"files": ["outside/keep.txt"], "dirs": ["work", "outside"], "archives": {"work/evil.tar": "evil-tar"}},
+ "steps": [
+  {"doubleClick": "work"},
+  {"waitFor": {"folder": "work", "rows": ["evil.tar"]}},
+  {"click": "evil.tar"}, {"command": "extractHere"},
+  {"waitFor": {"sheetPresent": true}, "timeoutMs": 10000},
+  {"answerError": "skip"},
+  {"waitFor": {"sheetPresent": false}},
+  {"sleepMs": 300},
+  {"expect": {"rows": ["evil.tar"], "filesAbsent": ["escape.txt", "work/escape.txt"], "filesExist": ["outside/keep.txt"],
+              "fileSizes": {"outside/keep.txt": 1}}}
+ ]}

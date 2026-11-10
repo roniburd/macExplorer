@@ -47,6 +47,9 @@ enum Budgets {
             // P4-03 review fix: the palette re-ranks on every keystroke (was a debug-build timing in PaletteCatalogTests).
             Budget(metric: "palette.rank", sizes: nil, limit: 2, unit: "ms",
                    spec: "Phase 4: palette ranking over every command plus 20 favorites plus 20 recents < 2 ms"),
+            // P4-23: the batch rename sheet re-previews on every edit (was a debug-build timing in BatchRenameRulesTests).
+            Budget(metric: "batchRename.preview", sizes: [10_000], limit: 100, unit: "ms",
+                   spec: "Phase 4: batch rename preview of 10,000 names < 100 ms off the main thread"),
         ]
         // P3-13: the This folder search filter is a re-sort with criteria (§4.4 re-sort 100k < 30 ms).
         t.append(Budget(metric: "search-filter-100k", sizes: [100_000], limit: 30, unit: "ms",

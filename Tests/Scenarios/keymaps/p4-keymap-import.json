@@ -1,0 +1,8 @@
+{
+  "format" : "macexplorer-keymap",
+  "version" : 1,
+  "base" : "explorer",
+  "bindings" : {
+    "newFolder" : { "primary" : "cmd+opt+n" }
+  }
+}

@@ -109,7 +109,8 @@ final class BudgetsTests: XCTestCase {
     func testBudgetTableCoversEveryHeadlessSpecRow() {
         let names = Set(Budgets.table.map(\.metric))
         for name in ["firstBatch", "listSorted", "modelResort", "fsevent.incremental", "fsevent.full", "memory.steady", "pasteboard",
-                     "folderViews.load", "folderViews.flush", "folderViews.save", "palette.rank"] {
+                     "folderViews.load", "folderViews.flush", "folderViews.save", "palette.rank",
+                     "batchRename.preview"] {
             XCTAssertTrue(names.contains(name), name)
         }
     }

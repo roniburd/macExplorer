@@ -50,6 +50,10 @@ finding what's big. MacExplorer keeps the Mac habits and borrows the Explorer id
 | Make a text file | Not available | **New ▸ Text File** |
 | Use the mouse | Back/forward buttons do nothing | **Back, forward, middle-click for a new tab**, right-drag menu |
 | Check a folder | Get Info | **Properties** (⌘I) with a live size and a Permissions tab |
+| Rename many files | A rename sheet | **F2 on several items**: find/replace with regex, numbering, live preview, one undo |
+| Run any command | Not available | **Command palette** (⇧⌘P) |
+| Unpack an archive | Archive Utility | **Extract Here**, which refuses archives that would write outside the folder |
+| Use your own keys | Only through System Settings | **Settings › Shortcuts**: Explorer or Finder preset, import and export |
 
 <table>
 <tr>
@@ -74,7 +78,8 @@ a copy. More in the [user guide](USER-GUIDE.md#what-macexplorer-cant-do).
 
 ## More
 
-- [User guide](USER-GUIDE.md): tabs, views, search syntax, the preview pane, updates, feedback.
+- [User guide](USER-GUIDE.md): tabs, views, search syntax, the preview pane, the command palette, batch rename,
+  compress and extract, shortcuts, updates, feedback.
 - [Building, testing and releasing](DEVELOPMENT.md): for contributors and maintainers.
 - Found a bug or want a feature? Help › **Report a Bug…** in the app, or [open an issue](https://github.com/roniburd/macExplorer/issues/new/choose).
 

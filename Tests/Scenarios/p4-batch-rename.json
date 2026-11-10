@@ -1,0 +1,13 @@
+{"name": "p4-batch-rename",
+ "fixture": {"files": ["IMG_2.jpg", "IMG_1.jpg", "other.txt"], "dirs": []},
+ "steps": [
+  {"click": "IMG_1.jpg"}, {"click": "IMG_2.jpg", "modifiers": ["cmd"]},
+  {"key": "F2"},
+  {"waitFor": {"sheetTitle": "Rename 2 Items"}},
+  {"type": "IMG_"},
+  {"key": "tab"}, {"type": "Trip "},
+  {"key": "return"},
+  {"waitFor": {"rows": ["other.txt", "Trip 1.jpg", "Trip 2.jpg"], "selection": ["Trip 1.jpg", "Trip 2.jpg"], "sheetPresent": false}, "timeoutMs": 5000},
+  {"key": "cmd+z"},
+  {"waitFor": {"rows": ["IMG_1.jpg", "IMG_2.jpg", "other.txt"], "filesAbsent": ["Trip 1.jpg"]}, "timeoutMs": 5000}
+ ]}

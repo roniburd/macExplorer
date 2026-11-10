@@ -1,0 +1,10 @@
+{"name": "p4-keymap-import",
+ "launchArguments": ["--keymap", "p4-keymap-import.json"],
+ "fixture": {"files": ["a.txt"], "dirs": []},
+ "steps": [
+  {"click": "a.txt"},
+  {"key": "cmd+shift+n"}, {"sleepMs": 400},
+  {"expect": {"rows": ["a.txt"], "filesAbsent": ["New Folder"]}},
+  {"key": "cmd+opt+n"},
+  {"waitFor": {"rowsContain": ["a.txt", "New Folder"], "filesExist": ["New Folder"]}, "timeoutMs": 5000}
+ ]}

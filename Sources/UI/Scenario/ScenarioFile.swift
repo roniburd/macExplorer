@@ -33,13 +33,15 @@ struct ScenarioFile: Codable {
         var binary: [String: Int]?            // file → N deterministic bytes that are never valid text
         var bulk: [String: Int]?              // dir → N empty files "file-000001.txt"… (FixtureTree.flat naming)
         var spotlight: [SpotlightFixture]?    // what the fake Spotlight returns (not created on disk)
+        // Phase 4 (P4-23)
+        var archives: [String: String]?       // path → crafted archive kind ("evil-tar": one entry "../escape.txt")
 
         /// Every relative path the fixture names (validated before anything is created).
         var allPaths: [String] {
             files + dirs + (hidden ?? []) + (images ?? []) + Array((sizes ?? [:]).keys) + Array((modes ?? [:]).keys)
                 + Array((mtimeDays ?? [:]).keys) + Array((tags ?? [:]).keys) + Array((comments ?? [:]).keys)
                 + Array((lastOpenedDays ?? [:]).keys) + Array((contents ?? [:]).keys) + Array((binary ?? [:]).keys)
-                + Array((bulk ?? [:]).keys) + (spotlight ?? []).map(\.path)
+                + Array((bulk ?? [:]).keys) + (spotlight ?? []).map(\.path) + Array((archives ?? [:]).keys)
         }
     }
     struct FSWrite: Codable { var path: String; var bytes: Int }
@@ -71,6 +73,8 @@ struct ScenarioFile: Codable {
         // Phase 3 (P3-13)
         var clickSidebar: String?             // "searches:<saved search name>" (only SEARCHES rows: never real folders)
         var setSearchScope: String?           // "thisFolder" | "subfolders" | "thisMac", via the View › Search menu item
+        // Phase 4 (P4-23)
+        var answerError: String?              // ErrorResolution case name for the pending file-operation error
 
         var actions: [String] {
             let named: [(String, Bool)] = [
@@ -80,6 +84,7 @@ struct ScenarioFile: Codable {
                 ("answerAlert", answerAlert != nil), ("waitFor", waitFor != nil), ("expect", expect != nil), ("sleepMs", sleepMs != nil),
                 ("middleClick", middleClick != nil), ("selectTab", selectTab != nil), ("fsWrite", fsWrite != nil),
                 ("fsTags", fsTags != nil), ("clickSidebar", clickSidebar != nil), ("setSearchScope", setSearchScope != nil),
+                ("answerError", answerError != nil),
             ]
             return named.filter { $0.1 }.map { $0.0 }
         }
@@ -141,9 +146,14 @@ struct ScenarioFile: Codable {
         // delivered" apart from "reload still running").
         var windowStates: [String]?           // each browser window's folder state, in window-list order
         var showHidden: Bool?                 // Settings.showHidden
+        // Phase 4 (P4-23)
+        var sheetTitle: String?               // the browser window's attached sheet title ("Rename 2 Items"); "" = no sheet
     }
     var name: String
     var indexStatus: String?                  // P3-13: --index-status for this file ("enabled" | "disabled" | "unknown")
+    /// P4-23: extra app arguments `scripts/ui-scenarios.sh` passes. Only `--keymap <name>.json`, a file in
+    /// Tests/Scenarios/keymaps that the script copies into the scenario's sandbox. The app ignores this field.
+    var launchArguments: [String]?
     var fixture: Fixture
     var steps: [Step]
 
@@ -166,6 +176,8 @@ struct ScenarioFile: Codable {
         case badFixture(String)
         case badSidebarTarget(step: Int, String)
         case badSearchScope(step: Int, String)
+        case badErrorAnswer(step: Int, String)
+        case badLaunchArguments([String])
         var description: String {
             switch self {
             case .actionCount(let s, let a): "step \(s): exactly one action required, found \(a)"
@@ -186,6 +198,8 @@ struct ScenarioFile: Codable {
             case .badFixture(let what): "fixture: \(what)"
             case .badSidebarTarget(let s, let t): "step \(s): clickSidebar '\(t)' must be 'searches:<name>' (scenarios never open real folders from the sidebar)"
             case .badSearchScope(let s, let v): "step \(s): setSearchScope '\(v)' must be thisFolder, subfolders or thisMac"
+            case .badErrorAnswer(let s, let v): "step \(s): answerError '\(v)' must be one of \(ScenarioFile.errorAnswers.keys.sorted())"
+            case .badLaunchArguments(let a): "launchArguments \(a): only [\"--keymap\", \"<name>.json\"] (a file in Tests/Scenarios/keymaps)"
             }
         }
     }
@@ -196,6 +210,15 @@ struct ScenarioFile: Codable {
     static let maxBulkFiles = 100_000
     static let searchScopes: Set<String> = ["thisFolder", "subfolders", "thisMac"]
     static let sidebarSections: Set<String> = ["searches"]
+    static let errorAnswers: [String: ErrorResolution] = ["retry": .retry, "skip": .skip, "skipAll": .skipAll, "cancel": .cancel,
+                                                         "unlockAndContinue": .unlockAndContinue, "continueAnyway": .continueAnyway]
+    static let archiveKinds: Set<String> = ["evil-tar"]
+
+    /// `["--keymap", "p4-x.json"]`: a plain file name (lowercase, digits, dashes) ending in .json.
+    static func isValidLaunchArguments(_ args: [String]) -> Bool {
+        guard args.count == 2, args[0] == "--keymap" else { return false }
+        return args[1].range(of: #"^[a-z0-9-]+\.json$"#, options: .regularExpression) != nil
+    }
 
     /// "searches:Taxes" → ("searches", "Taxes"); nil unless the section is allowed and the name is not empty.
     static func sidebarTarget(_ raw: String) -> (section: String, name: String)? {
@@ -211,6 +234,8 @@ struct ScenarioFile: Codable {
         if let status = indexStatus, IndexingStatus(rawValue: status) == nil { throw .badIndexStatus(status) }
         for (path, n) in fixture.binary ?? [:] where !(1...Self.maxWriteBytes).contains(n) { throw .badFixture("binary '\(path)' size \(n)") }
         for (path, n) in fixture.bulk ?? [:] where !(1...Self.maxBulkFiles).contains(n) { throw .badFixture("bulk '\(path)' count \(n)") }
+        for (path, kind) in fixture.archives ?? [:] where !Self.archiveKinds.contains(kind) { throw .badFixture("archive '\(path)' kind '\(kind)'") }
+        if let args = launchArguments, !Self.isValidLaunchArguments(args) { throw .badLaunchArguments(args) }
         for item in fixture.spotlight ?? [] {
             if let kind = item.kind, !SpotlightFixture.kinds.contains(kind) { throw .badFixture("spotlight '\(item.path)' kind '\(kind)'") }
             if let size = item.size, size < 0 { throw .badFixture("spotlight '\(item.path)' size \(size)") }
@@ -233,6 +258,7 @@ struct ScenarioFile: Codable {
             if let bytes = step.fsWrite?.bytes, !(0...Self.maxWriteBytes).contains(bytes) { throw .badSize(step: index, bytes) }
             if let target = step.clickSidebar, Self.sidebarTarget(target) == nil { throw .badSidebarTarget(step: index, target) }
             if let scope = step.setSearchScope, !Self.searchScopes.contains(scope) { throw .badSearchScope(step: index, scope) }
+            if let answer = step.answerError, Self.errorAnswers[answer] == nil { throw .badErrorAnswer(step: index, answer) }
             for expectation in [step.waitFor, step.expect].compactMap({ $0 }) {
                 if let problem = ExpectationMatcher.formatProblem(expectation) { throw .badExpectation(step: index, problem) }
             }

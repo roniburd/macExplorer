@@ -1,0 +1,8 @@
+{"name": "p4-extract-here",
+ "fixture": {"files": ["photos/a.jpg"], "dirs": ["photos"]},
+ "steps": [
+  {"click": "photos"}, {"command": "compressZip"},
+  {"waitFor": {"rowsContain": ["photos.zip"], "selection": ["photos.zip"]}, "timeoutMs": 10000},
+  {"command": "extractHere"},
+  {"waitFor": {"rows": ["photos", "photos 2", "photos.zip"], "filesExist": ["photos 2/a.jpg"], "selection": ["photos 2"]}, "timeoutMs": 10000}
+ ]}

@@ -71,6 +71,7 @@ final class ScenarioContext {
         _ = guarded(url)
         try FileManager.default.removeItem(at: url)
     }
+    @discardableResult func writeData(_ rel: String, _ data: Data) -> URL { sandbox.file("work/\(rel)", data) }
     func background(_ work: @escaping @Sendable () -> Void) async { await Task.detached(operation: work).value }
 
     // MARK: reads (harness-side, read-only)
@@ -99,6 +100,7 @@ final class ScenarioContext {
         guard getxattr(url.path, name, &buffer, n, 0, XATTR_NOFOLLOW) == n else { return nil }
         return String(decoding: buffer, as: UTF8.self)
     }
+    func text(_ url: URL) -> String? { (try? Data(contentsOf: url)).map { String(decoding: $0, as: UTF8.self) } }
     func entries(_ dir: URL) -> Set<String> { Set((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []) }
     func isAliasFile(_ url: URL) -> Bool { (try? url.resourceValues(forKeys: [.isAliasFileKey]).isAliasFile) == true }
     func resolveAlias(_ url: URL) -> URL? { try? URL(resolvingAliasFileAt: url) }
@@ -186,6 +188,35 @@ final class ScenarioContext {
     func run(_ queue: FileOpQueue, _ kind: JobKind) async -> JobOutcome {
         let id = await queue.enqueue(JobRequest(kind, registersUndo: false))
         return await queue.outcome(of: id)
+    }
+
+    /// Runs `body` on a file-operation lane (ACL and icon reads must stay off the main actor).
+    func onLane<T: Sendable>(_ body: @escaping @Sendable () throws -> T) async throws -> T {
+        try await env.lanes.perform(on: .unknown, .fileOp) { _ in try body() }
+    }
+
+    /// Launch recovery over the journal the last `crashBatchRename` left behind.
+    func runLaunchRecovery() async -> RecoveryReport {
+        await LaunchRecovery.run(journal: Journal(fileURL: path("helper-journal.json")), lanes: env.lanes)
+    }
+
+    /// P4-23: starts `macx-scenarios crash-helper --mode batchRename` on items of `work/<folder>`, waits until every item
+    /// is at its temporary name (`FaultPoint.batchRenameStaged`), then SIGKILLs it. The helper re-checks that every
+    /// path lies inside a macx-scenario-* sandbox.
+    func crashBatchRename(in folder: String, _ renames: [String: String]) async throws {
+        let helper = try requireHelper()
+        let ready = path("helper-ready")
+        let names = renames.keys.sorted().map { "\($0)/\(renames[$0]!)" }.joined(separator: "\n")
+        let process = try launchHelper(helper, [
+            "crash-helper", "--mode", "batchRename", "--source", path(folder).path, "--destination", path(folder).path,
+            "--journal", path("helper-journal.json").path, "--trash", dir("helper-trash").path, "--ready", ready.path,
+            "--names", names,
+        ])
+        try await waitUntil("helper stages the batch", timeout: .seconds(60)) { exists(ready) || !process.isRunning }
+        try expect(process.isRunning, "helper exited early with status \(process.terminationStatus)")
+        kill(process.processIdentifier, SIGKILL)
+        try await waitUntil("helper is gone", timeout: .seconds(10)) { !process.isRunning }
+        try removeRaw(ready)
     }
 
     // MARK: images and helper processes

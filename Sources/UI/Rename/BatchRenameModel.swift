@@ -78,6 +78,11 @@ final class BatchRenameModel {
         }
     }
 
+    /// Returns once the latest scheduled preview has been computed.
+    func waitForPreview() async {
+        while isComputing, let task { await task.value }
+    }
+
     /// Waits for a scheduled preview, then runs the batch rename job when the preview allows it. nil: nothing ran.
     func apply() async -> JobOutcome? {
         await task?.value

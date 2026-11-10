@@ -65,7 +65,7 @@ final class CommandBarTests: XCTestCase {
         for command in [Command.cut, .copy, .paste, .share, .moveToTrash, .properties] {
             XCTAssertTrue(try XCTUnwrap(bar.button(for: command)).isEnabled, "\(command)")
         }
-        XCTAssertFalse(try XCTUnwrap(bar.button(for: .rename)).isEnabled, "rename needs exactly one item")
+        XCTAssertTrue(try XCTUnwrap(bar.button(for: .rename)).isEnabled, "rename on several items opens batch rename (P4-12)")
 
         bar.update(state: CommandState(selectionCount: 1, canPaste: true, folderIsReadOnly: true), focus: .content, shiftHeld: false)
         XCTAssertFalse(bar.newButton.isEnabled, "read-only folder")

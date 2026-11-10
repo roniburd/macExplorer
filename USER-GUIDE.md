@@ -11,11 +11,14 @@ New here? Start with the [README](README.md).
 4. [Copy a path](#copy-a-path)
 5. [Quick Look and the preview pane](#quick-look-and-the-preview-pane)
 6. [Search](#search)
-7. [Properties](#properties)
-8. [Settings](#settings)
-9. [Updates](#updates)
-10. [Feedback and crashes](#feedback-and-crashes)
-11. [What MacExplorer can't do](#what-macexplorer-cant-do)
+7. [Command palette](#command-palette)
+8. [Rename many items](#rename-many-items)
+9. [Compress and extract](#compress-and-extract)
+10. [Properties](#properties)
+11. [Settings](#settings)
+12. [Updates](#updates)
+13. [Feedback and crashes](#feedback-and-crashes)
+14. [What MacExplorer can't do](#what-macexplorer-cant-do)
 
 ---
 
@@ -289,6 +292,59 @@ It never pops up a privacy prompt.
 
 ---
 
+## Command palette
+
+Press ⇧⌘P and type a few letters of any command or folder.
+Press Return to run the highlighted row, or Esc to close the palette.
+
+- It lists every command that works right now, with its shortcut.
+- It also lists your favorites and recent folders as "Go to …" rows.
+- What you used last comes first.
+
+---
+
+## Rename many items
+
+Select two or more items and press F2.
+You can also right-click and choose **Rename N Items…**, or use File › **Rename Items…**.
+
+| Field | What it does |
+|---|---|
+| Find / Replace with | Replaces every match. Turn on **Regular expression** to use `$1`… for groups and `$$` for a `$`. |
+| Prefix / Suffix | Adds text before or after the name |
+| Case | lowercase, UPPERCASE, Title Case or Sentence case |
+| Apply to | The name only, the name and extension, or only the extension |
+| Add numbers | Before or after the name, or **Replace name** for "Trip (1)", "Trip (2)"… |
+
+The list below shows each new name as you type.
+**Rename** stays off while a new name is invalid, used twice, or taken by another item in the folder.
+
+- Names can trade places: `a.txt` ↔ `b.txt` works, and so do chains like `1 → 2 → 3`.
+- One ⌘Z puts every name back.
+- If the Mac crashes in the middle, MacExplorer puts every item back at its old name the next time it opens.
+
+---
+
+## Compress and extract
+
+| To | Do this |
+|---|---|
+| Make a zip | Right-click › **Compress ▸** › **.zip**, or File › Compress |
+| Make an Apple Archive (.aar) | Right-click › **Compress ▸** › **.aar** |
+| Unpack an archive | Right-click it › **Extract Here** |
+
+The archive appears next to the first item and is selected.
+Extract Here opens .zip, .tar, .tar.gz, .tgz, .tar.bz2, .tar.xz, .gz and .aar files.
+An archive with one top-level folder is unpacked as that folder.
+Anything else goes into a new folder named after the archive.
+
+- A name that is taken gets a number: `photos.zip` becomes `photos 2.zip`.
+- Cancel leaves nothing behind.
+- Archives with entries that would land outside the folder (`../`, absolute paths, tricks with links) are refused before anything is written.
+- ⌘Z removes what was made.
+
+---
+
 ## Properties
 
 Select an item and press ⌘I.
@@ -297,6 +353,15 @@ Select an item and press ⌘I.
 
 Properties works like Windows Explorer's.
 It shows a live folder size and has a **Permissions** tab.
+
+**Custom icons:** drop an image on the icon at the top of Properties, or click it and paste (⌘V).
+**Remove Custom Icon** goes back to the normal one.
+⌘Z undoes either.
+
+**Access Control:** the Permissions tab lists the item's access control entries (who may read, write or delete it).
+Use **Add Entry**, **Edit Entry** and **Remove Entry** to change them.
+Entries inherited from a parent folder are shown but can't be edited.
+If you aren't the item's owner, the list is read-only.
 
 ---
 
@@ -315,7 +380,18 @@ Open Settings with ⌘,.
 <img src="site/assets/shots/guide/settings.png" width="420" alt="The General tab of Settings.">
 
 **Return key:** choose whether Return opens the item (like Windows) or renames it (like Finder).
-F2 always renames.
+F2 renames, unless you pick the Finder preset.
+
+**Shortcuts:** change any shortcut, or start from a **Preset**.
+**Explorer** (the default) uses Windows-style keys plus the Mac ones.
+**Finder** uses Finder's keys only: ⌘O opens, ⇧⌘G goes to a folder, and Return renames.
+**Export…** saves your shortcuts to a file, and **Import…** loads one.
+An imported file with two commands on one key, or with a key macOS keeps for itself, is refused and the clashes are listed.
+Commands from a newer MacExplorer are skipped.
+
+**Icon pack:** Settings › General › **Icon pack** shows your own icons for file types inside MacExplorer.
+A pack is a folder of images named after the extension, for example `pdf.png` or `swift.icns`, plus `folder.png` for folders.
+Apps, custom icons and disks keep their own icons.
 
 **Function keys:** F2 (rename) and F5 (refresh) need the fn key, unless your Mac is set to use F1, F2… as standard keys.
 That setting is in System Settings › Keyboard.

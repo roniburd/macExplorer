@@ -129,7 +129,20 @@ run_scenario() {
   # P3-13: the fake Spotlight index state for this file (the app never asks the real index in sandbox runs).
   index="$(/usr/bin/plutil -extract indexStatus raw -o - "$SCEN_DIR/$n.json" 2>/dev/null || echo disabled)"
   case "$index" in enabled|disabled|unknown) ;; *) index=disabled ;; esac
-  launch "$dir" "$log" --scenario "$SCEN_DIR/$n.json" --scenario-output "$dir/result.json" --index-status "$index"
+  # P4-23: launchArguments ["--keymap", "<name>.json"] (the only allowed form, ScenarioFile.isValidLaunchArguments): the
+  # file comes from Tests/Scenarios/keymaps and is copied into this scenario's sandbox before launch.
+  local extra=() flag keymap
+  flag="$(/usr/bin/plutil -extract launchArguments.0 raw -o - "$SCEN_DIR/$n.json" 2>/dev/null || true)"
+  if [ -n "$flag" ]; then
+    keymap="$(/usr/bin/plutil -extract launchArguments.1 raw -o - "$SCEN_DIR/$n.json" 2>/dev/null || true)"
+    case "$keymap" in *[!a-z0-9.-]*|"") keymap="" ;; *.json) ;; *) keymap="" ;; esac
+    if [ "$flag" != "--keymap" ] || [ -z "$keymap" ] || [ ! -f "$SCEN_DIR/keymaps/$keymap" ]; then
+      ms=0; act=false; msg="bad launchArguments ($flag $keymap): only --keymap <file in Tests/Scenarios/keymaps>"; return 0
+    fi
+    mkdir -p "$dir" && cp "$SCEN_DIR/keymaps/$keymap" "$dir/$keymap" || exit 2
+    extra=(--keymap "$dir/$keymap")
+  fi
+  launch "$dir" "$log" --scenario "$SCEN_DIR/$n.json" --scenario-output "$dir/result.json" --index-status "$index" ${extra[@]+"${extra[@]}"}
   await_app "$TIMEOUT"
   out="$dir/result.json"
   ms=0; act=false

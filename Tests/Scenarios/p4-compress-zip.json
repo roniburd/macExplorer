@@ -1,0 +1,8 @@
+{"name": "p4-compress-zip",
+ "fixture": {"files": ["photos/a.jpg"], "dirs": ["photos"]},
+ "steps": [
+  {"click": "photos"}, {"command": "compressZip"},
+  {"waitFor": {"rows": ["photos", "photos.zip"], "filesExist": ["photos.zip", "photos/a.jpg"], "selection": ["photos.zip"]}, "timeoutMs": 10000},
+  {"key": "cmd+z"},
+  {"waitFor": {"rows": ["photos"], "filesAbsent": ["photos.zip"]}, "timeoutMs": 10000}
+ ]}

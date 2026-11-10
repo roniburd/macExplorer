@@ -13,11 +13,13 @@ final class CatalogTests: XCTestCase {
 
     func testEveryFamilyIsPresent() {
         let families = Set(Catalog.all.map { String($0.name.split(separator: ".")[0]) })
-        XCTAssertEqual(families, ["browse", "ops", "conflict", "clip", "undo", "watch", "xvol", "crash", "search"])
+        XCTAssertEqual(families, ["browse", "ops", "conflict", "clip", "undo", "watch", "xvol", "crash", "search",
+                                  "archive", "batch", "acl", "icon", "keymap"])     // P4-23 (no tags, helper, network, dual pane)
     }
 
     func testEveryJobKindIsExercised() {
-        for needle in ["copy", "move", "trash", "delete", "duplicate", "newItems", "rename", "alias", "symlink", "chmod", "setAttributes"] {
+        for needle in ["copy", "move", "trash", "delete", "duplicate", "newItems", "rename", "alias", "symlink", "chmod", "setAttributes",
+                       "compress", "extract", "batch", "acl", "customIcon", "keymap"] {
             XCTAssertTrue(Catalog.all.contains { $0.name.lowercased().contains(needle.lowercased()) }, needle)
         }
     }
@@ -30,6 +32,15 @@ final class CatalogTests: XCTestCase {
                                "search.resultsFollowFileOps", "search.savedSearchRoundTrip", "search.crawlDoesNotCrossImage"])
     }
 
+    /// P4-23: the Phase 4 scenarios (Review Focus 1, 2 and 4 end to end; ACL, custom icon and keymap round trips).
+    func testPhase4FamiliesAreComplete() {
+        let names = Set(Catalog.all.map(\.name).filter { ["archive.", "batch.", "acl.", "icon.", "keymap."].contains(where: $0.hasPrefix) })
+        XCTAssertEqual(names, ["archive.compressExtractRoundTrip", "archive.appleArchiveNextFreeName", "archive.unsafeRefused",
+                               "batch.renameCycleAndUndo", "batch.renameSwapAndChain", "batch.renameCrashRecovery",
+                               "acl.editUndo", "icon.setCustomIconUndo", "keymap.importRejectsConflicts", "keymap.exportImportRoundTrip"])
+        XCTAssertFalse(Catalog.all.contains { $0.name.lowercased().contains("tag") }, "Phase 4 tags were removed (owner decision)")
+    }
+
     func testFilterSelectsBySubstring() {
         XCTAssertEqual(Catalog.select(nil).count, Catalog.all.count)
         XCTAssertFalse(Catalog.select("clip.").isEmpty)
@@ -40,6 +51,7 @@ final class CatalogTests: XCTestCase {
     func testRequirementsAreDeclared() {
         for s in Catalog.all where s.name.hasPrefix("xvol.") { XCTAssertEqual(s.requires, .diskImages, s.name) }
         for s in Catalog.all where s.name.hasPrefix("crash.") { XCTAssertEqual(s.requires, .helperProcess, s.name) }
+        XCTAssertEqual(Catalog.all.first { $0.name == "batch.renameCrashRecovery" }?.requires, .helperProcess)
         XCTAssertEqual(Catalog.all.first { $0.name == "search.crawlDoesNotCrossImage" }?.requires, .diskImages)
     }
 }

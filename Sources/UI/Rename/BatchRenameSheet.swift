@@ -54,6 +54,7 @@ final class BatchRenameSheet {
         window.beginSheet(sheet.panel) { _ in
             MainActor.assumeIsolated { open[ObjectIdentifier(window)] = nil }
         }
+        sheet.focusFindField()
         return sheet
     }
 
@@ -64,13 +65,35 @@ final class BatchRenameSheet {
 
     func cancel() { close() }
 
-    /// The Rename button: runs the job when the preview allows it, closing the sheet right away.
-    func rename() {
-        guard model.canApply else { NSSound.beep(); return }
-        let model = self.model
-        Task { _ = await model.apply() }
-        close()
+    /// The Find field takes the keyboard when the sheet opens (also its initial first responder).
+    private func focusFindField() {
+        panel.contentView?.layoutSubtreeIfNeeded()
+        guard let field = Self.firstTextField(in: panel.contentView) else { return }
+        panel.initialFirstResponder = field
+        panel.makeFirstResponder(field)
     }
+
+    private static func firstTextField(in view: NSView?) -> NSTextField? {
+        guard let view else { return nil }
+        if let field = view as? NSTextField, field.isEditable { return field }
+        for sub in view.subviews { if let found = firstTextField(in: sub) { return found } }
+        return nil
+    }
+
+    /// The Rename button (Return): waits for a preview still being computed (Return right after typing), then runs the
+    /// job and closes the sheet; a preview that blocks keeps the sheet open (beep).
+    func rename() {
+        let model = self.model
+        renameTask = Task { [weak self] in
+            await model.waitForPreview()
+            guard model.canApply else { NSSound.beep(); return }
+            self?.close()
+            _ = await model.apply()
+        }
+    }
+
+    /// Tests: the Rename press in flight.
+    private(set) var renameTask: Task<Void, Never>?
 
     private func close() {
         if let parent, panel.sheetParent === parent { parent.endSheet(panel) } else { panel.orderOut(nil) }
@@ -149,7 +172,7 @@ struct BatchRenameView: View {
                     .accessibilityIdentifier("macx.batchRename.cancel")
                 Button(L10n.string("Rename"), action: rename)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(!model.canApply)
+                    .disabled(!model.canApply && !model.isComputing)   // Return right after typing waits for the preview
                     .accessibilityIdentifier("macx.batchRename.apply")
             }
         }

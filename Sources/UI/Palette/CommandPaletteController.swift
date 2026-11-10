@@ -200,7 +200,9 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         panel.titlebarAppearsTransparent = true
         panel.isMovable = false
         panel.isReleasedWhenClosed = false
-        panel.hidesOnDeactivate = true
+        // UI scenario runs never activate the app (ScenarioDriver pins the key window instead), so a panel that hides on
+        // deactivation would never show there.
+        panel.hidesOnDeactivate = context.options.scenario == nil
         panel.animationBehavior = .utilityWindow
         for button: NSWindow.ButtonType in [.closeButton, .miniaturizeButton, .zoomButton] {
             panel.standardWindowButton(button)?.isHidden = true

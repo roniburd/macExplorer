@@ -78,6 +78,10 @@ enum ScenarioFixtures {
         }
         for (path, text) in (fixture.contents ?? [:]).sorted(by: { $0.key < $1.key }) { try write(path, Data(text.utf8)) }
         for (path, count) in (fixture.binary ?? [:]).sorted(by: { $0.key < $1.key }) { try write(path, binaryData(count)) }
+        // Phase 4 (P4-23): crafted archives (validated kinds only).
+        for (path, kind) in (fixture.archives ?? [:]).sorted(by: { $0.key < $1.key }) where kind == "evil-tar" {
+            try write(path, traversalTar())
+        }
         for (dir, count) in (fixture.bulk ?? [:]).sorted(by: { $0.key < $1.key }) {
             let url = try target(dir)
             do { try fm.createDirectory(at: url, withIntermediateDirectories: true) } catch { throw .io(dir, Int32((error as NSError).code)) }
@@ -139,6 +143,28 @@ enum ScenarioFixtures {
 
     /// `count` deterministic bytes (SplitMix64, seed 0x6D6163) with the high bit set and byte 0 = 0x00, so the
     /// data is never valid text (the text sniffer sees a NUL and invalid UTF-8).
+    /// A tar whose only entry is `../escape.txt` (Extract Here must refuse it before writing anything).
+    static func traversalTar() -> Data {
+        let contents = Data("escaped".utf8)
+        var h = [UInt8](repeating: 0, count: 512)
+        func put(_ s: String, _ offset: Int, _ len: Int) { for (i, b) in s.utf8.prefix(len).enumerated() { h[offset + i] = b } }
+        func octal(_ v: Int, _ offset: Int, _ len: Int) {
+            let digits = String(v, radix: 8)
+            put(String(repeating: "0", count: max(0, len - 1 - digits.count)) + digits, offset, len - 1)
+        }
+        put("../escape.txt", 0, 100); octal(0o644, 100, 8); octal(0, 108, 8); octal(0, 116, 8)
+        octal(contents.count, 124, 12); octal(1_700_000_000, 136, 12)
+        for i in 148..<156 { h[i] = 0x20 }
+        h[156] = 0x30; put("ustar", 257, 6); put("00", 263, 2)
+        let digits = String(h.reduce(0) { $0 + Int($1) }, radix: 8)
+        put(String(repeating: "0", count: max(0, 6 - digits.count)) + digits + "\0 ", 148, 8)
+        var out = Data(h)
+        out.append(contents)
+        out.append(Data(count: (512 - contents.count % 512) % 512))
+        out.append(Data(count: 1024))
+        return out
+    }
+
     static func binaryData(_ count: Int) -> Data {
         var seed: UInt64 = 0x6D6163
         func next() -> UInt64 {
@@ -302,6 +328,7 @@ enum ScenarioFixtures {
     static func topLevelVisibleNames(_ fixture: ScenarioFile.Fixture) -> Set<String> {
         let hidden = Set(fixture.hidden ?? [])
         let phase3 = Array((fixture.contents ?? [:]).keys) + Array((fixture.binary ?? [:]).keys) + Array((fixture.bulk ?? [:]).keys)
+            + Array((fixture.archives ?? [:]).keys)
         return Set((fixture.files + fixture.dirs + (fixture.images ?? []) + phase3).filter { !hidden.contains($0) }
             .compactMap { $0.split(separator: "/").first.map(String.init) }
             .filter { !$0.hasPrefix(".") })

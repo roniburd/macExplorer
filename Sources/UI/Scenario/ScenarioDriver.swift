@@ -117,6 +117,7 @@ final class ScenarioDriver {
             let scenario = try await loadScenario()
             result.name = scenario.name
             try await prepare(scenario.fixture)
+            if scenario.steps.contains(where: { $0.answerError != nil }) { decorator?.interceptErrors() }   // installed by prepare
             for (index, step) in scenario.steps.enumerated() {
                 do {
                     try await perform(step)
@@ -370,6 +371,9 @@ final class ScenarioDriver {
         else if let action = step.answerConflict {
             try await answerConflict(action, all: step.applyToAll ?? false, timeout: milliseconds(step.timeoutMs, default: Self.defaultWaitMs))
         }
+        else if let raw = step.answerError {
+            try await answerError(raw, timeout: milliseconds(step.timeoutMs, default: Self.defaultWaitMs))
+        }
         else if let title = step.answerAlert { try await answerAlert(title, timeout: milliseconds(step.timeoutMs, default: Self.defaultWaitMs)) }
         else if let expectation = step.waitFor { try await waitFor(expectation, timeout: milliseconds(step.timeoutMs, default: Self.defaultWaitMs)) }
         else if let raw = step.expect {
@@ -404,8 +408,11 @@ final class ScenarioDriver {
 
     /// Keys and typing go to a sheet attached to the pinned window (P3-13: the Save Search… name prompt), with its
     /// initial first responder focused, as a real sheet takes the keyboard; the pin returns to the window afterwards.
+    /// P4-23: a key-capable child window of the pinned window (the command palette) takes the keyboard the same way.
     private func toSheetIfPresent(_ body: () async throws -> Void) async throws {
-        guard let pinned = MacxApplication.scenarioKeyWindow, let sheet = pinned.attachedSheet, sheet.isVisible else {
+        guard let pinned = MacxApplication.scenarioKeyWindow,
+              let sheet = pinned.attachedSheet.flatMap({ $0.isVisible ? $0 : nil })
+                ?? pinned.childWindows?.last(where: { $0.isVisible && $0.canBecomeKey }) else {
             return try await body()
         }
         if !((sheet.firstResponder as? NSText)?.isFieldEditor ?? false), let initial = sheet.initialFirstResponder {
@@ -659,6 +666,19 @@ final class ScenarioDriver {
         try await lanes.perform(on: .unknown) { _ in try ScenarioFixtures.setFinderTags(tags, at: url, relative: path) }
     }
 
+    /// P4-23: answers the pending file-operation error (asked through the decorator) and closes its dialog.
+    private func answerError(_ raw: String, timeout: Duration) async throws {
+        guard let resolution = ScenarioFile.errorAnswers[raw], let decorator else { throw DriverError("bad error answer '\(raw)'") }
+        try await waitUntil("an error to be asked", timeout: timeout) { decorator.pendingErrorCount > 0 }
+        let controller = try browserWindow()
+        try await waitUntil("the error dialog on the origin window", timeout: .milliseconds(Self.defaultWaitMs)) {
+            controller.window?.attachedSheet != nil
+        }
+        _ = decorator.answerError(resolution)
+        if let window = controller.window, let sheet = window.attachedSheet { window.endSheet(sheet) }
+        try await fence()
+    }
+
     private func answerConflict(_ raw: String, all: Bool, timeout: Duration) async throws {
         guard let action = ConflictAction(rawValue: raw), let decorator else { throw DriverError("bad conflict answer '\(raw)'") }
         try await waitUntil("a conflict to be asked", timeout: timeout) { decorator.pendingCount > 0 }
@@ -781,6 +801,7 @@ final class ScenarioDriver {
         s.editingAddress = w.probeIsEditingAddress
         s.viewMode = w.probeViewMode.rawValue
         s.sheetPresent = w.window?.attachedSheet != nil
+        s.sheetTitle = w.probeSheetTitle ?? ""
         s.propertiesWindows = NSApp.windows.filter {
             $0.isVisible && ($0.identifier?.rawValue == AXID.propertiesWindow || $0.accessibilityIdentifier() == AXID.propertiesWindow)
         }.count

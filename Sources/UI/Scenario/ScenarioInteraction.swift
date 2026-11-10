@@ -11,6 +11,8 @@ final class ScenarioInteraction: FileOpInteraction {
     private struct State {
         var pending: [CheckedContinuation<ConflictResolution, Never>] = []
         var asked: Int = 0
+        var pendingErrors: [CheckedContinuation<ErrorResolution, Never>] = []
+        var interceptErrors = false
     }
     private let forward: any FileOpInteraction
     private let state = Mutex(State())
@@ -42,8 +44,29 @@ final class ScenarioInteraction: FileOpInteraction {
         return resolution
     }
 
+    /// P4-23: a scenario with an `answerError` step answers errors itself (the error dialog is SwiftUI too); the
+    /// dialog still shows on the origin window. Other scenarios keep the forwarded behaviour.
+    func interceptErrors() { state.withLock { $0.interceptErrors = true } }
+    var pendingErrorCount: Int { state.withLock { $0.pendingErrors.count } }
+
+    /// Resolves the oldest pending error; false if none is pending.
+    func answerError(_ resolution: ErrorResolution) -> Bool {
+        let next = state.withLock { s -> CheckedContinuation<ErrorResolution, Never>? in
+            s.pendingErrors.isEmpty ? nil : s.pendingErrors.removeFirst()
+        }
+        next?.resume(returning: resolution)
+        return next != nil
+    }
+
     func resolveError(_ error: FileOpError, job: JobSnapshot) async -> ErrorResolution {
-        await forward.resolveError(error, job: job)
+        guard state.withLock({ $0.interceptErrors }) else { return await forward.resolveError(error, job: job) }
+        let forward = self.forward
+        let presenter = Task { _ = await forward.resolveError(error, job: job) }   // shows the dialog; answer ignored
+        let resolution = await withCheckedContinuation { continuation in
+            state.withLock { $0.pendingErrors.append(continuation) }
+        }
+        presenter.cancel()
+        return resolution
     }
 
     func confirmInsufficientSpace(_ shortfall: SpaceShortfall, job: JobSnapshot) async -> Bool {

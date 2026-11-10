@@ -459,6 +459,7 @@ enum Bench {
             let wants: (String) -> Bool = { name in options.metrics.map { filter in filter.contains { name.hasPrefix($0) } } ?? true }
             metrics += try await FolderViewBench.run(options, wants: wants)
             metrics += try await PaletteBench.run(options, wants: wants)
+            metrics += try await BatchRenameBench.run(options, wants: wants)
             metrics += try await ScanBench.run(options, env: env, sandbox: sandbox, wants: wants)
             metrics += try await SearchMetrics.run(options, env: env, sandbox: sandbox, wants: wants)
         } catch {

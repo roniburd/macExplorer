@@ -16,6 +16,7 @@ struct ProbeSnapshot: Equatable {
     var editingAddress = false
     var viewMode = "details"
     var sheetPresent = false
+    var sheetTitle = ""                      // P4-23: "" = no sheet
     var propertiesWindows = 0
     var windowCount = 1
     var fileSizes: [String: Int] = [:]       // requested paths that exist → st_size
@@ -152,6 +153,7 @@ enum ExpectationMatcher {
         check("editingAddress", e.editingAddress, s.editingAddress)
         check("viewMode", e.viewMode, s.viewMode)
         check("sheetPresent", e.sheetPresent, s.sheetPresent)
+        check("sheetTitle", e.sheetTitle, s.sheetTitle)
         check("propertiesWindows", e.propertiesWindows, s.propertiesWindows)
         check("windowCount", e.windowCount, s.windowCount)
         for path in e.filesExist ?? [] where s.fileSizes[path] == nil { m.append("filesExist: '\(path)' is missing") }

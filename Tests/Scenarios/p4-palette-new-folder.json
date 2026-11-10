@@ -1,0 +1,8 @@
+{"name": "p4-palette-new-folder",
+ "fixture": {"files": ["a.txt"], "dirs": []},
+ "steps": [
+  {"click": "a.txt"},
+  {"key": "cmd+shift+p"}, {"sleepMs": 300},
+  {"type": "new fol"}, {"sleepMs": 200}, {"key": "return"},
+  {"waitFor": {"rowsContain": ["New Folder"], "filesExist": ["New Folder"]}, "timeoutMs": 5000}
+ ]}

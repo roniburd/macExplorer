@@ -109,6 +109,7 @@ rm -rf "$SB"                       # when you're done
 | `--scenario <file>` | Run one UI scenario and quit. |
 | `--scenario-output <file>` | Where the scenario writes its result. |
 | `--smoke-exit-after <seconds>` | Write `<state-dir>/smoke.json` and quit. |
+| `--keymap <file>` | Import a keymap file (the Settings › Shortcuts export format) into the sandbox settings before any window opens. Needs `--state-dir`. A file that can't be used exits with status 65. |
 
 Sandboxed runs never query the real Spotlight index and never download from iCloud.
 
@@ -133,6 +134,7 @@ Each runner deletes its folders when it finishes.
 | `swift run -c release macx-bench` | Benchmarks on 1k, 10k and 100k files | minutes |
 | `scripts/check-layering.sh` | Import rules and test-safety rules | seconds |
 | `scripts/verify-phase1.sh` | All of the above, then checks nothing was left behind | longest |
+| `scripts/verify-phase4.sh` | `verify-phase1.sh`, then checks every Phase 4 core family, `p4-*` UI scenario and Phase 4 budget passed | longest |
 
 Run the full suite with `--parallel`.
 Serial `swift test` takes 6–7 minutes.
@@ -145,6 +147,10 @@ Only one can run on the Mac at a time, across all worktrees.
 - Scenario files are in `Tests/Scenarios/`.
 - Their schema is in `Sources/UI/Scenario/ScenarioFile.swift`.
 - They run in a separate app (`com.macexplorer.app.scenarios`), so they never change a real install's settings.
+- A scenario can pass `"launchArguments": ["--keymap", "<name>.json"]`. The file comes from `Tests/Scenarios/keymaps/`
+  and is copied into that scenario's sandbox first. No other launch argument is allowed.
+- `"answerError": "skip"` (or another `ErrorResolution` case) answers a file-operation error dialog, and
+  `"archives": {"<path>": "evil-tar"}` makes a crafted tar with a `../escape.txt` entry.
 
 ### Benchmarks
 
@@ -153,6 +159,8 @@ Only one can run on the Mac at a time, across all worktrees.
 | `--metrics search-` | Run only the metrics whose name starts with `search-` |
 | `--check-budgets` | Fail when a metric is over its budget (Apple Silicon only) |
 | `--compare baseline.json` | Fail when a metric is much slower than the baseline |
+
+Phase 4 adds two in-memory budgets: `palette.rank` (< 2 ms) and `batchRename.preview` (10,000 names < 100 ms).
 
 Output is JSON with the median and p90 of each metric.
 
@@ -324,7 +332,7 @@ Every item is required.
 
 | # | Run | Expect |
 |---|---|---|
-| 1 | `scripts/verify-phase1.sh` | `verify-phase1: N/N gates passed`. Any metric over budget blocks the release. |
+| 1 | `scripts/verify-phase4.sh` | `[verify-phase4] OK` (it runs `verify-phase1.sh` first). Any metric over budget blocks the release. |
 | 2 | `scripts/ui-ax-smoke.sh` | `PASS ui-ax-smoke` |
 
 ### Performance (Instruments)
@@ -373,6 +381,11 @@ Use only a test folder you made on that disk for these checks.
 | 17 | **Columns keyboard (⌘3):** ↓/↑ select and open the next column. → enters it, ← goes back. Holding ↓ leaves one child column. Space opens Quick Look. Middle-click opens a tab. Tab moves focus out. |
 | 18 | **Live Spotlight:** see below. |
 | 19 | **Search and preview:** see below. |
+| 20 | **Custom icon:** in a test folder you made, drop a PNG on a file's icon in Properties. Finder shows the same icon. ⌘Z removes it in both apps. |
+| 21 | **Access Control:** on a file you made, add an "Everyone: Read" entry. `ls -le` lists it. On a file owned by another user (e.g. in `/Library`), the list is read-only and nothing can be changed. |
+| 22 | **Keymap export/import:** Settings › Shortcuts › Export… to a test folder, switch to the Finder preset, then Import… the file. Your shortcuts come back. |
+| 23 | **Archives from elsewhere:** Extract Here on a zip made by Windows and a `.tar.gz` from the web (copies in a test folder). The contents match `ditto -x`/`tar -x`. |
+| 24 | **Batch rename on a USB drive (exFAT/FAT):** rename `A.txt` → `a.txt` and swap two names. Both work, and one ⌘Z restores them. |
 
 <details>
 <summary><b>11. Tab restoration</b> (not run yet; needs a person at an unlocked Mac)</summary>
