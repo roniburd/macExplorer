@@ -10,6 +10,7 @@ public final class Settings {
     public static let schemaVersionKey = "schemaVersion"
     public static let recentLocationsLimit = 20
     public static let lastReportedCrashesLimit = 20
+    public static let paletteRecentLimit = 20
     /// Column defaults (display order): every ColumnID at its `defaultWidth`; Phase 1's Name, Date Modified, Size
     /// and Kind visible, everything else hidden. `DetailsColumns.defaults` is this list.
     public static let defaultColumns: [ColumnSetting] = ColumnID.allCases.map {
@@ -109,6 +110,12 @@ public final class Settings {
         set { recents = Array(newValue.prefix(Self.recentLocationsLimit)) }
     }
     private var recents: [String] { didSet { save(recents, Key.recentLocations) } }
+    /// The command palette's most recently run rows (P4-03): `PaletteTarget.encoded` strings, ≤ 20, most recent first.
+    public var paletteRecent: [String] {
+        get { paletteRecents }
+        set { paletteRecents = Array(newValue.prefix(Self.paletteRecentLimit)) }
+    }
+    private var paletteRecents: [String] { didSet { save(paletteRecents, Key.paletteRecent) } }
     private var tccOutcomes: [ProtectedLocation: TCCOutcome] { didSet { save(tccOutcomes.map(TCCRecord.init), Key.tccOutcomes) } }
 
     /// `diagnostic` receives one message per stored value that exists but can't be decoded (key-bindings spec §6);
@@ -162,6 +169,7 @@ public final class Settings {
         toolbarNewTabItemOffered = Self.load(Bool.self, Key.toolbarNewTabItemOffered, from: storage) ?? false
         lastLocation = Self.load(URL.self, Key.lastLocation, from: storage)
         recents = Array((Self.load([String].self, Key.recentLocations, from: storage) ?? []).prefix(Self.recentLocationsLimit))
+        paletteRecents = Array((Self.load([String].self, Key.paletteRecent, from: storage) ?? []).prefix(Self.paletteRecentLimit))
         let records = Self.load([TCCRecord].self, Key.tccOutcomes, from: storage) ?? []
         tccOutcomes = Dictionary(records.map { ($0.location, $0.outcome) }, uniquingKeysWith: { _, last in last })
         updateChannel = Self.load(UpdateChannel.self, Key.updateChannel, from: storage) ?? .release
@@ -192,6 +200,15 @@ public final class Settings {
         list.insert(path, at: 0)
         recentLocations = list
     }
+
+    /// Moves `target` to the front of `paletteRecent` (P4-03).
+    public func notePaletteUsed(_ target: PaletteTarget) {
+        let entry = target.encoded
+        paletteRecent = [entry] + paletteRecent.filter { $0 != entry }
+    }
+
+    /// `paletteRecent` decoded; entries this version can't read (a newer version's commands) are skipped.
+    public var paletteRecentTargets: [PaletteTarget] { paletteRecent.compactMap(PaletteTarget.init(encoded:)) }
 
     public func markCrashReported(_ fileName: String) {
         lastReportedCrashes = Array(([fileName] + lastReportedCrashes.filter { $0 != fileName }).prefix(Self.lastReportedCrashesLimit))
@@ -250,6 +267,7 @@ public final class Settings {
         static let searchScope = "searchScope", searchMode = "searchMode", searchIncludesPackages = "searchIncludesPackages"
         static let resultsColumns = "resultsColumns", previewRendersMarkdown = "previewRendersMarkdown"
         static let previewReflowsDocuments = "previewReflowsDocuments", previewZoom = "previewZoom"
+        static let paletteRecent = "paletteRecent"
     }
 
     private struct TCCRecord: Codable {

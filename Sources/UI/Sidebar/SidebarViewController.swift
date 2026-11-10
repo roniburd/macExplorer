@@ -121,6 +121,7 @@ final class SidebarViewController: CommandHandlingViewController {
         .toggleFolderSizes, .applyViewToAllFolders,
         .useViewAsDefault, .resetFolderView,
         .togglePreviewPane,                                  // the window's preview pane (P3-12)
+        .showCommandPalette,                                 // P4-03: opens over the window from any focus
     ]
 
     // MARK: view

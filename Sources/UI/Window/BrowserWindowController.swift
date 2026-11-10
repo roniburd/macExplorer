@@ -116,6 +116,13 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
         }
     }
 
+    /// Go › Command Palette… (⌘⇧P, P4-03): opens the palette over this window; its rows act on the current focus.
+    @discardableResult
+    func showCommandPalette() -> CommandPaletteController? {
+        guard let window else { return nil }
+        return CommandPaletteController.show(over: window, context: context)
+    }
+
     /// The toolbar's address bar (Phase 4 tests submit through it).
     var addressBar: AddressBarView { toolbarController.addressBar }
 

@@ -28,6 +28,9 @@ enum AXID {
     static let shortcutsPreset = "macx.settings.shortcuts.preset"          // P4-02
     static let shortcutsImport = "macx.settings.shortcuts.import"
     static let shortcutsExport = "macx.settings.shortcuts.export"
+    static let palette = "macx.palette"                                  // P4-03
+    static let paletteField = "macx.palette.field"
+    static let paletteTable = "macx.palette.table"
     static let shortcutsKeymapStatus = "macx.settings.shortcuts.keymapStatus"
     static let onboardingSheet = "macx.onboarding"       // additive, P1-30
     static let updateBadge = "macx.updateBadge"

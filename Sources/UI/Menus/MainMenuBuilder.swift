@@ -150,7 +150,8 @@ import Core
         [
             item(.back), item(.forward), item(.up), item(.openContainingFolder), .separator(),
             item(.focusAddressBar), item(.focusSearch), .separator(),
-            item(.cycleFocusForward), item(.cycleFocusBackward),
+            item(.cycleFocusForward), item(.cycleFocusBackward), .separator(),
+            item(.showCommandPalette),
         ]
     }
 

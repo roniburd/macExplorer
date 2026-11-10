@@ -2468,6 +2468,17 @@
         }
       }
     },
+    "Go to %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Go to %@"
+          }
+        }
+      }
+    },
     "Go to Location…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3586,6 +3597,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No"
+          }
+        }
+      }
+    },
+    "No Matches" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Matches"
           }
         }
       }
@@ -5802,6 +5824,17 @@
         }
       }
     },
+    "Type a command or folder name" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type a command or folder name"
+          }
+        }
+      }
+    },
     "Type identifier" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6018,6 +6051,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "View"
+          }
+        }
+      }
+    },
+    "View as Columns" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View as Columns"
+          }
+        }
+      }
+    },
+    "View as Details" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View as Details"
+          }
+        }
+      }
+    },
+    "View as Icons" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View as Icons"
           }
         }
       }
