@@ -17,7 +17,7 @@ enum JobTitle {
         case .deleting: return String(format: L10n.string("Deleting %@"), what)
         case .creating:
             return to.map { String(format: L10n.string("Creating %@ in %@"), what, $0) } ?? String(format: L10n.string("Creating %@"), what)
-        case .renaming: return String(format: L10n.string("Renaming %@"), what)
+        case .renaming, .batchRenaming: return String(format: L10n.string("Renaming %@"), what)
         case .makingAlias: return String(format: L10n.string("Making an alias of %@"), what)
         case .makingSymlink: return String(format: L10n.string("Making a symbolic link to %@"), what)
         case .changingPermissions: return String(format: L10n.string("Changing permissions of %@"), what)

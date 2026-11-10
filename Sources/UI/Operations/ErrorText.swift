@@ -49,7 +49,7 @@ extension ErrorText {
         case .deleting?: "You don't have permission to delete '%@'."
         case .duplicating?: "You don't have permission to duplicate '%@'."
         case .creating?: "You don't have permission to create '%@'."
-        case .renaming?: "You don't have permission to rename '%@'."
+        case .renaming?, .batchRenaming?: "You don't have permission to rename '%@'."
         case .makingAlias?, .makingSymlink?: "You don't have permission to make a link to '%@'."
         case .compressing?: "You don't have permission to compress '%@'."
         case .extracting?: "You don't have permission to extract '%@'."

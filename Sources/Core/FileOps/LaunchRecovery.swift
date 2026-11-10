@@ -12,7 +12,7 @@ public struct RecoveryReport: Sendable, Equatable {
 }
 
 public enum LaunchRecovery {
-    /// Order: interrupted two-step renames, then journaled partials (only names matching PartialName), then
+    /// Order: interrupted batch renames (every item back at its original name, P4-11), interrupted two-step renames, then journaled partials (only names matching PartialName), then
     /// trashed destinations whose original path is free. Every job in the journal is then finished.
     public static func run(journal: Journal, lanes: LanePool) async -> RecoveryReport {
         let entries = await journal.entries()
@@ -27,6 +27,10 @@ public enum LaunchRecovery {
     static func recover(_ entries: [JournalEntry], _ lane: LaneContext) -> RecoveryReport {
         assertOffMain()
         var report = RecoveryReport()
+        for case .batchRename(_, let steps) in entries {
+            lane.heartbeat()
+            report.restoredRenames += BatchRenameJob.recover(steps, heartbeat: lane.heartbeat)
+        }
         for case .twoStepRename(_, let temp, let original, _) in entries {
             lane.heartbeat()
             if PosixFS.exists(temp.path), !PosixFS.exists(original.path), PosixFS.rename(temp.path, original.path) == 0 {

@@ -6,11 +6,25 @@ public enum JournalEntry: Sendable, Codable, Equatable {
     case trashedDestination(job: JobID, original: URL, trashURL: URL)
     case twoStepRename(job: JobID, temporary: URL, original: URL, target: URL)
     case jobStarted(job: JobID, description: JobDescription)
+    /// A batch rename's plan, recorded before its first rename (P4-11). Launch recovery puts every item back.
+    case batchRename(job: JobID, steps: [BatchRenameStep])
 
     public var job: JobID {
         switch self {
-        case .partial(let j, _), .trashedDestination(let j, _, _), .twoStepRename(let j, _, _, _), .jobStarted(let j, _): j
+        case .partial(let j, _), .trashedDestination(let j, _, _), .twoStepRename(let j, _, _, _), .jobStarted(let j, _),
+             .batchRename(let j, _): j
         }
+    }
+}
+
+/// One item of a batch rename: original → temporary (phase 1) → target (phase 2). `identity` is the item's (lstat).
+public struct BatchRenameStep: Sendable, Codable, Equatable {
+    public var original: URL
+    public var temporary: URL
+    public var target: URL
+    public var identity: FileIdentity
+    public init(original: URL, temporary: URL, target: URL, identity: FileIdentity) {
+        self.original = original; self.temporary = temporary; self.target = target; self.identity = identity
     }
 }
 

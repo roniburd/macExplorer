@@ -12,8 +12,20 @@ enum UndoStep: Sendable, Equatable {
     case restoreMode(URL, expected: UInt16, restore: UInt16)
     case restoreAttributes(URL, expected: AttributeSnapshot, restore: AttributeSnapshot)
     case restoreIcon(URL, expected: IconImageData?, restore: IconImageData?)
+    /// Two or more consecutive renames in one folder (a batch rename, or its undo): reversed together by the
+    /// cycle-safe batch executor, so swaps and cycles come back too (P4-11).
+    case batchRenameBack([BatchRenameBackItem])
 
     var isRestoreMode: Bool { if case .restoreMode = self { true } else { false } }
+    /// Items the step counts for in the job's progress.
+    var itemCount: Int { if case .batchRenameBack(let items) = self { items.count } else { 1 } }
+}
+
+/// One item of `UndoStep.batchRenameBack`: the item at `current` (still `identity`) gets `original`'s name back.
+struct BatchRenameBackItem: Sendable, Equatable {
+    var current: URL
+    var original: URL
+    var identity: FileIdentity
 }
 
 /// Body of `.undo(record)` and `.redo(record)` jobs (§6.6). Never overwrites; checks identity first.
@@ -25,7 +37,7 @@ enum UndoPlanner {
     static func steps(for record: JobRecord) -> [UndoStep]? {
         guard record.isUndoable else { return nil }
         let removesLinks = record.verb == .makingAlias || record.verb == .makingSymlink
-        return record.actions.reversed().compactMap { action -> UndoStep? in
+        let single = record.actions.reversed().compactMap { action -> UndoStep? in
             switch action {
             case .created(let u, let id): removesLinks ? .remove(u, id) : .trash(u, id)
             case .createdDirectory(let u, let id): .removeDirectoryIfEmpty(u, id)
@@ -39,26 +51,59 @@ enum UndoPlanner {
             case .deleted: nil
             }
         }
+        return groupingBatchRenames(single)
+    }
+
+    /// Runs of at least two consecutive same-folder `.renameBack` steps become one `.batchRenameBack` (order kept).
+    static func groupingBatchRenames(_ steps: [UndoStep]) -> [UndoStep] {
+        func folder(_ u: URL) -> String { u.deletingLastPathComponent().standardizedFileURL.path }
+        func sameFolderRename(_ step: UndoStep) -> (folder: String, item: BatchRenameBackItem)? {
+            guard case .renameBack(let current, let original, let id) = step, folder(current) == folder(original) else { return nil }
+            return (folder(current), BatchRenameBackItem(current: current, original: original, identity: id))
+        }
+        var out: [UndoStep] = []
+        var run: [BatchRenameBackItem] = [], runFolder: String?
+        func flush() {
+            if run.count >= 2 {
+                out.append(.batchRenameBack(run))
+            } else {
+                out += run.map { .renameBack(current: $0.current, original: $0.original, $0.identity) }
+            }
+            run = []; runFolder = nil
+        }
+        for step in steps {
+            if let r = sameFolderRename(step) {
+                if runFolder != r.folder { flush(); runFolder = r.folder }
+                run.append(r.item)
+            } else {
+                flush()
+                out.append(step)
+            }
+        }
+        flush()
+        return out
     }
 
     static func run(_ ctx: JobContext, _ record: JobRecord) async {
         guard let steps = steps(for: record) else { return }
-        ctx.setTotals(items: steps.count, bytes: nil)
+        ctx.setTotals(items: steps.reduce(0) { $0 + $1.itemCount }, bytes: nil)
         ctx.setState(.running)
-        var index = 0
+        var index = 0, done = 0
         while index < steps.count {
             guard await ctx.checkpoint() else { return }
             if steps[index].isRestoreMode {
                 var end = index
                 while end < steps.count, steps[end].isRestoreMode { end += 1 }
                 let finished = await restoreModes(ctx, Array(steps[index..<end]))
+                done += end - index
                 index = end
-                ctx.setItemsDone(index)
+                ctx.setItemsDone(done)
                 guard finished else { return }
             } else {
                 let result = await perform(ctx, steps[index])
+                done += steps[index].itemCount
                 index += 1
-                ctx.setItemsDone(index)
+                ctx.setItemsDone(done)
                 if result == .cancelled { return }
             }
         }
@@ -74,6 +119,13 @@ enum UndoPlanner {
         case .restoreMode: return await restoreModes(ctx, [step]) ? .done : .cancelled
         case .restoreAttributes(let u, let e, let r): return await restoreAttributes(ctx, u, expected: e, restore: r)
         case .restoreIcon(let u, let e, let r): return await IconJobs.restoreIcon(ctx, u, expected: e, restore: r)
+        case .batchRenameBack(let items):
+            // The executor checks each item's identity (gone → sourceGone, another file → changedDuringMove).
+            let actions = await BatchRenameJob.execute(ctx, items.map {
+                BatchRenameJob.Item(url: $0.current, newName: $0.original.lastPathComponent, expected: $0.identity)
+            })
+            for a in actions { ctx.record(a) }
+            return ctx.control.isCancelled ? .cancelled : .done
         }
     }
 

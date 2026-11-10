@@ -70,6 +70,8 @@ public indirect enum JobKind: Sendable, Equatable {
     case compress([URL], ArchiveFormat)
     /// Extract Here: the archive's contents next to it (P4-10).
     case extract(URL)
+    /// Several items renamed at once, cycle-safe (swaps, chains, case-only), one undo (P4-11).
+    case batchRename([BatchRenamePair])
     case undo(JobRecord)
     case redo(JobRecord)
 }
@@ -83,6 +85,7 @@ extension JobKind {
              .compress(let u, _): return u
         case .newItem(_, let d): return [d]
         case .rename(let u, _), .chmodRecursive(let u, _), .extract(let u): return [u]
+        case .batchRename(let pairs): return pairs.flatMap { [$0.url, $0.url.deletingLastPathComponent().appending(path: $0.newName)] }
         case .undo(let r), .redo(let r): return r.actions.flatMap(\.urls)
         }
     }
@@ -103,6 +106,7 @@ extension JobKind {
         case .setCustomIcon: .changingIcon
         case .compress: .compressing
         case .extract: .extracting
+        case .batchRename: .batchRenaming
         case .undo: .undoing
         case .redo: .redoing
         }
@@ -122,6 +126,9 @@ extension JobKind {
         case .rename(let u, _), .chmodRecursive(let u, _), .extract(let u):
             return JobDescription(verb: verb, itemCount: 1, firstItemName: u.lastPathComponent,
                                   sourceFolderName: folderName(u), destinationFolderName: nil)
+        case .batchRename(let pairs):
+            return JobDescription(verb: verb, itemCount: pairs.count, firstItemName: pairs.first?.url.lastPathComponent,
+                                  sourceFolderName: folderName(pairs.first?.url), destinationFolderName: nil)
         case .undo(let r), .redo(let r):
             return JobDescription(verb: verb, itemCount: r.actions.count, firstItemName: r.actions.first?.urls.first?.lastPathComponent,
                                   sourceFolderName: nil, destinationFolderName: nil)
@@ -142,7 +149,7 @@ public enum JobState: Sendable, Equatable { case queued, planning, running, paus
 
 public enum JobVerb: String, Sendable, Codable {
     case copying, moving, trashing, deleting, duplicating, creating, renaming, makingAlias, makingSymlink,
-         changingPermissions, changingAttributes, changingAccess, changingIcon, compressing, extracting, undoing, redoing
+         changingPermissions, changingAttributes, changingAccess, changingIcon, compressing, extracting, batchRenaming, undoing, redoing
 }
 
 /// UI formats "Copying 1,204 items from Downloads to Backup".

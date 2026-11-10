@@ -5,4 +5,6 @@ public enum FaultPoint: String, Sendable, CaseIterable {
     case modeBatchCheckpoint
     /// A compress (or extract) job's tool was just spawned (on the lane).
     case archiveToolStarted
+    /// A batch rename moved every item to its temporary name (between phase 1 and phase 2; job code).
+    case batchRenameStaged
 }

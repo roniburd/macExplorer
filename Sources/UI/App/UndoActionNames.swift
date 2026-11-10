@@ -19,6 +19,7 @@ public enum UndoActionNames {
         case .changingIcon: L10n.string("Change Icon")
         case .compressing: L10n.string("Compress")
         case .extracting: L10n.string("Extract")
+        case .batchRenaming: L10n.string("Rename")
         case .undoing: L10n.string("Undo")
         case .redoing: L10n.string("Redo")
         }

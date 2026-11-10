@@ -356,6 +356,8 @@ enum JobRunner {
             await CompressJob.compress(ctx, urls, format)
         case .extract(let url):
             await ExtractJob.extract(ctx, url)
+        case .batchRename(let pairs):
+            await BatchRenameJob.run(ctx, pairs)
         case .undo(let record), .redo(let record):
             await UndoPlanner.run(ctx, record)
         }

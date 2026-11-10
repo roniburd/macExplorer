@@ -6,8 +6,9 @@ import MacxFixtures
 
 /// Describes a job the child process runs until it SIGKILLs itself at `fault`.
 struct CrashSpec: Codable {
-    var mode: String                 // "move" | "copy"
+    var mode: String                 // "move" | "copy" | "batchRename"
     var sources: [String]
+    /// A folder path; for "batchRename" the new names (one per source, newline-separated, no "/").
     var destination: String
     var journal: String
     var trash: String
@@ -15,6 +16,12 @@ struct CrashSpec: Codable {
     var conflict: String?            // ConflictAction raw value answered for every conflict
     var forceCrossVolume: Bool
     var allowClone: Bool
+}
+
+extension CrashSpec {
+    /// Paths the sandbox guard checks besides sources, journal and trash: the destination folder. A batch rename's
+    /// destination holds plain names (checked separately), whose targets live next to the sources.
+    var destinationPaths: [String] { mode == "batchRename" ? [] : [destination] }
 }
 
 /// Entry point executed only inside the child `xctest` process (skips everywhere else).
@@ -25,7 +32,7 @@ final class CrashHelperEntry: XCTestCase {
         }
         let spec = try JSONDecoder().decode(CrashSpec.self, from: Data(raw.utf8))
         let tmp = try Sandbox.resolvedTemporaryDirectory() + "/macx-tests-"   // /private/var/…: resolvingSymlinksInPath drops /private
-        for p in spec.sources + [spec.destination, spec.journal, spec.trash] where !p.hasPrefix(tmp) {
+        for p in spec.sources + spec.destinationPaths + [spec.journal, spec.trash] where !p.hasPrefix(tmp) {
             return XCTFail("crash helper refuses a path outside a test sandbox: \(p)")
         }
         let fault = try XCTUnwrap(FaultPoint(rawValue: spec.fault))
@@ -37,8 +44,13 @@ final class CrashHelperEntry: XCTestCase {
                                 journal: Journal(fileURL: URL(filePath: spec.journal)), interaction: interaction, tuning: tuning)
         let sources = spec.sources.map { URL(filePath: $0) }
         let destination = URL(filePath: spec.destination, directoryHint: .isDirectory)
-        let kind: JobKind = spec.mode == "move" ? .move(sources: sources, destination: destination)
-                                                : .copy(sources: sources, destination: destination)
+        let kind: JobKind = switch spec.mode {
+        case "move": .move(sources: sources, destination: destination)
+        case "batchRename":
+            .batchRename(zip(sources, spec.destination.split(separator: "\n", omittingEmptySubsequences: false))
+                .map { BatchRenamePair(url: $0, newName: String($1)) })
+        default: .copy(sources: sources, destination: destination)
+        }
         // Same guard on the request actually enqueued (the child has no FileOpsTestCase sandbox to delegate to).
         for u in kind.allURLs where !u.resolvingSymlinksInPath().path.hasPrefix(tmp) && !u.path.hasPrefix(tmp) {
             return XCTFail("crash helper refuses a job URL outside a test sandbox: \(u.path)")
@@ -52,8 +64,14 @@ final class CrashHelperEntry: XCTestCase {
 extension FileOpsTestCase {
     /// Runs `spec` in a child `xcrun xctest` process of this same test bundle. Returns true if the child was SIGKILLed.
     func runCrashingChild(_ spec: CrashSpec) async throws -> Bool {
-        for p in spec.sources + [spec.destination, spec.journal, spec.trash] {
+        for p in spec.sources + spec.destinationPaths + [spec.journal, spec.trash] {
             guard p.hasPrefix(root.path + "/") else { XCTFail("outside sandbox: \(p)"); return false }
+        }
+        if spec.mode == "batchRename" {
+            let names = spec.destination.split(separator: "\n", omittingEmptySubsequences: false)
+            guard names.count == spec.sources.count, names.allSatisfy({ !$0.isEmpty && !$0.contains("/") && $0 != ".." }) else {
+                XCTFail("batchRename names must be plain names, one per source"); return false
+            }
         }
         let bundle = Bundle(for: CrashHelperEntry.self).bundlePath
         guard bundle.hasSuffix(".xctest"), FileManager.default.isExecutableFile(atPath: "/usr/bin/xcrun") else {
