@@ -182,11 +182,19 @@ extension FolderModel {
     }
 
     /// Selects names posted with `select` and begins the posted inline rename once those items are displayed.
+    /// Names not listed yet stay pending (a watcher patch can land part of a batch before the post's own read lands
+    /// the rest), so a later patch extends the selection to them; `select` from anywhere else drops them.
     func satisfyPending() {
         if !pendingSelect.isEmpty {
             // One pass over the store for every pending name (QA round 1: 10k pasted items), not one per name.
             let present = rows(named: pendingSelect)
-            if !present.isEmpty { select(.set(present, cursor: nil)) }
+            if !present.isEmpty {
+                let pending = pendingSelect
+                select(.set(present, cursor: nil))       // clears pendingSelect
+                let caseSensitive = self.caseSensitive
+                let wanted = Set(pending.map { NameNormalizer.identityName($0, caseSensitive: caseSensitive) })
+                if present.count < wanted.count { pendingSelect = pending }
+            }
         }
         if let name = pendingRename, let row = row(named: name) {
             pendingRename = nil

@@ -659,6 +659,28 @@ final class FolderModelTests: XCTestCase {
         XCTAssertEqual(log.renames, [0])
     }
 
+    /// A posted selection whose names reach the store in different patches (e.g. a watcher read lands one renamed
+    /// item before the post's own read lands the other) selects every one of them, not only the first arrivals.
+    func testPendingSelectionKeepsNamesNotListedYet() async throws {
+        let w = try await FolderTestWorld.make(self)
+        try w.dir("p")
+        try w.file("p/b")
+        let m = try await w.open("p")
+        m.pendingSelect = ["b", "c"]
+        m.satisfyPending()
+        XCTAssertEqual(m.selectedNames, ["b"])
+        try w.file("p/c")
+        m.applyLocalChange(LocalChange(directory: w.url("p"), added: ["c"]))     // a patch that selects nothing itself
+        try await w.waitUntil("c listed") { m.row(named: "c") != nil }
+        XCTAssertEqual(m.selectedNames.sorted(), ["b", "c"])
+        XCTAssertEqual(m.pendingSelect, [], "satisfied once every name is listed")
+        m.select(.names(["b"]))
+        try w.file("p/d")
+        m.applyLocalChange(LocalChange(directory: w.url("p"), added: ["d"]))
+        try await w.waitUntil("d listed") { m.row(named: "d") != nil }
+        XCTAssertEqual(m.selectedNames, ["b"], "a user selection is not overridden later")
+    }
+
     /// CPU time consumed by the calling thread (immune to time spent waiting for a core).
     private static func threadCPUTime() -> Duration {
         var ts = timespec()
