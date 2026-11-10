@@ -19,7 +19,7 @@ final class SettingsChoicesTests: XCTestCase {
 
     func testShortcutsPageRenders() {
         let s = settings()
-        let host = NSHostingView(rootView: ShortcutsSettingsView(settings: s))
+        let host = NSHostingView(rootView: ShortcutsSettingsView(settings: s, panels: NoPanels(), lanes: LanePool()))
         host.frame = NSRect(x: 0, y: 0, width: 500, height: 520)
         host.layoutSubtreeIfNeeded()
         XCTAssertGreaterThan(host.fittingSize.height, 0)
@@ -150,7 +150,7 @@ final class SettingsWindowTests: XCTestCase {
         let h = try await ShellHarness.make(self)
         for section in SettingsSection.allCases {
             let host = NSHostingController(rootView: SettingsView(settings: h.environment.settings, panels: NoPanels(),
-                                                                  updates: h.context.updates,
+                                                                  updates: h.context.updates, lanes: h.environment.lanes,
                                                                   initialSection: section))
             _ = host.view
             XCTAssertGreaterThan(host.view.fittingSize.width, 0, "\(section)")
@@ -174,4 +174,6 @@ final class SettingsWindowTests: XCTestCase {
 private final class NoPanels: SettingsPanels {
     func chooseFolder() -> URL? { nil }
     func chooseApplication() -> URL? { nil }
+    func chooseKeymapToImport() -> URL? { nil }
+    func chooseKeymapExportDestination() -> URL? { nil }
 }

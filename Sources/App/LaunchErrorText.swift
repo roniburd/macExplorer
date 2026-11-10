@@ -6,7 +6,7 @@ enum LaunchErrorText {
         switch error {
         case .missingValue(let option): "missing value for \(option)"
         case .unknownOption(let option): "unknown option \(option)"
-        case .stateDirectoryRequired: "--root, --scenario and --smoke-exit-after require --state-dir <dir>"
+        case .stateDirectoryRequired: "--root, --scenario, --smoke-exit-after and --keymap require --state-dir <dir>"
         case .notADirectory(let path): "not a directory: \(path)"
         case .invalidValue(let option, let value): "invalid value '\(value)' for \(option)"
         }

@@ -63,6 +63,10 @@ enum AppBootstrap {
                                         build: info["CFBundleVersion"] as? String ?? "unknown", launchedAt: Date()))
         let storage = makeSettingsStorage(options: options, statePaths: statePaths)
         let environment = makeEnvironment(options: options, statePaths: statePaths, settingsStorage: storage)
+        if let keymapFile = options.keymapFile, await !applyKeymap(keymapFile, to: environment) {
+            marker.end()   // a usage error, not a crash: no crash-report flow at the next launch
+            exit(65)       // EX_DATAERR
+        }
         let context = UIContext(environment: environment, options: options)
         let recovery = await environment.start()
         await context.windows.restoreOrOpenInitial()
@@ -71,5 +75,21 @@ enum AppBootstrap {
         if options.scenario == nil { CrashReporting.start(context: context, previous: previous, statePaths: statePaths) }
         let updates = UpdateController.live(model: context.updates, settings: environment.settings, options: options)
         return (context, lifecycle, updates, marker)
+    }
+
+    /// `--keymap <file>` (P4-02; sandbox runs only, `LaunchOptions` requires `--state-dir`): reads the file on a lane
+    /// and imports it into the sandbox settings before any window or menu reads them. false (after printing why) when
+    /// the file can't be read or used; the caller exits 65 (EX_DATAERR).
+    private static func applyKeymap(_ file: URL, to environment: CoreEnvironment) async -> Bool {
+        do {
+            let data = try await environment.lanes.perform(on: .unknown, .fileOp) { _ in try Data(contentsOf: file) }
+            for warning in try environment.settings.importKeymap(data) {
+                FileHandle.standardError.write(Data("macExplorer: --keymap: skipped \(warning)\n".utf8))
+            }
+            return true
+        } catch {
+            FileHandle.standardError.write(Data("macExplorer: --keymap \(file.path(percentEncoded: false)): \(error)\n".utf8))
+            return false
+        }
     }
 }

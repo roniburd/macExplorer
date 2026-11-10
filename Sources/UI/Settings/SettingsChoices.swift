@@ -51,6 +51,10 @@ enum StartupFolderChoice: String, CaseIterable, Hashable {
 @MainActor protocol SettingsPanels: AnyObject {
     func chooseFolder() -> URL?
     func chooseApplication() -> URL?
+    /// Settings › Shortcuts › Import…: a keymap file to read (P4-02).
+    func chooseKeymapToImport() -> URL?
+    /// Settings › Shortcuts › Export…: where to save the keymap file.
+    func chooseKeymapExportDestination() -> URL?
 }
 
 /// Settings edits the SwiftUI sections bind to. Pure over `Settings`; panels come in as closures.

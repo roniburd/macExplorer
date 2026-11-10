@@ -24,6 +24,7 @@ public enum KeymapImportError: Error, Sendable, Equatable {
 ///       "format" : "macexplorer-keymap",
 ///       "version" : 1,
 ///       "base" : "finder",
+///       "returnKey" : "rename",
 ///       "bindings" : {
 ///         "duplicate" : { "primary" : null },
 ///         "refresh" : { "alternates" : [ "ctrl+r" ] },
@@ -31,7 +32,8 @@ public enum KeymapImportError: Error, Sendable, Equatable {
 ///       }
 ///     }
 ///
-/// `base` is a `KeymapPreset`; each binding replaces only the slots it lists (`primary`: a chord, or null / "" for
+/// `base` is a `KeymapPreset`; `returnKey` (optional, `ReturnKeyBehavior`) is the Return key setting that goes with
+/// the keys (an absent or unknown value leaves the setting alone); each binding replaces only the slots it lists (`primary`: a chord, or null / "" for
 /// none; `alternates` and `mouse`: lists), and every other slot keeps the base's value. Chords use the
 /// Settings storage text form (`KeyChord.description`; `KeyChord(parsing:)` also takes "cmd+shift+n" orders and
 /// aliases such as "backspace" and "fwddelete").
@@ -40,12 +42,13 @@ public enum KeymapDocument {
     public static let version = 1
 
     /// `overrides` as a document on the preset it differs least from (Explorer on a tie), listing only the changed
-    /// slots. Keys sorted, pretty-printed.
-    public static func export(_ overrides: KeyBindingOverrides) -> Data {
+    /// slots, plus `returnKey` when given. Keys sorted, pretty-printed.
+    public static func export(_ overrides: KeyBindingOverrides, returnKey: ReturnKeyBehavior? = nil) -> Data {
         let current = KeyBindings(overrides: overrides)
         let diffs = KeymapPreset.allCases.map { ($0, bindings(current, relativeTo: $0)) }
         let (base, entries) = diffs.min { $0.1.count < $1.1.count } ?? (.explorer, [:])
-        let root: [String: Any] = ["format": format, "version": version, "base": base.rawValue, "bindings": entries]
+        var root: [String: Any] = ["format": format, "version": version, "base": base.rawValue, "bindings": entries]
+        if let returnKey { root["returnKey"] = returnKey.rawValue }
         // Plain string/number/array/dictionary/NSNull values only, so serialization can't fail.
         return (try? JSONSerialization.data(withJSONObject: root, options: [.sortedKeys, .prettyPrinted, .withoutEscapingSlashes]))
             ?? Data()
@@ -92,6 +95,14 @@ public enum KeymapDocument {
         let issues = KeymapValidator.issues(overrides)
         guard issues.isEmpty else { throw .issues(issues) }
         return (overrides, warnings)
+    }
+
+    /// The document's `returnKey`, or nil when it has none (or one this version doesn't know). Call after `import`
+    /// succeeded; it doesn't validate the rest of the file.
+    public static func returnKey(in data: Data) -> ReturnKeyBehavior? {
+        guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let raw = root["returnKey"] as? String else { return nil }
+        return ReturnKeyBehavior(rawValue: raw)
     }
 
     /// Per command, the slots of `current` that differ from `preset`'s (nil primary → NSNull).

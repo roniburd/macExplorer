@@ -1,5 +1,6 @@
 import SwiftUI
 import Core
+import MacxFS
 
 /// §7 Settings (SwiftUI in an NSWindow, SettingsWindowController): General, View, Sidebar, Shortcuts, Advanced tabs. Every control
 /// writes straight to `Settings`, which persists the value and lets the open windows observe it.
@@ -7,10 +8,13 @@ struct SettingsView: View {
     let settings: Core.Settings
     let panels: any SettingsPanels
     let updates: UpdateModel
+    let lanes: LanePool
     @State private var section: SettingsSection
 
-    init(settings: Core.Settings, panels: any SettingsPanels, updates: UpdateModel, initialSection: SettingsSection = .general) {
+    init(settings: Core.Settings, panels: any SettingsPanels, updates: UpdateModel, lanes: LanePool,
+         initialSection: SettingsSection = .general) {
         self.settings = settings
+        self.lanes = lanes
         self.panels = panels
         self.updates = updates
         _section = State(initialValue: initialSection)
@@ -33,7 +37,7 @@ struct SettingsView: View {
         case .general: GeneralSettingsView(settings: settings, panels: panels, updates: updates)
         case .view: ViewSettingsView(settings: settings)
         case .sidebar: SidebarSettingsView(settings: settings)
-        case .shortcuts: ShortcutsSettingsView(settings: settings)
+        case .shortcuts: ShortcutsSettingsView(settings: settings, panels: panels, lanes: lanes)
         case .advanced: AdvancedSettingsView(settings: settings)
         }
     }

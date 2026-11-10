@@ -1,11 +1,19 @@
 import SwiftUI
 import AppKit
 import Core
+import MacxFS
 
 /// Settings › Shortcuts (key-bindings spec §5): every command with its menu shortcut, extra keys and mouse buttons.
 /// Click a shortcut to record a new one (Esc cancels, ⌫ clears); [+] records an extra key or mouse button.
+/// P4-02: a preset picker (Explorer, Finder; Custom once edited), and Import…/Export… of a keymap file with a report
+/// of what an import skipped or why it was rejected.
 struct ShortcutsSettingsView: View {
     @Bindable var settings: Core.Settings
+    /// The keymap file panels; nil disables Import… and Export….
+    let panels: (any SettingsPanels)?
+    let lanes: LanePool
+    @State private var pendingPreset: KeymapPreset?
+    @State private var keymapStatus: KeymapStatus?
     @State private var query = ""
     @State private var recording: Recording?
     @State private var notice: Notice?
@@ -25,10 +33,19 @@ struct ShortcutsSettingsView: View {
         static func == (a: Notice, b: Notice) -> Bool { a.command == b.command && a.text == b.text }
     }
 
+    /// The outcome of the last import or export, shown under the list until the next one or a preset change.
+    struct KeymapStatus: Equatable {
+        enum Tone { case info, warning, error }
+        let tone: Tone
+        let summary: String
+        let details: [String]
+    }
+
     private var model: ShortcutsModel { ShortcutsModel(settings: settings) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            keymapBar
             TextField(L10n.string("Search commands…"), text: $query)
                 .textFieldStyle(.roundedBorder)
             List {
@@ -38,8 +55,9 @@ struct ShortcutsSettingsView: View {
                     }
                 }
             }
-            .frame(height: 420)
+            .frame(height: 400)
             .accessibilityIdentifier(AXID.shortcutsList)
+            if let keymapStatus { statusView(keymapStatus) }
             HStack {
                 Text(L10n.string("Shortcuts set in System Settings › Keyboard › App Shortcuts take precedence over menu shortcuts."))
                     .font(.footnote)
@@ -54,9 +72,121 @@ struct ShortcutsSettingsView: View {
         .onDisappear { recorder.stop(); recording = nil }
         .onChange(of: query) { recorder.stop(); recording = nil }
         .confirmationDialog(L10n.string("Restore all shortcuts to their defaults?"), isPresented: $confirmReset) {
-            Button(L10n.string("Restore All Defaults"), role: .destructive) { model.resetAll(); notice = nil }
+            Button(L10n.string("Restore All Defaults"), role: .destructive) { model.resetAll(); notice = nil; keymapStatus = nil }
             Button(L10n.string("Cancel"), role: .cancel) {}
         }
+        .confirmationDialog(pendingPreset.map(presetQuestion) ?? "", isPresented: presetDialogShown) {
+            Button(L10n.string("Replace Shortcuts"), role: .destructive) {
+                if let pendingPreset { model.applyPreset(pendingPreset) }
+                pendingPreset = nil
+                notice = nil
+                keymapStatus = nil
+            }
+            Button(L10n.string("Cancel"), role: .cancel) { pendingPreset = nil }
+        } message: {
+            if pendingPreset?.returnKey == .rename {
+                Text(L10n.string("Return will rename the selected item, as in Finder."))
+            }
+        }
+    }
+
+    // MARK: presets, import, export (P4-02)
+
+    private var keymapBar: some View {
+        HStack(spacing: 8) {
+            Picker(L10n.string("Preset:"), selection: presetSelection) {
+                ForEach(ShortcutsModel.presetChoices, id: \.self) { choice in
+                    Text(ShortcutsModel.title(choice)).tag(choice)
+                        .selectionDisabled(choice == .custom)
+                }
+            }
+            .fixedSize()
+            .accessibilityIdentifier(AXID.shortcutsPreset)
+            Spacer()
+            Button(L10n.string("Import…")) { importKeymap() }
+                .disabled(panels == nil)
+                .accessibilityIdentifier(AXID.shortcutsImport)
+            Button(L10n.string("Export…")) { exportKeymap() }
+                .disabled(panels == nil)
+                .accessibilityIdentifier(AXID.shortcutsExport)
+        }
+    }
+
+    /// Shows the current preset (Custom once edited); choosing another one asks first.
+    private var presetSelection: Binding<ShortcutsModel.PresetChoice> {
+        Binding(get: { model.presetChoice }, set: { choice in
+            guard case .preset(let preset) = choice, choice != model.presetChoice else { return }
+            recorder.stop()
+            recording = nil
+            pendingPreset = preset
+        })
+    }
+
+    private var presetDialogShown: Binding<Bool> {
+        Binding(get: { pendingPreset != nil }, set: { if !$0 { pendingPreset = nil } })
+    }
+
+    private func presetQuestion(_ preset: KeymapPreset) -> String {
+        String(format: L10n.string("Replace your shortcuts with the %@ preset?"), ShortcutsModel.title(.preset(preset)))
+    }
+
+    private func importKeymap() {
+        recorder.stop()
+        recording = nil
+        guard let url = panels?.chooseKeymapToImport() else { return }
+        let model = model
+        Task { @MainActor in
+            switch await model.importKeymap(from: url, lanes: lanes) {
+            case .imported(let warnings):
+                notice = nil
+                let name = url.lastPathComponent
+                keymapStatus = KeymapStatus(tone: warnings.isEmpty ? .info : .warning,
+                                            summary: String(format: L10n.string("Imported “%@”."), name),
+                                            details: warnings.map(ShortcutsModel.message))
+            case .failed(let failure):
+                let report = ShortcutsModel.report(failure)
+                keymapStatus = KeymapStatus(tone: .error, summary: report.summary, details: report.details)
+            }
+        }
+    }
+
+    private func exportKeymap() {
+        recorder.stop()
+        recording = nil
+        guard let url = panels?.chooseKeymapExportDestination() else { return }
+        let model = model
+        Task { @MainActor in
+            do {
+                try await model.exportKeymap(to: url, lanes: lanes)
+                keymapStatus = KeymapStatus(tone: .info, summary: String(format: L10n.string("Exported “%@”."),
+                                                                         url.lastPathComponent), details: [])
+            } catch {
+                keymapStatus = KeymapStatus(tone: .error, summary: L10n.string("The keymap couldn’t be saved."), details: [])
+            }
+        }
+    }
+
+    private func statusView(_ status: KeymapStatus) -> some View {
+        let color: Color = switch status.tone {
+        case .info: .secondary
+        case .warning: .orange
+        case .error: .red
+        }
+        return HStack(alignment: .top, spacing: 6) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(status.summary).font(.callout).foregroundStyle(color)
+                ForEach(Array(status.details.enumerated()), id: \.offset) { _, line in
+                    Text("• " + line).font(.caption).foregroundStyle(color)
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            Button { keymapStatus = nil } label: { Image(systemName: "xmark.circle.fill") }
+                .buttonStyle(.borderless)
+                .help(L10n.string("Dismiss"))
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier(AXID.shortcutsKeymapStatus)
     }
 
     // MARK: rows

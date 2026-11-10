@@ -100,6 +100,17 @@
         }
       }
     },
+    "%@ is reserved by macOS or MacExplorer (%@)." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is reserved by macOS or MacExplorer (%@)."
+          }
+        }
+      }
+    },
     "%@ is used by %@." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -162,6 +173,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ selected (%@)"
+          }
+        }
+      }
+    },
+    "%@ types text, so it can’t be the menu shortcut of %@." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ types text, so it can’t be the menu shortcut of %@."
           }
         }
       }
@@ -1599,6 +1621,17 @@
         }
       }
     },
+    "Custom (edited)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Custom (edited)"
+          }
+        }
+      }
+    },
     "Custom folder:" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2083,6 +2116,39 @@
         }
       }
     },
+    "Explorer (default)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Explorer (default)"
+          }
+        }
+      }
+    },
+    "Exported “%@”." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exported “%@”."
+          }
+        }
+      }
+    },
+    "Export…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export…"
+          }
+        }
+      }
+    },
     "Extended attributes" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2200,6 +2266,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Filters on"
+          }
+        }
+      }
+    },
+    "Finder" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finder"
           }
         }
       }
@@ -2563,6 +2640,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "If you keep both, the copied item gets a number added to its name."
+          }
+        }
+      }
+    },
+    "Imported “%@”." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imported “%@”."
+          }
+        }
+      }
+    },
+    "Import…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Import…"
           }
         }
       }
@@ -2937,6 +3036,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "MacExplorer Settings"
+          }
+        }
+      }
+    },
+    "MacExplorer Shortcuts.json" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MacExplorer Shortcuts.json"
           }
         }
       }
@@ -3943,6 +4053,17 @@
         }
       }
     },
+    "Preset:" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preset:"
+          }
+        }
+      }
+    },
     "Preview" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4328,6 +4449,17 @@
         }
       }
     },
+    "Replace Shortcuts" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replace Shortcuts"
+          }
+        }
+      }
+    },
     "Replace it with the item you're copying or moving, skip this item, or keep both." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4335,6 +4467,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Replace it with the item you're copying or moving, skip this item, or keep both."
+          }
+        }
+      }
+    },
+    "Replace your shortcuts with the %@ preset?" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replace your shortcuts with the %@ preset?"
           }
         }
       }
@@ -4500,6 +4643,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Return key:"
+          }
+        }
+      }
+    },
+    "Return will rename the selected item, as in Finder." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Return will rename the selected item, as in Finder."
           }
         }
       }
@@ -5021,6 +5175,28 @@
         }
       }
     },
+    "Skipped %@: its shortcut can’t be changed." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skipped %@: its shortcut can’t be changed."
+          }
+        }
+      }
+    },
+    "Skipped “%@”: not a command in this version of MacExplorer." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skipped “%@”: not a command in this version of MacExplorer."
+          }
+        }
+      }
+    },
     "Small" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5307,6 +5483,17 @@
         }
       }
     },
+    "The file couldn’t be read." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The file couldn’t be read."
+          }
+        }
+      }
+    },
     "The file may open in a different app, or not at all." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5325,6 +5512,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The item will be hidden unless hidden items are shown."
+          }
+        }
+      }
+    },
+    "The keymap couldn’t be saved." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The keymap couldn’t be saved."
           }
         }
       }
@@ -5450,6 +5648,17 @@
         }
       }
     },
+    "This file isn’t a MacExplorer keymap." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This file isn’t a MacExplorer keymap."
+          }
+        }
+      }
+    },
     "This folder is empty" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5457,6 +5666,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "This folder is empty"
+          }
+        }
+      }
+    },
+    "This keymap can’t be used. Nothing was changed." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This keymap can’t be used. Nothing was changed."
+          }
+        }
+      }
+    },
+    "This keymap is based on an unknown preset, “%@”." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This keymap is based on an unknown preset, “%@”."
+          }
+        }
+      }
+    },
+    "This keymap was made by a newer version of MacExplorer." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This keymap was made by a newer version of MacExplorer."
           }
         }
       }
@@ -7397,6 +7639,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "“%@” couldn't be ejected."
+          }
+        }
+      }
+    },
+    "“%@” for “%@” isn’t a shortcut MacExplorer can read." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@” for “%@” isn’t a shortcut MacExplorer can read."
           }
         }
       }

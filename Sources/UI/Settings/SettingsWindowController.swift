@@ -22,7 +22,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private init(context: UIContext) {
         self.context = context
         let view = SettingsView(settings: context.environment.settings, panels: OpenPanelSettingsPanels(),
-                                updates: context.updates)
+                                updates: context.updates, lanes: context.environment.lanes)
         let host = NSHostingController(rootView: view)
         host.sizingOptions = [.preferredContentSize]
         let window = NSWindow(contentViewController: host)
@@ -44,7 +44,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 }
 
-/// Folder and application choosers for the General section (modal NSOpenPanel; only a user click runs them).
+/// Folder and application choosers for the General section and the keymap file panels of Shortcuts (modal
+/// NSOpenPanel/NSSavePanel; only a user click runs them).
 @MainActor
 final class OpenPanelSettingsPanels: SettingsPanels {
     func chooseFolder() -> URL? {
@@ -64,6 +65,23 @@ final class OpenPanelSettingsPanels: SettingsPanels {
         panel.allowedContentTypes = [.application]
         panel.directoryURL = URL(filePath: "/Applications", directoryHint: .isDirectory)
         panel.prompt = L10n.string("Choose")
+        return panel.runModal() == .OK ? panel.url : nil
+    }
+
+    func chooseKeymapToImport() -> URL? {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.json]
+        panel.prompt = L10n.string("Choose")
+        return panel.runModal() == .OK ? panel.url : nil
+    }
+
+    func chooseKeymapExportDestination() -> URL? {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = L10n.string("MacExplorer Shortcuts.json")
         return panel.runModal() == .OK ? panel.url : nil
     }
 }
