@@ -77,3 +77,30 @@ public enum PrincipalDirectory {
     }
     private static let allLock = NSLock()      // getpwent/getgrent iterate shared state and are not reentrant
 }
+
+extension PrincipalDirectory {
+    /// Whether `principal` covers the user running the app: `everyone`, the user, or a group the user is in
+    /// (through `mbr_check_membership`, so nested groups count). Lane only: it may ask Directory Services.
+    public static func appliesToCurrentUser(_ principal: ACLPrincipal) -> Bool {
+        if principal.uuid == everyone.uuid { return true }
+        guard let me = uuid({ mbr_uid_to_uuid(getuid(), $0) }) else { return false }
+        if case .user = principal { return principal.uuid == me }
+        var user = me.uuid, group = principal.uuid.uuid
+        var isMember: Int32 = 0
+        let rc = withUnsafeBytes(of: &user) { u in
+            withUnsafeBytes(of: &group) { g in
+                mbr_check_membership(u.bindMemory(to: UInt8.self).baseAddress!, g.bindMemory(to: UInt8.self).baseAddress!, &isMember)
+            }
+        }
+        return rc == 0 && isMember != 0
+    }
+}
+
+extension ACLEntry {
+    /// A deny entry that would stop the current user from reading or changing this item's ACL: the editor would
+    /// then show nothing, every later edit would fail, and undo couldn't snapshot it. Lane only.
+    public var locksOutCurrentUser: Bool {
+        kind == .deny && !permissions.isDisjoint(with: [.readSecurity, .writeSecurity])
+            && PrincipalDirectory.appliesToCurrentUser(principal)
+    }
+}

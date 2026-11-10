@@ -128,6 +128,56 @@ final class ACLTests: FileOpsTestCase {
         XCTAssertEqual(interaction.askedErrors().map(\.kind), [.locked])
     }
 
+    // MARK: lockout (review finding: "deny everyone read" hid the ACL from its owner and broke undo)
+
+    func testLockoutDetection() async throws {
+        let me = self.me
+        let staff = try XCTUnwrap(PrincipalDirectory.resolve(group: "staff"))
+        let results = try await onLane { () -> [Bool] in
+            [
+                ACLEntry(kind: .deny, principal: PrincipalDirectory.everyone, permissions: .readOnlyPreset).locksOutCurrentUser,
+                ACLEntry(kind: .deny, principal: me, permissions: [.writeSecurity]).locksOutCurrentUser,
+                ACLEntry(kind: .deny, principal: staff, permissions: [.readSecurity]).locksOutCurrentUser,
+                ACLEntry(kind: .deny, principal: PrincipalDirectory.everyone, permissions: [.delete]).locksOutCurrentUser,
+                ACLEntry(kind: .allow, principal: PrincipalDirectory.everyone, permissions: .fullControlPreset).locksOutCurrentUser,
+                ACLEntry(kind: .deny, principal: .user(name: "orphan", uuid: UUID()), permissions: [.readSecurity]).locksOutCurrentUser,
+            ]
+        }
+        XCTAssertEqual(results, [true, true, true, false, false, false])
+    }
+
+    func testUnreadableACLIsNeverSnapshotAsNone() async throws {
+        let a = try file("a.txt")
+        // Deny the owner readsecurity (and delete, so the sandbox teardown must clear an ACL it can't read).
+        let lock = ACLEntry(kind: .deny, principal: PrincipalDirectory.everyone, permissions: [.readSecurity, .delete])
+        try await onLane { try ACLIO.write(explicit: [lock], to: a) }
+        do {
+            _ = try await onLane { try ACLIO.read(a) }
+            XCTFail("expected EACCES")
+        } catch let e as ACLIOError {
+            XCTAssertEqual(e.code, EACCES)
+        }
+        let snap = try await onLane { AttributeJobs.snapshot(a, for: .acl([])) }
+        XCTAssertNil(snap, "an unreadable ACL fails the item, never reads as \"\"")
+        let interaction = ScriptedInteraction(errors: [.skip])
+        let (queue, _) = makeQueue(interaction: interaction)
+        let outcome = try await run(.setAttributes([a], .acl([])), on: queue)
+        XCTAssertEqual(outcome.record.actions, [])
+        XCTAssertEqual(interaction.askedErrors().count, 1)
+    }
+
+    func testEditThatHidesTheACLIsRolledBack() async throws {
+        let a = try file("a.txt")
+        let interaction = ScriptedInteraction(errors: [.skip])
+        let (queue, _) = makeQueue(interaction: interaction)
+        let outcome = try await run(.setAttributes([a], .acl([ACLEntry(kind: .deny, principal: PrincipalDirectory.everyone,
+                                                                         permissions: .readOnlyPreset)])), on: queue)
+        XCTAssertEqual(outcome.record.actions, [], "nothing recorded: the edit was put back")
+        XCTAssertEqual(interaction.askedErrors().count, 1)
+        let after = try await onLane { try ACLIO.read(a) }
+        XCTAssertEqual(after, [], "the previous (empty) ACL is restored and readable")
+    }
+
     func testAllPrincipalsListsCurrentUserAndStaff() async {
         let all = await PrincipalDirectory.all(lanes: LanePool())
         XCTAssertTrue(all.contains(me))

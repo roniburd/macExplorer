@@ -30,7 +30,9 @@ struct ACLEditorView: View {
             table
                 .frame(height: 130)
                 .overlay {
-                    if model.isLoaded && model.entries.isEmpty {
+                    if let readError = model.readError {
+                        Text(verbatim: readError).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(8)
+                    } else if model.isLoaded && model.entries.isEmpty {
                         Text(verbatim: L10n.string("No access control entries")).foregroundStyle(.secondary)
                     }
                 }
@@ -122,6 +124,8 @@ private struct ACLEntrySheet: View {
     let onCancel: () -> Void
     @State private var search = ""
     @State private var showsCustom = false
+    /// The draft is a deny entry that would lock the user out of this list: warned about, and Add/OK disabled.
+    @State private var locksOut = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -169,19 +173,29 @@ private struct ACLEntrySheet: View {
                     }
                 }
             }
+            if locksOut {
+                Label {
+                    Text(verbatim: ACLEditorModel.lockoutMessage(editor.url.lastPathComponent))
+                        .fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.yellow)
+                }
+                .font(.caption)
+            }
             HStack {
                 Spacer()
                 Button(L10n.string("Cancel"), role: .cancel) { onCancel() }
                     .keyboardShortcut(.cancelAction)
                 Button(isNew ? L10n.string("Add") : L10n.string("OK")) { onSave(draft.entry) }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(draft.entry.permissions.isEmpty)
+                    .disabled(draft.entry.permissions.isEmpty || locksOut)
             }
         }
         .padding(16)
         .frame(width: 420)
         .accessibilityIdentifier(AXID.propertiesACLSheet)
         .task { await editor.loadPrincipals() }
+        .task(id: draft.entry) { locksOut = await editor.wouldLockOut(draft.entry) }
     }
 
     /// The picker always lists the entry's own principal, even one the directory doesn't return (an orphaned UUID).

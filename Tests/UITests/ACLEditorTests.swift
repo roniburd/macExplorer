@@ -94,6 +94,45 @@ final class ACLEditorTests: XCTestCase {
         XCTAssertEqual(afterUndo.first?.kind, .deny)
     }
 
+    /// Review finding: "deny everyone Read only" denied the owner readsecurity, hid the ACL and broke undo.
+    func testDenyThatWouldLockTheUserOutIsRefused() async throws {
+        let ui = try await ContentTestHarness.make(self)
+        let a = try ui.file("a.txt")
+        let model = editor(a, ui)
+        await model.load()
+        let lockout = ACLEntry(kind: .deny, principal: PrincipalDirectory.everyone, permissions: .readOnlyPreset)
+        let locksOut = await model.wouldLockOut(lockout)
+        XCTAssertTrue(locksOut)
+        let harmless = await model.wouldLockOut(ACLEntry(kind: .deny, principal: PrincipalDirectory.everyone, permissions: [.delete]))
+        XCTAssertFalse(harmless)
+        await model.add(lockout)
+        XCTAssertNotNil(model.error, "explains why the entry wasn't added")
+        let after = try await read(a, ui)
+        XCTAssertEqual(after, [])
+        XCTAssertFalse(ui.environment.undo.canUndo)
+        // Replacing an existing entry with one that locks the user out is refused too.
+        let deny = ACLEntry(kind: .deny, principal: PrincipalDirectory.everyone, permissions: [.delete])
+        await model.add(deny)
+        XCTAssertNil(model.error)
+        await model.replace(at: 0, with: ACLEntry(kind: .deny, principal: PrincipalDirectory.everyone, permissions: [.delete, .writeSecurity]))
+        XCTAssertNotNil(model.error)
+        let afterReplace = try await read(a, ui)
+        XCTAssertEqual(afterReplace, [deny])
+    }
+
+    func testUnreadableACLShowsAnErrorNotAnEmptyTable() async throws {
+        let ui = try await ContentTestHarness.make(self)
+        let a = try ui.file("a.txt")
+        let lock = ACLEntry(kind: .deny, principal: PrincipalDirectory.everyone, permissions: [.readSecurity])
+        try await ui.environment.lanes.perform(on: .unknown) { _ in try ACLIO.write(explicit: [lock], to: a) }
+        let model = editor(a, ui)
+        await model.load()
+        XCTAssertTrue(model.isLoaded)
+        XCTAssertEqual(model.entries, [])
+        XCTAssertEqual(model.readError, "You can't read the access list of “a.txt”.")
+        XCTAssertFalse(model.canAdd, "an unreadable list isn't shown as an empty, editable one")
+    }
+
     func testInheritedRowsAreReadOnly() async throws {
         let ui = try await ContentTestHarness.make(self)
         let d = try ui.dir("d")

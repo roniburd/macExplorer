@@ -119,7 +119,17 @@ public enum ACLIO {
         throw ACLIOError(code: code)
     }
 
+    /// When an entry denies the owner `readsecurity`, `acl_set_link_np` fails with EACCES: it lstats the item
+    /// first, and that lstat is denied, although the owner may still change the ACL. Symbolic links never carry
+    /// such an entry (their lstat isn't denied), so when readlink confirms the item isn't one, `acl_set_file` sets
+    /// it the way `acl_set_link_np` would have. So such an ACL can still be rolled back, undone or cleared.
     private static func set(_ acl: acl_t, on url: URL) throws(ACLIOError) {
-        guard acl_set_link_np(url.path, ACL_TYPE_EXTENDED, acl) == 0 else { throw ACLIOError(code: errno) }
+        let path = url.path
+        guard acl_set_link_np(path, ACL_TYPE_EXTENDED, acl) != 0 else { return }
+        let code = errno
+        guard code == EACCES else { throw ACLIOError(code: code) }
+        var byte: CChar = 0
+        guard readlink(path, &byte, 1) < 0, errno == EINVAL else { throw ACLIOError(code: code) }
+        guard acl_set_file(path, ACL_TYPE_EXTENDED, acl) == 0 else { throw ACLIOError(code: errno) }
     }
 }

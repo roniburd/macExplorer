@@ -266,7 +266,12 @@ public final class Sandbox: Sendable {
 
     static func unlockTree(_ path: String) {
         var st = stat()
-        guard lstat(path, &st) == 0 else { return }
+        if lstat(path, &st) != 0 {
+            // An entry denying the owner readsecurity makes even lstat fail with EACCES: clear the ACL, retry.
+            guard errno == EACCES else { return }
+            clearExtendedACL(path)
+            guard lstat(path, &st) == 0 else { return }
+        }
         if st.st_flags & UInt32(UF_IMMUTABLE | UF_APPEND) != 0 { _ = lchflags(path, 0) }
         clearExtendedACL(path)      // e.g. "everyone deny delete" left by the ACL tests (P4-14/P4-18)
         if (st.st_mode & S_IFMT) == S_IFDIR {
@@ -277,13 +282,17 @@ public final class Sandbox: Sendable {
         }
     }
 
-    /// Replaces the extended ACL of `path` (not following a final symlink) with an empty one, if it has entries.
+    /// Replaces the extended ACL of `path` (not following a final symlink) with an empty one. Doesn't read the
+    /// current ACL first: an entry denying the owner `readsecurity` makes `acl_get_link_np`, lstat and so
+    /// `acl_set_link_np` fail with EACCES, while the owner can still change it. Symbolic links never carry such an
+    /// entry, so once readlink confirms the item isn't one, `acl_set_file` clears it (as `chmod -N` does).
     static func clearExtendedACL(_ path: String) {
-        guard let current = acl_get_link_np(path, ACL_TYPE_EXTENDED) else { return }
-        acl_free(UnsafeMutableRawPointer(current))
         guard let empty = acl_init(0) else { return }
-        _ = acl_set_link_np(path, ACL_TYPE_EXTENDED, empty)
-        acl_free(UnsafeMutableRawPointer(empty))
+        defer { acl_free(UnsafeMutableRawPointer(empty)) }
+        guard acl_set_link_np(path, ACL_TYPE_EXTENDED, empty) != 0, errno == EACCES else { return }
+        var byte: CChar = 0
+        guard readlink(path, &byte, 1) < 0, errno == EINVAL else { return }
+        _ = acl_set_file(path, ACL_TYPE_EXTENDED, empty)
     }
 
     static func mountPoints(under base: String) -> [String] {

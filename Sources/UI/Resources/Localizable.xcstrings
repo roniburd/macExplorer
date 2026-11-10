@@ -7166,6 +7166,17 @@
         }
       }
     },
+    "You can't read the access list of “%@”." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You can't read the access list of “%@”."
+          }
+        }
+      }
+    },
     "You can't undo this action." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7393,6 +7404,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Edit…"
+          }
+        }
+      }
+    },
+    "acl.lockout" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This entry would stop you from seeing or changing the access list of “%@”. Remove Read permissions and Change permissions from it, or choose another user or group."
           }
         }
       }

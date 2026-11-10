@@ -13,6 +13,17 @@ enum AttributeJobs {
         return read >= 0 ? Data(buf.prefix(read)) : nil
     }
 
+    /// Lane only. Why `snapshot` returned nil: the lstat or ACL read errno (EACCES for an ACL that denies the
+    /// user readsecurity), ENOENT otherwise.
+    static func snapshotFailure(_ url: URL, for edit: AttributeEdit) -> Int32 {
+        var st = stat()
+        if lstat(url.path, &st) != 0 { return errno }
+        if case .acl = edit {
+            do { _ = try ACLIO.text(url) } catch { return error.code }
+        }
+        return ENOENT
+    }
+
     /// Lane only. Current values of exactly the fields `edit` touches (nil fields = untouched).
     static func snapshot(_ url: URL, for edit: AttributeEdit) -> AttributeSnapshot? {
         assertOffMain()
@@ -25,7 +36,10 @@ enum AttributeJobs {
             return AttributeSnapshot(extensionHidden: v?.hasHiddenExtension ?? false)
         case .permissions: return AttributeSnapshot(mode: info.mode)
         case .removeQuarantine: return AttributeSnapshot(quarantine: readXattr(url.path, quarantineName) ?? Data())
-        case .acl: return AttributeSnapshot(acl: (try? ACLIO.text(url)) ?? "")
+        case .acl:
+            // An unreadable ACL fails the item: never recorded as "none" (undo would then "restore" nothing).
+            guard let text = try? ACLIO.text(url) else { return nil }
+            return AttributeSnapshot(acl: text)
         }
     }
 
@@ -91,10 +105,15 @@ enum AttributeJobs {
             guard await ctx.checkpoint() else { break }
             while true {
                 let r = (try? await ctx.onLane { _ -> (Int32, AttributeSnapshot?, AttributeSnapshot?) in
-                    guard let old = snapshot(url, for: edit) else { return (ENOENT, nil, nil) }
+                    guard let old = snapshot(url, for: edit) else { return (snapshotFailure(url, for: edit), nil, nil) }
                     let rc = apply(edit, to: url)
                     guard rc == 0 else { return (rc, old, nil) }
-                    return (0, old, planned ?? snapshot(url, for: edit))
+                    if let new = planned ?? snapshot(url, for: edit) { return (0, old, new) }
+                    // The edit made the item unreadable (an ACL denying the user readsecurity): put the previous
+                    // values back and fail the item, so nothing unrecordable or un-undoable is left behind.
+                    let failure = snapshotFailure(url, for: edit)
+                    _ = apply(old, to: url)
+                    return (failure == ENOENT ? EACCES : failure, old, nil)
                 }) ?? (EIO, nil, nil)
                 if r.0 == 0, let old = r.1, let new = r.2 {
                     if old != new { ctx.record(.attributesChanged(url, old: old, new: new)) }

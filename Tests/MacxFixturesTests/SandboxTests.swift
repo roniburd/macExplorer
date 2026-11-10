@@ -53,9 +53,19 @@ final class SandboxTests: XCTestCase {
 
     /// ACL tests (P4-14/P4-18) put "everyone deny delete" entries on sandbox files; teardown must still remove them.
     func testDestroyRemovesContentWithDenyDeleteACLs() throws {
+        try checkDestroyRemovesDenyACLs(extra: [])
+    }
+
+    /// An entry that also denies the owner readsecurity makes acl_get_link_np and even lstat fail with EACCES;
+    /// teardown must clear it without reading it first.
+    func testDestroyRemovesContentWithUnreadableACLs() throws {
+        try checkDestroyRemovesDenyACLs(extra: [ACL_READ_SECURITY, ACL_READ_DATA])
+    }
+
+    private func checkDestroyRemovesDenyACLs(extra: [acl_perm_t]) throws {
         let child = try sandbox.createFile("d/c.txt").path(percentEncoded: false)
         let dir = sandbox.url("d").path(percentEncoded: false)
-        for (path, perms) in [(child, [ACL_DELETE]), (dir, [ACL_DELETE, ACL_DELETE_CHILD])] {
+        for (path, perms) in [(child, [ACL_DELETE] + extra), (dir, [ACL_DELETE, ACL_DELETE_CHILD] + extra)] {
             var acl = acl_init(1)
             var entry: acl_entry_t?
             XCTAssertEqual(acl_create_entry(&acl, &entry), 0)

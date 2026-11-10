@@ -135,6 +135,9 @@ final class ACLEditorModel {
     private(set) var isLoaded = false
     private(set) var isApplying = false
     private(set) var error: String?
+    /// Set when the list itself can't be read (e.g. an entry denies the user readsecurity): shown instead of the
+    /// table's "no entries" text, and nothing can be added (a write would fail or drop what can't be seen).
+    private(set) var readError: String?
     private(set) var principals: [ACLPrincipal] = []
 
     @ObservationIgnored private let environment: CoreEnvironment
@@ -153,7 +156,7 @@ final class ACLEditorModel {
         perform = { request in await operations.perform(request) }
     }
 
-    var canAdd: Bool { isEditable && isLoaded && !isApplying }
+    var canAdd: Bool { isEditable && isLoaded && readError == nil && !isApplying }
 
     /// Explicit rows of an editable item; inherited rows never.
     func canEdit(row: Int) -> Bool {
@@ -165,9 +168,18 @@ final class ACLEditorModel {
         let generation = loadGeneration
         let url = url
         let volume = environment.volumes.volume(for: url)?.id ?? .unknown
-        let read = try? await environment.lanes.perform(on: volume) { _ in try ACLIO.read(url) }
+        let read: Result<[ACLEntry], Error>
+        do { read = .success(try await environment.lanes.perform(on: volume) { _ in try ACLIO.read(url) }) }
+        catch { read = .failure(error) }
         guard generation == loadGeneration else { return }       // a newer load won
-        entries = read ?? []
+        switch read {
+        case .success(let list):
+            entries = list
+            readError = nil
+        case .failure:
+            entries = []
+            readError = String(format: L10n.string("You can't read the access list of “%@”."), url.lastPathComponent)
+        }
         isLoaded = true
     }
 
@@ -189,10 +201,19 @@ final class ACLEditorModel {
         return principals.filter { $0.name.localizedCaseInsensitiveContains(query) }
     }
 
+    /// A deny entry that would stop the user from reading or changing this list (`ACLEntry.locksOutCurrentUser`,
+    /// asked on a lane: group membership may query Directory Services).
+    func wouldLockOut(_ entry: ACLEntry) async -> Bool {
+        guard entry.kind == .deny, !entry.permissions.isDisjoint(with: [.readSecurity, .writeSecurity]) else { return false }
+        let volume = environment.volumes.volume(for: url)?.id ?? .unknown
+        return (try? await environment.lanes.perform(on: volume) { _ in entry.locksOutCurrentUser }) ?? true
+    }
+
     func add(_ entry: ACLEntry) async {
-        guard isEditable, isLoaded else { return }
+        guard canAdd else { return }
         var entry = entry
         entry.isInherited = false
+        guard await refuseLockout(entry) == false else { return }
         await apply(explicit + [entry])
     }
 
@@ -205,9 +226,10 @@ final class ACLEditorModel {
 
     func replace(at index: Int, with entry: ACLEntry) async {
         guard canEdit(row: index) else { return }
-        var list = entries
         var entry = entry
         entry.isInherited = false
+        guard await refuseLockout(entry) == false, canEdit(row: index) else { return }
+        var list = entries
         list[index] = entry
         await apply(list.filter { !$0.isInherited })
     }
@@ -224,6 +246,18 @@ final class ACLEditorModel {
     // MARK: private
 
     private var explicit: [ACLEntry] { entries.filter { !$0.isInherited } }
+
+    /// True (with the inline error set) when `entry` would lock the user out of this list, which then couldn't be
+    /// shown, edited or undone here.
+    private func refuseLockout(_ entry: ACLEntry) async -> Bool {
+        guard await wouldLockOut(entry) else { return false }
+        error = Self.lockoutMessage(url.lastPathComponent)
+        return true
+    }
+
+    static func lockoutMessage(_ name: String) -> String {
+        String(format: L10n.string("acl.lockout"), name)
+    }
 
     /// One job; a skipped item with a reason (the router answers Properties errors with Skip, P1-38) becomes the
     /// inline error. The table reloads from disk either way.

@@ -362,6 +362,7 @@ It shows a live folder size and has a **Permissions** tab.
 Use **Add Entry**, **Edit Entry** and **Remove Entry** to change them.
 Entries inherited from a parent folder are shown but can't be edited.
 If you aren't the item's owner, the list is read-only.
+MacExplorer won't save a Deny entry that would stop you from seeing or changing the list itself (one that applies to you and denies Read permissions or Change permissions).
 
 ---
 
