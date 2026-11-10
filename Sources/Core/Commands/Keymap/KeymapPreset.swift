@@ -76,7 +76,7 @@ public enum KeymapPreset: String, Sendable, Codable, CaseIterable {
              .searchScopeThisFolder, .searchScopeSubfolders, .searchScopeThisMac, .searchModeName, .searchModeContents,
              .renameSavedSearch, .removeSavedSearch, .downloadForPreview, .showInPreview,
              .previewZoomIn, .previewZoomOut, .previewActualSize,
-             .showCommandPalette, .compressZip, .compressAppleArchive, .extractHere, .batchRename, .editTags:
+             .showCommandPalette, .compressZip, .compressAppleArchive, .extractHere, .batchRename:
             nil
         }
     }

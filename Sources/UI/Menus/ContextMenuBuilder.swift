@@ -141,9 +141,7 @@ final class ContextMenuBuilder {
         for command in [Command.duplicate, .makeAlias, .makeSymlink] { add(command, target, handler, to: menu) }
         menu.addItem(compressItem(names: valid.map { folder.url(atRow: $0).lastPathComponent }, target: target, handler: handler))
         menu.addItem(.separator())
-        add(.rename, target, handler, to: menu)
-        if let tags = tagsItem(urls: valid.map { folder.url(atRow: $0) }, target: target, handler: handler) { menu.addItem(tags) }
-        for command in [Command.moveToTrash, .deletePermanently] { add(command, target, handler, to: menu) }
+        for command in [Command.rename, .moveToTrash, .deletePermanently] { add(command, target, handler, to: menu) }
         menu.addItem(.separator())
         menu.addItem(newSubmenu(folder: folder, handler: handler))
         add(.revealInFinder, target, handler, to: menu)
@@ -182,7 +180,6 @@ final class ContextMenuBuilder {
         menu.addItem(CopyPathMenu.submenuItem(target: target, handler: handler))
         menu.addItem(.separator())
         add(.rename, target, handler, to: menu)
-        if let tags = tagsItem(urls: valid.map { results.url(atRow: $0) }, target: target, handler: handler) { menu.addItem(tags) }
         add(.moveToTrash, target, handler, to: menu)
         menu.addItem(.separator())
         add(.properties, target, handler, to: menu).title = L10n.string("Get Info")
@@ -341,28 +338,6 @@ final class ContextMenuBuilder {
             return String(format: L10n.string("Compress “%@” to %@"), name, ext)
         }
         return String(format: L10n.string("Compress %lld Items to %@"), Int64(names.count), ext)
-    }
-
-    /// Tags ▸ (P4-05): the known tags with their states from the tag cache (the selection is prefetched now),
-    /// then "Tags…" (Edit Tags on this menu's target).
-    private func tagsItem(urls: [URL], target: CommandTarget, handler: CommandHandler) -> NSMenuItem? {
-        guard let commands = handler as? FileCommandController, !urls.isEmpty else { return nil }
-        let edit = NSMenuItem()
-        let box = MenuActionBox(command: .editTags, target: target, handler: handler)
-        edit.action = #selector(MenuActionBox.run(_:))
-        edit.target = box
-        edit.representedObject = box
-        edit.identifier = NSUserInterfaceItemIdentifier("macx.menu.editTags")
-        let environment = context.environment
-        let submenu = TagMenu.build(for: urls, cache: environment.tagCache, settings: environment.settings, editItem: edit) {
-            [weak commands] tagEdit in
-            guard let commands else { return }
-            Task { await commands.applyTagEdit(tagEdit, to: urls) }
-        }
-        let item = NSMenuItem(title: L10n.string("Tags"), action: nil, keyEquivalent: "")
-        item.identifier = NSUserInterfaceItemIdentifier("macx.menu.tags")
-        item.submenu = submenu
-        return item
     }
 
     private func openWithItem(rows: IndexSet, folder: any RowSource, handler: CommandHandler) -> NSMenuItem? {

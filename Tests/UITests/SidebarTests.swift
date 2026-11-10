@@ -13,9 +13,9 @@ final class SidebarTests: XCTestCase {
 
     func testSectionsInOrderAndExpandedByDefault() async throws {
         let h = try await SidebarHarness.make(self)
-        XCTAssertEqual(h.sidebar.sectionHeaders, [.favorites, .locations, .tags, .folders])
+        XCTAssertEqual(h.sidebar.sectionHeaders, [.favorites, .locations, .folders])
         let headers = (0..<h.outline.numberOfRows).compactMap { h.sidebar.item(atRow: $0) }.filter(\.isHeader)
-        XCTAssertEqual(headers.map(\.section), [.favorites, .locations, .tags, .folders])
+        XCTAssertEqual(headers.map(\.section), [.favorites, .locations, .folders])
         for section in h.sidebar.sectionHeaders {
             let header = try XCTUnwrap(SidebarItem.header(section))
             XCTAssertTrue(h.outline.isItemExpanded(h.sidebar.box(header)), "\(section)")

@@ -21,7 +21,7 @@ final class SettingsV3Tests: XCTestCase {
         XCTAssertEqual(Set(s.resultsColumns.map(\.id)), Set(ColumnID.allCases))
         XCTAssertEqual(s.resultsColumns.count, ColumnID.allCases.count)
         XCTAssertTrue(SidebarSection.allCases.contains(.searches))
-        XCTAssertEqual(SidebarSection.allCases, [.favorites, .searches, .locations, .tags, .folders])
+        XCTAssertEqual(SidebarSection.allCases, [.favorites, .searches, .locations, .folders])
     }
 
     func testVersionTwoStoreMigrates() throws {

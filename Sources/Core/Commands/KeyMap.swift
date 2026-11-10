@@ -62,7 +62,7 @@ public enum KeyMap {
              .copyPathTilde, .copyPathFileURL, .copyName, .copyPathShellQuoted,
              .saveSearch, .stopSearch, .searchScopeThisFolder, .searchScopeSubfolders, .searchScopeThisMac,
              .searchModeName, .searchModeContents, .renameSavedSearch, .removeSavedSearch, .downloadForPreview, .showInPreview,
-             .compressZip, .compressAppleArchive, .extractHere, .batchRename, .editTags:
+             .compressZip, .compressAppleArchive, .extractHere, .batchRename:
             nil
         }
     }
@@ -109,7 +109,7 @@ public enum KeyMap {
              .searchScopeThisFolder, .searchScopeSubfolders, .searchScopeThisMac, .searchModeName, .searchModeContents,
              .renameSavedSearch, .removeSavedSearch, .downloadForPreview, .showInPreview,
              .previewZoomIn, .previewZoomOut, .previewActualSize,
-             .showCommandPalette, .compressZip, .compressAppleArchive, .extractHere, .batchRename, .editTags:
+             .showCommandPalette, .compressZip, .compressAppleArchive, .extractHere, .batchRename:
             []
         }
     }

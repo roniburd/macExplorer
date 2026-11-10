@@ -50,33 +50,6 @@ public enum AttributeEdit: Sendable, Codable, Equatable {
     case locked(Bool), hidden(Bool), extensionHidden(Bool), permissions(UInt16), removeQuarantine
 }
 
-/// A tag change applied to every item of a `.setTags` job. Names match case-insensitively.
-/// `toggle`: Finder semantics — if any item lacks the tag it is added everywhere, otherwise removed everywhere.
-/// `recolor`: items that have the tag (by name) get its colour; it is never added. Applied to each item's tags as
-/// read by the job, so a tag editor never writes back a stale snapshot.
-public enum TagEdit: Sendable, Codable, Equatable {
-    case set([FileTag]), add(FileTag), remove(String), toggle(FileTag), recolor(FileTag)
-}
-
-extension TagEdit {
-    /// Pure. `toggle` is resolved to `add`/`remove` by the job before items are edited; here it behaves as `add`.
-    public func applied(to current: [FileTag]) -> [FileTag] {
-        switch self {
-        case .set(let tags): return TagIO.normalize(tags)
-        case .add(let tag):
-            let name = tag.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            return current.contains { $0.name.lowercased() == name } ? current : TagIO.normalize(current + [tag])
-        case .remove(let name):
-            let n = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            return current.filter { $0.name.lowercased() != n }
-        case .toggle(let tag): return TagEdit.add(tag).applied(to: current)
-        case .recolor(let tag):
-            let name = tag.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            return current.map { $0.name.lowercased() == name ? FileTag(name: $0.name, color: tag.color) : $0 }
-        }
-    }
-}
-
 public indirect enum JobKind: Sendable, Equatable {
     case copy(sources: [URL], destination: URL)
     case move(sources: [URL], destination: URL)
@@ -89,7 +62,6 @@ public indirect enum JobKind: Sendable, Equatable {
     case symlink(sources: [URL], destination: URL)
     case chmodRecursive(URL, ModeChange)
     case setAttributes([URL], AttributeEdit)
-    case setTags([URL], TagEdit)
     /// nil removes the custom icon (P4-07).
     case setCustomIcon([URL], IconImageData?)
     /// A zip or Apple Archive of the items, next to the first one (P4-09).
@@ -105,7 +77,7 @@ extension JobKind {
     var allURLs: [URL] {
         switch self {
         case .copy(let s, let d), .move(let s, let d), .alias(let s, let d), .symlink(let s, let d): return s + [d]
-        case .trash(let u), .delete(let u), .duplicate(let u), .setAttributes(let u, _), .setTags(let u, _), .setCustomIcon(let u, _),
+        case .trash(let u), .delete(let u), .duplicate(let u), .setAttributes(let u, _), .setCustomIcon(let u, _),
              .compress(let u, _): return u
         case .newItem(_, let d): return [d]
         case .rename(let u, _), .chmodRecursive(let u, _), .extract(let u): return [u]
@@ -125,7 +97,6 @@ extension JobKind {
         case .symlink: .makingSymlink
         case .chmodRecursive: .changingPermissions
         case .setAttributes: .changingAttributes
-        case .setTags: .tagging
         case .setCustomIcon: .changingIcon
         case .compress: .compressing
         case .extract: .extracting
@@ -139,7 +110,7 @@ extension JobKind {
         case .copy(let s, let d), .move(let s, let d), .alias(let s, let d), .symlink(let s, let d):
             return JobDescription(verb: verb, itemCount: s.count, firstItemName: s.first?.lastPathComponent,
                                   sourceFolderName: folderName(s.first), destinationFolderName: d.lastPathComponent)
-        case .trash(let u), .delete(let u), .duplicate(let u), .setAttributes(let u, _), .setTags(let u, _), .setCustomIcon(let u, _),
+        case .trash(let u), .delete(let u), .duplicate(let u), .setAttributes(let u, _), .setCustomIcon(let u, _),
              .compress(let u, _):
             return JobDescription(verb: verb, itemCount: u.count, firstItemName: u.first?.lastPathComponent,
                                   sourceFolderName: folderName(u.first), destinationFolderName: nil)
@@ -168,7 +139,7 @@ public enum JobState: Sendable, Equatable { case queued, planning, running, paus
 
 public enum JobVerb: String, Sendable, Codable {
     case copying, moving, trashing, deleting, duplicating, creating, renaming, makingAlias, makingSymlink,
-         changingPermissions, changingAttributes, tagging, changingIcon, compressing, extracting, undoing, redoing
+         changingPermissions, changingAttributes, changingIcon, compressing, extracting, undoing, redoing
 }
 
 /// UI formats "Copying 1,204 items from Downloads to Backup".

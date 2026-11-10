@@ -35,14 +35,13 @@ public enum ItemAction: Sendable, Codable, Equatable {
     case replaced(original: URL, trashURL: URL, FileIdentity)
     case modeChanged(URL, old: UInt16, new: UInt16)
     case attributesChanged(URL, old: AttributeSnapshot, new: AttributeSnapshot)
-    case tagsChanged(URL, old: [FileTag], new: [FileTag])
     /// nil = no custom icon. In-memory only (undo stack), like every JobRecord; the journal never holds it.
     case customIconChanged(URL, previous: IconImageData?, new: IconImageData?)
     case deleted(URL)
 
     var urls: [URL] {
         switch self {
-        case .created(let u, _), .createdDirectory(let u, _), .modeChanged(let u, _, _), .attributesChanged(let u, _, _), .tagsChanged(let u, _, _),
+        case .created(let u, _), .createdDirectory(let u, _), .modeChanged(let u, _, _), .attributesChanged(let u, _, _),
              .customIconChanged(let u, _, _), .deleted(let u): [u]
         case .moved(let a, let b, _), .renamed(let a, let b, _): [a, b]
         case .trashed(let a, let b, _), .replaced(let a, let b, _): [a, b]

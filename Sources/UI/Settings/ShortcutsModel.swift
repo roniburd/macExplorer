@@ -35,7 +35,7 @@ enum ShortcutApply: Equatable {
         ShortcutGroup(id: "file", title: L10n.string("File"),
                       commands: [.newFolder, .newTextFile, .newEmptyFile, .rename, .batchRename, .duplicate, .makeAlias,
                                  .makeSymlink, .compressZip, .compressAppleArchive, .extractHere,
-                                 .moveToTrash, .deletePermanently, .editTags, .share, .properties]),
+                                 .moveToTrash, .deletePermanently, .share, .properties]),
         ShortcutGroup(id: "navigation", title: L10n.string("Navigation"),
                       commands: [.back, .forward, .up, .focusAddressBar, .focusSearch, .refresh,
                                  .openContainingFolder, .cycleFocusForward, .cycleFocusBackward, .cancelOperation,

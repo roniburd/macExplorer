@@ -24,7 +24,6 @@ extension SidebarViewController {
     /// Favorites: then Remove from Favorites (+ Locate… when stale). Locations and tree volume roots: Eject, Properties.
     /// Items act on the clicked row, not the selection.
     func menu(forRow row: Int) -> NSMenu? {
-        if case .tagsHeader? = item(atRow: row) { return tagsHeaderMenu() }
         guard let item = item(atRow: row), !item.isHeader else { return nil }
         let menu = NSMenu()
         menu.autoenablesItems = false
@@ -57,34 +56,14 @@ extension SidebarViewController {
             menu.addItem(SidebarMenuItem(L10n.string("Remove from Sidebar")) { [weak self] in
                 self?.perform(.removeSavedSearch, on: item)
             })
-        case .tag(let tag):
-            menu.addItem(SidebarMenuItem(L10n.string("Remove from Sidebar")) { [weak self] in
-                self?.settings.setSidebarTag(tag.name, visible: false)
-            })
-            menu.addItem(SidebarMenuItem(L10n.string("Show All Tags…")) { [weak self] in self?.showAllTags() })
         case .location(let volume):
             addVolumeItems(volume, item: item, to: menu)
         case .folder(let node) where node.isVolumeRoot:
             addVolumeItems(node.volume, item: item, to: menu)
-        case .iCloudDrive, .cloudStorage, .trash, .folder, .favoritesHeader, .searchesHeader, .locationsHeader, .tagsHeader,
-             .foldersHeader:
+        case .iCloudDrive, .cloudStorage, .trash, .folder, .favoritesHeader, .searchesHeader, .locationsHeader, .foldersHeader:
             break
         }
         return menu.items.isEmpty ? nil : menu
-    }
-
-    /// The TAGS header (P4-06): Show All Tags… and Hide Tags (Settings › Sidebar shows the section again).
-    func tagsHeaderMenu() -> NSMenu {
-        let menu = NSMenu()
-        menu.autoenablesItems = false
-        menu.addItem(SidebarMenuItem(L10n.string("Show All Tags…")) { [weak self] in self?.showAllTags() })
-        menu.addItem(SidebarMenuItem(L10n.string("Hide Tags")) { [weak self] in self?.settings.showTagsInSidebar = false })
-        return menu
-    }
-
-    /// The Show All Tags… sheet: every known tag with a checkbox that shows or hides it in TAGS.
-    func showAllTags() {
-        presentTagsSheet(settings)
     }
 
     private func addVolumeItems(_ volume: VolumeInfo, item: SidebarItem, to menu: NSMenu) {

@@ -79,5 +79,3 @@ public struct FileOpError: Error, Sendable, Equatable {
 
 /// An error that carries an errno; jobs read it through `(error as? any ErrnoCarrying)?.errnoCode ?? EIO`.
 protocol ErrnoCarrying { var errnoCode: Int32 { get } }
-
-extension TagIOError: ErrnoCarrying { var errnoCode: Int32 { code } }

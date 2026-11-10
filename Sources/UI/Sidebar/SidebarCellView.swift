@@ -72,12 +72,6 @@ final class SidebarCellView: NSTableCellView {
         setAccessibilityLabel(dimmed ? String(format: L10n.string("%@ (not available)"), title) : title)
     }
 
-    /// A TAGS row's icon (P4-06): the tag's colour dot (an outlined circle for a colourless tag).
-    func showTagDot(_ color: TagColor) {
-        imageView?.image = TagDotsView.menuImage(for: color)
-        imageView?.contentTintColor = nil
-    }
-
     @objc private func ejectClicked(_ sender: Any?) { onEject?() }
 }
 

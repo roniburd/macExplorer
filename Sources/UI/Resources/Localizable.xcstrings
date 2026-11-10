@@ -652,17 +652,6 @@
         }
       }
     },
-    "Add Tags" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Add Tags"
-          }
-        }
-      }
-    },
     "Add a key or mouse button" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -879,17 +868,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Beta"
-          }
-        }
-      }
-    },
-    "Blue" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Blue"
           }
         }
       }
@@ -1984,17 +1962,6 @@
         }
       }
     },
-    "Done" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Done"
-          }
-        }
-      }
-    },
     "Download for Preview" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2123,17 +2090,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Edit"
-          }
-        }
-      }
-    },
-    "Edit Tags…" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Edit Tags…"
           }
         }
       }
@@ -2633,28 +2589,6 @@
         }
       }
     },
-    "Gray" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gray"
-          }
-        }
-      }
-    },
-    "Green" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Green"
-          }
-        }
-      }
-    },
     "Group (%@)" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2750,17 +2684,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hide Preview Pane"
-          }
-        }
-      }
-    },
-    "Hide Tags" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hide Tags"
           }
         }
       }
@@ -3799,17 +3722,6 @@
         }
       }
     },
-    "No Color" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No Color"
-          }
-        }
-      }
-    },
     "No Matches" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4129,17 +4041,6 @@
         }
       }
     },
-    "Orange" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Orange"
-          }
-        }
-      }
-    },
     "Original" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4350,17 +4251,6 @@
         }
       }
     },
-    "Purple" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Purple"
-          }
-        }
-      }
-    },
     "Put back %ld items that were being replaced." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4489,17 +4379,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Reassign"
-          }
-        }
-      }
-    },
-    "Red" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Red"
           }
         }
       }
@@ -5219,17 +5098,6 @@
         }
       }
     },
-    "Show All Tags…" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Show All Tags…"
-          }
-        }
-      }
-    },
     "Show Command Bar" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5336,17 +5204,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Show Tab Bar"
-          }
-        }
-      }
-    },
-    "Show Tags in the sidebar" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Show Tags in the sidebar"
           }
         }
       }
@@ -5637,39 +5494,6 @@
         }
       }
     },
-    "Tag" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tag"
-          }
-        }
-      }
-    },
-    "Tag Color" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tag Color"
-          }
-        }
-      }
-    },
-    "Tagging %@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tagging %@"
-          }
-        }
-      }
-    },
     "Tags" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5677,17 +5501,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tags"
-          }
-        }
-      }
-    },
-    "Tags shown in the sidebar" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tags shown in the sidebar"
           }
         }
       }
@@ -6535,17 +6348,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Write only"
-          }
-        }
-      }
-    },
-    "Yellow" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Yellow"
           }
         }
       }

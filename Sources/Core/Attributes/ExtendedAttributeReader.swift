@@ -24,10 +24,7 @@ public enum ExtendedAttributeReader {
                 if wanted.contains(.permissions) { a.mode = UInt16(st.st_mode) }
                 if wanted.contains(.owner) { a.ownerID = st.st_uid; a.ownerName = owners.name(for: st.st_uid) }
                 let path = base + name
-                if wanted.contains(.tags), let data = Xattrs.read(path, FinderMetadata.tagsXattr) {
-                    a.tags = FinderMetadata.parseTags(data)
-                    a.fileTags = TagIO.decode(data)
-                }
+                if wanted.contains(.tags) { a.tags = Xattrs.read(path, FinderMetadata.tagsXattr).map(FinderMetadata.parseTags) ?? [] }
                 if wanted.contains(.comments) {
                     a.comment = Xattrs.read(path, FinderMetadata.commentXattr).flatMap(FinderMetadata.parseComment)
                 }

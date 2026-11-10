@@ -11,7 +11,6 @@ public final class Settings {
     public static let recentLocationsLimit = 20
     public static let lastReportedCrashesLimit = 20
     public static let paletteRecentLimit = 20
-    public static let knownTagsLimit = 200
     /// Column defaults (display order): every ColumnID at its `defaultWidth`; Phase 1's Name, Date Modified, Size
     /// and Kind visible, everything else hidden. `DetailsColumns.defaults` is this list.
     public static let defaultColumns: [ColumnSetting] = ColumnID.allCases.map {
@@ -117,16 +116,6 @@ public final class Settings {
         set { paletteRecents = Array(newValue.prefix(Self.paletteRecentLimit)) }
     }
     private var paletteRecents: [String] { didSet { save(paletteRecents, Key.paletteRecent) } }
-    /// Tags offered by the tag editor and menus (P4-04): ≤ 200, most recently used first; default `FileTag.standard`.
-    public var knownTags: [FileTag] {
-        get { knownTagList }
-        set { knownTagList = Array(newValue.prefix(Self.knownTagsLimit)) }
-    }
-    private var knownTagList: [FileTag] { didSet { save(knownTagList, Key.knownTags) } }
-    /// Tag names shown in the sidebar's TAGS section (P4-06), in order; default the seven standard names.
-    public var sidebarTags: [String] { didSet { save(sidebarTags, Key.sidebarTags) } }
-    /// The sidebar's TAGS section is shown (P4-06; its header menu's Hide Tags turns it off, Settings › Sidebar on).
-    public var showTagsInSidebar: Bool { didSet { save(showTagsInSidebar, Key.showTagsInSidebar) } }
     /// Settings › General › Icon pack (P4-08): a bookmark of the pack folder; nil = no pack.
     public var iconPackBookmark: Data? { didSet { save(iconPackBookmark, Key.iconPackBookmark) } }
     private var tccOutcomes: [ProtectedLocation: TCCOutcome] { didSet { save(tccOutcomes.map(TCCRecord.init), Key.tccOutcomes) } }
@@ -183,9 +172,6 @@ public final class Settings {
         lastLocation = Self.load(URL.self, Key.lastLocation, from: storage)
         recents = Array((Self.load([String].self, Key.recentLocations, from: storage) ?? []).prefix(Self.recentLocationsLimit))
         paletteRecents = Array((Self.load([String].self, Key.paletteRecent, from: storage) ?? []).prefix(Self.paletteRecentLimit))
-        knownTagList = Array((Self.load([FileTag].self, Key.knownTags, from: storage) ?? FileTag.standard).prefix(Self.knownTagsLimit))
-        sidebarTags = Self.load([String].self, Key.sidebarTags, from: storage) ?? FileTag.standard.map(\.name)
-        showTagsInSidebar = Self.load(Bool.self, Key.showTagsInSidebar, from: storage) ?? true
         iconPackBookmark = Self.load(Data.self, Key.iconPackBookmark, from: storage)
         let records = Self.load([TCCRecord].self, Key.tccOutcomes, from: storage) ?? []
         tccOutcomes = Dictionary(records.map { ($0.location, $0.outcome) }, uniquingKeysWith: { _, last in last })
@@ -222,26 +208,6 @@ public final class Settings {
     public func notePaletteUsed(_ target: PaletteTarget) {
         let entry = target.encoded
         paletteRecent = [entry] + paletteRecent.filter { $0 != entry }
-    }
-
-    /// Moves `tag` to the front of `knownTags`, replacing any entry with the same name (case-insensitively).
-    public func noteTagUsed(_ tag: FileTag) {
-        let name = tag.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return }
-        let entry = FileTag(name: name, color: tag.color)
-        let list = [entry] + knownTags.filter { $0.name.lowercased() != name.lowercased() }
-        if list != knownTags { knownTags = list }
-    }
-
-    /// Shows (appended at the end) or hides `name` in the sidebar's TAGS section; names match case-insensitively and
-    /// hiding keeps the order of the others.
-    public func setSidebarTag(_ name: String, visible: Bool) {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        let key = trimmed.lowercased()
-        let shown = sidebarTags.contains { $0.lowercased() == key }
-        if visible, !shown { sidebarTags.append(trimmed) }
-        if !visible, shown { sidebarTags.removeAll { $0.lowercased() == key } }
     }
 
     /// `paletteRecent` decoded; entries this version can't read (a newer version's commands) are skipped.
@@ -304,8 +270,7 @@ public final class Settings {
         static let searchScope = "searchScope", searchMode = "searchMode", searchIncludesPackages = "searchIncludesPackages"
         static let resultsColumns = "resultsColumns", previewRendersMarkdown = "previewRendersMarkdown"
         static let previewReflowsDocuments = "previewReflowsDocuments", previewZoom = "previewZoom"
-        static let paletteRecent = "paletteRecent", knownTags = "knownTags", sidebarTags = "sidebarTags"
-        static let showTagsInSidebar = "showTagsInSidebar", iconPackBookmark = "iconPackBookmark"
+        static let paletteRecent = "paletteRecent", iconPackBookmark = "iconPackBookmark"
     }
 
     private struct TCCRecord: Codable {

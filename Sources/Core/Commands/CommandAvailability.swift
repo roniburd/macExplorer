@@ -61,13 +61,13 @@ public struct CommandState: Sendable, Equatable {
 public enum CommandAvailability {
     /// The Phase 4 commands (spec §11 "Phase 4 — Power", without the items moved to Phase 6).
     public static let phase4Commands: Set<Command> = [
-        .showCommandPalette, .compressZip, .compressAppleArchive, .extractHere, .batchRename, .editTags,
+        .showCommandPalette, .compressZip, .compressAppleArchive, .extractHere, .batchRename,
     ]
 
     /// The Phase 4 commands whose feature has landed. Each owning task adds its commands here (P4-03 the palette,
-    /// P4-05 Edit Tags, P4-09 compress, P4-10 Extract Here, P4-12 batch rename). Until then a command is disabled,
+    /// P4-09 compress, P4-10 Extract Here, P4-12 batch rename). Until then a command is disabled,
     /// holds no keys (`KeyBindings`) and is left out of the menus and Settings › Shortcuts.
-    public static let shippedPhase4Commands: Set<Command> = [.showCommandPalette, .editTags, .compressZip, .compressAppleArchive, .extractHere]
+    public static let shippedPhase4Commands: Set<Command> = [.showCommandPalette, .compressZip, .compressAppleArchive, .extractHere]
 
     /// False only for a Phase 4 command that hasn't shipped yet.
     public static func isShipped(_ command: Command) -> Bool {
@@ -172,7 +172,7 @@ public enum CommandAvailability {
              .searchScopeThisFolder, .searchScopeSubfolders, .searchScopeThisMac, .searchModeName, .searchModeContents,
              .renameSavedSearch, .removeSavedSearch, .downloadForPreview, .showInPreview, .viewAsIcons, .viewAsColumns,
              .previewZoomIn, .previewZoomOut, .previewActualSize,
-             .showCommandPalette, .compressZip, .compressAppleArchive, .extractHere, .batchRename, .editTags:
+             .showCommandPalette, .compressZip, .compressAppleArchive, .extractHere, .batchRename:
             return false   // decided above
         }
     }
@@ -190,7 +190,6 @@ public enum CommandAvailability {
             return selected && writable && (focus == .content || focus == .sidebarFolders)
         case .extractHere: return state.selectionIsArchive && writable && focus == .content
         case .batchRename: return state.selectionCount > 1 && writable && inContent
-        case .editTags: return selected && (inContent || focus == .sidebarFolders)
         case .open, .openInNewWindow, .showPackageContents, .openInTerminal, .revealInFinder,
              .cut, .copy, .paste, .moveItemHere, .selectAll, .undo, .redo, .selectNone, .invertSelection,
              .rename, .moveToTrash, .deletePermanently, .duplicate, .makeAlias, .makeSymlink,

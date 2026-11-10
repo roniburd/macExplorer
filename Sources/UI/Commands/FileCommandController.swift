@@ -11,8 +11,6 @@ final class FileCommandController: CommandHandler {
     var prompts: any CommandPrompts = AppKitCommandPrompts()
     /// Set by SidebarViewController so F2 on a Folders-tree node renames inline there; nil → a name prompt.
     var beginSidebarRename: ((URL) -> Void)?
-    /// The open Edit Tags… popover (P4-05), if any.
-    var tagPopover: NSPopover?
     /// Commands whose UI arrives in a later Phase 2 task (disabled, never performed). The NSWindow tab commands are
     /// here too: NSWindow and BrowserWindowController handle them, so they never reach a pane's handler.
     /// Every Phase 3 command has its action now (the preview pane, P3-12, was the last).
@@ -145,7 +143,6 @@ final class FileCommandController: CommandHandler {
         case .newTab, .nextTab, .previousTab, .showTabBar, .showAllTabs, .moveTabToNewWindow, .mergeAllWindows:
             break   // pendingCommands: canPerform is false, so perform beeps above
         case .showCommandPalette: window?.showCommandPalette()
-        case .editTags: editTags(target)
         case .compressZip: compress(target, .zip)
         case .compressAppleArchive: compress(target, .appleArchive)
         case .extractHere: extractHere(target)

@@ -41,10 +41,6 @@ public struct FolderContext {
     public var resortCoalescing: Duration
     /// uid → user name for the Owner column (P2-15); CoreEnvironment shares one cache across folders.
     public var ownerNames: OwnerNameCache
-    /// Items of a folder changed outside the model's own patches (watcher events, F5): the names, or nil when the
-    /// change can't be pinned to names (full rescan, root changed, refresh). CoreEnvironment drops the TagCache
-    /// entries (P4-05: tags edited by Finder or other apps, paths reused).
-    public var itemsChanged: @MainActor (_ directory: URL, _ names: [String]?) -> Void
 
     public init(readers: DirectoryReaders, lanes: LanePool, volumes: Volumes, changeBus: ChangeBus,
                 types: TypeRegistry = .shared, pacer: any FramePacer = TimerFramePacer(),
@@ -55,9 +51,7 @@ public struct FolderContext {
                 now: @escaping @Sendable () -> Date = { Date() },
                 calendar: Calendar = .autoupdatingCurrent,
                 resortCoalescing: Duration = .milliseconds(500),
-                ownerNames: OwnerNameCache = OwnerNameCache(),
-                itemsChanged: @escaping @MainActor (_ directory: URL, _ names: [String]?) -> Void = { _, _ in }) {
-        self.itemsChanged = itemsChanged
+                ownerNames: OwnerNameCache = OwnerNameCache()) {
         self.home = home
         self.ownerNames = ownerNames
         self.resortCoalescing = resortCoalescing
@@ -253,7 +247,6 @@ public final class FolderModel {
         case .complete:
             if rereadInFlight && rereadStalled { abandonReread() }
             invalidateAllExtendedAttributes()       // F5 re-reads the visible rows' attributes too (P2-15)
-            context.itemsChanged(directory, nil)
             localizedNameCache = [:]
             beginReread()
         case .loading, .partial: break

@@ -37,7 +37,7 @@ final class ShortcutsModelTests: XCTestCase {
 
     func testPhase4CommandsHaveAGroupAndATitle() {
         func group(of c: Command) -> String? { ShortcutsModel.allGroups.first { $0.commands.contains(c) }?.id }
-        for c: Command in [.compressZip, .compressAppleArchive, .extractHere, .batchRename, .editTags] {
+        for c: Command in [.compressZip, .compressAppleArchive, .extractHere, .batchRename] {
             XCTAssertEqual(group(of: c), "file", "\(c)")
         }
         XCTAssertEqual(group(of: .showCommandPalette), "navigation", "next to its Go menu siblings")

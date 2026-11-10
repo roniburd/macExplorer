@@ -350,8 +350,6 @@ enum JobRunner {
             await AttributeJobs.chmodRecursive(ctx, url, change)
         case .setAttributes(let urls, let edit):
             await AttributeJobs.setAttributes(ctx, urls, edit)
-        case .setTags(let urls, let edit):
-            await TagJobs.setTags(ctx, urls, edit)
         case .setCustomIcon(let urls, let data):
             await IconJobs.setCustomIcon(ctx, urls, data)
         case .compress(let urls, let format):

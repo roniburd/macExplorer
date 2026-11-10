@@ -81,7 +81,7 @@ public enum OpenFoldersIn: String, Sendable, Codable { case sameWindow, newWindo
 public enum ReturnKeyBehavior: String, Sendable, Codable { case open, rename }
 public enum DateStyle: String, Sendable, Codable { case relative, absolute }
 /// Declaration order is the sidebar order (Phase 3 adds SEARCHES under FAVORITES; existing raw values unchanged).
-public enum SidebarSection: String, Sendable, Codable, CaseIterable { case favorites, searches, locations, tags, folders }
+public enum SidebarSection: String, Sendable, Codable, CaseIterable { case favorites, searches, locations, folders }
 public enum DefaultFavorite: String, Sendable, Codable, CaseIterable { case home, desktop, documents, downloads, applications }
 public enum TCCOutcome: String, Sendable, Codable { case granted, denied }
 

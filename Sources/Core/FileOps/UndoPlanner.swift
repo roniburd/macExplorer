@@ -11,7 +11,6 @@ enum UndoStep: Sendable, Equatable {
     case renameBack(current: URL, original: URL, FileIdentity)
     case restoreMode(URL, expected: UInt16, restore: UInt16)
     case restoreAttributes(URL, expected: AttributeSnapshot, restore: AttributeSnapshot)
-    case restoreTags(URL, expected: [FileTag], restore: [FileTag])
     case restoreIcon(URL, expected: IconImageData?, restore: IconImageData?)
 
     var isRestoreMode: Bool { if case .restoreMode = self { true } else { false } }
@@ -36,7 +35,6 @@ enum UndoPlanner {
                 .moveBack(current: t, original: original, id)
             case .modeChanged(let u, let old, let new): .restoreMode(u, expected: new, restore: old)
             case .attributesChanged(let u, let old, let new): .restoreAttributes(u, expected: new, restore: old)
-            case .tagsChanged(let u, let old, let new): .restoreTags(u, expected: new, restore: old)
             case .customIconChanged(let u, let previous, let new): .restoreIcon(u, expected: new, restore: previous)
             case .deleted: nil
             }
@@ -75,7 +73,6 @@ enum UndoPlanner {
         case .renameBack(let c, let o, let id): return await renameBack(ctx, current: c, original: o, id)
         case .restoreMode: return await restoreModes(ctx, [step]) ? .done : .cancelled
         case .restoreAttributes(let u, let e, let r): return await restoreAttributes(ctx, u, expected: e, restore: r)
-        case .restoreTags(let u, let e, let r): return await TagJobs.restoreTags(ctx, u, expected: e, restore: r)
         case .restoreIcon(let u, let e, let r): return await IconJobs.restoreIcon(ctx, u, expected: e, restore: r)
         }
     }

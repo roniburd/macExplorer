@@ -100,7 +100,7 @@ import Core
             item(.rename), item(.duplicate), item(.makeAlias), item(.makeSymlink),
             submenu(L10n.string("Compress"), id: "compress", [item(.compressZip), item(.compressAppleArchive)]), item(.extractHere), .separator(),
             item(.moveToTrash), item(.deletePermanently), .separator(),
-            item(.editTags), item(.share), item(.properties), .separator(),
+            item(.share), item(.properties), .separator(),
             item(.saveSearch), .separator(),
             item(.eject), item(.removeFromFavorites), item(.renameSavedSearch), item(.removeSavedSearch), .separator(),
             item(.closeWindow),

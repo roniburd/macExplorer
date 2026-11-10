@@ -911,13 +911,6 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
             cell.configure(parent: source.parentURL(atRow: row), home: settings.home, isCut: isCut)
             return cell
         }
-        if id == .tags, let folder {
-            let cell = tableView.makeView(withIdentifier: TagsCellView.reuseID, owner: nil) as? TagsCellView ?? TagsCellView()
-            let attributes = folder.extendedAttributes(atRow: row)
-            let tags = attributes.flatMap { $0.loaded.contains(.tags) ? $0.fileTags : nil } ?? []
-            cell.configure(tags: tags, text: text(for: id, row: row), isCut: isCut)
-            return cell
-        }
         let cell = tableView.makeView(withIdentifier: PlainCellView.reuseID, owner: nil) as? PlainCellView ?? PlainCellView()
         let label = id == .size && Self.isSizedFolder(entry)
             ? folder.flatMap { FolderSizeText.accessibilityLabel($0.folderSize(atRow: row), enabled: $0.folderSizesEnabled) } : nil

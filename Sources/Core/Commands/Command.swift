@@ -40,9 +40,9 @@ public enum Command: String, Sendable, Codable, CaseIterable {
     case showInPreview
     // Preview pane zoom (text, Markdown, reflowed documents)
     case previewZoomIn, previewZoomOut, previewActualSize
-    // Phase 4: command palette, compress/extract, batch rename, tags. Disabled and unbound until their task ships
+    // Phase 4: command palette, compress/extract, batch rename. Disabled and unbound until their task ships
     // them (`CommandAvailability.shippedPhase4Commands`).
-    case showCommandPalette, compressZip, compressAppleArchive, extractHere, batchRename, editTags
+    case showCommandPalette, compressZip, compressAppleArchive, extractHere, batchRename
 
     /// "cut:", "copy:", "paste:", "selectAll:", "undo:", "redo:", "cancelOperation:" for the standard ones;
     /// AppKit's NSWindow tab actions ("newWindowForTab:", "selectNextTab:", "selectPreviousTab:", "toggleTabBar:",
@@ -93,7 +93,7 @@ public enum Command: String, Sendable, Codable, CaseIterable {
              .searchScopeThisFolder, .searchScopeSubfolders, .searchScopeThisMac, .searchModeName, .searchModeContents,
              .renameSavedSearch, .removeSavedSearch, .downloadForPreview, .showInPreview,
              .previewZoomIn, .previewZoomOut, .previewActualSize,
-             .showCommandPalette, .compressZip, .compressAppleArchive, .extractHere, .batchRename, .editTags:
+             .showCommandPalette, .compressZip, .compressAppleArchive, .extractHere, .batchRename:
             false
         }
     }

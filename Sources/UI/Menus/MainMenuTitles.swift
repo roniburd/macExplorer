@@ -109,7 +109,6 @@ import Core
         case .compressAppleArchive: L10n.string("Compress to .aar")
         case .extractHere: L10n.string("Extract Here")
         case .batchRename: L10n.string("Rename Items…")
-        case .editTags: L10n.string("Edit Tags…")
         }
     }
 }

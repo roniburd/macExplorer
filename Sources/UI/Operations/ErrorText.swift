@@ -53,7 +53,7 @@ extension ErrorText {
         case .makingAlias?, .makingSymlink?: "You don't have permission to make a link to '%@'."
         case .compressing?: "You don't have permission to compress '%@'."
         case .extracting?: "You don't have permission to extract '%@'."
-        case .changingPermissions?, .changingAttributes?, .tagging?, .changingIcon?, .undoing?, .redoing?, nil: "You don't have permission to change '%@'."
+        case .changingPermissions?, .changingAttributes?, .changingIcon?, .undoing?, .redoing?, nil: "You don't have permission to change '%@'."
         }
     }
 }

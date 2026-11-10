@@ -22,7 +22,7 @@ final class FakeIconWriter: CustomIconWriting, @unchecked Sendable {
     }
     func setIcon(_ data: IconImageData?, for url: URL) throws {
         try lock.withLock {
-            if let code = failingPaths[url.path] { throw TagIOError(code: code) }
+            if let code = failingPaths[url.path] { throw IconWriteError(code: code) }
             icons[url.path] = data
         }
     }

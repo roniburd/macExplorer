@@ -47,7 +47,7 @@ final class BasicAlertInteractionTests: XCTestCase {
 final class UndoActionNamesTests: XCTestCase {
     func testEveryVerbHasALocalizedName() {
         let verbs: [JobVerb] = [.copying, .moving, .trashing, .deleting, .duplicating, .creating, .renaming, .makingAlias,
-                                .makingSymlink, .changingPermissions, .changingAttributes, .tagging, .undoing, .redoing]
+                                .makingSymlink, .changingPermissions, .changingAttributes, .undoing, .redoing]
         for verb in verbs {
             let name = UndoActionNames.name(for: JobDescription(verb: verb, itemCount: 1, firstItemName: "a", sourceFolderName: nil,
                                                                destinationFolderName: nil))
@@ -58,7 +58,5 @@ final class UndoActionNamesTests: XCTestCase {
                                                                 sourceFolderName: nil, destinationFolderName: nil)), "Copy")
         XCTAssertEqual(UndoActionNames.name(for: JobDescription(verb: .trashing, itemCount: 2, firstItemName: nil,
                                                                 sourceFolderName: nil, destinationFolderName: nil)), "Move to Trash")
-        XCTAssertEqual(UndoActionNames.name(for: JobDescription(verb: .tagging, itemCount: 2, firstItemName: nil,
-                                                                sourceFolderName: nil, destinationFolderName: nil)), "Tag")
     }
 }

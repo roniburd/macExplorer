@@ -5,7 +5,7 @@ import XCTest
 final class KeymapPresetTests: XCTestCase {
     private func chord(_ s: String) -> KeyChord { KeyChord(parsing: s)! }
 
-    static let phase4: [Command] = [.showCommandPalette, .compressZip, .compressAppleArchive, .extractHere, .batchRename, .editTags]
+    static let phase4: [Command] = [.showCommandPalette, .compressZip, .compressAppleArchive, .extractHere, .batchRename]
 
     func testPhase4CommandsAreAppendedWithMacxSelectors() {
         XCTAssertEqual(Array(Command.allCases.suffix(Self.phase4.count)), Self.phase4)
@@ -59,12 +59,7 @@ final class KeymapPresetTests: XCTestCase {
         XCTAssertFalse(on(.batchRename, CommandState(selectionCount: 1)))
         XCTAssertFalse(on(.batchRename, CommandState(selectionCount: 2, folderIsReadOnly: true)))
         XCTAssertFalse(on(.batchRename, .sidebarFolders, CommandState(selectionCount: 2)))
-        XCTAssertTrue(on(.editTags, CommandState(selectionCount: 1)))
-        XCTAssertTrue(on(.editTags, .sidebarFolders, CommandState(selectionCount: 1)))
-        XCTAssertFalse(on(.editTags, CommandState()))
-        XCTAssertFalse(on(.editTags, .sidebarLocations, CommandState(selectionCount: 1)))
         // Search results act like the content view.
-        XCTAssertTrue(on(.editTags, .searchResults, CommandState(selectionCount: 1)))
         XCTAssertTrue(on(.batchRename, .searchResults, CommandState(selectionCount: 2)))
         // Compress and Extract write next to the items: search results have no single folder.
         for c: Command in [.compressZip, .compressAppleArchive, .extractHere] {

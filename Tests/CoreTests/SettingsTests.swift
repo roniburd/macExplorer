@@ -20,7 +20,7 @@ final class SettingsTypesTests: XCTestCase {
     func testRawValuesAreStable() {
         XCTAssertEqual(ViewMode.allCases.map(\.rawValue), ["details", "icons", "columns"])
         XCTAssertEqual(DefaultFavorite.allCases.map(\.rawValue), ["home", "desktop", "documents", "downloads", "applications"])
-        XCTAssertEqual(SidebarSection.allCases.map(\.rawValue), ["favorites", "searches", "locations", "tags", "folders"])   // P3-07 searches, P4-06 tags
+        XCTAssertEqual(SidebarSection.allCases.map(\.rawValue), ["favorites", "searches", "locations", "folders"])   // P3-07 adds searches
         XCTAssertEqual(TCCOutcome.granted.rawValue, "granted")
     }
 
