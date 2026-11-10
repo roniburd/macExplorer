@@ -71,6 +71,7 @@ struct GeneralTab: View {
                     Button(L10n.string("Reveal")) { actions.reveal(item.url) }
                 }
             }
+            TagsRow(model: model)
             if item.kind == .directory {
                 LabeledContent(L10n.string("Size"), value: PropertiesFormat.countedSize(model.folderCount))
                 LabeledContent(L10n.string("Contains"), value: model.folderCount.map { PropertiesFormat.contains($0) }
@@ -200,6 +201,21 @@ struct DetailsTab: View {
     }
 }
 
+/// The "Tags" row (P4-05): the tag editor inline, for one or several items (no row for a volume).
+private struct TagsRow: View {
+    let model: PropertiesViewModel
+
+    var body: some View {
+        if let editor = model.tagEditor {
+            LabeledContent(L10n.string("Tags")) {
+                TagEditorView(model: editor)
+                    .frame(minHeight: 22)
+                    .accessibilityIdentifier("macx.properties.tags")
+            }
+        }
+    }
+}
+
 private struct MultiItemsForm: View {
     let model: PropertiesViewModel
     let multi: MultiProperties
@@ -208,6 +224,7 @@ private struct MultiItemsForm: View {
         Form {
             LabeledContent(L10n.string("Selection"), value: PropertiesFormat.items(count: multi.count, files: multi.files, folders: multi.folders))
             LabeledContent(L10n.string("Total size"), value: PropertiesFormat.size(multi.totalSize))
+            TagsRow(model: model)
             LabeledContent(L10n.string("Attributes")) {
                 VStack(alignment: .leading, spacing: 4) {
                     TriCheckbox(title: L10n.string("Read-only (Locked)"), state: multi.locked) { on in Task { await model.setLocked(on) } }

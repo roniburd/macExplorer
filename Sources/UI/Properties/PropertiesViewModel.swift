@@ -55,6 +55,8 @@ final class PropertiesViewModel {
     private(set) var inlineError: String?
     private(set) var isApplying = false
     var icon: CGImage?
+    /// The "Tags" row's editor (P4-05): one or more items; nil for a volume.
+    private(set) var tagEditor: TagEditorModel?
 
     let environment: CoreEnvironment
     /// The window's number; jobs carry it so P1-38's router answers their errors inline.
@@ -74,6 +76,23 @@ final class PropertiesViewModel {
         let operations = environment.operations
         perform = { request in await operations.perform(request) }
         finishedToken = operations.onFinished { [weak self] _, outcome in self?.jobFinished(outcome) }
+        makeTagEditor()
+    }
+
+    /// Tag edits run as this window's jobs (inline errors, P1-38) and report a skipped item like the other edits.
+    private func makeTagEditor() {
+        guard case .items(let urls) = subject, !urls.isEmpty else { tagEditor = nil; return }
+        let editor = TagEditorModel(urls: urls, environment: environment)
+        let operations = environment.operations
+        editor.perform = { [weak self] kind in
+            guard let self else { return await operations.perform(JobRequest(kind, origin: nil)) }
+            return await self.perform(JobRequest(kind, origin: self.origin))
+        }
+        editor.onSkipped = { [weak self] skipped, verb in
+            guard let reason = skipped.reason else { return }
+            self?.inlineError = ErrorText.jobError(reason, name: skipped.url.lastPathComponent, verb: verb)
+        }
+        tagEditor = editor
     }
 
     var urls: [URL] {
@@ -179,9 +198,16 @@ final class PropertiesViewModel {
                 break
             }
         }
+        var tagsTouched = false
+        for action in outcome.record.actions {
+            if case .tagsChanged(let url, _, _) = action, mapped.contains(url.standardizedFileURL) { tagsTouched = true }
+        }
         if mapped != current {
             subject = .items(mapped)
             onSubjectChanged?(subject)
+            makeTagEditor()
+        } else if tagsTouched, let tagEditor {
+            Task { await tagEditor.reload() }
         }
         if touched { Task { await self.load() } }
     }

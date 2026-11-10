@@ -99,7 +99,7 @@ import Core
             .separator(),
             item(.rename), item(.duplicate), item(.makeAlias), item(.makeSymlink), .separator(),
             item(.moveToTrash), item(.deletePermanently), .separator(),
-            item(.share), item(.properties), .separator(),
+            item(.editTags), item(.share), item(.properties), .separator(),
             item(.saveSearch), .separator(),
             item(.eject), item(.removeFromFavorites), item(.renameSavedSearch), item(.removeSavedSearch), .separator(),
             item(.closeWindow),

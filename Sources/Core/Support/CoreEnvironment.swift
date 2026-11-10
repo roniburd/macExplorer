@@ -29,6 +29,8 @@ public final class CoreEnvironment {
     public let termination: TerminationCoordinator
     /// Spotlight, index status and iCloud downloads for search and preview (P3-06). Sandboxed environments use fakes.
     public let searchServices: SearchServices
+    /// Tags per item for menus and the tag editor (P4-05); follows finished tag jobs (undo/redo included).
+    public let tagCache: TagCache
 
     /// Undo action names ("Copy", "Move"…) are user-visible text, which Core never produces: the app installs a
     /// localized formatter at launch (P1-26). Default: the verb's raw value ("copying").
@@ -106,6 +108,14 @@ public final class CoreEnvironment {
         let operations = OperationsCenter(queue: queue, undo: undo, changeBus: bus, actionName: { namer.format($0) })
         self.operations = operations
         self.termination = TerminationCoordinator(queue: queue, operations: operations)
+        let tagCache = TagCache(lanes: lanes, volumeID: { [weak volumes] url in volumes?.volume(for: url)?.id ?? .unknown })
+        self.tagCache = tagCache
+        tokens.append(operations.onFinished { _, outcome in
+            let changed = outcome.record.actions.compactMap { action -> URL? in
+                if case .tagsChanged(let url, _, _) = action { url } else { nil }
+            }
+            if !changed.isEmpty { tagCache.invalidate(changed) }
+        })
 
         // §4.2 release (S1 contract note 15): cancel this volume's reads first, then pause the jobs touching it.
         // Watchers stop through FolderModel's volume-gone path (P1-11); windows move home in WindowManager (P1-26).

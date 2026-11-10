@@ -31,8 +31,10 @@ public struct ExtendedAttributeSet: OptionSet, Sendable, Hashable {
 /// One item's extended attributes. Only the fields named by `loaded` are meaningful.
 public struct ExtendedAttributes: Sendable, Equatable {
     public var loaded: ExtendedAttributeSet
-    /// Finder tag names, in Finder's order (colours are Phase 4).
+    /// Finder tag names, in Finder's order.
     public var tags: [String] = []
+    /// The same tags with their colours (P4-05: the Tags column's dots), decoded by `TagIO.decode`.
+    public var fileTags: [FileTag] = []
     public var lastOpened: Date?
     /// `st_mode` of the item itself (never a symlink's target): type and permission bits.
     public var mode: UInt16?
@@ -46,7 +48,7 @@ public struct ExtendedAttributes: Sendable, Equatable {
     public func merging(_ other: ExtendedAttributes) -> ExtendedAttributes {
         var r = self
         r.loaded.formUnion(other.loaded)
-        if other.loaded.contains(.tags) { r.tags = other.tags }
+        if other.loaded.contains(.tags) { r.tags = other.tags; r.fileTags = other.fileTags }
         if other.loaded.contains(.lastOpened) { r.lastOpened = other.lastOpened }
         if other.loaded.contains(.permissions) { r.mode = other.mode }
         if other.loaded.contains(.owner) { r.ownerID = other.ownerID; r.ownerName = other.ownerName }
