@@ -60,6 +60,7 @@ enum AXID {
     static let searchResultsTitle = "macx.searchResultsTitle"
     // Phase 3 saved searches (plan P3-11)
     static func sidebarSavedSearch(_ name: String) -> String { "macx.sidebar.search.\(name)" }
+    static func sidebarTag(_ name: String) -> String { "macx.sidebar.tag.\(name)" }
     static let namePromptField = "macx.namePromptField"
     // Phase 3 preview pane (plan P3-12)
     static let previewPane = "macx.preview"

@@ -125,6 +125,8 @@ public final class Settings {
     private var knownTagList: [FileTag] { didSet { save(knownTagList, Key.knownTags) } }
     /// Tag names shown in the sidebar's TAGS section (P4-06), in order; default the seven standard names.
     public var sidebarTags: [String] { didSet { save(sidebarTags, Key.sidebarTags) } }
+    /// The sidebar's TAGS section is shown (P4-06; its header menu's Hide Tags turns it off, Settings › Sidebar on).
+    public var showTagsInSidebar: Bool { didSet { save(showTagsInSidebar, Key.showTagsInSidebar) } }
     private var tccOutcomes: [ProtectedLocation: TCCOutcome] { didSet { save(tccOutcomes.map(TCCRecord.init), Key.tccOutcomes) } }
 
     /// `diagnostic` receives one message per stored value that exists but can't be decoded (key-bindings spec §6);
@@ -181,6 +183,7 @@ public final class Settings {
         paletteRecents = Array((Self.load([String].self, Key.paletteRecent, from: storage) ?? []).prefix(Self.paletteRecentLimit))
         knownTagList = Array((Self.load([FileTag].self, Key.knownTags, from: storage) ?? FileTag.standard).prefix(Self.knownTagsLimit))
         sidebarTags = Self.load([String].self, Key.sidebarTags, from: storage) ?? FileTag.standard.map(\.name)
+        showTagsInSidebar = Self.load(Bool.self, Key.showTagsInSidebar, from: storage) ?? true
         let records = Self.load([TCCRecord].self, Key.tccOutcomes, from: storage) ?? []
         tccOutcomes = Dictionary(records.map { ($0.location, $0.outcome) }, uniquingKeysWith: { _, last in last })
         updateChannel = Self.load(UpdateChannel.self, Key.updateChannel, from: storage) ?? .release
@@ -225,6 +228,17 @@ public final class Settings {
         let entry = FileTag(name: name, color: tag.color)
         let list = [entry] + knownTags.filter { $0.name.lowercased() != name.lowercased() }
         if list != knownTags { knownTags = list }
+    }
+
+    /// Shows (appended at the end) or hides `name` in the sidebar's TAGS section; names match case-insensitively and
+    /// hiding keeps the order of the others.
+    public func setSidebarTag(_ name: String, visible: Bool) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let key = trimmed.lowercased()
+        let shown = sidebarTags.contains { $0.lowercased() == key }
+        if visible, !shown { sidebarTags.append(trimmed) }
+        if !visible, shown { sidebarTags.removeAll { $0.lowercased() == key } }
     }
 
     /// `paletteRecent` decoded; entries this version can't read (a newer version's commands) are skipped.
@@ -288,6 +302,7 @@ public final class Settings {
         static let resultsColumns = "resultsColumns", previewRendersMarkdown = "previewRendersMarkdown"
         static let previewReflowsDocuments = "previewReflowsDocuments", previewZoom = "previewZoom"
         static let paletteRecent = "paletteRecent", knownTags = "knownTags", sidebarTags = "sidebarTags"
+        static let showTagsInSidebar = "showTagsInSidebar"
     }
 
     private struct TCCRecord: Codable {

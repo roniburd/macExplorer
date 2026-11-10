@@ -2,7 +2,7 @@ import SwiftUI
 import Core
 
 /// §7 Sidebar: show or hide each default favorite (removing one from the sidebar hides it; this brings it back) and
-/// the Locations items.
+/// the Locations items, and the TAGS section (P4-06).
 struct SidebarSettingsView: View {
     @Bindable var settings: Core.Settings
 
@@ -17,6 +17,11 @@ struct SidebarSettingsView: View {
                 Toggle(L10n.string("iCloud Drive"), isOn: $settings.showICloudInSidebar)
                 Toggle(L10n.string("Cloud storage (OneDrive, Google Drive, Dropbox…)"), isOn: $settings.showCloudStorageInSidebar)
                 Toggle(L10n.string("External disks"), isOn: $settings.showExternalVolumesInSidebar)
+            }
+            // P4-06: the TAGS section (its header menu's Hide Tags turns it off) and which tags it lists.
+            Section(L10n.string("Tags")) {
+                Toggle(L10n.string("Show Tags in the sidebar"), isOn: $settings.showTagsInSidebar)
+                if settings.showTagsInSidebar { SidebarTagChoicesList(settings: settings) }
             }
         }
         .formStyle(.grouped)

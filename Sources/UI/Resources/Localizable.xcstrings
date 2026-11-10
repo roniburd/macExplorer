@@ -1907,6 +1907,17 @@
         }
       }
     },
+    "Done" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done"
+          }
+        }
+      }
+    },
     "Download for Preview" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2629,6 +2640,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hide Preview Pane"
+          }
+        }
+      }
+    },
+    "Hide Tags" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide Tags"
           }
         }
       }
@@ -5054,6 +5076,17 @@
         }
       }
     },
+    "Show All Tags…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show All Tags…"
+          }
+        }
+      }
+    },
     "Show Command Bar" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5160,6 +5193,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Show Tab Bar"
+          }
+        }
+      }
+    },
+    "Show Tags in the sidebar" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Tags in the sidebar"
           }
         }
       }
@@ -5490,6 +5534,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tags"
+          }
+        }
+      }
+    },
+    "Tags shown in the sidebar" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tags shown in the sidebar"
           }
         }
       }

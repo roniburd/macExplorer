@@ -3,7 +3,7 @@ import Core
 import MacxFS
 
 /// The sidebar (§5.4): one source-list NSOutlineView with FAVORITES, SEARCHES (P3-11, only while there are saved
-/// searches), LOCATIONS and FOLDERS sections. Rows navigate the
+/// searches), LOCATIONS, TAGS (P4-06, unless hidden) and FOLDERS sections. Rows navigate the
 /// window's session; commands act on the focused row (`focusContext` / `commandTarget`), never on the content
 /// selection. Section collapse state persists in `Settings.collapsedSections`.
 @MainActor
@@ -19,6 +19,8 @@ final class SidebarViewController: CommandHandlingViewController {
     private(set) lazy var dragSource = DragSourceController(icons: context.icons)
     let tree: FolderTreeController
     let favorites: SidebarFavoritesModel
+    /// The TAGS rows, drop-to-tag and tag results (P4-06).
+    let tagsSection: SidebarTagsSection
     /// Middle-click / ⌘-click on a row (P2-06): a background tab of this window (tests replace it).
     lazy var openBackgroundTab: (URL) -> Void = { [weak self] url in
         (self?.view.window?.windowController as? BrowserWindowController)?.openTabs([url], select: false)
@@ -29,6 +31,11 @@ final class SidebarViewController: CommandHandlingViewController {
         guard let self, let host = self.view.window?.windowController as? BrowserWindowController else { return }
         let tab = self.context.windows.openTab(at: saved.spec.root, in: host, select: select)
         Task { await tab.session.openSavedSearch(saved) }
+    }
+    /// Show All Tags… (P4-06): the tag checkboxes as a sheet on the window (tests replace it).
+    lazy var presentTagsSheet: (Settings) -> Void = { [weak self] settings in
+        guard let self else { return }
+        SidebarTagsSheet.present(from: self, settings: settings)
     }
     /// Locate… picks the new folder (tests replace it). Default: an NSOpenPanel sheet.
     var pickFolder: (_ message: String, _ window: NSWindow?) async -> URL? = SidebarViewController.openPanel
@@ -63,6 +70,7 @@ final class SidebarViewController: CommandHandlingViewController {
         self.tree = FolderTreeController(readers: context.environment.readers, showHidden: context.environment.settings.showHidden)
         self.favorites = SidebarFavoritesModel(environment: context.environment,
                                                confinement: SandboxConfinement(root: context.options.root))
+        self.tagsSection = SidebarTagsSection(context: context, session: session)
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -171,6 +179,14 @@ final class SidebarViewController: CommandHandlingViewController {
         tree.onChange = { [weak self] node in self?.treeChanged(node) }
         tree.onDrop = { [weak self] node in self?.boxes[SidebarItem.folder(node).identity] = nil }
         favorites.onChange = { [weak self] in self?.reloadSection(.favoritesHeader) }
+        let fallbackTagEdit = tagsSection.applyTagEdit
+        tagsSection.applyTagEdit = { [weak self] edit, urls in
+            if let commands = self?.handler as? FileCommandController {
+                await commands.applyTagEdit(edit, to: urls)
+            } else {
+                await fallbackTagEdit(edit, urls)
+            }
+        }
         lastSettings = SettingsSnapshot(settings)
         settingsLoop = ObservationLoop({ [weak self] in _ = self.map { SettingsSnapshot($0.settings) } },
                                        onChange: { [weak self] in self?.settingsChanged() })
@@ -207,9 +223,13 @@ final class SidebarViewController: CommandHandlingViewController {
 
     // MARK: rows
 
-    /// The headers in the outline, in order: FAVORITES, SEARCHES (only with saved searches), LOCATIONS, FOLDERS.
+    /// The headers in the outline, in order: FAVORITES, SEARCHES (only with saved searches), LOCATIONS, TAGS (unless
+    /// hidden), FOLDERS.
     var sectionHeaders: [SidebarSection] {
-        SidebarSection.allCases.filter { SidebarItem.header($0) != nil && ($0 != .searches || !savedSearchItems.isEmpty) }
+        SidebarSection.allCases.filter {
+            SidebarItem.header($0) != nil && ($0 != .searches || !savedSearchItems.isEmpty)
+                && ($0 != .tags || settings.showTagsInSidebar)
+        }
     }
 
     var selectedItem: SidebarItem? { item(atRow: outlineView.selectedRow) }
@@ -234,9 +254,10 @@ final class SidebarViewController: CommandHandlingViewController {
         case .favoritesHeader: return favorites.rows.map(SidebarItem.favorite)
         case .searchesHeader: return savedSearchItems
         case .locationsHeader: return locationItems
+        case .tagsHeader: return tagsSection.rows.map(SidebarItem.tag)
         case .foldersHeader: return tree.roots.map(SidebarItem.folder)
         case .folder(let node): return tree.children(of: node).map(SidebarItem.folder)
-        case .favorite, .savedSearch, .location, .iCloudDrive, .cloudStorage, .trash: return []
+        case .favorite, .savedSearch, .location, .iCloudDrive, .cloudStorage, .trash, .tag: return []
         }
     }
 
@@ -258,19 +279,25 @@ final class SidebarViewController: CommandHandlingViewController {
     // MARK: activation
 
     /// Click, Return or keyboard selection: navigate to the row's folder (a stale favorite offers Locate…); a saved
-    /// search runs (P3-11). `newTab` (⌘-click, middle-click on a saved search) opens it in a new tab instead.
+    /// search runs (P3-11), a tag shows its items (P4-06). `newTab` (⌘-click, middle-click on a saved search) opens
+    /// it in a new tab instead.
     func activateRow(_ row: Int, newTab: Bool = false) {
         guard let item = item(atRow: row) else { return }
         if case .savedSearch(let saved) = item {
             if newTab { return openSavedSearchInTab(saved, true) }
             if outlineView.selectedRow != row { select(row: row) }   // the row keeps the focus (Del, F2 act on it)
         }
+        if case .tag = item, outlineView.selectedRow != row { select(row: row) }
         activate(item)
     }
 
     func activate(_ item: SidebarItem) {
         if case .savedSearch(let saved) = item {
             runSavedSearch(saved)
+            return
+        }
+        if case .tag(let tag) = item {
+            tagsSection.showResults(for: tag.name)
             return
         }
         if case .favorite(let favorite) = item, favorite.isStale {
@@ -354,6 +381,11 @@ final class SidebarViewController: CommandHandlingViewController {
             expandPath(path)
             return
         }
+        // Keep the TAGS row whose items the window shows.
+        if case .tag(let tag)? = selectedItem, tagsSection.isShowingResults(of: tag.name) {
+            expandPath(path)
+            return
+        }
         guard let path, !settings.collapsedSections.contains(.folders) else {
             if let selected = selectedItem, isTreeItem(selected) { select(row: -1) }
             return
@@ -406,6 +438,14 @@ final class SidebarViewController: CommandHandlingViewController {
         lastSettings = now
         if before.favorites != now.favorites || before.hiddenDefaults != now.hiddenDefaults { favorites.refresh() }
         if before.savedSearches != now.savedSearches { rebuildSearches(now.savedSearches) }
+        if before.showTags != now.showTags {
+            tagsSection.rebuild()
+            reloadPreservingSelection { outlineView.reloadData() }
+            syncHeaderExpansion()
+        } else if (before.sidebarTags != now.sidebarTags || before.knownTags != now.knownTags), tagsSection.rebuild(),
+                  now.showTags {
+            reloadSection(.tagsHeader)
+        }
         if before.showICloud != now.showICloud || before.showCloudStorage != now.showCloudStorage
             || before.showExternal != now.showExternal {
             rebuildLocations()
@@ -616,6 +656,9 @@ final class SidebarViewController: CommandHandlingViewController {
 struct SettingsSnapshot: Equatable {
     var favorites: [Favorite]
     var savedSearches: [SavedSearch]
+    var sidebarTags: [String]
+    var knownTags: [FileTag]
+    var showTags: Bool
     var hiddenDefaults: Set<DefaultFavorite>
     var showICloud: Bool
     var showCloudStorage: Bool
@@ -627,6 +670,9 @@ struct SettingsSnapshot: Equatable {
     @MainActor init(_ settings: Settings) {
         favorites = settings.favorites
         savedSearches = settings.savedSearches
+        sidebarTags = settings.sidebarTags
+        knownTags = settings.knownTags
+        showTags = settings.showTagsInSidebar
         hiddenDefaults = settings.hiddenDefaultFavorites
         showICloud = settings.showICloudInSidebar
         showCloudStorage = settings.showCloudStorageInSidebar

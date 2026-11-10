@@ -23,7 +23,9 @@ public final class SystemMetadataQuery: MetadataQuerying {
 
 final class QueryRun: @unchecked Sendable {
     private let queue = OperationQueue()
-    private let request: SpotlightRequest
+    /// Built on `queue` at `begin` (NSPredicate isn't Sendable).
+    private let makePredicate: @Sendable () -> NSPredicate
+    private let scope: MetadataScope
     private let continuation: AsyncStream<MetadataQueryEvent>.Continuation
     private var query: NSMetadataQuery?
     private var observers: [NSObjectProtocol] = []
@@ -32,9 +34,17 @@ final class QueryRun: @unchecked Sendable {
     private var stopped = false
     private let onQueue: (@Sendable (String) -> Void)?
 
-    init(request: SpotlightRequest, continuation: AsyncStream<MetadataQueryEvent>.Continuation,
-         onQueue: (@Sendable (String) -> Void)? = nil) {
-        self.request = request
+    convenience init(request: SpotlightRequest, continuation: AsyncStream<MetadataQueryEvent>.Continuation,
+                     onQueue: (@Sendable (String) -> Void)? = nil) {
+        self.init(predicate: { SpotlightPredicate.make(request) }, scope: request.scope, continuation: continuation,
+                  onQueue: onQueue)
+    }
+
+    /// Any predicate (P4-06 tag queries) with the same confinement, batching and event mapping.
+    init(predicate: @escaping @Sendable () -> NSPredicate, scope: MetadataScope,
+         continuation: AsyncStream<MetadataQueryEvent>.Continuation, onQueue: (@Sendable (String) -> Void)? = nil) {
+        makePredicate = predicate
+        self.scope = scope
         self.continuation = continuation
         self.onQueue = onQueue
         queue.maxConcurrentOperationCount = 1
@@ -50,8 +60,8 @@ final class QueryRun: @unchecked Sendable {
         onQueue?("begin")
         let q = NSMetadataQuery()
         q.operationQueue = queue
-        q.predicate = SpotlightPredicate.make(request)
-        switch request.scope {
+        q.predicate = makePredicate()
+        switch scope {
         case .localComputer: q.searchScopes = [NSMetadataQueryLocalComputerScope]
         case .folders(let urls): q.searchScopes = urls
         }

@@ -69,12 +69,12 @@ final class SidebarSearchesTests: XCTestCase {
 
     func testSectionAppearsOnlyWithSavedSearches() async {
         XCTAssertFalse(sidebar.sectionHeaders.contains(.searches))
-        XCTAssertEqual(sidebar.sectionHeaders, [.favorites, .locations, .folders])
+        XCTAssertEqual(sidebar.sectionHeaders, [.favorites, .locations, .tags, .folders])
         env.settings.addSavedSearch(name: "Taxes", spec: spec)
         await waitUntil("section") { self.savedRows() == ["Taxes"] }
-        XCTAssertEqual(sidebar.sectionHeaders, [.favorites, .searches, .locations, .folders])
+        XCTAssertEqual(sidebar.sectionHeaders, [.favorites, .searches, .locations, .tags, .folders])
         let headers = (0..<sidebar.outlineView.numberOfRows).compactMap { sidebar.item(atRow: $0) }.filter(\.isHeader)
-        XCTAssertEqual(headers.map(\.section), [.favorites, .searches, .locations, .folders])
+        XCTAssertEqual(headers.map(\.section), [.favorites, .searches, .locations, .tags, .folders])
         env.settings.collapsedSections.insert(.searches)
         await waitUntil("collapsed") { self.savedRows().isEmpty }
         XCTAssertTrue(sidebar.sectionHeaders.contains(.searches))
@@ -86,7 +86,7 @@ final class SidebarSearchesTests: XCTestCase {
         XCTAssertFalse(env.settings.collapsedSections.contains(.searches))
         env.settings.removeSavedSearch(env.settings.savedSearches[0].id)
         await waitUntil("section gone") { !self.sidebar.sectionHeaders.contains(.searches) }
-        XCTAssertEqual(sidebar.sectionHeaders, [.favorites, .locations, .folders])
+        XCTAssertEqual(sidebar.sectionHeaders, [.favorites, .locations, .tags, .folders])
         XCTAssertFalse((0..<sidebar.outlineView.numberOfRows).contains { sidebar.item(atRow: $0) == .searchesHeader })
     }
 

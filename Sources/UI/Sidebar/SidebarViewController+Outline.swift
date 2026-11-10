@@ -15,7 +15,7 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
 
     func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
         switch item as? SidebarItem {
-        case .favoritesHeader?, .searchesHeader?, .locationsHeader?, .foldersHeader?: true
+        case .favoritesHeader?, .searchesHeader?, .locationsHeader?, .tagsHeader?, .foldersHeader?: true
         case .folder(let node)?: tree.isExpandable(node)
         default: false
         }
@@ -52,6 +52,12 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
             cell.setAccessibilityIdentifier(AXID.sidebarSavedSearch(saved.name))
         case .locationsHeader:
             cell.configure(title: L10n.string("Locations"), symbol: nil, dimmed: false, ejectable: false, toolTip: nil)
+        case .tagsHeader:
+            cell.configure(title: L10n.string("Tags"), symbol: nil, dimmed: false, ejectable: false, toolTip: nil)
+        case .tag(let tag):
+            cell.configure(title: tag.name, symbol: nil, dimmed: false, ejectable: false, toolTip: nil)
+            cell.showTagDot(tag.color)
+            cell.setAccessibilityIdentifier(AXID.sidebarTag(tag.name))
         case .foldersHeader:
             cell.configure(title: L10n.string("Folders"), symbol: nil, dimmed: false, ejectable: false, toolTip: nil)
         case .favorite(let favorite):
@@ -107,10 +113,10 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
                 outlineView.collapseItem(box(.folder(child)), collapseChildren: true)
             }
             isSyncing = wasSyncing
-        case .favoritesHeader, .searchesHeader, .locationsHeader, .foldersHeader:
+        case .favoritesHeader, .searchesHeader, .locationsHeader, .tagsHeader, .foldersHeader:
             guard !isSyncing, !settings.collapsedSections.contains(item.section) else { return }
             settings.collapsedSections.insert(item.section)
-        case .favorite, .savedSearch, .location, .iCloudDrive, .cloudStorage, .trash:
+        case .favorite, .savedSearch, .location, .iCloudDrive, .cloudStorage, .trash, .tag:
             break
         }
     }
@@ -160,6 +166,10 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
             return index != NSOutlineViewDropOnItemIndex ? savedSearchesDropOperation(info.draggingPasteboard) : []
         }
         if Self.draggedSavedSearchID(info.draggingPasteboard) != nil { return [] }
+        // P4-06: files dropped onto a TAGS row get the tag (copy cursor, whatever the modifiers).
+        if case .tag? = item as? SidebarItem {
+            return index == NSOutlineViewDropOnItemIndex ? tagsSection.validateDrop(fileURLs: Self.fileURLs(info.draggingPasteboard)) : []
+        }
         // P1-36 (§5.4, §5.6): drops onto a tree node, favorite or volume row go through DropTarget.
         if index == NSOutlineViewDropOnItemIndex, let url = folderURL(forDropOnto: item) {
             return fileDropTarget.validate(info, destination: url)
@@ -174,6 +184,13 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
             return moveSavedSearch(id: id, toChildIndex: index)
         }
         if Self.draggedSavedSearchID(info.draggingPasteboard) != nil { return false }
+        if case .tag(let tag)? = item as? SidebarItem {
+            let urls = Self.fileURLs(info.draggingPasteboard)
+            guard index == NSOutlineViewDropOnItemIndex, tagsSection.validateDrop(fileURLs: urls) != [] else { return false }
+            let section = tagsSection
+            Task { await section.performDrop(urls, onto: tag.name) }
+            return true
+        }
         if index == NSOutlineViewDropOnItemIndex, let url = folderURL(forDropOnto: item) {
             return fileDropTarget.perform(info, destination: url, in: outlineView)
         }
