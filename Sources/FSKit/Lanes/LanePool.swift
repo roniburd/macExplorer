@@ -96,7 +96,7 @@ public actor LanePool {
                 let item = IOLane.Item(
                     job: job,
                     run: { [self] in
-                        defer { Task { await self.finished(job.id) } }
+                        defer { Task { await self.finished(job) } }
                         if job.cancelled.load(ordering: .relaxed) {
                             once.resume(.failure(LaneError.cancelled))
                             return
@@ -171,8 +171,12 @@ public actor LanePool {
         startWatchdogIfNeeded()
     }
 
-    private func finished(_ id: UInt64) {
-        active[id] = nil
+    /// A job that stalled (and poisoned its lane) has returned: the volume answers again — a laptop wake, a share
+    /// or disk that reconnected while staying mounted. Forget the unresponsive mark so reads resume; otherwise only a
+    /// remount (or a relaunch) would clear it.
+    private func finished(_ job: LaneJob) {
+        active[job.id] = nil
+        if job.everStalled.load(ordering: .relaxed) { resetVolume(job.volume) }
     }
 
     /// Cancellation before the job started: take it off its lane and fail it now.

@@ -242,6 +242,25 @@ final class LaneTests: XCTestCase {
         _ = try await (a.value, b.value)
     }
 
+    /// Laptop wake / share reconnect: reads stall past the cap, then the volume answers again while it stays mounted
+    /// (so no remount resets it). A stalled job returning late proves the volume is back: it must recover without a
+    /// relaunch.
+    func testUnresponsiveVolumeRecoversWhenAStalledJobReturns() async throws {
+        let config = WatchdogConfig(stallTimeout: .milliseconds(150), tick: .milliseconds(20), lanesPerClass: 2, poisonCap: 2)
+        let pool = LanePool(config: config)
+        let hung = gate()
+        let a = Task { try await pool.perform(on: volume) { _ in hung.wait() } }
+        let b = Task { try await pool.perform(on: volume) { _ in hung.wait() } }
+        let marked = await eventually { await pool.health(of: volume) == .unresponsive }
+        XCTAssertTrue(marked)
+        hung.open(count: 2)                                                // the volume answers
+        _ = try await (a.value, b.value)
+        let recovered = await eventually { await pool.health(of: volume) == .healthy }
+        XCTAssertTrue(recovered)
+        let after = try await pool.perform(on: volume) { _ in 1 }
+        XCTAssertEqual(after, 1)
+    }
+
     func testJobsQueuedBehindAHungJobMoveToAFreshLane() async throws {
         let config = WatchdogConfig(stallTimeout: .milliseconds(150), tick: .milliseconds(20), lanesPerClass: 1, poisonCap: 4)
         let clock = ManualClock()

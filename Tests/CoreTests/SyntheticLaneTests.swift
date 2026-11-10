@@ -37,12 +37,14 @@ final class SyntheticLaneTests: XCTestCase {
         return try await slow.value
     }
 
-    func testPlainPerformLeavesASlowSyntheticVolumeUnresponsive() async throws {
+    /// LanePool itself now resets a volume when a stalled job returns (laptop wake / share reconnect), so plain
+    /// `perform` recovers too; `performRecovering` is kept as the explicit spelling at these call sites.
+    func testPlainPerformAlsoRecoversAfterALateReturn() async throws {
         let lanes = pool(), volume = lane
         let slow = try await returnLateAfterTheStall(on: lanes, volume) { work in try await lanes.perform(on: volume, .read, work) }
         XCTAssertEqual(slow, 1)
         let health = await lanes.health(of: volume)
-        XCTAssertEqual(health, .unresponsive, "control: this is the failure mode being fixed")
+        XCTAssertEqual(health, .healthy, "a stalled job that returns proves the volume answers")
     }
 
     func testRecoveringPerformResetsAfterALateReturn() async throws {
