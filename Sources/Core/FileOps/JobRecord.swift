@@ -21,8 +21,12 @@ public struct AttributeSnapshot: Sendable, Codable, Equatable {
     public var extensionHidden: Bool?
     public var mode: UInt16?
     public var quarantine: Data?
-    public init(locked: Bool? = nil, hidden: Bool? = nil, extensionHidden: Bool? = nil, mode: UInt16? = nil, quarantine: Data? = nil) {
+    /// The whole extended ACL in `acl_to_text` form; "" = none (P4-14). Absent in older records → nil.
+    public var acl: String?
+    public init(locked: Bool? = nil, hidden: Bool? = nil, extensionHidden: Bool? = nil, mode: UInt16? = nil, quarantine: Data? = nil,
+                acl: String? = nil) {
         self.locked = locked; self.hidden = hidden; self.extensionHidden = extensionHidden; self.mode = mode; self.quarantine = quarantine
+        self.acl = acl
     }
 }
 

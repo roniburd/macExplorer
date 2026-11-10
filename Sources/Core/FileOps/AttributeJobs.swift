@@ -25,21 +25,31 @@ enum AttributeJobs {
             return AttributeSnapshot(extensionHidden: v?.hasHiddenExtension ?? false)
         case .permissions: return AttributeSnapshot(mode: info.mode)
         case .removeQuarantine: return AttributeSnapshot(quarantine: readXattr(url.path, quarantineName) ?? Data())
+        case .acl: return AttributeSnapshot(acl: (try? ACLIO.text(url)) ?? "")
         }
     }
 
-    /// Values after applying `edit`. Quarantine `Data()` means "absent".
-    static func newValues(_ edit: AttributeEdit) -> AttributeSnapshot {
+    /// Values after applying `edit`. Quarantine `Data()` means "absent". nil for `.acl`: its text form is only
+    /// known after writing, so `setAttributes` snapshots it again then.
+    static func newValues(_ edit: AttributeEdit) -> AttributeSnapshot? {
         switch edit {
         case .locked(let v): AttributeSnapshot(locked: v)
         case .hidden(let v): AttributeSnapshot(hidden: v)
         case .extensionHidden(let v): AttributeSnapshot(extensionHidden: v)
         case .permissions(let m): AttributeSnapshot(mode: m)
         case .removeQuarantine: AttributeSnapshot(quarantine: Data())
+        case .acl: nil
         }
     }
 
-    static func apply(_ edit: AttributeEdit, to url: URL) -> Int32 { apply(newValues(edit), to: url) }
+    /// Lane only.
+    static func apply(_ edit: AttributeEdit, to url: URL) -> Int32 {
+        if case .acl(let entries) = edit {
+            do { try ACLIO.write(explicit: entries, to: url) } catch { return error.code }
+            return 0
+        }
+        return newValues(edit).map { apply($0, to: url) } ?? EINVAL
+    }
 
     /// Lane only. Applies every non-nil field; unlocks first and locks last so other edits can land.
     static func apply(_ s: AttributeSnapshot, to url: URL) -> Int32 {
@@ -66,6 +76,9 @@ enum AttributeJobs {
                 if rc != 0 { return errno }
             }
         }
+        if let text = s.acl {
+            do { try ACLIO.restore(text: text, to: url) } catch { return error.code }
+        }
         if s.locked == true, case let rc = setFlag(UInt32(UF_IMMUTABLE), true), rc != 0 { return rc }
         return 0
     }
@@ -73,15 +86,17 @@ enum AttributeJobs {
     static func setAttributes(_ ctx: JobContext, _ urls: [URL], _ edit: AttributeEdit) async {
         ctx.setTotals(items: urls.count, bytes: 0)
         ctx.setState(.running)
-        let new = newValues(edit)
+        let planned = newValues(edit)
         items: for url in urls {
             guard await ctx.checkpoint() else { break }
             while true {
-                let r = (try? await ctx.onLane { _ -> (Int32, AttributeSnapshot?) in
-                    guard let old = snapshot(url, for: edit) else { return (ENOENT, nil) }
-                    return (apply(edit, to: url), old)
-                }) ?? (EIO, nil)
-                if r.0 == 0, let old = r.1 {
+                let r = (try? await ctx.onLane { _ -> (Int32, AttributeSnapshot?, AttributeSnapshot?) in
+                    guard let old = snapshot(url, for: edit) else { return (ENOENT, nil, nil) }
+                    let rc = apply(edit, to: url)
+                    guard rc == 0 else { return (rc, old, nil) }
+                    return (0, old, planned ?? snapshot(url, for: edit))
+                }) ?? (EIO, nil, nil)
+                if r.0 == 0, let old = r.1, let new = r.2 {
                     if old != new { ctx.record(.attributesChanged(url, old: old, new: new)) }
                     ctx.noteModified(url)
                     ctx.addProgress(items: 1, current: url.lastPathComponent)

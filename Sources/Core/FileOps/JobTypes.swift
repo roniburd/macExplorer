@@ -48,6 +48,8 @@ public struct ModeChange: Sendable, Codable, Equatable {
 
 public enum AttributeEdit: Sendable, Codable, Equatable {
     case locked(Bool), hidden(Bool), extensionHidden(Bool), permissions(UInt16), removeQuarantine
+    /// The item's explicit ACL entries (inherited entries are kept as they are) (P4-14).
+    case acl([ACLEntry])
 }
 
 public indirect enum JobKind: Sendable, Equatable {

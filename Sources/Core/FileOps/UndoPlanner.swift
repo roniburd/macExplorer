@@ -328,6 +328,10 @@ enum UndoPlanner {
             guard let s = AttributeJobs.snapshot(url, for: .removeQuarantine) else { return nil }
             out.quarantine = s.quarantine
         }
+        if template.acl != nil {
+            guard let s = AttributeJobs.snapshot(url, for: .acl([])) else { return nil }
+            out.acl = s.acl
+        }
         return out
     }
 
