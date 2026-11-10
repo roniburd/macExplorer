@@ -55,6 +55,8 @@ final class PropertiesViewModel {
     private(set) var inlineError: String?
     private(set) var isApplying = false
     var icon: CGImage?
+    /// The Access Control table (P4-18): one item only; nil for several items or a volume.
+    private(set) var acl: ACLEditorModel?
 
     let environment: CoreEnvironment
     /// The window's number; jobs carry it so P1-38's router answers their errors inline.
@@ -148,15 +150,40 @@ final class PropertiesViewModel {
         }
         guard generation == loadGeneration else { return }     // a newer load won
         content = loaded
-        guard case .item(let item) = loaded else { return }
+        guard case .item(let item) = loaded else {
+            acl?.close()
+            acl = nil
+            return
+        }
         if nameDraft == (loadedName ?? "") { nameDraft = item.name }   // don't clobber a name being typed
         loadedName = item.name
+        await loadACL(item)
         if item.kind == .directory || item.kind == .package {
             if folderCount == nil { startCount(item.url) }
             if item.kind == .package, showsOpensWith { await reloadDefaultApp() }
         } else if showsOpensWith {
             await reloadDefaultApp()
         }
+    }
+
+    /// Builds the table for this item (again after a rename or an ownership change) and reloads its entries.
+    private func loadACL(_ item: ItemProperties) async {
+        let isDirectory = item.kind == .directory || item.kind == .package
+        if let acl, acl.url == item.url, acl.isEditable == item.isOwnedByCurrentUser, acl.isDirectory == isDirectory {
+            await acl.load()
+            return
+        }
+        acl?.close()
+        let model = ACLEditorModel(url: item.url, isDirectory: isDirectory, isEditable: item.isOwnedByCurrentUser,
+                                   environment: environment)
+        model.origin = { [weak self] in self?.origin }
+        let operations = environment.operations
+        model.perform = { [weak self] request in
+            if let self { return await self.perform(request) }
+            return await operations.perform(request)
+        }
+        acl = model
+        await model.load()
     }
 
     func reloadDefaultApp() async {
@@ -312,6 +339,7 @@ final class PropertiesViewModel {
     }
 
     func close() {
+        acl?.close()
         countTask?.cancel()
         countTask = nil
         finishedToken?.cancel()

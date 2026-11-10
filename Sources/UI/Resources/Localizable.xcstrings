@@ -34,6 +34,17 @@
         }
       }
     },
+    "%@ (inherited)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (inherited)"
+          }
+        }
+      }
+    },
     "%@ (not available)" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -41,6 +52,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ (not available)"
+          }
+        }
+      }
+    },
+    "%@ (one level)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (one level)"
           }
         }
       }
@@ -630,13 +652,24 @@
         }
       }
     },
-    "Access control list" : {
+    "Access" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Access control list"
+            "value" : "Access"
+          }
+        }
+      }
+    },
+    "Access Control" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Access Control"
           }
         }
       }
@@ -648,6 +681,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Actual Size"
+          }
+        }
+      }
+    },
+    "Add" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add"
+          }
+        }
+      }
+    },
+    "Add Entry" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add Entry"
           }
         }
       }
@@ -681,6 +736,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Advanced"
+          }
+        }
+      }
+    },
+    "Allow" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow"
           }
         }
       }
@@ -751,6 +817,17 @@
         }
       }
     },
+    "Append data / Create folders" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Append data / Create folders"
+          }
+        }
+      }
+    },
     "Applications" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -758,6 +835,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Applications"
+          }
+        }
+      }
+    },
+    "Applies To" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Applies To"
+          }
+        }
+      }
+    },
+    "Applies to items inside:" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Applies to items inside:"
           }
         }
       }
@@ -1016,6 +1115,17 @@
         }
       }
     },
+    "Change Access" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Change Access"
+          }
+        }
+      }
+    },
     "Change All…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1067,6 +1177,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Change…"
+          }
+        }
+      }
+    },
+    "Changing access of %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Changing access of %@"
           }
         }
       }
@@ -1808,6 +1929,17 @@
         }
       }
     },
+    "Delete subfolders and files" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete subfolders and files"
+          }
+        }
+      }
+    },
     "Deleting %@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1826,6 +1958,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Density"
+          }
+        }
+      }
+    },
+    "Deny" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deny"
           }
         }
       }
@@ -1962,6 +2105,17 @@
         }
       }
     },
+    "Don't propagate" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Don't propagate"
+          }
+        }
+      }
+    },
     "Download for Preview" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2094,6 +2248,17 @@
         }
       }
     },
+    "Edit Entry" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit Entry"
+          }
+        }
+      }
+    },
     "Eject" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2167,6 +2332,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Executable"
+          }
+        }
+      }
+    },
+    "Execute / Traverse folder" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Execute / Traverse folder"
           }
         }
       }
@@ -2321,6 +2497,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "File URL"
+          }
+        }
+      }
+    },
+    "Files" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Files"
+          }
+        }
+      }
+    },
+    "Files only" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Files only"
           }
         }
       }
@@ -2497,6 +2695,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "From source"
+          }
+        }
+      }
+    },
+    "Full Control" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Full Control"
           }
         }
       }
@@ -3755,6 +3964,17 @@
         }
       }
     },
+    "No access control entries" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No access control entries"
+          }
+        }
+      }
+    },
     "No default app" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3854,6 +4074,17 @@
         }
       }
     },
+    "Nothing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing"
+          }
+        }
+      }
+    },
     "OK" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3872,6 +4103,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Offer to report crashes"
+          }
+        }
+      }
+    },
+    "Only children" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only children"
           }
         }
       }
@@ -4350,6 +4592,39 @@
         }
       }
     },
+    "Read attributes" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read attributes"
+          }
+        }
+      }
+    },
+    "Read data / List folder" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read data / List folder"
+          }
+        }
+      }
+    },
+    "Read extended attributes" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read extended attributes"
+          }
+        }
+      }
+    },
     "Read only" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4357,6 +4632,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Read only"
+          }
+        }
+      }
+    },
+    "Read permissions" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read permissions"
           }
         }
       }
@@ -4478,6 +4764,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Remove Custom Icon"
+          }
+        }
+      }
+    },
+    "Remove Entry" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove Entry"
           }
         }
       }
@@ -4951,6 +5248,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Search commands…"
+          }
+        }
+      }
+    },
+    "Search users and groups" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search users and groups"
           }
         }
       }
@@ -5483,6 +5791,17 @@
         }
       }
     },
+    "Subfolders and files only" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Subfolders and files only"
+          }
+        }
+      }
+    },
     "Subfolders of '%@'" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5494,6 +5813,17 @@
         }
       }
     },
+    "Subfolders only" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Subfolders only"
+          }
+        }
+      }
+    },
     "Tags" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5501,6 +5831,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tags"
+          }
+        }
+      }
+    },
+    "Take ownership" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Take ownership"
           }
         }
       }
@@ -5824,6 +6165,28 @@
         }
       }
     },
+    "This folder and files" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This folder and files"
+          }
+        }
+      }
+    },
+    "This folder and subfolders" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This folder and subfolders"
+          }
+        }
+      }
+    },
     "This folder is empty" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5831,6 +6194,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "This folder is empty"
+          }
+        }
+      }
+    },
+    "This folder only" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This folder only"
+          }
+        }
+      }
+    },
+    "This folder, subfolders and files" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This folder, subfolders and files"
           }
         }
       }
@@ -6341,6 +6726,39 @@
         }
       }
     },
+    "Write attributes" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Write attributes"
+          }
+        }
+      }
+    },
+    "Write data / Create files" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Write data / Create files"
+          }
+        }
+      }
+    },
+    "Write extended attributes" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Write extended attributes"
+          }
+        }
+      }
+    },
     "Write only" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6425,6 +6843,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "You don't have permission to change '%@'."
+          }
+        }
+      }
+    },
+    "You don't have permission to change the access of '%@'." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You don't have permission to change the access of '%@'."
           }
         }
       }
@@ -6601,6 +7030,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Zoom Out"
+          }
+        }
+      }
+    },
+    "acl.access.custom" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Custom"
+          }
+        }
+      }
+    },
+    "acl.editEntry" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit…"
+          }
+        }
+      }
+    },
+    "acl.permission.changePermissions" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Change permissions"
+          }
+        }
+      }
+    },
+    "acl.type" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type"
           }
         }
       }

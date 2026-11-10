@@ -22,6 +22,7 @@ enum JobTitle {
         case .makingSymlink: return String(format: L10n.string("Making a symbolic link to %@"), what)
         case .changingPermissions: return String(format: L10n.string("Changing permissions of %@"), what)
         case .changingAttributes: return String(format: L10n.string("Changing attributes of %@"), what)
+        case .changingAccess: return String(format: L10n.string("Changing access of %@"), what)
         case .changingIcon: return String(format: L10n.string("Changing the icon of %@"), what)
         case .compressing: return String(format: L10n.string("Compressing %@"), what)
         case .extracting: return String(format: L10n.string("Extracting %@"), what)

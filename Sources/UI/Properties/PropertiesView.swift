@@ -106,6 +106,14 @@ struct PermissionsTab: View {
     let item: ItemProperties
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            modes
+            // P4-18: the editable ACL table; it replaces Phase 1's read-only text list.
+            if let acl = model.acl { ACLEditorView(model: acl).padding(.horizontal, 8) }
+        }
+    }
+
+    private var modes: some View {
         Form {
             ForEach(PermissionClass.allCases, id: \.self) { who in
                 Picker(PropertiesFormat.who(who, owner: item.ownerName, group: item.groupName), selection: Binding(
@@ -127,13 +135,6 @@ struct PermissionsTab: View {
             if item.kind == .directory {
                 Button(L10n.string("Apply to enclosed items…")) { Task { await model.applyPermissionsToEnclosed() } }
                     .disabled(!model.canEditPermissions)
-            }
-            if !item.aclEntries.isEmpty {
-                Section(L10n.string("Access control list")) {
-                    ForEach(item.aclEntries, id: \.self) { entry in
-                        Text(verbatim: entry).font(.caption.monospaced()).textSelection(.enabled)
-                    }
-                }
             }
         }
         .formStyle(.columns)

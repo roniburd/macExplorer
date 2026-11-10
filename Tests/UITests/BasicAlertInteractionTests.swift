@@ -47,7 +47,7 @@ final class BasicAlertInteractionTests: XCTestCase {
 final class UndoActionNamesTests: XCTestCase {
     func testEveryVerbHasALocalizedName() {
         let verbs: [JobVerb] = [.copying, .moving, .trashing, .deleting, .duplicating, .creating, .renaming, .makingAlias,
-                                .makingSymlink, .changingPermissions, .changingAttributes, .undoing, .redoing]
+                                .makingSymlink, .changingPermissions, .changingAttributes, .changingAccess, .undoing, .redoing]
         for verb in verbs {
             let name = UndoActionNames.name(for: JobDescription(verb: verb, itemCount: 1, firstItemName: "a", sourceFolderName: nil,
                                                                destinationFolderName: nil))

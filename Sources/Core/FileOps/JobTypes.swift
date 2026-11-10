@@ -98,6 +98,7 @@ extension JobKind {
         case .alias: .makingAlias
         case .symlink: .makingSymlink
         case .chmodRecursive: .changingPermissions
+        case .setAttributes(_, .acl): .changingAccess          // "Undo Change Access" (P4-18)
         case .setAttributes: .changingAttributes
         case .setCustomIcon: .changingIcon
         case .compress: .compressing
@@ -141,7 +142,7 @@ public enum JobState: Sendable, Equatable { case queued, planning, running, paus
 
 public enum JobVerb: String, Sendable, Codable {
     case copying, moving, trashing, deleting, duplicating, creating, renaming, makingAlias, makingSymlink,
-         changingPermissions, changingAttributes, changingIcon, compressing, extracting, undoing, redoing
+         changingPermissions, changingAttributes, changingAccess, changingIcon, compressing, extracting, undoing, redoing
 }
 
 /// UI formats "Copying 1,204 items from Downloads to Backup".

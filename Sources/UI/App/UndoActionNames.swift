@@ -15,6 +15,7 @@ public enum UndoActionNames {
         case .makingSymlink: L10n.string("Make Symbolic Link")
         case .changingPermissions: L10n.string("Change Permissions")
         case .changingAttributes: L10n.string("Change Attributes")
+        case .changingAccess: L10n.string("Change Access")
         case .changingIcon: L10n.string("Change Icon")
         case .compressing: L10n.string("Compress")
         case .extracting: L10n.string("Extract")

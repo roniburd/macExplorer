@@ -25,6 +25,10 @@ enum AXID {
     static let propertiesIconWell = "macx.properties.iconWell"
     static let iconPackPicker = "macx.settings.iconPack"
     static let propertiesRemoveCustomIcon = "macx.properties.removeCustomIcon"
+    static let propertiesACLTable = "macx.properties.acl"
+    static let propertiesACLAdd = "macx.properties.acl.add"
+    static let propertiesACLRemove = "macx.properties.acl.remove"
+    static let propertiesACLSheet = "macx.properties.acl.sheet"
     static let settingsWindow = "macx.settings"          // additive, P1-30
     static let shortcutsList = "macx.settings.shortcuts.list"            // additive: Settings › Shortcuts
     static let shortcutsRestoreDefaults = "macx.settings.shortcuts.restore"
