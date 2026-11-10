@@ -3,11 +3,12 @@ import SwiftUI
 import Core
 
 /// §7 General: startup folder (Home / last location / custom), open folders in, Return key, Terminal app; Updates
-/// (channel, automatic checks, Check Now).
+/// (channel, automatic checks, Check Now); Icon pack (P4-08).
 struct GeneralSettingsView: View {
     @Bindable var settings: Core.Settings
     let panels: any SettingsPanels
     let updates: UpdateModel
+    let iconPack: IconPackModel?
 
     var body: some View {
         Form {
@@ -40,6 +41,20 @@ struct GeneralSettingsView: View {
                     if settings.terminalApp != nil {
                         Button(L10n.string("Use Terminal")) { SettingsChoices.resetTerminalApp(in: settings) }
                     }
+                }
+            }
+            if let iconPack {
+                Picker(L10n.string("Icon pack:"), selection: Binding(
+                    get: { iconPack.selection },
+                    set: { choice in Task { await iconPack.select(choice) { [panels] in panels.chooseFolder() } } })) {
+                    Text(L10n.string("None")).tag(IconPackChoice.none)
+                    if let name = iconPack.folderName { Text(verbatim: name).tag(IconPackChoice.current) }
+                    Divider()
+                    Text(L10n.string("Choose Folder…")).tag(IconPackChoice.choose)
+                }
+                .accessibilityIdentifier(AXID.iconPackPicker)
+                if let error = iconPack.error {
+                    Text(verbatim: error).font(.caption).foregroundStyle(.red)
                 }
             }
             Section(L10n.string("Updates")) {

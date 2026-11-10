@@ -9,10 +9,12 @@ struct SettingsView: View {
     let panels: any SettingsPanels
     let updates: UpdateModel
     let lanes: LanePool
+    let iconPack: IconPackModel?
     @State private var section: SettingsSection
 
     init(settings: Core.Settings, panels: any SettingsPanels, updates: UpdateModel, lanes: LanePool,
-         initialSection: SettingsSection = .general) {
+         iconPack: IconPackModel? = nil, initialSection: SettingsSection = .general) {
+        self.iconPack = iconPack
         self.settings = settings
         self.lanes = lanes
         self.panels = panels
@@ -34,7 +36,7 @@ struct SettingsView: View {
 
     @ViewBuilder private func page(_ section: SettingsSection) -> some View {
         switch section {
-        case .general: GeneralSettingsView(settings: settings, panels: panels, updates: updates)
+        case .general: GeneralSettingsView(settings: settings, panels: panels, updates: updates, iconPack: iconPack)
         case .view: ViewSettingsView(settings: settings)
         case .sidebar: SidebarSettingsView(settings: settings)
         case .shortcuts: ShortcutsSettingsView(settings: settings, panels: panels, lanes: lanes)

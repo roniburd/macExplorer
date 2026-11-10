@@ -9,6 +9,8 @@ struct PropertiesActions {
     var reveal: @MainActor (URL) -> Void
     var changeDefaultApp: @MainActor (_ allOfType: Bool) -> Void
     var eject: @MainActor () -> Void
+    /// Copy/Paste of the icon well (P4-08); nil = no clipboard.
+    var pasteboard: @MainActor () -> NSPasteboard? = { nil }
 }
 
 /// §5.8 layout: tabs for one item, a single form for several items or a volume. Error text sits under the content.
@@ -26,7 +28,7 @@ struct PropertiesView: View {
             case .item(let item):
                 ItemTabs(model: model, item: item, actions: actions)
             case .items(let multi):
-                MultiItemsForm(model: model, multi: multi)
+                MultiItemsForm(model: model, multi: multi, actions: actions)
             case .volume(let volume):
                 VolumeForm(volume: volume, actions: actions)
             }
@@ -50,9 +52,7 @@ struct GeneralTab: View {
     var body: some View {
         Form {
             HStack(alignment: .top, spacing: 12) {
-                if let icon = model.icon {
-                    Image(decorative: icon, scale: 2).resizable().frame(width: 64, height: 64)
-                }
+                IconWellColumn(model: model, actions: actions)
                 VStack(alignment: .leading, spacing: 4) {
                     TextField(L10n.string("Name"), text: $model.nameDraft)
                         .onSubmit { Task { await model.commitName() } }
@@ -216,14 +216,46 @@ private struct TagsRow: View {
     }
 }
 
+/// The icon well (drop or paste an image to set a custom icon, P4-08) and "Remove Custom Icon" under it. Items whose
+/// icon can't be changed show the plain icon.
+private struct IconWellColumn: View {
+    let model: PropertiesViewModel
+    let actions: PropertiesActions
+
+    var body: some View {
+        VStack(spacing: 4) {
+            if model.canEditIcon {
+                IconWellView(image: model.icon, isEnabled: !model.isApplying, showsRemove: model.hasCustomIcon,
+                             lanes: model.environment.lanes, pasteboard: actions.pasteboard,
+                             onDropImage: { data in Task { await model.setCustomIcon(data) } },
+                             onRemove: { Task { await model.setCustomIcon(nil) } })
+                    .frame(width: 64, height: 64)
+                    .help(L10n.string("Drop or paste an image to use it as the icon."))
+                if model.hasCustomIcon {
+                    Button(L10n.string("Remove Custom Icon")) { Task { await model.setCustomIcon(nil) } }
+                        .controlSize(.small)
+                        .disabled(model.isApplying)
+                        .accessibilityIdentifier(AXID.propertiesRemoveCustomIcon)
+                }
+            } else if let icon = model.icon {
+                Image(decorative: icon, scale: 2).resizable().frame(width: 64, height: 64)
+            }
+        }
+    }
+}
+
 private struct MultiItemsForm: View {
     let model: PropertiesViewModel
     let multi: MultiProperties
+    let actions: PropertiesActions
 
     var body: some View {
         Form {
             LabeledContent(L10n.string("Selection"), value: PropertiesFormat.items(count: multi.count, files: multi.files, folders: multi.folders))
             LabeledContent(L10n.string("Total size"), value: PropertiesFormat.size(multi.totalSize))
+            if model.canEditIcon {
+                LabeledContent(L10n.string("Icon")) { IconWellColumn(model: model, actions: actions) }
+            }
             TagsRow(model: model)
             LabeledContent(L10n.string("Attributes")) {
                 VStack(alignment: .leading, spacing: 4) {

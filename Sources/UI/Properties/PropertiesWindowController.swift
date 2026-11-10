@@ -93,6 +93,7 @@ final class PropertiesWindowController: NSWindowController, NSWindowDelegate {
         model.origin = OriginID(raw: window.windowNumber)
         model.confirm = { [weak self] confirmation in await self?.confirm(confirmation) ?? false }
         model.onSubjectChanged = { [weak self] subject in self?.subjectChanged(subject) }
+        model.onIconChanged = { [weak self] in self?.customIconChanged() }
         let hosting = NSHostingController(rootView: PropertiesView(model: model, actions: makeActions()))
         hosting.sizingOptions = [.preferredContentSize]
         window.contentViewController = hosting
@@ -141,6 +142,13 @@ final class PropertiesWindowController: NSWindowController, NSWindowDelegate {
         updateIcon()
     }
 
+    /// The item's custom icon changed (P4-08): drop its cached Tier 1 image and fetch it again. The icon is shown
+    /// from the new Tier 1 image even if the list's entry flags haven't caught up yet.
+    private func customIconChanged() {
+        for url in model.urls { context.icons.invalidate(path: url.path) }
+        updateIcon()
+    }
+
     /// Tier 0 type icon at once, then the per-file icon from a lane (S5-C3).
     private func updateIcon() {
         guard case .item(let item) = model.content else { return }
@@ -159,7 +167,8 @@ final class PropertiesWindowController: NSWindowController, NSWindowDelegate {
                 _ = self?.context.windows.openWindow(at: url.deletingLastPathComponent(), selecting: url.lastPathComponent)
             },
             changeDefaultApp: { [weak self] allOfType in self?.changeDefaultApp(allOfType: allOfType) },
-            eject: { [weak self] in self?.eject() })
+            eject: { [weak self] in self?.eject() },
+            pasteboard: { [weak self] in self?.context.imagePasteboard })
     }
 
     private func changeDefaultApp(allOfType: Bool) {

@@ -20,7 +20,7 @@ public enum PropertiesLoader {
             try withNoMaterialization {
                 var files = 0, folders = 0
                 var total: Int64 = 0
-                var locked: [Bool] = [], hidden: [Bool] = [], extensionHidden: [Bool] = []
+                var locked: [Bool] = [], hidden: [Bool] = [], extensionHidden: [Bool] = [], customIcon: [Bool] = []
                 for url in urls {
                     if context.isCancelled { throw LaneError.cancelled }
                     context.heartbeat()
@@ -39,10 +39,12 @@ public enum PropertiesLoader {
                     locked.append(isLocked(st))
                     hidden.append(st.st_flags & UInt32(UF_HIDDEN) != 0)
                     extensionHidden.append(values?.hasHiddenExtension ?? false)
+                    customIcon.append(hasCustomIcon(path))
                 }
                 if context.isCancelled { throw LaneError.cancelled }
                 return MultiProperties(count: urls.count, files: files, folders: folders, totalSize: total,
-                                       locked: .of(locked), hidden: .of(hidden), extensionHidden: .of(extensionHidden))
+                                       locked: .of(locked), hidden: .of(hidden), extensionHidden: .of(extensionHidden),
+                                       customIcon: .of(customIcon))
             }
         }
     }
@@ -105,7 +107,13 @@ public enum PropertiesLoader {
             volumeName: values?.volumeLocalizedName ?? values?.volumeName ?? "",
             whereFroms: Xattrs.whereFroms(path),
             quarantine: Xattrs.quarantine(path),
-            xattrs: Xattrs.list(path))
+            xattrs: Xattrs.list(path),
+            hasCustomIcon: hasCustomIcon(path))
+    }
+
+    /// kHasCustomIcon in the item's own FinderInfo (never a symlink's target).
+    static func hasCustomIcon(_ path: String) -> Bool {
+        WorkspaceIconWriter.finderFlags(path) & WorkspaceIconWriter.customIconBit != 0
     }
 
     /// Extended ACL entries as `acl_to_text` lines (header dropped), read without following a symlink.

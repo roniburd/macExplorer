@@ -127,6 +127,8 @@ public final class Settings {
     public var sidebarTags: [String] { didSet { save(sidebarTags, Key.sidebarTags) } }
     /// The sidebar's TAGS section is shown (P4-06; its header menu's Hide Tags turns it off, Settings › Sidebar on).
     public var showTagsInSidebar: Bool { didSet { save(showTagsInSidebar, Key.showTagsInSidebar) } }
+    /// Settings › General › Icon pack (P4-08): a bookmark of the pack folder; nil = no pack.
+    public var iconPackBookmark: Data? { didSet { save(iconPackBookmark, Key.iconPackBookmark) } }
     private var tccOutcomes: [ProtectedLocation: TCCOutcome] { didSet { save(tccOutcomes.map(TCCRecord.init), Key.tccOutcomes) } }
 
     /// `diagnostic` receives one message per stored value that exists but can't be decoded (key-bindings spec §6);
@@ -184,6 +186,7 @@ public final class Settings {
         knownTagList = Array((Self.load([FileTag].self, Key.knownTags, from: storage) ?? FileTag.standard).prefix(Self.knownTagsLimit))
         sidebarTags = Self.load([String].self, Key.sidebarTags, from: storage) ?? FileTag.standard.map(\.name)
         showTagsInSidebar = Self.load(Bool.self, Key.showTagsInSidebar, from: storage) ?? true
+        iconPackBookmark = Self.load(Data.self, Key.iconPackBookmark, from: storage)
         let records = Self.load([TCCRecord].self, Key.tccOutcomes, from: storage) ?? []
         tccOutcomes = Dictionary(records.map { ($0.location, $0.outcome) }, uniquingKeysWith: { _, last in last })
         updateChannel = Self.load(UpdateChannel.self, Key.updateChannel, from: storage) ?? .release
@@ -302,7 +305,7 @@ public final class Settings {
         static let resultsColumns = "resultsColumns", previewRendersMarkdown = "previewRendersMarkdown"
         static let previewReflowsDocuments = "previewReflowsDocuments", previewZoom = "previewZoom"
         static let paletteRecent = "paletteRecent", knownTags = "knownTags", sidebarTags = "sidebarTags"
-        static let showTagsInSidebar = "showTagsInSidebar"
+        static let showTagsInSidebar = "showTagsInSidebar", iconPackBookmark = "iconPackBookmark"
     }
 
     private struct TCCRecord: Codable {

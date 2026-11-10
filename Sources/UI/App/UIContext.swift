@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import Core
 
 /// Shared UI services for one app (or one test/scenario world): the Core environment, launch options, the window
@@ -16,6 +16,9 @@ public final class UIContext {
     public private(set) var interaction: any FileOpInteraction
     /// §4.4 icon tiers (P1-31), shared by every window's lists.
     let icons: IconCache
+    /// Settings › General › Icon pack (P4-08), applied to `icons`.
+    private(set) lazy var iconPack = IconPackModel(settings: environment.settings, lanes: environment.lanes, icons: icons,
+                                                   options: options)
     /// Tier 2 (P2-17): Quick Look thumbnails shared by every window's Icons view (64 MB cost limit).
     let thumbnails = ThumbnailCache()
     /// Makes each Icons view's thumbnail generator; tests install a fake so nothing calls Quick Look.
@@ -42,6 +45,16 @@ public final class UIContext {
         installInteraction(operationsUI.router)   // P1-38: InteractionRouter replaces BasicAlertInteraction
         keyBindings = KeyBindingsController(settings: environment.settings)
     }
+
+    /// The pasteboard for image Copy/Paste in Properties' icon well (P4-08): the private `--pasteboard` when given,
+    /// none in other sandbox runs (never the system clipboard there), else the general pasteboard.
+    var imagePasteboard: NSPasteboard? {
+        if let name = options.pasteboardName { return NSPasteboard(name: NSPasteboard.Name(name)) }
+        return options.isSandboxed ? nil : .general
+    }
+
+    /// At launch (AppBootstrap): the icon pack stored in Settings, if any (P4-08).
+    public func restoreIconPack() async { await iconPack.restore() }
 
     /// Window › Operations; the app delegate calls it when no browser window is open.
     public func showOperationsPanel() { operationsUI.showPanel() }

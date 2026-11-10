@@ -1214,6 +1214,17 @@
         }
       }
     },
+    "Choose Folder…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose Folder…"
+          }
+        }
+      }
+    },
     "Choose an app to open '%@':" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1995,6 +2006,17 @@
         }
       }
     },
+    "Drop or paste an image to use it as the icon." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drop or paste an image to use it as the icon."
+          }
+        }
+      }
+    },
     "Duplicate" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2710,6 +2732,17 @@
         }
       }
     },
+    "Icon" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Icon"
+          }
+        }
+      }
+    },
     "Icon Size" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2717,6 +2750,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Icon Size"
+          }
+        }
+      }
+    },
+    "Icon pack:" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Icon pack:"
           }
         }
       }
@@ -4482,6 +4526,17 @@
         }
       }
     },
+    "Remove Custom Icon" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove Custom Icon"
+          }
+        }
+      }
+    },
     "Remove Saved Search" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5600,6 +5655,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Text File"
+          }
+        }
+      }
+    },
+    "That folder isn't an icon pack." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That folder isn't an icon pack."
           }
         }
       }

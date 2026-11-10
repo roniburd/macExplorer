@@ -22,7 +22,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private init(context: UIContext) {
         self.context = context
         let view = SettingsView(settings: context.environment.settings, panels: OpenPanelSettingsPanels(),
-                                updates: context.updates, lanes: context.environment.lanes)
+                                updates: context.updates, lanes: context.environment.lanes,
+                                iconPack: context.iconPack)
         let host = NSHostingController(rootView: view)
         host.sizingOptions = [.preferredContentSize]
         let window = NSWindow(contentViewController: host)

@@ -53,12 +53,15 @@ public struct ItemProperties: Sendable, Equatable {
     public var whereFroms: [String]
     public var quarantine: QuarantineInfo?
     public var xattrs: [XattrInfo]
+    /// The Finder flags' kHasCustomIcon bit (P4-08): Properties offers "Remove Custom Icon".
+    public var hasCustomIcon: Bool
 
     public init(url: URL, name: String, displayName: String, kindDescription: String, typeIdentifier: String, kind: Kind,
                 logicalSize: Int64?, physicalSize: Int64?, created: Date?, modified: Date?, lastOpened: Date?,
                 isLocked: Bool, isHidden: Bool, isExtensionHidden: Bool, mode: UInt16, ownerID: UInt32, groupID: UInt32,
                 ownerName: String, groupName: String, isOwnedByCurrentUser: Bool, aclEntries: [String], inode: UInt64,
-                volumeName: String, whereFroms: [String], quarantine: QuarantineInfo?, xattrs: [XattrInfo]) {
+                volumeName: String, whereFroms: [String], quarantine: QuarantineInfo?, xattrs: [XattrInfo],
+                hasCustomIcon: Bool = false) {
         self.url = url
         self.name = name
         self.displayName = displayName
@@ -85,6 +88,7 @@ public struct ItemProperties: Sendable, Equatable {
         self.whereFroms = whereFroms
         self.quarantine = quarantine
         self.xattrs = xattrs
+        self.hasCustomIcon = hasCustomIcon
     }
 }
 
@@ -97,8 +101,11 @@ public struct MultiProperties: Sendable, Equatable {
     public var locked: Tri
     public var hidden: Tri
     public var extensionHidden: Tri
+    /// Which items have a custom icon (P4-08).
+    public var customIcon: Tri
 
-    public init(count: Int, files: Int, folders: Int, totalSize: Int64, locked: Tri, hidden: Tri, extensionHidden: Tri) {
+    public init(count: Int, files: Int, folders: Int, totalSize: Int64, locked: Tri, hidden: Tri, extensionHidden: Tri,
+                customIcon: Tri = .off) {
         self.count = count
         self.files = files
         self.folders = folders
@@ -106,6 +113,7 @@ public struct MultiProperties: Sendable, Equatable {
         self.locked = locked
         self.hidden = hidden
         self.extensionHidden = extensionHidden
+        self.customIcon = customIcon
     }
 }
 

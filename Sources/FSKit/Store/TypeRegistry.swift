@@ -15,6 +15,8 @@ public final class TypeRegistry: Sendable {
         var types: [UTType] = [.folder, .data, .symbolicLink]
         var packages: [Bool] = [false, false, false]
         var applications: [Bool] = [false, false, false]
+        /// Lowercased extensions interned per index, first seen first (several can share a type: jpg, jpeg).
+        var extensions: [[String]] = [[], [], []]
         /// The system's localizedDescription; nil for dynamic (unregistered) types, which read as the generic text.
         var descriptions: [String?] = []
         var genericDocument = "Document"
@@ -52,12 +54,16 @@ public final class TypeRegistry: Sendable {
                 let package = isDirectory && type.conforms(to: .package)
                 if let existing = s.types.indices.first(where: { s.types[$0] == type && s.packages[$0] == package }) {
                     index = UInt16(existing)
+                    if existing > Int(Self.symlinkIndex), !s.extensions[existing].contains(key.ext) {
+                        s.extensions[existing].append(key.ext)
+                    }
                 } else {
                     index = UInt16(s.types.count)
                     s.types.append(type)
                     s.packages.append(package)
                     s.applications.append(type.conforms(to: .application))
                     s.descriptions.append(Self.systemDescription(type))
+                    s.extensions.append([key.ext])
                 }
             } else {
                 index = isDirectory ? Self.folderIndex : Self.dataIndex
@@ -71,6 +77,25 @@ public final class TypeRegistry: Sendable {
     public func isPackage(_ index: UInt16) -> Bool { state.withLock { $0.packages[Int(index)] } }
     public func isApplication(_ index: UInt16) -> Bool { state.withLock { $0.applications[Int(index)] } }
     public func localizedDescription(_ index: UInt16) -> String { state.withLock { $0.description(Int(index)) } }
+
+    /// The lowercased extension first interned for `index` (icon packs, P4-08); nil for the folder, data and
+    /// symlink types.
+    public func extensionString(at index: UInt16) -> String? { extensionStrings(at: index).first }
+
+    /// Every extension known for `index`: the interned ones (first seen first), then the type's other registered
+    /// filename extensions. Empty for the folder, data and symlink types.
+    public func extensionStrings(at index: UInt16) -> [String] {
+        guard index > Self.symlinkIndex else { return [] }
+        let (interned, type): ([String], UTType?) = state.withLock { s in
+            Int(index) < s.types.count ? (s.extensions[Int(index)], s.types[Int(index)]) : ([], nil)
+        }
+        var result = interned
+        for ext in type?.tags[.filenameExtension] ?? [] {
+            let lower = ext.lowercased()
+            if !result.contains(lower) { result.append(lower) }
+        }
+        return result
+    }
 
     /// The Kind text for types the system can't describe (dynamic types of unregistered extensions): the UI passes
     /// its localized "Document" / "Folder" at launch, before any listing (the defaults are the English text).

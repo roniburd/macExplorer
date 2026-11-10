@@ -63,6 +63,11 @@ final class ContentTestHarness {
     }
 
     @discardableResult
+    func file(_ relative: String, contents: Data) throws -> URL {
+        try sandbox.createFile("files/" + relative, contents: contents)
+    }
+
+    @discardableResult
     func dir(_ relative: String) throws -> URL {
         try sandbox.createDirectory("files/" + relative)
     }

@@ -22,6 +22,9 @@ enum AXID {
     static let operationsPanel = "macx.operationsPanel"
     static func conflictButton(_ a: ConflictAction) -> String { "macx.conflict.\(a.rawValue)" }
     static let propertiesWindow = "macx.properties"
+    static let propertiesIconWell = "macx.properties.iconWell"
+    static let iconPackPicker = "macx.settings.iconPack"
+    static let propertiesRemoveCustomIcon = "macx.properties.removeCustomIcon"
     static let settingsWindow = "macx.settings"          // additive, P1-30
     static let shortcutsList = "macx.settings.shortcuts.list"            // additive: Settings › Shortcuts
     static let shortcutsRestoreDefaults = "macx.settings.shortcuts.restore"

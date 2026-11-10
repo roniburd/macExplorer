@@ -135,6 +135,8 @@ final class ContentViewController: CommandHandlingViewController {
         }
         NotificationCenter.default.addObserver(self, selector: #selector(applicationDidBecomeActive(_:)),
                                                name: NSApplication.didBecomeActiveNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(iconPackChanged(_:)),
+                                               name: IconCache.iconPackChanged, object: context.icons)
         sessionToken = session.observe { [weak self] event in self?.handle(event) }
         volumesToken = context.environment.volumes.observe { [weak self] _ in self?.refreshFreeSpace(force: true) }
         finishedToken = context.environment.operations.onFinished { [weak self] _, outcome in
@@ -312,6 +314,15 @@ final class ContentViewController: CommandHandlingViewController {
             for column in columns.columnControllers { reload(column.model) { column.apply($0) } }
         } else if let folder = activeList.folder {
             reload(folder) { activeList.apply($0) }
+        }
+    }
+
+    /// Settings › General › Icon pack changed (P4-08): every row's type icon may differ, so redraw them all.
+    @objc private func iconPackChanged(_ note: Notification) {
+        if isShowingColumns, let columns {
+            for column in columns.columnControllers { column.apply(.reset) }
+        } else {
+            activeList.apply(.reset)
         }
     }
 

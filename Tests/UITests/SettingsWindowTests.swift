@@ -151,6 +151,7 @@ final class SettingsWindowTests: XCTestCase {
         for section in SettingsSection.allCases {
             let host = NSHostingController(rootView: SettingsView(settings: h.environment.settings, panels: NoPanels(),
                                                                   updates: h.context.updates, lanes: h.environment.lanes,
+                                                                  iconPack: h.context.iconPack,
                                                                   initialSection: section))
             _ = host.view
             XCTAssertGreaterThan(host.view.fittingSize.width, 0, "\(section)")

@@ -63,6 +63,9 @@ final class PropertiesViewModel {
     @ObservationIgnored var origin: OriginID?
     @ObservationIgnored var confirm: @MainActor (PropertiesConfirmation) async -> Bool = { _ in false }
     @ObservationIgnored var perform: @MainActor (JobRequest) async -> JobOutcome
+    /// A finished job (ours, another window's, or undo/redo) changed our items' custom icons: the window drops its
+    /// cached icon and fetches it again (P4-08).
+    @ObservationIgnored var onIconChanged: (@MainActor () -> Void)?
     /// A rename (also by undo or another window) moved our items: the window updates its key and title.
     @ObservationIgnored var onSubjectChanged: (@MainActor (PropertiesSubject) -> Void)?
     @ObservationIgnored private var countTask: Task<Void, Never>?
@@ -115,6 +118,29 @@ final class PropertiesViewModel {
     var showsOpensWith: Bool {
         guard case .item(let item) = content, item.kind != .directory else { return false }
         return !(UTType(item.typeIdentifier)?.conforms(to: .application) ?? false)
+    }
+
+    /// The icon well takes drops and pastes (P4-08): items (not a volume, not a symlink) on a writable volume.
+    var canEditIcon: Bool {
+        switch content {
+        case .item(let item): item.kind != .symlink && !isOnReadOnlyVolume
+        case .items: !isOnReadOnlyVolume
+        case .loading, .volume, .failed: false
+        }
+    }
+
+    /// "Remove Custom Icon" is offered (any selected item has one).
+    var hasCustomIcon: Bool {
+        switch content {
+        case .item(let item): item.hasCustomIcon
+        case .items(let multi): multi.customIcon != .off
+        case .loading, .volume, .failed: false
+        }
+    }
+
+    private var isOnReadOnlyVolume: Bool {
+        guard let first = urls.first else { return true }
+        return environment.volumes.volume(for: first)?.isReadOnly ?? false
     }
 
     static func permissionsNote(isOwner: Bool) -> String? {
@@ -185,6 +211,7 @@ final class PropertiesViewModel {
         guard case .items(let current) = subject else { return }
         var mapped = current
         var touched = false
+        var iconTouched = false
         for action in outcome.record.actions {
             switch action {
             case .renamed(let from, let to, _), .moved(let from, let to, _):
@@ -194,6 +221,8 @@ final class PropertiesViewModel {
                 }
             case .attributesChanged(let url, _, _), .modeChanged(let url, _, _), .tagsChanged(let url, _, _):
                 if mapped.contains(url.standardizedFileURL) { touched = true }
+            case .customIconChanged(let url, _, _):
+                if mapped.contains(url.standardizedFileURL) { touched = true; iconTouched = true }
             default:
                 break
             }
@@ -209,6 +238,7 @@ final class PropertiesViewModel {
         } else if tagsTouched, let tagEditor {
             Task { await tagEditor.reload() }
         }
+        if iconTouched { onIconChanged?() }
         if touched { Task { await self.load() } }
     }
 
@@ -228,6 +258,12 @@ final class PropertiesViewModel {
 
     func removeQuarantine() async {
         await applyAttribute(.removeQuarantine, item: { $0.quarantine = nil }, multi: { _ in })
+    }
+
+    /// The icon well's drop or paste, or "Remove Custom Icon" (nil): one job for every selected item (P4-08).
+    func setCustomIcon(_ data: IconImageData?) async {
+        guard canEditIcon else { return }
+        await run(.setCustomIcon(urls, data), revertTo: content)
     }
 
     func setAccess(_ access: PermissionAccess, for who: PermissionClass) async {

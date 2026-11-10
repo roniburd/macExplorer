@@ -7,6 +7,8 @@ import MacxFS
 /// §4.4 icon tiers. Tier 0: one NSWorkspace type icon per (UTType, pixel size), rasterized once, available on the
 /// first frame. Tier 1: per-file icons for apps, volumes, .icns files and custom-icon items, fetched for visible
 /// rows only on a read lane under withNoMaterialization. Tier 2 (thumbnails) is Phase 2.
+/// An icon pack (P4-08) replaces Tier 0 type icons only: its images are rasterized on a lane when it is set, before
+/// it takes effect, so the first frame afterwards has every image.
 @MainActor
 final class IconCache {
     private struct TypeKey: Hashable { let type: UInt16; let pixels: Int }
@@ -27,6 +29,16 @@ final class IconCache {
     /// Volume for a URL's lane (set by ContentViewController from Volumes); VolumeID.unknown when nil.
     var volumeLookup: (@MainActor (URL) -> VolumeID)?
 
+    /// Posted (object: the cache) after `setIconPack` switched packs; every visible list redraws its rows.
+    static let iconPackChanged = Notification.Name("macx.iconPackChanged")
+    /// Pixel sizes each pack image is rasterized at; other sizes are scaled from the nearest larger one once.
+    nonisolated static let packPixelSizes = [16, 32, 64, 128, 256]
+    /// `packImages` key of the pack's `folder.<fmt>` (no extension can contain a NUL).
+    nonisolated static let packFolderKey = "\u{0}folder"
+    private(set) var currentPack: IconPack?
+    private var packImages: [String: [Int: CGImage]] = [:]
+    private var packGeneration = 0
+
     init(lanes: LanePool, types: TypeRegistry) {
         self.lanes = lanes
         self.types = types
@@ -36,10 +48,86 @@ final class IconCache {
         let pixels = max(1, Int((points * scale).rounded()))
         let key = TypeKey(type: typeIndex, pixels: pixels)
         if let cached = typeImages[key] { return cached }
+        if currentPack != nil, let packed = packIcon(typeIndex, pixels: pixels) {
+            typeImages[key] = packed
+            return packed
+        }
         let image = NSWorkspace.shared.icon(for: types.type(at: typeIndex))   // per type, not per path (§4.4 Tier 0)
         let raster = Self.rasterize(image, pixels: pixels) ?? Self.blank(pixels: pixels)
         typeImages[key] = raster
         return raster
+    }
+
+    /// Switches to `pack` (nil: back to the system icons). The pack's images are read and rasterized on a lane first;
+    /// a later call wins over one still rasterizing. Images that can't be decoded are left out (system icon).
+    func setIconPack(_ pack: IconPack?) async {
+        packGeneration += 1
+        let generation = packGeneration
+        var images: [String: [Int: CGImage]] = [:]
+        if let pack {
+            images = (try? await lanes.perform(on: .unknown, .read) { context in
+                try withNoMaterialization { try IconCache.rasterizePack(pack, context: context) }
+            }) ?? [:]
+            guard generation == packGeneration else { return }   // a newer pack (or none) was set meanwhile
+        }
+        currentPack = pack
+        packImages = images
+        typeImages = [:]
+        NotificationCenter.default.post(name: Self.iconPackChanged, object: self)
+    }
+
+    /// The pack's image for a type at `pixels`: the folder icon for folders, else the first of the type's extensions
+    /// the pack has. The nearest rasterized size ≥ `pixels` (else the largest), scaled once to `pixels`.
+    private func packIcon(_ typeIndex: UInt16, pixels: Int) -> CGImage? {
+        let keys = typeIndex == TypeRegistry.folderIndex ? [Self.packFolderKey] : types.extensionStrings(at: typeIndex)
+        guard let sizes = keys.lazy.compactMap({ self.packImages[$0] }).first, !sizes.isEmpty else { return nil }
+        let source = sizes.keys.filter { $0 >= pixels }.min().flatMap { sizes[$0] } ?? sizes[sizes.keys.max()!]!
+        if source.width == pixels && source.height == pixels { return source }
+        return Self.scale(source, to: pixels)
+    }
+
+    /// Lane work: each pack image decoded once and drawn (aspect fit) at every `packPixelSizes` size.
+    nonisolated static func rasterizePack(_ pack: IconPack, context: LaneContext) throws -> [String: [Int: CGImage]] {
+        var files = pack.byExtension.map { ($0.key, $0.value) }
+        if let folder = pack.folderIcon { files.append((packFolderKey, folder)) }
+        var out: [String: [Int: CGImage]] = [:]
+        for (key, url) in files {
+            if context.isCancelled { throw LaneError.cancelled }
+            context.heartbeat()
+            guard let data = try? Data(contentsOf: url), data.count <= 1 << 20,
+                  let image = NSImage(data: data), image.isValid, image.size.width > 0, image.size.height > 0 else { continue }
+            var sizes: [Int: CGImage] = [:]
+            for pixels in packPixelSizes { sizes[pixels] = rasterizeFitting(image, pixels: pixels) }
+            if !sizes.isEmpty { out[key] = sizes }
+        }
+        return out
+    }
+
+    /// Like `rasterize`, keeping the image's aspect ratio (centred in the square).
+    nonisolated static func rasterizeFitting(_ image: NSImage, pixels: Int) -> CGImage? {
+        let side = max(pixels, 1)
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        let size = image.size
+        let fit = min(Double(side) / size.width, Double(side) / size.height)
+        let rect = NSRect(x: (Double(side) - size.width * fit) / 2, y: (Double(side) - size.height * fit) / 2,
+                          width: size.width * fit, height: size.height * fit)
+        let graphics = NSGraphicsContext(cgContext: context, flipped: false)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = graphics
+        image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1)
+        NSGraphicsContext.restoreGraphicsState()
+        return context.makeImage()
+    }
+
+    private static func scale(_ image: CGImage, to pixels: Int) -> CGImage? {
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(data: nil, width: pixels, height: pixels, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(x: 0, y: 0, width: pixels, height: pixels))
+        return context.makeImage()
     }
 
     /// Tier 1 eligibility (§4.4): apps, volume roots, .icns files and custom-icon items; never dataless items.

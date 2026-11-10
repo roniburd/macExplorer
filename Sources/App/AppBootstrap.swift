@@ -68,6 +68,8 @@ enum AppBootstrap {
             exit(65)       // EX_DATAERR
         }
         let context = UIContext(environment: environment, options: options)
+        // The icon pack (P4-08) loads and rasterizes on a lane while the windows open; they redraw when it lands.
+        Task { await context.restoreIconPack() }
         let recovery = await environment.start()
         await context.windows.restoreOrOpenInitial()
         let lifecycle = AppLifecycle(context: context, flushSettings: { (storage as? FileSettingsStorage)?.flush() })
