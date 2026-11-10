@@ -1,0 +1,13 @@
+{"name": "p4-extract-link-chain",
+ "fixture": {"files": ["outside/keep.txt"], "dirs": ["work", "outside"], "archives": {"work/chain.tar": "link-chain-tar"}},
+ "steps": [
+  {"doubleClick": "work"},
+  {"waitFor": {"folder": "work", "rows": ["chain.tar"]}},
+  {"click": "chain.tar"}, {"command": "extractHere"},
+  {"waitFor": {"sheetPresent": true}, "timeoutMs": 10000},
+  {"answerError": "skip"},
+  {"waitFor": {"sheetPresent": false}},
+  {"sleepMs": 300},
+  {"expect": {"rows": ["chain.tar"], "filesAbsent": ["work/chain"], "filesExist": ["outside/keep.txt"],
+              "fileSizes": {"outside/keep.txt": 1}}}
+ ]}

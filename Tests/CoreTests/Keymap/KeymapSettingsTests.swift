@@ -33,6 +33,65 @@ final class KeymapSettingsTests: XCTestCase {
         XCTAssertEqual(s.keymapPreset, .explorer)
     }
 
+    /// QA round 1: per-row Reset and "modified" are relative to the preset the keys are based on, not Explorer's.
+    func testResetAndModifiedFollowTheBasePreset() {
+        let s = settings()
+        s.applyKeymapPreset(.finder)
+        XCTAssertEqual(s.keymapBase, .finder)
+        XCTAssertTrue(Command.allCases.allSatisfy { !s.isShortcutModified($0) }, "nothing is modified right after choosing Finder")
+        s.resetShortcut(.viewAsIcons)
+        XCTAssertEqual(s.keyBindings.primary(.viewAsIcons), k("cmd+1"))
+        XCTAssertEqual(s.keyBindings.primary(.viewAsDetails), k("cmd+2"), "Details keeps Finder's ⌘2")
+        XCTAssertEqual(s.keymapPreset, .finder)
+
+        s.keyBindingOverrides.reassign(.key(k("f5")), to: .refresh, as: .alternate)
+        s.keyBindingOverrides.setPrimary(k("cmd+9"), for: .open)
+        XCTAssertTrue(s.isShortcutModified(.refresh)); XCTAssertTrue(s.isShortcutModified(.open))
+        XCTAssertFalse(s.isShortcutModified(.rename))
+        s.resetShortcut(.refresh)
+        XCTAssertNil(s.keyBindings.primary(.refresh)); XCTAssertEqual(s.keyBindings.alternates(.refresh), [])
+        s.resetShortcut(.open)
+        XCTAssertEqual(s.keyBindings.primary(.open), k("cmd+o"))
+        XCTAssertEqual(s.keyBindings.alternates(.open), [k("return"), k("cmd+down")])
+        XCTAssertEqual(s.keymapPreset, .finder)
+
+        s.restoreDefaultShortcuts()
+        XCTAssertEqual(s.keymapBase, .explorer)
+        XCTAssertEqual(s.keyBindingOverrides, .empty)
+        s.resetShortcut(.rename)
+        XCTAssertEqual(s.keyBindings.primary(.rename), KeyMap.primary(.rename))
+    }
+
+    /// The base survives a relaunch; stored keys from before it was remembered get the nearest preset.
+    func testKeymapBaseIsStoredAndInferredWhenMissing() throws {
+        let storage = InMemorySettingsStorage()
+        let home = URL(filePath: "/tmp/macx-tests-home", directoryHint: .isDirectory)
+        let a = Settings(storage: storage, home: home)
+        a.applyKeymapPreset(.finder)
+        a.keyBindingOverrides.setPrimary(k("cmd+9"), for: .open)
+        XCTAssertEqual(Settings(storage: storage, home: home).keymapBase, .finder)
+        storage.set(nil, forKey: "keymapBase")
+        XCTAssertEqual(Settings(storage: storage, home: home).keymapBase, .finder, "inferred: one edit away from Finder")
+        let fresh = settings()
+        XCTAssertEqual(fresh.keymapBase, .explorer)
+    }
+
+    /// An imported keymap is based on the file's base preset (export writes the settings' base).
+    func testImportSetsTheNearestBase() throws {
+        let a = settings()
+        a.applyKeymapPreset(.finder)
+        a.keyBindingOverrides.setPrimary(k("cmd+9"), for: .open)
+        let data = a.exportKeymap()
+        let b = settings()
+        try b.importKeymap(data)
+        XCTAssertEqual(b.keymapBase, .finder)
+        XCTAssertTrue(b.isShortcutModified(.open)); XCTAssertFalse(b.isShortcutModified(.viewAsIcons))
+        let c = settings()
+        c.applyKeymapPreset(.finder)
+        try c.importKeymap(KeymapDocument.export(.empty, returnKey: .open))
+        XCTAssertEqual(c.keymapBase, .explorer)
+    }
+
     func testExportImportCarriesBindingsAndReturnKeyThroughASandboxFile() throws {
         let sandbox = try Sandbox(); defer { sandbox.destroy() }
         let a = settings()

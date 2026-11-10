@@ -95,7 +95,8 @@ enum ShortcutApply: Equatable {
         return result
     }
 
-    func isModified(_ command: Command) -> Bool { settings.keyBindingOverrides.commands[command] != nil }
+    /// Relative to the preset the keys are based on (`Settings.keymapBase`), like per-row Reset.
+    func isModified(_ command: Command) -> Bool { settings.isShortcutModified(command) }
     func isFixed(_ command: Command) -> Bool { KeyBindings.fixedCommands.contains(command) }
 
     /// Validates, then saves unless another slot holds `trigger` and `reassigning` is false.
@@ -116,8 +117,8 @@ enum ShortcutApply: Equatable {
         }
     }
 
-    func reset(_ command: Command) { settings.keyBindingOverrides.reset(command) }
-    func resetAll() { settings.keyBindingOverrides = .empty }
+    func reset(_ command: Command) { settings.resetShortcut(command) }
+    func resetAll() { settings.restoreDefaultShortcuts() }
 
     static func message(_ rejection: BindingRejection) -> String {
         switch rejection {

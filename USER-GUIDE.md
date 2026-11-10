@@ -386,6 +386,8 @@ F2 renames, unless you pick the Finder preset.
 **Shortcuts:** change any shortcut, or start from a **Preset**.
 **Explorer** (the default) uses Windows-style keys plus the Mac ones.
 **Finder** uses Finder's keys only: ⌘O opens, ⇧⌘G goes to a folder, and Return renames.
+A shortcut's **Reset** button gives it back the keys of the preset you started from.
+**Restore All Defaults** goes back to the Explorer keys.
 **Export…** saves your shortcuts to a file, and **Import…** loads one.
 An imported file with two commands on one key, or with a key macOS keeps for itself, is refused and the clashes are listed.
 Commands from a newer MacExplorer are skipped.

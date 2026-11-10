@@ -194,11 +194,7 @@ enum ExtractJob {
                 let len = readlink(path, &buffer, buffer.count - 1)
                 guard len >= 0 else { return false }
                 let target = String(decoding: buffer[0..<len].map { UInt8(bitPattern: $0) }, as: UTF8.self)
-                if target.hasPrefix("/") { return false }
-                var depth = level - 1                                // the link's folder depth below root
-                for c in ArchiveSafety.components(target) {
-                    if c == ".." { depth -= 1; if depth < 0 { return false } } else { depth += 1 }
-                }
+                guard linkStaysInside(target: target, from: realParent, realRoot: realRoot) else { return false }
                 continue
             }
             if (st.st_mode & S_IFMT) == S_IFREG, st.st_nlink > 1 {
@@ -211,6 +207,46 @@ enum ExtractJob {
         }
         if errno != 0 { return false }
         return linkCounts.values.allSatisfy { $0.seen == $0.total }
+    }
+
+    /// Whether a symlink in `folder` (a real path inside `realRoot`) with `target` resolves inside `realRoot`, following
+    /// every link it passes through on disk (a lexical count would trust "d/l1/.." where d/l1 is itself a link to "..").
+    /// Components that don't exist resolve lexically; an absolute target, a step outside the root or more than 32 links
+    /// (a loop) fail it.
+    static func linkStaysInside(target: String, from folder: String, realRoot: String) -> Bool {
+        func inside(_ parts: [String]) -> Bool {
+            let p = "/" + parts.joined(separator: "/")
+            return p == realRoot || p.hasPrefix(realRoot + "/")
+        }
+        var at = folder.split(separator: "/").map(String.init)
+        // On disk only "/" separates ("\\" is an ordinary character in a name here).
+        func parts(_ t: String) -> [String] { t.split(separator: "/").map(String.init).filter { $0 != "." } }
+        var pending = parts(target)
+        if target.hasPrefix("/") { return false }
+        var hops = 0
+        while !pending.isEmpty {
+            let c = pending.removeFirst()
+            if c == ".." {
+                guard !at.isEmpty else { return false }
+                at.removeLast()
+                guard inside(at) else { return false }
+                continue
+            }
+            at.append(c)
+            guard inside(at) else { return false }
+            var st = stat()
+            guard lstat("/" + at.joined(separator: "/"), &st) == 0, (st.st_mode & S_IFMT) == S_IFLNK else { continue }
+            hops += 1
+            guard hops <= 32 else { return false }
+            var buffer = [CChar](repeating: 0, count: Int(PATH_MAX) + 1)
+            let len = readlink("/" + at.joined(separator: "/"), &buffer, buffer.count - 1)
+            guard len >= 0 else { return false }
+            let next = String(decoding: buffer[0..<len].map { UInt8(bitPattern: $0) }, as: UTF8.self)
+            if next.hasPrefix("/") { return false }
+            at.removeLast()
+            pending = parts(next) + pending
+        }
+        return true
     }
 
     /// Moves the result out of the partial folder: its one top-level item (other than "__MACOSX") as itself, or the

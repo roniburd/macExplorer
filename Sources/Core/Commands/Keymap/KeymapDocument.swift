@@ -41,12 +41,13 @@ public enum KeymapDocument {
     public static let format = "macexplorer-keymap"
     public static let version = 1
 
-    /// `overrides` as a document on the preset it differs least from (Explorer on a tie), listing only the changed
-    /// slots, plus `returnKey` when given. Keys sorted, pretty-printed.
-    public static func export(_ overrides: KeyBindingOverrides, returnKey: ReturnKeyBehavior? = nil) -> Data {
+    /// `overrides` as a document on `base` (nil: the preset it differs least from, Explorer on a tie), listing only
+    /// the changed slots, plus `returnKey` when given. Keys sorted, pretty-printed.
+    public static func export(_ overrides: KeyBindingOverrides, returnKey: ReturnKeyBehavior? = nil,
+                              base: KeymapPreset? = nil) -> Data {
         let current = KeyBindings(overrides: overrides)
-        let diffs = KeymapPreset.allCases.map { ($0, bindings(current, relativeTo: $0)) }
-        let (base, entries) = diffs.min { $0.1.count < $1.1.count } ?? (.explorer, [:])
+        let base = base ?? KeymapPreset.nearest(to: overrides)
+        let entries = bindings(current, relativeTo: base)
         var root: [String: Any] = ["format": format, "version": version, "base": base.rawValue, "bindings": entries]
         if let returnKey { root["returnKey"] = returnKey.rawValue }
         // Plain string/number/array/dictionary/NSNull values only, so serialization can't fail.
@@ -95,6 +96,13 @@ public enum KeymapDocument {
         let issues = KeymapValidator.issues(overrides)
         guard issues.isEmpty else { throw .issues(issues) }
         return (overrides, warnings)
+    }
+
+    /// The document's `base` preset (Explorer when it names none). Call after `import` succeeded.
+    public static func base(in data: Data) -> KeymapPreset {
+        guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let raw = root["base"] as? String else { return .explorer }
+        return KeymapPreset(rawValue: raw) ?? .explorer
     }
 
     /// The document's `returnKey`, or nil when it has none (or one this version doesn't know). Call after `import`

@@ -42,6 +42,26 @@ enum Phase4Scenarios {
             try ctx.expectEqual(ctx.text(ctx.path("outside/keep.txt")), "keep", "sibling unchanged")
             try ctx.expectEqual(ctx.entries(ctx.path("outside")), ["keep.txt"], "sibling unchanged")
         },
+        CoreScenario("archive.linkChainRefused") { ctx in
+            ctx.file("outside/keep.txt", "keep")
+            ctx.writeData("inbox/chain.tar", ScenarioArchives.linkChainTar())
+            ctx.setInteraction(ScriptedInteraction(errors: [.skip]))
+            let o = await ctx.perform(.extract(ctx.path("inbox/chain.tar")))
+            try ctx.expect(o.created.isEmpty, "nothing extracted: \(o.created)")
+            try ctx.expectEqual(ctx.entries(ctx.path("inbox")), ["chain.tar"], "no result or partial folder left")
+            try ctx.expectEqual(ctx.text(ctx.path("outside/keep.txt")), "keep", "sibling unchanged")
+            try ctx.expectEqual(ctx.entries(ctx.path("outside")), ["keep.txt"], "sibling unchanged")
+        },
+        CoreScenario("batch.renameSameNameInTwoFolders") { ctx in
+            ctx.file("p/x.txt", "P"); ctx.file("q/x.txt", "Q")
+            var rules = BatchRenameRules()
+            rules.prefix = "new "
+            let preview = BatchRenamePlanner.preview([ctx.path("p/x.txt"), ctx.path("q/x.txt")], rules: rules,
+                                                     caseSensitive: false, existingNames: [])
+            try ctx.expect(preview.canApply, "search results in two folders can take the same new name: \(preview.rows.map(\.status))")
+            _ = await ctx.perform(.batchRename(BatchRenamePlanner.pairs(preview)))
+            try ctx.expect(ctx.text(ctx.path("p/new x.txt")) == "P" && ctx.text(ctx.path("q/new x.txt")) == "Q", "each renamed in its folder")
+        },
         CoreScenario("batch.renameCycleAndUndo") { ctx in
             ctx.file("y/x.txt", "X"); ctx.file("y/y.txt", "Y"); ctx.file("y/z.txt", "Z")
             let pairs = [("x.txt", "y.txt"), ("y.txt", "z.txt"), ("z.txt", "x.txt")].map {
@@ -98,6 +118,16 @@ enum Phase4Scenarios {
             try ctx.expect(undone == nil, "undo removed it")
             try ctx.expectEqual(ctx.text(a), "x", "the file's data is untouched")
         },
+        CoreScenario("keymap.resetFollowsThePreset") { ctx in
+            let settings = Settings(storage: InMemorySettingsStorage(), home: ctx.work)
+            settings.applyKeymapPreset(.finder)
+            try ctx.expect(!Command.allCases.contains { settings.isShortcutModified($0) }, "nothing modified right after Finder")
+            settings.keyBindingOverrides.setPrimary(KeyChord(parsing: "cmd+9"), for: .viewAsIcons)
+            settings.resetShortcut(.viewAsIcons)
+            try ctx.expectEqual(settings.keyBindings.primary(.viewAsIcons), KeyChord(parsing: "cmd+1"), "Finder's ⌘1 back")
+            try ctx.expectEqual(settings.keyBindings.primary(.viewAsDetails), KeyChord(parsing: "cmd+2"), "Details keeps ⌘2")
+            try ctx.expectEqual(settings.keymapPreset, .finder, "still the Finder preset")
+        },
         CoreScenario("keymap.importRejectsConflicts") { _ in
             let bad = Data(#"{"format":"macexplorer-keymap","version":1,"base":"explorer","bindings":{"newFolder":{"primary":"cmd+l"}}}"#.utf8)
             let accepted: Bool
@@ -124,28 +154,38 @@ enum Phase4Scenarios {
     ]
 }
 
-/// A crafted tar whose only entry is `../escape.txt` (a copy of the tar writer in the CoreTests' CraftedArchives: the
-/// scenario target can't import test code).
+/// Crafted tars (a copy of the tar writer in the CoreTests' CraftedArchives: the scenario target can't import test code).
 enum ScenarioArchives {
-    static func traversalTar() -> Data { tar(path: "../escape.txt", contents: Data("escaped".utf8)) }
+    /// One entry, `../escape.txt`.
+    static func traversalTar() -> Data { tar([(path: "../escape.txt", type: 0x30, link: "", contents: Data("escaped".utf8))]) }
 
-    static func tar(path: String, contents: Data) -> Data {
-        var h = [UInt8](repeating: 0, count: 512)
-        func put(_ s: String, _ offset: Int, _ len: Int) { for (i, b) in s.utf8.prefix(len).enumerated() { h[offset + i] = b } }
-        func octal(_ v: Int, _ offset: Int, _ len: Int) {
-            let digits = String(v, radix: 8)
-            put(String(repeating: "0", count: max(0, len - 1 - digits.count)) + digits, offset, len - 1)
+    /// QA round 1: "d/l1 -> .." and links through it that resolve outside the extracted folder.
+    static func linkChainTar() -> Data {
+        tar([(path: "d/", type: 0x35, link: "", contents: Data()), (path: "d/l1", type: 0x32, link: "..", contents: Data()),
+             (path: "l2", type: 0x32, link: "d/l1/..", contents: Data()),
+             (path: "l3", type: 0x32, link: "d/l1/../../outside/keep.txt", contents: Data())])
+    }
+
+    /// A ustar archive of `entries` (type '0' file, '2' symlink, '5' folder).
+    static func tar(_ entries: [(path: String, type: UInt8, link: String, contents: Data)]) -> Data {
+        var out = Data()
+        for e in entries {
+            var h = [UInt8](repeating: 0, count: 512)
+            func put(_ s: String, _ offset: Int, _ len: Int) { for (i, b) in s.utf8.prefix(len).enumerated() { h[offset + i] = b } }
+            func octal(_ v: Int, _ offset: Int, _ len: Int) {
+                let digits = String(v, radix: 8)
+                put(String(repeating: "0", count: max(0, len - 1 - digits.count)) + digits, offset, len - 1)
+            }
+            put(e.path, 0, 100); octal(e.type == 0x35 ? 0o755 : 0o644, 100, 8); octal(0, 108, 8); octal(0, 116, 8)
+            octal(e.contents.count, 124, 12); octal(1_700_000_000, 136, 12)
+            for i in 148..<156 { h[i] = 0x20 }
+            h[156] = e.type; put(e.link, 157, 100); put("ustar", 257, 6); put("00", 263, 2)
+            let digits = String(h.reduce(0) { $0 + Int($1) }, radix: 8)
+            put(String(repeating: "0", count: max(0, 6 - digits.count)) + digits + "\0 ", 148, 8)
+            out.append(contentsOf: h)
+            out.append(e.contents)
+            out.append(Data(count: (512 - e.contents.count % 512) % 512))
         }
-        put(path, 0, 100); octal(0o644, 100, 8); octal(0, 108, 8); octal(0, 116, 8)
-        octal(contents.count, 124, 12); octal(1_700_000_000, 136, 12)
-        for i in 148..<156 { h[i] = 0x20 }
-        h[156] = 0x30; put("ustar", 257, 6); put("00", 263, 2)
-        let sum = h.reduce(0) { $0 + Int($1) }
-        let digits = String(sum, radix: 8)
-        put(String(repeating: "0", count: max(0, 6 - digits.count)) + digits + "\0 ", 148, 8)
-        var out = Data(h)
-        out.append(contents)
-        out.append(Data(count: (512 - contents.count % 512) % 512))
         out.append(Data(count: 1024))
         return out
     }

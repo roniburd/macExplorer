@@ -1,4 +1,5 @@
 import AppKit
+import Synchronization
 import UniformTypeIdentifiers
 import os
 import Core
@@ -86,21 +87,35 @@ final class IconCache {
         return Self.scale(source, to: pixels)
     }
 
-    /// Lane work: each pack image decoded once and drawn (aspect fit) at every `packPixelSizes` size.
+    /// Lane work: each pack image decoded once and drawn (aspect fit) at every `packPixelSizes` size. Images are spread
+    /// over every core (in batches, with a heartbeat and a cancellation check between them), so a 2,000-image pack is
+    /// ready about as fast as a few hundred serially and the launch wait for it (`UIContext`) rarely times out.
     nonisolated static func rasterizePack(_ pack: IconPack, context: LaneContext) throws -> [String: [Int: CGImage]] {
         var files = pack.byExtension.map { ($0.key, $0.value) }
         if let folder = pack.folderIcon { files.append((packFolderKey, folder)) }
-        var out: [String: [Int: CGImage]] = [:]
-        for (key, url) in files {
+        let results = Mutex<[String: [Int: CGImage]]>([:])
+        let batch = 64
+        for start in stride(from: 0, to: files.count, by: batch) {
             if context.isCancelled { throw LaneError.cancelled }
             context.heartbeat()
-            guard let data = try? Data(contentsOf: url), data.count <= 1 << 20,
-                  let image = NSImage(data: data), image.isValid, image.size.width > 0, image.size.height > 0 else { continue }
-            var sizes: [Int: CGImage] = [:]
-            for pixels in packPixelSizes { sizes[pixels] = rasterizeFitting(image, pixels: pixels) }
-            if !sizes.isEmpty { out[key] = sizes }
+            let slice = Array(files[start..<min(start + batch, files.count)])
+            DispatchQueue.concurrentPerform(iterations: slice.count) { i in
+                let (key, url) = slice[i]
+                // The no-materialization policy is per thread: each worker sets it for its own reads.
+                guard let sizes = withNoMaterialization({ rasterizePackImage(url) }) else { return }
+                results.withLock { $0[key] = sizes }
+            }
         }
-        return out
+        return results.withLock { $0 }
+    }
+
+    /// One pack file at every `packPixelSizes` size; nil when it can't be read or decoded.
+    nonisolated private static func rasterizePackImage(_ url: URL) -> [Int: CGImage]? {
+        guard let data = try? Data(contentsOf: url), data.count <= 1 << 20,
+              let image = NSImage(data: data), image.isValid, image.size.width > 0, image.size.height > 0 else { return nil }
+        var sizes: [Int: CGImage] = [:]
+        for pixels in packPixelSizes { sizes[pixels] = rasterizeFitting(image, pixels: pixels) }
+        return sizes.isEmpty ? nil : sizes
     }
 
     /// Like `rasterize`, keeping the image's aspect ratio (centred in the square).

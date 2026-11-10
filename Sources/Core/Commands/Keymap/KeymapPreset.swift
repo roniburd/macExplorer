@@ -33,6 +33,19 @@ public enum KeymapPreset: String, Sendable, Codable, CaseIterable {
         self = preset
     }
 
+    /// The preset with the fewest commands whose triggers differ from `overrides` (Explorer on a tie): what an
+    /// imported or older stored keymap is taken to be based on.
+    public static func nearest(to overrides: KeyBindingOverrides) -> KeymapPreset {
+        let bindings = KeyBindings(overrides: overrides)
+        var best = KeymapPreset.explorer, bestCount = Int.max
+        for preset in allCases {
+            let base = KeyBindings(overrides: preset.overrides)
+            let count = Command.allCases.count { !bindings.sameTriggers(as: base, for: $0) }
+            if count < bestCount { best = preset; bestCount = count }
+        }
+        return best
+    }
+
     private static let finderOverrides: KeyBindingOverrides = {
         var commands: [Command: KeyBindingOverrides.Entry] = [:]
         for command in Command.allCases {
@@ -86,8 +99,12 @@ extension KeyBindings {
     /// Same primary, alternates and mouse buttons for every command (unlike `==`, which compares the stored
     /// overrides, so two spellings of one table differ there).
     public func sameTriggers(as other: KeyBindings) -> Bool {
-        Command.allCases.allSatisfy {
-            primary($0) == other.primary($0) && alternates($0) == other.alternates($0) && mouse($0) == other.mouse($0)
-        }
+        Command.allCases.allSatisfy { sameTriggers(as: other, for: $0) }
+    }
+
+    /// Same primary, alternates and mouse buttons for `command`.
+    public func sameTriggers(as other: KeyBindings, for command: Command) -> Bool {
+        primary(command) == other.primary(command) && alternates(command) == other.alternates(command)
+            && mouse(command) == other.mouse(command)
     }
 }

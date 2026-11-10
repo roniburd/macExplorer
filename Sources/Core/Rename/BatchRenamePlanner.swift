@@ -39,9 +39,10 @@ public struct BatchRenamePair: Sendable, Codable, Equatable {
 /// Batch-rename preview (P4-11). O(n), no file-system access: safe to run for every keystroke off the main thread.
 public enum BatchRenamePlanner {
     /// `urls` in display order (numbering follows it). A URL whose `hasDirectoryPath` is true is a folder (all base name).
-    /// `existingNames`: every name in the folder (hidden included, from EntryStore), NameNormalizer semantics.
+    /// `existingNames`: every name in the items' folder (hidden included, from EntryStore), NameNormalizer semantics; pass
+    /// [] when the items span folders (search results), where the job reports a name that's taken.
     /// Statuses in priority order: invalidPattern (all rows), invalid (NameRules), unchanged (byte-equal), duplicateInBatch
-    /// (every member of a group of equal proposals, unchanged rows' names included), collidesWithExisting (an existing name
+    /// (every member of a group of equal proposals in the same folder, unchanged rows' names included), collidesWithExisting (an existing name
     /// that is not one of the batch's originals; names being vacated are free), ok.
     public static func preview(_ urls: [URL], rules: BatchRenameRules, caseSensitive: Bool, existingNames: [String]) -> BatchRenamePreview {
         let originals = urls.map(\.lastPathComponent)
@@ -54,10 +55,13 @@ public enum BatchRenamePlanner {
             return BatchRenamePreview(rows: rows, canApply: false)
         }
         func key(_ name: String) -> String { NameNormalizer.identityName(name, caseSensitive: caseSensitive) }
+        // Items from search results live in several folders: a proposal only clashes with one in the same folder.
+        let folders = urls.map { $0.deletingLastPathComponent().standardizedFileURL.path }
+        struct Slot: Hashable { var folder: String; var name: String }
 
         var rows: [BatchRenameRow] = []
         rows.reserveCapacity(urls.count)
-        var proposalCount: [String: Int] = [:]
+        var proposalCount: [Slot: Int] = [:]
         proposalCount.reserveCapacity(urls.count)
         for (i, url) in urls.enumerated() {
             let original = originals[i]
@@ -71,7 +75,7 @@ public enum BatchRenamePlanner {
                 status = .invalid(problem)
             } else {
                 status = Array(proposed.utf8) == Array(original.utf8) ? .unchanged : .ok
-                proposalCount[key(proposed), default: 0] += 1
+                proposalCount[Slot(folder: folders[i], name: key(proposed)), default: 0] += 1
             }
             rows.append(BatchRenameRow(url: url, original: original, proposed: proposed, status: status, extensionChanged: extensionChanged))
         }
@@ -87,7 +91,7 @@ public enum BatchRenamePlanner {
         var canApply = false, blocked = false
         for i in rows.indices where rows[i].status == .ok {
             let k = key(rows[i].proposed)
-            if (proposalCount[k] ?? 0) > 1 {
+            if (proposalCount[Slot(folder: folders[i], name: k)] ?? 0) > 1 {
                 rows[i].status = .duplicateInBatch
             } else if let taken = existing[k] {
                 rows[i].status = .collidesWithExisting(taken)

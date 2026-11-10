@@ -79,8 +79,12 @@ enum ScenarioFixtures {
         for (path, text) in (fixture.contents ?? [:]).sorted(by: { $0.key < $1.key }) { try write(path, Data(text.utf8)) }
         for (path, count) in (fixture.binary ?? [:]).sorted(by: { $0.key < $1.key }) { try write(path, binaryData(count)) }
         // Phase 4 (P4-23): crafted archives (validated kinds only).
-        for (path, kind) in (fixture.archives ?? [:]).sorted(by: { $0.key < $1.key }) where kind == "evil-tar" {
-            try write(path, traversalTar())
+        for (path, kind) in (fixture.archives ?? [:]).sorted(by: { $0.key < $1.key }) {
+            switch kind {
+            case "evil-tar": try write(path, traversalTar())
+            case "link-chain-tar": try write(path, linkChainTar())
+            default: break                                   // ScenarioFile.archiveKinds rejects any other kind
+            }
         }
         for (dir, count) in (fixture.bulk ?? [:]).sorted(by: { $0.key < $1.key }) {
             let url = try target(dir)
@@ -144,23 +148,36 @@ enum ScenarioFixtures {
     /// `count` deterministic bytes (SplitMix64, seed 0x6D6163) with the high bit set and byte 0 = 0x00, so the
     /// data is never valid text (the text sniffer sees a NUL and invalid UTF-8).
     /// A tar whose only entry is `../escape.txt` (Extract Here must refuse it before writing anything).
-    static func traversalTar() -> Data {
-        let contents = Data("escaped".utf8)
-        var h = [UInt8](repeating: 0, count: 512)
-        func put(_ s: String, _ offset: Int, _ len: Int) { for (i, b) in s.utf8.prefix(len).enumerated() { h[offset + i] = b } }
-        func octal(_ v: Int, _ offset: Int, _ len: Int) {
-            let digits = String(v, radix: 8)
-            put(String(repeating: "0", count: max(0, len - 1 - digits.count)) + digits, offset, len - 1)
+    static func traversalTar() -> Data { tar([(path: "../escape.txt", type: 0x30, link: "", contents: Data("escaped".utf8))]) }
+
+    /// QA round 1: "d/l1 -> .." then links through it ("l2 -> d/l1/..", "l3 -> d/l1/../../outside/keep.txt"), which a
+    /// lexical depth count passes but which resolve outside the extracted folder.
+    static func linkChainTar() -> Data {
+        tar([(path: "d/", type: 0x35, link: "", contents: Data()), (path: "d/l1", type: 0x32, link: "..", contents: Data()),
+             (path: "l2", type: 0x32, link: "d/l1/..", contents: Data()),
+             (path: "l3", type: 0x32, link: "d/l1/../../outside/keep.txt", contents: Data())])
+    }
+
+    /// A ustar archive of `entries` (type '0' file, '2' symlink, '5' folder).
+    private static func tar(_ entries: [(path: String, type: UInt8, link: String, contents: Data)]) -> Data {
+        var out = Data()
+        for e in entries {
+            var h = [UInt8](repeating: 0, count: 512)
+            func put(_ s: String, _ offset: Int, _ len: Int) { for (i, b) in s.utf8.prefix(len).enumerated() { h[offset + i] = b } }
+            func octal(_ v: Int, _ offset: Int, _ len: Int) {
+                let digits = String(v, radix: 8)
+                put(String(repeating: "0", count: max(0, len - 1 - digits.count)) + digits, offset, len - 1)
+            }
+            put(e.path, 0, 100); octal(e.type == 0x35 ? 0o755 : 0o644, 100, 8); octal(0, 108, 8); octal(0, 116, 8)
+            octal(e.contents.count, 124, 12); octal(1_700_000_000, 136, 12)
+            for i in 148..<156 { h[i] = 0x20 }
+            h[156] = e.type; put(e.link, 157, 100); put("ustar", 257, 6); put("00", 263, 2)
+            let digits = String(h.reduce(0) { $0 + Int($1) }, radix: 8)
+            put(String(repeating: "0", count: max(0, 6 - digits.count)) + digits + "\0 ", 148, 8)
+            out.append(contentsOf: h)
+            out.append(e.contents)
+            out.append(Data(count: (512 - e.contents.count % 512) % 512))
         }
-        put("../escape.txt", 0, 100); octal(0o644, 100, 8); octal(0, 108, 8); octal(0, 116, 8)
-        octal(contents.count, 124, 12); octal(1_700_000_000, 136, 12)
-        for i in 148..<156 { h[i] = 0x20 }
-        h[156] = 0x30; put("ustar", 257, 6); put("00", 263, 2)
-        let digits = String(h.reduce(0) { $0 + Int($1) }, radix: 8)
-        put(String(repeating: "0", count: max(0, 6 - digits.count)) + digits + "\0 ", 148, 8)
-        var out = Data(h)
-        out.append(contents)
-        out.append(Data(count: (512 - contents.count % 512) % 512))
         out.append(Data(count: 1024))
         return out
     }

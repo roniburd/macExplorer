@@ -19,7 +19,9 @@ public enum ArchiveSafetyProblem: Sendable, Equatable { case absolutePath(String
 /// 1. `absolutePath`: the path starts with "/" (after one leading "./").
 /// 2. `parentTraversal`: a ".." component, or a link whose target leaves the archive root (symlink targets resolve
 ///    from the link's folder, hard-link targets from the root; absolute targets always leave).
-/// 3. `throughSymlink`: a path (or hard-link target) below an earlier symlink entry ("link" then "link/evil.txt").
+/// 3. `throughSymlink`: a path (or hard-link target) below an earlier symlink entry ("link" then "link/evil.txt"), a
+///    symlink target that passes through another symlink entry ("d/l1 -> .." then "l2 -> d/l1/.."), or a symlink
+///    entry at a folder an earlier path or link target went through.
 /// 4. `unlistable`: an empty path or one containing NUL (and, in the job, a listing that failed).
 ///
 /// Paths split on "/" and also on "\" (zips made on Windows; some extractors treat it as a separator), dropping empty
@@ -38,6 +40,9 @@ public enum ArchiveSafety {
     /// Checks entries in archive order, remembering symlink entries for rule 3.
     public struct Tracker: Sendable {
         private var links: Set<[String]> = []
+        /// Folders (lower-cased components) that entry paths or symlink targets go through; a later symlink entry at
+        /// one of them would make an earlier, lexically checked path resolve somewhere else.
+        private var traversed: Set<[String]> = []
         public init() {}
 
         public mutating func check(_ entry: ArchiveEntry) -> ArchiveSafetyProblem? {
@@ -52,15 +57,35 @@ public enum ArchiveSafety {
                 return entry.type == .directory ? nil : .unlistable
             }
             if throughLink(parts) { return .throughSymlink(entry.path) }
+            let folderKey = Self.key(parts.dropLast())
+            if !folderKey.isEmpty { for n in 1...folderKey.count { traversed.insert(Array(folderKey.prefix(n))) } }
             switch entry.type {
             case .symlink(let target):
-                links.insert(Self.key(parts))
+                let key = Self.key(parts)
+                links.insert(key)
                 if target.isEmpty || target.contains("\0") { return .unlistable }
                 if target.hasPrefix("/") || target.hasPrefix("\\") { return .parentTraversal(entry.path) }
-                var depth = parts.count - 1                          // the link's folder depth
-                for c in ArchiveSafety.components(target) {
-                    if c == ".." { depth -= 1; if depth < 0 { return .parentTraversal(entry.path) } } else { depth += 1 }
+                // A link where an earlier link's target already went through a folder of that name.
+                if traversed.contains(key) { return .throughSymlink(entry.path) }
+                // Resolve the target lexically from the link's folder. That is only sound while every component
+                // passed through is a real folder, so a component that is itself a link entry (and is followed by
+                // more components) is refused, and each one passed through is remembered for links listed later.
+                var at = Array(key.dropLast())
+                let targetParts = ArchiveSafety.components(target)
+                var newlyTraversed: [[String]] = []
+                for (i, c) in targetParts.enumerated() {
+                    if c == ".." {
+                        if at.isEmpty { return .parentTraversal(entry.path) }
+                        at.removeLast()
+                    } else {
+                        at.append(c.lowercased())
+                        if i < targetParts.count - 1 {
+                            if links.contains(at) { return .throughSymlink(entry.path) }
+                            newlyTraversed.append(at)
+                        }
+                    }
                 }
+                traversed.formUnion(newlyTraversed)
             case .hardlink(let target):
                 if target.isEmpty || target.contains("\0") { return .unlistable }
                 var t = target
@@ -82,6 +107,6 @@ public enum ArchiveSafety {
             return (1..<key.count).contains { links.contains(Array(key.prefix($0))) }
         }
 
-        private static func key(_ parts: [Substring]) -> [String] { parts.map { $0.lowercased() } }
+        private static func key<C: Collection<Substring>>(_ parts: C) -> [String] { parts.map { $0.lowercased() } }
     }
 }

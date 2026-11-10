@@ -73,6 +73,9 @@ public final class Settings {
     }
     /// The resolved table for `keyBindingOverrides`.
     public var keyBindings: KeyBindings { KeyBindings(overrides: keyBindingOverrides) }
+    /// The preset the keys are based on (the last one chosen, or the one an imported file is closest to): per-row
+    /// Reset and "modified" in Settings › Shortcuts are relative to it. Not stored while Explorer.
+    public var keymapBase: KeymapPreset { didSet { save(keymapBase == .explorer ? nil : keymapBase, Key.keymapBase) } }
     /// `.ips` file names already offered (newest first, ≤ 20), so one crash prompts once.
     public private(set) var lastReportedCrashes: [String] { didSet { save(lastReportedCrashes, Key.lastReportedCrashes) } }
     // Phase 3 (schema v3): saved searches, preview pane, search defaults, results columns.
@@ -182,16 +185,17 @@ public final class Settings {
         pendingRollback = Self.load(PendingRollback.self, Key.pendingRollback, from: storage)
         lastReportedCrashes = Array((Self.load([String].self, Key.lastReportedCrashes, from: storage) ?? []).prefix(Self.lastReportedCrashesLimit))
         // Undecodable data: defaults are used and the data is left in place (assigning in init doesn't save).
+        var overrides = KeyBindingOverrides.empty
         if let data = storage.data(forKey: Key.keyBindings) {
             do {
-                keyBindingOverrides = try JSONDecoder().decode(KeyBindingOverrides.self, from: data)
+                overrides = try JSONDecoder().decode(KeyBindingOverrides.self, from: data)
             } catch {
-                keyBindingOverrides = .empty
                 diagnostic("MacExplorer: stored \"\(Key.keyBindings)\" could not be read; using default shortcuts (\(error))")
             }
-        } else {
-            keyBindingOverrides = .empty
         }
+        keyBindingOverrides = overrides
+        // Stored keys from before the base was remembered: the preset they are closest to.
+        keymapBase = Self.load(KeymapPreset.self, Key.keymapBase, from: storage) ?? KeymapPreset.nearest(to: overrides)
         if (stored ?? 0) < Self.schemaVersion {
             storage.set(try? JSONEncoder().encode(Self.schemaVersion), forKey: Self.schemaVersionKey)
         }
@@ -270,7 +274,7 @@ public final class Settings {
         static let searchScope = "searchScope", searchMode = "searchMode", searchIncludesPackages = "searchIncludesPackages"
         static let resultsColumns = "resultsColumns", previewRendersMarkdown = "previewRendersMarkdown"
         static let previewReflowsDocuments = "previewReflowsDocuments", previewZoom = "previewZoom"
-        static let paletteRecent = "paletteRecent", iconPackBookmark = "iconPackBookmark"
+        static let paletteRecent = "paletteRecent", iconPackBookmark = "iconPackBookmark", keymapBase = "keymapBase"
     }
 
     private struct TCCRecord: Codable {

@@ -36,6 +36,7 @@ final class CatalogTests: XCTestCase {
     func testPhase4FamiliesAreComplete() {
         let names = Set(Catalog.all.map(\.name).filter { ["archive.", "batch.", "acl.", "icon.", "keymap."].contains(where: $0.hasPrefix) })
         XCTAssertEqual(names, ["archive.compressExtractRoundTrip", "archive.appleArchiveNextFreeName", "archive.unsafeRefused",
+                               "archive.linkChainRefused", "batch.renameSameNameInTwoFolders", "keymap.resetFollowsThePreset",
                                "batch.renameCycleAndUndo", "batch.renameSwapAndChain", "batch.renameCrashRecovery",
                                "acl.editUndo", "icon.setCustomIconUndo", "keymap.importRejectsConflicts", "keymap.exportImportRoundTrip"])
         XCTAssertFalse(Catalog.all.contains { $0.name.lowercased().contains("tag") }, "Phase 4 tags were removed (owner decision)")

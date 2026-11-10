@@ -70,7 +70,7 @@ final class Phase4ScenarioSchemaTests: XCTestCase {
     /// names a file in Tests/Scenarios/keymaps that imports cleanly.
     func testEveryPhase4ScenarioFileExists() throws {
         let names = Set(try FileManager.default.contentsOfDirectory(atPath: Self.dir.path(percentEncoded: false)))
-        for n in ["p4-keymap-import", "p4-palette-new-folder", "p4-compress-zip", "p4-extract-here", "p4-extract-unsafe", "p4-batch-rename"] {
+        for n in ["p4-keymap-import", "p4-palette-new-folder", "p4-compress-zip", "p4-extract-here", "p4-extract-unsafe", "p4-extract-link-chain", "p4-batch-rename"] {
             XCTAssertTrue(names.contains(n + ".json"), n)
             if names.contains(n + ".json") { XCTAssertNoThrow(try ScenarioFile.load(Data(contentsOf: Self.dir.appending(path: n + ".json"))), n) }
         }

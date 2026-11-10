@@ -7,6 +7,10 @@ import UI
 /// sandbox `home`, localized undo action names, `await environment.start()` before any window opens.
 @MainActor
 enum AppBootstrap {
+    /// The longest the first window waits for a stored icon pack (QA round 1: a 2,000-image pack rasterizes in about
+    /// 0.35 s on every core, so ordinary packs make it).
+    static let iconPackLaunchWait: Duration = .milliseconds(500)
+
     /// Live services, or their sandbox stand-ins when `--state-dir` is given (overview Global Constraints › Safety):
     /// settings in `<state-dir>/settings.json`, a sandbox Trash, eject limited to images under the sandbox.
     static func makeEnvironment(options: LaunchOptions, statePaths: StatePaths,
@@ -68,9 +72,11 @@ enum AppBootstrap {
             exit(65)       // EX_DATAERR
         }
         let context = UIContext(environment: environment, options: options)
-        // The icon pack (P4-08) loads and rasterizes on a lane while the windows open; they redraw when it lands.
-        Task { await context.restoreIconPack() }
+        // The icon pack (P4-08) loads and rasterizes on lanes alongside Core's start; the windows wait for it (at most
+        // `iconPackLaunchWait`) so their first frame already uses it. A pack that takes longer lands later and redraws.
+        async let iconPack: Void = context.restoreIconPack(waitingAtMost: iconPackLaunchWait)
         let recovery = await environment.start()
+        await iconPack
         await context.windows.restoreOrOpenInitial()
         let lifecycle = AppLifecycle(context: context, flushSettings: { (storage as? FileSettingsStorage)?.flush() })
         lifecycle.didLaunch(recovery: recovery)

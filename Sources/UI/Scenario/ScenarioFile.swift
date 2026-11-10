@@ -34,7 +34,8 @@ struct ScenarioFile: Codable {
         var bulk: [String: Int]?              // dir → N empty files "file-000001.txt"… (FixtureTree.flat naming)
         var spotlight: [SpotlightFixture]?    // what the fake Spotlight returns (not created on disk)
         // Phase 4 (P4-23)
-        var archives: [String: String]?       // path → crafted archive kind ("evil-tar": one entry "../escape.txt")
+        var archives: [String: String]?       // path → crafted archive kind ("evil-tar": one entry "../escape.txt";
+                                              // "link-chain-tar": links through a "d/l1 -> .." link)
 
         /// Every relative path the fixture names (validated before anything is created).
         var allPaths: [String] {
@@ -212,7 +213,7 @@ struct ScenarioFile: Codable {
     static let sidebarSections: Set<String> = ["searches"]
     static let errorAnswers: [String: ErrorResolution] = ["retry": .retry, "skip": .skip, "skipAll": .skipAll, "cancel": .cancel,
                                                          "unlockAndContinue": .unlockAndContinue, "continueAnyway": .continueAnyway]
-    static let archiveKinds: Set<String> = ["evil-tar"]
+    static let archiveKinds: Set<String> = ["evil-tar", "link-chain-tar"]
 
     /// `["--keymap", "p4-x.json"]`: a plain file name (lowercase, digits, dashes) ending in .json.
     static func isValidLaunchArguments(_ args: [String]) -> Bool {

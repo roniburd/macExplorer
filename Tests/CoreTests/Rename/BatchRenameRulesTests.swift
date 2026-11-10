@@ -80,6 +80,21 @@ final class BatchRenameRulesTests: XCTestCase {
         XCTAssertFalse(BatchRenamePlanner.preview([u("c.txt")], rules: r, caseSensitive: false, existingNames: ["c.txt"]).canApply,
                        "nothing to rename")
     }
+    /// QA round 1: search results span folders; the same new name in two different folders is not a duplicate.
+    func testSameNewNameInDifferentFoldersIsAllowed() {
+        func at(_ path: String) -> URL { URL(filePath: "/tmp/macx-x/\(path)", directoryHint: .notDirectory) }
+        let prefixed = BatchRenamePlanner.preview([at("p/x.txt"), at("q/x.txt")], rules: rules { $0.prefix = "new " },
+                                                  caseSensitive: false, existingNames: [])
+        XCTAssertEqual(prefixed.rows.map(\.status), [.ok, .ok])
+        XCTAssertTrue(prefixed.canApply)
+        let r = rules { $0.find = "x"; $0.replace = "y" }
+        let other = BatchRenamePlanner.preview([at("p/y.txt"), at("q/x.txt")], rules: r, caseSensitive: false, existingNames: [])
+        XCTAssertEqual(other.rows.map(\.status), [.unchanged, .ok])
+        XCTAssertTrue(other.canApply)
+        let same = BatchRenamePlanner.preview([at("p/y.txt"), at("p/x.txt"), at("q/x.txt")], rules: r, caseSensitive: false, existingNames: [])
+        XCTAssertEqual(same.rows.map(\.status), [.unchanged, .duplicateInBatch, .ok], "still a duplicate within one folder")
+        XCTAssertFalse(same.canApply)
+    }
     func testPairsAreTheOKRowsInOrder() {
         let r = rules { $0.find = "a"; $0.replace = "x" }
         let p = BatchRenamePlanner.preview([u("a1.txt"), u("b.txt"), u("a2.txt")], rules: r, caseSensitive: false,

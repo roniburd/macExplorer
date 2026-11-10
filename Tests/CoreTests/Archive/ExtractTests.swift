@@ -51,6 +51,50 @@ final class ExtractTests: FileOpsTestCase {
         XCTAssertEqual(ArchiveSafety.problems([f(".//abs.txt")]), [.absolutePath(".//abs.txt")])
     }
 
+    /// QA round 1: a link target may not pass through another symlink entry ("d/l1 -> .." then "l2 -> d/l1/.."), in
+    /// either order, since the lexical depth count assumes every component is a real folder.
+    func testSafetyRulesRefuseTargetsThroughOtherLinks() {
+        func l(_ p: String, _ t: String) -> ArchiveEntry { ArchiveEntry(path: p, type: .symlink(target: t)) }
+        let d = ArchiveEntry(path: "d/", type: .directory)
+        XCTAssertEqual(ArchiveSafety.problems([d, l("d/l1", ".."), l("l2", "d/l1/.."), l("l3", "d/l1/../../outside/keep.txt")]),
+                       [.throughSymlink("l2"), .throughSymlink("l3")])
+        XCTAssertEqual(ArchiveSafety.problems([d, l("l2", "d/l1/.."), l("d/l1", "..")]), [.throughSymlink("d/l1")])
+        XCTAssertEqual(ArchiveSafety.problems([d, l("d/l1", ".."), l("l4", "d/l1")]), [], "a link to a link that stays inside is fine")
+        XCTAssertEqual(ArchiveSafety.problems([d, l("d/x", "../y"), l("l5", "d/X/z")]), [.throughSymlink("l5")])
+    }
+
+    /// QA round 1: the d/l1 -> ".." chain in tar, zip and Apple Archive is refused, and nothing outside changes.
+    func testExtractRefusesLinkChainEscape() async throws {
+        try file("outside/keep.txt", "keep")
+        let before = snapshot(url("outside"))
+        try dir("src/chain/d")
+        try sandbox.createSymlink("src/chain/d/l1", target: "..")
+        try sandbox.createSymlink("src/chain/l2", target: "d/l1/..")
+        try sandbox.createSymlink("src/chain/l3", target: "d/l1/../../outside/keep.txt")
+        try dir("work"); try dir("made")
+        _ = try ProcessRunnerTestTool.run("/usr/bin/aa", ["archive", "-d", url("src/chain").path, "-o", url("made/chain.aar").path])
+        let archives: [(String, Data?)] = [
+            ("chain.tar", CraftedArchives.tar([.init(path: "d/", type: 0x35), .init(path: "d/l1", type: 0x32, linkTarget: ".."),
+                                               .init(path: "l2", type: 0x32, linkTarget: "d/l1/.."),
+                                               .init(path: "l3", type: 0x32, linkTarget: "d/l1/../../outside/keep.txt")])),
+            ("chain.zip", CraftedArchives.zip([.init(path: "d/"), .init(path: "d/l1", contents: Data("..".utf8), symlink: true),
+                                               .init(path: "l2", contents: Data("d/l1/..".utf8), symlink: true),
+                                               .init(path: "l3", contents: Data("d/l1/../../outside/keep.txt".utf8), symlink: true)])),
+            ("chain.aar", nil),
+        ]
+        for (name, data) in archives {
+            if let data { try sandbox.createFile("work/\(name)", contents: data) } else { try sandbox.rename("made/\(name)", to: "work/\(name)") }
+            let interaction = ScriptedInteraction(errors: [.skip])
+            let (queue, _) = makeQueue(interaction: interaction)
+            let outcome = try await run(.extract(url("work/\(name)")), on: queue)
+            XCTAssertEqual(interaction.askedErrors().map(\.kind), [.unsafeArchive], name)
+            XCTAssertTrue(outcome.created.isEmpty, name)
+            XCTAssertEqual(names(url("work")), [name], name)
+            XCTAssertEqual(snapshot(url("outside")), before, name)
+            try sandbox.remove("work/\(name)")
+        }
+    }
+
     func testListerParsesTarVerboseLines() {
         XCTAssertEqual(ArchiveLister.entry(path: "./l", verboseLine: "lrw-r--r--  0 0      0           0 Dec 31  1969 ./l -> a b -> c.txt"),
                        ArchiveEntry(path: "./l", type: .symlink(target: "a b -> c.txt")))
@@ -304,6 +348,24 @@ final class ExtractTests: FileOpsTestCase {
         let linkedIn = try await LanePool().perform(on: .unknown, .fileOp) { lane in ExtractJob.postCheck(r, lane: lane) }
         XCTAssertTrue(linkedIn, "hard links among extracted files are fine")
         XCTAssertEqual(text(url("outside/keep.txt")), "keep")
+
+        // QA round 1: links resolved through other links ("d/l1 -> .." then "l2 -> d/l1/..") leave the root.
+        func check(_ name: String, _ links: [(String, String)]) async throws -> Bool {
+            try dir("\(name)/d"); try sandbox.createSymlink("\(name)/d/l1", target: "..")
+            for (path, target) in links { try sandbox.createSymlink("\(name)/\(path)", target: target) }
+            let root = url(name).path
+            return try await LanePool().perform(on: .unknown, .fileOp) { lane in ExtractJob.postCheck(root, lane: lane) }
+        }
+        let chainInside = try await check("c1", [])
+        XCTAssertTrue(chainInside)
+        let viaLinkInside = try await check("c2", [("l4", "d/l1/d/l1")])
+        XCTAssertTrue(viaLinkInside)
+        let chainOut = try await check("c3", [("l2", "d/l1/..")])
+        XCTAssertFalse(chainOut)
+        let chainToFile = try await check("c4", [("l3", "d/l1/../../outside/keep.txt")])
+        XCTAssertFalse(chainToFile)
+        let loop = try await check("c5", [("loop", "loop")])
+        XCTAssertFalse(loop, "a link loop never resolves, so it is refused")
     }
 }
 private extension String { func leftPadded(_ n: Int) -> String { String(repeating: "0", count: max(0, n - count)) + self } }

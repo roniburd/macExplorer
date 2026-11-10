@@ -199,6 +199,48 @@ final class IconWellTests: XCTestCase {
         XCTAssertNil(icons.currentPack)
     }
 
+    /// QA round 1: at launch the stored pack is waited for (time-boxed), so the first frame already uses it.
+    func testLaunchRestoreWaitsForThePackWithinTheLimit() async throws {
+        let ui = try await ContentTestHarness.make(self)
+        try ui.file("pack/txt.png", contents: TestImagesUI.png(red: 0))
+        let packURL = ui.url("pack")
+        await ui.context.iconPack.select(.choose) { packURL }
+        await ui.context.icons.setIconPack(nil)
+        await ui.context.restoreIconPack(waitingAtMost: .seconds(30))
+        XCTAssertEqual(ui.context.icons.currentPack?.byExtension.keys.sorted(), ["txt"], "applied before it returns")
+    }
+
+    /// A pack still rasterizing when the limit passes doesn't hold the launch; it lands later.
+    func testLaunchRestoreGivesUpAtTheLimit() async throws {
+        let ui = try await ContentTestHarness.make(self)
+        let png = TestImagesUI.png(size: 256, red: 0)
+        for i in 0..<400 { try ui.file("pack/e\(i).png", contents: png) }
+        let packURL = ui.url("pack")
+        await ui.context.iconPack.select(.choose) { packURL }
+        await ui.context.icons.setIconPack(nil)
+        let start = ContinuousClock.now
+        await ui.context.restoreIconPack(waitingAtMost: .milliseconds(1))
+        XCTAssertLessThan(ContinuousClock.now - start, .milliseconds(500))
+        let landed = expectation(forNotification: IconCache.iconPackChanged, object: ui.context.icons)
+        await fulfillment(of: [landed], timeout: 30)
+        XCTAssertEqual(ui.context.icons.currentPack?.byExtension.count, 400)
+    }
+
+    /// Rasterizing runs on every core: a 2,000-image pack is ready in a fraction of the serial time.
+    func testLargePackRasterizesInParallel() async throws {
+        let ui = try await ContentTestHarness.make(self)
+        let png = TestImagesUI.png(size: 128, red: 0)
+        for i in 0..<2_000 { try ui.file("pack/e\(i).png", contents: png) }
+        let pack = try await IconPackLoader.load(ui.url("pack"), lanes: ui.environment.lanes)
+        let start = ContinuousClock.now
+        await ui.context.icons.setIconPack(pack)
+        let elapsed = ContinuousClock.now - start
+        print("macx: 2000-image pack rasterized in \(elapsed)")
+        XCTAssertEqual(ui.context.icons.currentPack?.byExtension.count, 2_000)
+        let e7 = ui.environment.types.index(forExtension: "e7", isDirectory: false)
+        XCTAssertLessThan(TestImagesUI.centrePixel(ui.context.icons.typeIcon(e7, points: 32, scale: 2))[0], 40)
+    }
+
     func testUndecodablePackImageFallsBackToTheSystemIcon() async throws {
         let ui = try await ContentTestHarness.make(self)
         try ui.file("pack/pdf.png", contents: Data("not an image".utf8))

@@ -56,6 +56,20 @@ public final class UIContext {
     /// At launch (AppBootstrap): the icon pack stored in Settings, if any (P4-08).
     public func restoreIconPack() async { await iconPack.restore() }
 
+    /// AppBootstrap: `restoreIconPack`, waiting for it at most `limit` so the first window frame already shows the
+    /// pack (P4-08). A pack still loading then lands later and the lists redraw (`IconCache.iconPackChanged`).
+    public func restoreIconPack(waitingAtMost limit: Duration) async {
+        // Not a task group: a group waits for every child, and awaiting the restore can't be cancelled.
+        final class Once { var continuation: CheckedContinuation<Void, Never>? }
+        let once = Once()
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            once.continuation = continuation
+            func finish() { once.continuation?.resume(); once.continuation = nil }
+            Task { await self.restoreIconPack(); finish() }
+            Task { try? await Task.sleep(for: limit); finish() }
+        }
+    }
+
     /// Window › Operations; the app delegate calls it when no browser window is open.
     public func showOperationsPanel() { operationsUI.showPanel() }
 
