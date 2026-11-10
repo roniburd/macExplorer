@@ -1060,6 +1060,17 @@
         }
       }
     },
+    "Change Icon" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Change Icon"
+          }
+        }
+      }
+    },
     "Change Permissions" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1100,6 +1111,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Changing permissions of %@"
+          }
+        }
+      }
+    },
+    "Changing the icon of %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Changing the icon of %@"
           }
         }
       }

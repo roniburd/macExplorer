@@ -48,7 +48,7 @@ extension ErrorText {
         case .creating?: "You don't have permission to create '%@'."
         case .renaming?: "You don't have permission to rename '%@'."
         case .makingAlias?, .makingSymlink?: "You don't have permission to make a link to '%@'."
-        case .changingPermissions?, .changingAttributes?, .tagging?, .undoing?, .redoing?, nil: "You don't have permission to change '%@'."
+        case .changingPermissions?, .changingAttributes?, .tagging?, .changingIcon?, .undoing?, .redoing?, nil: "You don't have permission to change '%@'."
         }
     }
 }

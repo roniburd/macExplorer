@@ -51,4 +51,65 @@ final class IconCacheTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(500))
         XCTAssertFalse(called)
     }
+
+    // MARK: P4-07 invalidation
+
+    func testInvalidateRowIDDropsCachedImagesAndInFlightResults() async throws {
+        let h = try await ContentTestHarness.make(self)
+        let icons = h.context.icons
+        let app = try h.dir("Inv.app/Contents").deletingLastPathComponent()
+        let id = RowID.name("Inv.app")
+        var first: CGImage?
+        icons.fileIcon(for: app, rowID: id, points: 16, scale: 2) { first = $0 }
+        try await h.waitUntil("tier 1 icon") { first != nil }
+        XCTAssertTrue(icons.hasCachedFileIcon(rowID: id))
+        icons.invalidate(rowID: id)
+        XCTAssertFalse(icons.hasCachedFileIcon(rowID: id))
+
+        // A request in flight when the item changes is dropped: its read may predate the change.
+        var stale = false
+        icons.fileIcon(for: app, rowID: id, points: 16, scale: 2) { _ in stale = true }
+        icons.invalidate(rowID: id)
+        try await Task.sleep(for: .milliseconds(500))
+        XCTAssertFalse(stale)
+        XCTAssertFalse(icons.hasCachedFileIcon(rowID: id))
+
+        var again: CGImage?
+        icons.fileIcon(for: app, rowID: id, points: 16, scale: 2) { again = $0 }
+        try await h.waitUntil("refetched icon") { again != nil }
+        XCTAssertTrue(icons.hasCachedFileIcon(rowID: id))
+    }
+
+    func testInvalidatePathLeavesOtherItems() async throws {
+        let h = try await ContentTestHarness.make(self)
+        let icons = h.context.icons
+        let a = try h.dir("A.app/Contents").deletingLastPathComponent()
+        let b = try h.dir("B.app/Contents").deletingLastPathComponent()
+        var done = 0
+        icons.fileIcon(for: a, rowID: .name(a.path), points: 16, scale: 1) { _ in done += 1 }
+        icons.fileIcon(for: b, rowID: .name(b.path), points: 16, scale: 1) { _ in done += 1 }
+        try await h.waitUntil("both icons") { done == 2 }
+        icons.invalidate(path: a.path)
+        XCTAssertFalse(icons.hasCachedFileIcon(rowID: .name(a.path)))
+        XCTAssertTrue(icons.hasCachedFileIcon(rowID: .name(b.path)))
+    }
+
+    func testFinishedIconJobInvalidatesRowsOfTheShownFolder() async throws {
+        let h = try await ContentTestHarness.make(self)
+        _ = try h.dir("Shown.app/Contents")
+        _ = try h.dir("Other.app/Contents")
+        let (content, session, _) = try await h.makeContent()
+        let folder = session.folder
+        let row = try XCTUnwrap(folder.row(named: "Shown.app")), other = try XCTUnwrap(folder.row(named: "Other.app"))
+        let id = folder.identity(atRow: row), otherID = folder.identity(atRow: other)
+        try await h.waitUntil("row icons fetched") {
+            h.context.icons.hasCachedFileIcon(rowID: id) && h.context.icons.hasCachedFileIcon(rowID: otherID)
+        }
+        let record = JobRecord(id: JobID(), verb: .changingIcon,
+                               actions: [.customIconChanged(folder.url(atRow: row), previous: nil, new: IconImageData(bytes: Data([1])))])
+        content.customIconsChanged(record)
+        XCTAssertTrue(h.context.icons.hasCachedFileIcon(rowID: otherID), "only the changed item is dropped")
+        // The row is redrawn, so its icon is fetched again.
+        try await h.waitUntil("changed row refetched") { h.context.icons.hasCachedFileIcon(rowID: id) }
+    }
 }

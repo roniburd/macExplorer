@@ -16,6 +16,7 @@ public enum UndoActionNames {
         case .changingPermissions: L10n.string("Change Permissions")
         case .changingAttributes: L10n.string("Change Attributes")
         case .tagging: L10n.string("Tag")
+        case .changingIcon: L10n.string("Change Icon")
         case .undoing: L10n.string("Undo")
         case .redoing: L10n.string("Redo")
         }

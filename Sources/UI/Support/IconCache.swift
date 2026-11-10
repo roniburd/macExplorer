@@ -19,6 +19,9 @@ final class IconCache {
     private var fileImages: [FileKey: CGImage] = [:]
     private var fileOrder: [FileKey] = []
     private var pending: [FileKey: Task<Void, Never>] = [:]
+    /// The newest request per key: a result from an older (invalidated or superseded) request is dropped.
+    private var requestTokens: [FileKey: Int] = [:]
+    private var nextToken = 0
     private var waiting: [FileKey: [@MainActor (CGImage) -> Void]] = [:]
     private var iconFill: OSSignpostIntervalState?
     /// Volume for a URL's lane (set by ContentViewController from Volumes); VolumeID.unknown when nil.
@@ -58,13 +61,16 @@ final class IconCache {
         let volume = volumeLookup?(url) ?? .unknown
         let lanes = self.lanes
         let path = url.path
+        nextToken += 1
+        let token = nextToken
+        requestTokens[key] = token
         pending[key] = Task { [weak self] in
             let image: CGImage? = try? await lanes.perform(on: volume, .read) { _ in
                 withNoMaterialization {
                     IconCache.rasterize(NSWorkspace.shared.icon(forFile: path), pixels: pixels)
                 }
             }
-            self?.landed(key, image: image)
+            self?.landed(key, token: token, image: image)
         }
     }
 
@@ -77,7 +83,35 @@ final class IconCache {
         endIconFillIfIdle()
     }
 
-    private func landed(_ key: FileKey, image: CGImage?) {
+    /// Drops every cached Tier 1 image of `rowID` (all sizes) and cancels its pending requests (P4-07: the item's
+    /// custom icon changed). The next `fileIcon` call fetches it again.
+    func invalidate(rowID: RowID) {
+        invalidateFileImages { $0.id == rowID }
+    }
+
+    /// Same, by file path: lists that key rows differently (Properties' `.name(path)`) see the change too.
+    func invalidate(path: String) {
+        invalidateFileImages { $0.path == path }
+    }
+
+    private func invalidateFileImages(where matches: (FileKey) -> Bool) {
+        for key in fileImages.keys where matches(key) { fileImages[key] = nil }
+        fileOrder.removeAll(where: matches)
+        for key in requestTokens.keys where matches(key) { requestTokens[key] = nil }   // in-flight reads are stale
+        for (key, task) in pending where matches(key) {
+            task.cancel()
+            pending[key] = nil
+            waiting[key] = nil
+        }
+        endIconFillIfIdle()
+    }
+
+    /// Test hook: whether a Tier 1 image is cached for `rowID` (any size).
+    func hasCachedFileIcon(rowID: RowID) -> Bool { fileImages.keys.contains { $0.id == rowID } }
+
+    private func landed(_ key: FileKey, token: Int, image: CGImage?) {
+        guard requestTokens[key] == token else { return }    // invalidated or superseded since it was asked for
+        requestTokens[key] = nil
         pending[key] = nil
         let callbacks = waiting.removeValue(forKey: key) ?? []
         if let image {

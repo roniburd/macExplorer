@@ -83,6 +83,8 @@ public indirect enum JobKind: Sendable, Equatable {
     case chmodRecursive(URL, ModeChange)
     case setAttributes([URL], AttributeEdit)
     case setTags([URL], TagEdit)
+    /// nil removes the custom icon (P4-07).
+    case setCustomIcon([URL], IconImageData?)
     case undo(JobRecord)
     case redo(JobRecord)
 }
@@ -92,7 +94,7 @@ extension JobKind {
     var allURLs: [URL] {
         switch self {
         case .copy(let s, let d), .move(let s, let d), .alias(let s, let d), .symlink(let s, let d): return s + [d]
-        case .trash(let u), .delete(let u), .duplicate(let u), .setAttributes(let u, _), .setTags(let u, _): return u
+        case .trash(let u), .delete(let u), .duplicate(let u), .setAttributes(let u, _), .setTags(let u, _), .setCustomIcon(let u, _): return u
         case .newItem(_, let d): return [d]
         case .rename(let u, _), .chmodRecursive(let u, _): return [u]
         case .undo(let r), .redo(let r): return r.actions.flatMap(\.urls)
@@ -112,6 +114,7 @@ extension JobKind {
         case .chmodRecursive: .changingPermissions
         case .setAttributes: .changingAttributes
         case .setTags: .tagging
+        case .setCustomIcon: .changingIcon
         case .undo: .undoing
         case .redo: .redoing
         }
@@ -122,7 +125,7 @@ extension JobKind {
         case .copy(let s, let d), .move(let s, let d), .alias(let s, let d), .symlink(let s, let d):
             return JobDescription(verb: verb, itemCount: s.count, firstItemName: s.first?.lastPathComponent,
                                   sourceFolderName: folderName(s.first), destinationFolderName: d.lastPathComponent)
-        case .trash(let u), .delete(let u), .duplicate(let u), .setAttributes(let u, _), .setTags(let u, _):
+        case .trash(let u), .delete(let u), .duplicate(let u), .setAttributes(let u, _), .setTags(let u, _), .setCustomIcon(let u, _):
             return JobDescription(verb: verb, itemCount: u.count, firstItemName: u.first?.lastPathComponent,
                                   sourceFolderName: folderName(u.first), destinationFolderName: nil)
         case .newItem(_, let d):
@@ -150,7 +153,7 @@ public enum JobState: Sendable, Equatable { case queued, planning, running, paus
 
 public enum JobVerb: String, Sendable, Codable {
     case copying, moving, trashing, deleting, duplicating, creating, renaming, makingAlias, makingSymlink,
-         changingPermissions, changingAttributes, tagging, undoing, redoing
+         changingPermissions, changingAttributes, tagging, changingIcon, undoing, redoing
 }
 
 /// UI formats "Copying 1,204 items from Downloads to Backup".

@@ -31,6 +31,9 @@ public final class CoreEnvironment {
     public let searchServices: SearchServices
     /// Tags per item for menus and the tag editor (P4-05); follows finished tag jobs (undo/redo included).
     public let tagCache: TagCache
+    /// Custom-icon storage for `.setCustomIcon` jobs (P4-07): `WorkspaceIconWriter` live and in sandbox mode (the
+    /// sandbox only ever points it at sandbox files).
+    public let iconWriter: any CustomIconWriting = WorkspaceIconWriter()
 
     /// Undo action names ("Copy", "Move"…) are user-visible text, which Core never produces: the app installs a
     /// localized formatter at launch (P1-26). Default: the verb's raw value ("copying").
@@ -99,7 +102,7 @@ public final class CoreEnvironment {
         if let interactionTarget { interaction.setTarget(interactionTarget) }
         self.interaction = interaction
         let queue = FileOpQueue(lanes: lanes, trash: trash, journal: journal, interaction: interaction,
-                                tuning: fileOpTuning, startsHeld: true)
+                                tuning: fileOpTuning, iconWriter: iconWriter, startsHeld: true)
         self.fileOps = queue
         let undo = FileOpUndoStack(queue: queue)
         self.undo = undo

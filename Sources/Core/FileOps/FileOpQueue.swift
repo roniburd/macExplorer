@@ -37,6 +37,7 @@ public actor FileOpQueue {
     private let journal: Journal
     private let interaction: any FileOpInteraction
     private let tuning: FileOpTuning
+    private let iconWriter: any CustomIconWriting
     private var order: [JobID] = []
     private var held = false
     private var entries: [JobID: Entry] = [:]
@@ -47,16 +48,19 @@ public actor FileOpQueue {
     private nonisolated let eventStream: AsyncStream<JobEvent>
     private nonisolated let continuation: AsyncStream<JobEvent>.Continuation
 
+    /// `iconWriter`: custom-icon storage for `.setCustomIcon` jobs and their undo (tests pass a fake).
     public init(lanes: LanePool, trash: any TrashService, journal: Journal, interaction: any FileOpInteraction,
-                tuning: FileOpTuning = FileOpTuning()) {
-        self.init(lanes: lanes, trash: trash, journal: journal, interaction: interaction, tuning: tuning, startsHeld: false)
+                tuning: FileOpTuning = FileOpTuning(), iconWriter: any CustomIconWriting = WorkspaceIconWriter()) {
+        self.init(lanes: lanes, trash: trash, journal: journal, interaction: interaction, tuning: tuning,
+                  iconWriter: iconWriter, startsHeld: false)
     }
 
     /// `startsHeld`: jobs stay queued until `releaseHold()`. CoreEnvironment uses it so LaunchRecovery sees the
     /// journal before any job of this session writes to it.
     init(lanes: LanePool, trash: any TrashService, journal: Journal, interaction: any FileOpInteraction,
-         tuning: FileOpTuning, startsHeld: Bool) {
+         tuning: FileOpTuning, iconWriter: any CustomIconWriting = WorkspaceIconWriter(), startsHeld: Bool) {
         self.lanes = lanes; self.trash = trash; self.journal = journal; self.interaction = interaction; self.tuning = tuning
+        self.iconWriter = iconWriter
         self.held = startsHeld
         (eventStream, continuation) = AsyncStream.makeStream(of: JobEvent.self, bufferingPolicy: .unbounded)
     }
@@ -72,7 +76,7 @@ public actor FileOpQueue {
     public func enqueue(_ request: JobRequest) -> JobID {
         let id = JobID()
         let ctx = JobContext(id: id, request: request, lanes: lanes, trash: trash, journal: journal,
-                             interaction: interaction, tuning: tuning)
+                             interaction: interaction, tuning: tuning, iconWriter: iconWriter)
         order.append(id)
         entries[id] = Entry(ctx: ctx)
         undoFlags[id] = request.registersUndo

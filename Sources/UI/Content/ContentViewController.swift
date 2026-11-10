@@ -137,7 +137,10 @@ final class ContentViewController: CommandHandlingViewController {
                                                name: NSApplication.didBecomeActiveNotification, object: nil)
         sessionToken = session.observe { [weak self] event in self?.handle(event) }
         volumesToken = context.environment.volumes.observe { [weak self] _ in self?.refreshFreeSpace(force: true) }
-        finishedToken = context.environment.operations.onFinished { [weak self] _, _ in self?.refreshFreeSpace(force: true) }
+        finishedToken = context.environment.operations.onFinished { [weak self] _, outcome in
+            self?.refreshFreeSpace(force: true)
+            self?.customIconsChanged(outcome.record)
+        }
         // Cut dimming and Paste enablement (§5.6)
         clipboardToken = context.environment.clipboard.observe { [weak self] in self?.refreshCutNames() }
         settingsLoop = ObservationLoop { [weak self] in
@@ -282,6 +285,33 @@ final class ContentViewController: CommandHandlingViewController {
             if ids.contains(where: selected.contains) { updateStatus() }
         case .extendedAttributes(let ids):
             if details.folder === session.folder { details.reloadExtendedAttributes(ids) }
+        }
+    }
+
+    // MARK: custom icons (P4-07)
+
+    /// A finished job changed custom icons (a `.changingIcon` job, or its undo/redo): drop the cached Tier 1 images
+    /// of those items and redraw their rows here. The next directory read refreshes `EntryFlags.customIcon`, so Tier 1
+    /// eligibility (`IconCache.needsFileIcon`) follows.
+    func customIconsChanged(_ record: JobRecord) {
+        let urls = record.actions.compactMap { action -> URL? in
+            if case .customIconChanged(let url, _, _) = action { url } else { nil }
+        }
+        guard !urls.isEmpty else { return }
+        let icons = context.icons
+        for url in urls { icons.invalidate(path: url.path) }
+        func reload(_ folder: FolderModel, apply: (ChangeSet) -> Void) {
+            let directory = folder.directory.standardizedFileURL.path
+            let names = urls.filter { $0.deletingLastPathComponent().standardizedFileURL.path == directory }.map(\.lastPathComponent)
+            guard !names.isEmpty else { return }
+            let rows = folder.rows(named: names)
+            for row in rows { icons.invalidate(rowID: folder.identity(atRow: row)) }
+            if !rows.isEmpty { apply(ChangeSet([.reload(rows)])) }
+        }
+        if isShowingColumns, let columns {
+            for column in columns.columnControllers { reload(column.model) { column.apply($0) } }
+        } else if let folder = activeList.folder {
+            reload(folder) { activeList.apply($0) }
         }
     }
 

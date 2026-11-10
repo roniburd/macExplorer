@@ -42,6 +42,7 @@ final class JobContext: Sendable {
     let journal: Journal
     let interaction: any FileOpInteraction
     let tuning: FileOpTuning
+    let iconWriter: any CustomIconWriting
     let control = JobControl()
 
     private struct State {
@@ -66,9 +67,9 @@ final class JobContext: Sendable {
     private let state: Mutex<State>
 
     init(id: JobID, request: JobRequest, lanes: LanePool, trash: any TrashService, journal: Journal,
-         interaction: any FileOpInteraction, tuning: FileOpTuning) {
+         interaction: any FileOpInteraction, tuning: FileOpTuning, iconWriter: any CustomIconWriting = WorkspaceIconWriter()) {
         self.id = id; self.request = request; self.lanes = lanes; self.trash = trash
-        self.journal = journal; self.interaction = interaction; self.tuning = tuning
+        self.journal = journal; self.interaction = interaction; self.tuning = tuning; self.iconWriter = iconWriter
         state = Mutex(State(snapshot: JobSnapshot(id: id, description: request.kind.jobDescription, state: .queued,
                                                   progress: .zero, origin: request.origin, startedAt: .now)))
     }
@@ -346,6 +347,8 @@ enum JobRunner {
             await AttributeJobs.setAttributes(ctx, urls, edit)
         case .setTags(let urls, let edit):
             await TagJobs.setTags(ctx, urls, edit)
+        case .setCustomIcon(let urls, let data):
+            await IconJobs.setCustomIcon(ctx, urls, data)
         case .undo(let record), .redo(let record):
             await UndoPlanner.run(ctx, record)
         }
