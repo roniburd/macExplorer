@@ -55,6 +55,29 @@ final class Phase4ScenarioSchemaTests: XCTestCase {
         XCTAssertEqual(ScenarioFixtures.topLevelVisibleNames(file.fixture), ["w"])
     }
 
+    /// QA round 2: symlink fixtures (safe relative link text only) and the hidden-local-zip archive kind.
+    func testSymlinkAndHiddenLocalZipFixtures() throws {
+        XCTAssertEqual(load(#"{"name":"x","fixture":{"files":[],"dirs":[],"symlinks":{"l":"../out"}},"steps":[{"sleepMs":1}]}"#),
+                       .badFixture("symlink 'l' -> '../out'"))
+        XCTAssertEqual(load(#"{"name":"x","fixture":{"files":[],"dirs":[],"symlinks":{"l":"/etc"}},"steps":[{"sleepMs":1}]}"#),
+                       .badFixture("symlink 'l' -> '/etc'"))
+        XCTAssertEqual(load(#"{"name":"x","fixture":{"files":[],"dirs":[],"symlinks":{"../l":"a"}},"steps":[{"sleepMs":1}]}"#),
+                       .unsafePath("../l"))
+        let base = FileManager.default.temporaryDirectory.appending(path: "macx-tests-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let root = base.appending(path: "macx-scenario-root", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: base) }
+        let json = #"{"name":"x","fixture":{"files":["a.txt"],"dirs":["w"],"symlinks":{"d/l":"a.txt"},"archives":{"w/h.zip":"hidden-local-zip"}},"steps":[]}"#
+        let file = try ScenarioFile.load(Data(json.utf8))
+        let resolved = root.resolvingSymlinksInPath()
+        try ScenarioFixtures.create(file.fixture, in: resolved)
+        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: resolved.appending(path: "d/l").path), "a.txt")
+        let zip = try Data(contentsOf: resolved.appending(path: "w/h.zip"))
+        XCTAssertEqual(Array(zip.prefix(4)), [0x50, 0x4B, 0x03, 0x04])
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: base.path), ["macx-scenario-root"])
+        XCTAssertEqual(ScenarioFixtures.topLevelVisibleNames(file.fixture), ["a.txt", "w", "d"])
+    }
+
     func testSheetTitleExpectation() {
         var s = ProbeSnapshot()
         var e = ScenarioFile.Expectation()
@@ -70,7 +93,8 @@ final class Phase4ScenarioSchemaTests: XCTestCase {
     /// names a file in Tests/Scenarios/keymaps that imports cleanly.
     func testEveryPhase4ScenarioFileExists() throws {
         let names = Set(try FileManager.default.contentsOfDirectory(atPath: Self.dir.path(percentEncoded: false)))
-        for n in ["p4-keymap-import", "p4-palette-new-folder", "p4-compress-zip", "p4-extract-here", "p4-extract-unsafe", "p4-extract-link-chain", "p4-batch-rename"] {
+        for n in ["p4-keymap-import", "p4-palette-new-folder", "p4-compress-zip", "p4-extract-here", "p4-extract-unsafe", "p4-extract-link-chain", "p4-batch-rename",
+                  "p4-compress-symlink", "p4-extract-hidden-local-zip"] {
             XCTAssertTrue(names.contains(n + ".json"), n)
             if names.contains(n + ".json") { XCTAssertNoThrow(try ScenarioFile.load(Data(contentsOf: Self.dir.appending(path: n + ".json"))), n) }
         }

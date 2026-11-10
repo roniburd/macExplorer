@@ -61,7 +61,9 @@ final class IconCache {
 
     /// Switches to `pack` (nil: back to the system icons). The pack's images are read and rasterized on a lane first;
     /// a later call wins over one still rasterizing. Images that can't be decoded are left out (system icon).
-    func setIconPack(_ pack: IconPack?) async {
+    /// - Returns: whether `pack` was applied; false when a newer call replaced it while it was rasterizing.
+    @discardableResult
+    func setIconPack(_ pack: IconPack?) async -> Bool {
         packGeneration += 1
         let generation = packGeneration
         var images: [String: [Int: CGImage]] = [:]
@@ -69,12 +71,13 @@ final class IconCache {
             images = (try? await lanes.perform(on: .unknown, .read) { context in
                 try withNoMaterialization { try IconCache.rasterizePack(pack, context: context) }
             }) ?? [:]
-            guard generation == packGeneration else { return }   // a newer pack (or none) was set meanwhile
+            guard generation == packGeneration else { return false }   // a newer pack (or none) was set meanwhile
         }
         currentPack = pack
         packImages = images
         typeImages = [:]
         NotificationCenter.default.post(name: Self.iconPackChanged, object: self)
+        return true
     }
 
     /// The pack's image for a type at `pixels`: the folder icon for folders, else the first of the type's extensions

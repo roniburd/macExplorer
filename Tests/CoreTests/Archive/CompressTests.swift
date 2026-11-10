@@ -119,6 +119,28 @@ final class CompressTests: FileOpsTestCase {
         XCTAssertEqual(names(url("photos")), ["a.jpg", "sub"], "sources are left alone")
     }
 
+    /// QA round 2: a single symlink is archived as the link itself, under its own name, in both formats (ditto given
+    /// the link directly followed it and stored the target's data as "a.txt").
+    func testCompressSingleSymlinkStoresTheLinkInBothFormats() async throws {
+        try file("a.txt", "A")
+        try sandbox.createSymlink("link-to-a", target: "a.txt")
+        let (queue, _) = makeQueue()
+        let zip = try await run(.compress([url("link-to-a")], .zip), on: queue)
+        XCTAssertEqual(zip.created.map(\.lastPathComponent), ["link-to-a.zip"])
+        XCTAssertEqual(try unzipList(url("link-to-a.zip")), ["link-to-a"])
+        let aar = try await run(.compress([url("link-to-a")], .appleArchive), on: queue)
+        XCTAssertEqual(aar.created.map(\.lastPathComponent), ["link-to-a.aar"])
+        try dir("zipcheck"); try dir("aarcheck")
+        _ = try ProcessRunnerTestTool.run("/usr/bin/tar", ["-xf", url("link-to-a.zip").path, "-C", url("zipcheck").path])
+        _ = try ProcessRunnerTestTool.run("/usr/bin/aa", ["extract", "-i", url("link-to-a.aar").path, "-d", url("aarcheck").path])
+        for check in ["zipcheck", "aarcheck"] {
+            XCTAssertEqual(names(url(check)), ["link-to-a"], check)
+            XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: url("\(check)/link-to-a").path), "a.txt", check)
+        }
+        XCTAssertEqual(leftovers(), [])
+        XCTAssertEqual(text(url("a.txt")), "A")
+    }
+
     func testCompressMultipleItemsPutsThemAtTopLevelAndAppleArchiveRoundTrips() async throws {
         try file("a.txt", "A"); try file("b.txt", "B")
         let (queue, _) = makeQueue()

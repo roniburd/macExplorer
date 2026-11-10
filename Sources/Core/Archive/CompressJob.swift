@@ -5,7 +5,7 @@ import MacxFS
 /// `.compress` jobs (P4-09): Finder-compatible zip (`ditto`) and Apple Archive (`aa`) next to the first source.
 ///
 /// The archive is written to a journaled partial (`PartialName`, so `LaunchRecovery` removes it after a crash) and
-/// renamed to the next free name with RENAME_EXCL. Several sources (or any `.aar`) are first cloned into a journaled
+/// renamed to the next free name with RENAME_EXCL. Several sources (or any `.aar`, or a single symlink) are first cloned into a journaled
 /// staging folder beside them, so the archive holds them at its top level as Finder's does. The sources are only read.
 enum CompressJob {
     enum StageFailure: Error, Sendable { case failed(URL, Int32) }
@@ -23,7 +23,9 @@ enum CompressJob {
         ctx.setTotals(items: filesTotal, bytes: plan.totalBytes)
 
         let partial = parent.appending(path: PartialName.make(for: name, job: ctx.id))
-        let needsStaging = !(kept.count == 1 && format == .zip)
+        // ditto follows a symlink it is given directly (it stored the target's data under the target's name), so a
+        // single link is staged too and ditto archives the staging folder holding the link itself (QA round 2).
+        let needsStaging = !(kept.count == 1 && format == .zip && items[0].entries.first?.type != .symlink)
         let staging = parent.appending(path: PartialName.make(for: name + " staging", job: ctx.id), directoryHint: .isDirectory)
         for entry in [JournalEntry.partial(job: ctx.id, url: partial)] + (needsStaging ? [.partial(job: ctx.id, url: staging)] : []) {
             do { try await ctx.journalRecord(entry) } catch {

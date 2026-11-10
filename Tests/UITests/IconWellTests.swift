@@ -284,6 +284,48 @@ final class IconWellTests: XCTestCase {
         XCTAssertNil(ui.context.icons.currentPack)
     }
 
+    /// QA round 2: a second choice made while the first pack still rasterizes wins, and the popup, the applied pack
+    /// and the stored bookmark all show it (the older call used to overwrite `folderName` after its stale return).
+    func testChoosingAnotherPackWhileTheFirstRasterizesShowsTheSecond() async throws {
+        let ui = try await ContentTestHarness.make(self)
+        let png = TestImagesUI.png(size: 512, red: 0)
+        for i in 0..<1_500 { try ui.file("A/e\(i).png", contents: png) }
+        try ui.file("B/pdf.png", contents: TestImagesUI.png(red: 0))
+        let iconPack = ui.context.iconPack, settings = ui.environment.settings
+        let a = ui.url("A"), b = ui.url("B")
+        let first = Task { await iconPack.choose(a) }
+        while settings.iconPackBookmark == nil { try await Task.sleep(for: .milliseconds(5)) }   // A is rasterizing
+        await iconPack.choose(b)
+        _ = await first.value
+        XCTAssertEqual(ui.context.icons.currentPack?.folder.lastPathComponent, "B")
+        XCTAssertEqual(iconPack.folderName, "B")
+        XCTAssertEqual(try Self.resolve(settings.iconPackBookmark)?.lastPathComponent, "B")
+    }
+
+    /// QA round 2: None picked while a big pack still rasterizes leaves no pack, no bookmark and the popup on None.
+    func testChoosingNoneWhileAPackRasterizesShowsNone() async throws {
+        let ui = try await ContentTestHarness.make(self)
+        let png = TestImagesUI.png(size: 512, red: 0)
+        for i in 0..<1_500 { try ui.file("big/e\(i).png", contents: png) }
+        let iconPack = ui.context.iconPack, settings = ui.environment.settings
+        let big = ui.url("big")
+        let first = Task { await iconPack.choose(big) }
+        while settings.iconPackBookmark == nil { try await Task.sleep(for: .milliseconds(5)) }
+        await iconPack.select(.none) { nil }
+        _ = await first.value
+        XCTAssertNil(ui.context.icons.currentPack)
+        XCTAssertNil(settings.iconPackBookmark)
+        XCTAssertNil(iconPack.folderName)
+        XCTAssertEqual(iconPack.selection, .none)
+    }
+
+    private static func resolve(_ bookmark: Data?) throws -> URL? {
+        guard let bookmark else { return nil }
+        var stale = false
+        return try URL(resolvingBookmarkData: bookmark, options: [.withoutUI, .withoutMounting], relativeTo: nil,
+                       bookmarkDataIsStale: &stale)
+    }
+
     func testSandboxRunIgnoresAPackOutsideRoot() async throws {
         let ui = try await ContentTestHarness.make(self)
         let outside = try ui.sandbox.createFile("outside-pack/pdf.png", contents: TestImagesUI.png()).deletingLastPathComponent()

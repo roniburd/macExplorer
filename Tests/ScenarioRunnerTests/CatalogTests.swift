@@ -38,7 +38,9 @@ final class CatalogTests: XCTestCase {
         XCTAssertEqual(names, ["archive.compressExtractRoundTrip", "archive.appleArchiveNextFreeName", "archive.unsafeRefused",
                                "archive.linkChainRefused", "batch.renameSameNameInTwoFolders", "keymap.resetFollowsThePreset",
                                "batch.renameCycleAndUndo", "batch.renameSwapAndChain", "batch.renameCrashRecovery",
-                               "acl.editUndo", "icon.setCustomIconUndo", "keymap.importRejectsConflicts", "keymap.exportImportRoundTrip"])
+                               "acl.editUndo", "icon.setCustomIconUndo", "keymap.importRejectsConflicts", "keymap.exportImportRoundTrip",
+                               "archive.zipHiddenLocalEntriesNotWritten", "archive.compressSymlinkStoresTheLink",
+                               "keymap.explorerBaseSurvivesRelaunch"])
         XCTAssertFalse(Catalog.all.contains { $0.name.lowercased().contains("tag") }, "Phase 4 tags were removed (owner decision)")
     }
 

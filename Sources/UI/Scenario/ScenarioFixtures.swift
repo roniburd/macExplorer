@@ -83,8 +83,19 @@ enum ScenarioFixtures {
             switch kind {
             case "evil-tar": try write(path, traversalTar())
             case "link-chain-tar": try write(path, linkChainTar())
+            case "hidden-local-zip": try write(path, hiddenLocalZip())
             default: break                                   // ScenarioFile.archiveKinds rejects any other kind
             }
+        }
+        // QA round 2: symlinks (the link itself; its text is a safe relative path, so it never points out of the root).
+        for (path, link) in (fixture.symlinks ?? [:]).sorted(by: { $0.key < $1.key }) {
+            let url = try target(path)
+            do { try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true) } catch {
+                throw .io(path, Int32((error as NSError).code))
+            }
+            guard symlink(link, url.path) == 0 else { throw .io(path, errno) }
+            let parent = (path as NSString).deletingLastPathComponent
+            if !parent.isEmpty { noteCreated(parent) }                  // not the link: chmod would follow it
         }
         for (dir, count) in (fixture.bulk ?? [:]).sorted(by: { $0.key < $1.key }) {
             let url = try target(dir)
@@ -145,8 +156,6 @@ enum ScenarioFixtures {
         return "file-" + String(repeating: "0", count: max(0, 6 - n.count)) + n + ".txt"
     }
 
-    /// `count` deterministic bytes (SplitMix64, seed 0x6D6163) with the high bit set and byte 0 = 0x00, so the
-    /// data is never valid text (the text sniffer sees a NUL and invalid UTF-8).
     /// A tar whose only entry is `../escape.txt` (Extract Here must refuse it before writing anything).
     static func traversalTar() -> Data { tar([(path: "../escape.txt", type: 0x30, link: "", contents: Data("escaped".utf8))]) }
 
@@ -182,6 +191,45 @@ enum ScenarioFixtures {
         return out
     }
 
+    /// QA round 2: a stored zip whose local entries "hidden-not-in-cd.txt" and "/ABS-ESCAPE.txt" are missing from its
+    /// central directory, then "safe.txt", which it lists. Extract Here writes only safe.txt.
+    static func hiddenLocalZip() -> Data {
+        storedZip([("hidden-not-in-cd.txt", Data("hidden".utf8), false), ("/ABS-ESCAPE.txt", Data("abs".utf8), false),
+                   ("safe.txt", Data("safe".utf8), true)])
+    }
+
+    /// A stored (uncompressed) zip of regular files; entries with `listed == false` get no central directory record.
+    private static func storedZip(_ entries: [(path: String, contents: Data, listed: Bool)]) -> Data {
+        var out = Data(), central = Data()
+        func le16(_ v: Int) -> [UInt8] { [UInt8(v & 0xFF), UInt8((v >> 8) & 0xFF)] }
+        func le32(_ v: UInt32) -> [UInt8] { (0..<4).map { UInt8((v >> (8 * $0)) & 0xFF) } }
+        func crc32(_ data: Data) -> UInt32 {
+            var crc: UInt32 = 0xFFFF_FFFF
+            for byte in data {
+                crc ^= UInt32(byte)
+                for _ in 0..<8 { crc = (crc & 1) != 0 ? (crc >> 1) ^ 0xEDB8_8320 : crc >> 1 }
+            }
+            return ~crc
+        }
+        for e in entries {
+            let name = Array(e.path.utf8), crc = crc32(e.contents), size = UInt32(e.contents.count), offset = UInt32(out.count)
+            out.append(contentsOf: [0x50, 0x4B, 0x03, 0x04] + le16(10) + le16(0) + le16(0) + le16(0) + le16(0) + le32(crc)
+                       + le32(size) + le32(size) + le16(name.count) + le16(0) + name)
+            out.append(e.contents)
+            guard e.listed else { continue }
+            central.append(contentsOf: [0x50, 0x4B, 0x01, 0x02] + le16(0x031E) + le16(10) + le16(0) + le16(0) + le16(0) + le16(0)
+                           + le32(crc) + le32(size) + le32(size) + le16(name.count) + le16(0) + le16(0) + le16(0) + le16(0)
+                           + le32(UInt32(0o100644) << 16) + le32(offset) + name)
+        }
+        let listed = entries.filter(\.listed).count, cdOffset = UInt32(out.count)
+        out.append(central)
+        out.append(contentsOf: [0x50, 0x4B, 0x05, 0x06] + le16(0) + le16(0) + le16(listed) + le16(listed)
+                   + le32(UInt32(central.count)) + le32(cdOffset) + le16(0))
+        return out
+    }
+
+    /// `count` deterministic bytes (SplitMix64, seed 0x6D6163) with the high bit set and byte 0 = 0x00, so the
+    /// data is never valid text (the text sniffer sees a NUL and invalid UTF-8).
     static func binaryData(_ count: Int) -> Data {
         var seed: UInt64 = 0x6D6163
         func next() -> UInt64 {
@@ -345,7 +393,7 @@ enum ScenarioFixtures {
     static func topLevelVisibleNames(_ fixture: ScenarioFile.Fixture) -> Set<String> {
         let hidden = Set(fixture.hidden ?? [])
         let phase3 = Array((fixture.contents ?? [:]).keys) + Array((fixture.binary ?? [:]).keys) + Array((fixture.bulk ?? [:]).keys)
-            + Array((fixture.archives ?? [:]).keys)
+            + Array((fixture.archives ?? [:]).keys) + Array((fixture.symlinks ?? [:]).keys)
         return Set((fixture.files + fixture.dirs + (fixture.images ?? []) + phase3).filter { !hidden.contains($0) }
             .compactMap { $0.split(separator: "/").first.map(String.init) }
             .filter { !$0.hasPrefix(".") })

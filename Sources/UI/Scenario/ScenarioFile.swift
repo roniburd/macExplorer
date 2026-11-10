@@ -35,7 +35,9 @@ struct ScenarioFile: Codable {
         var spotlight: [SpotlightFixture]?    // what the fake Spotlight returns (not created on disk)
         // Phase 4 (P4-23)
         var archives: [String: String]?       // path → crafted archive kind ("evil-tar": one entry "../escape.txt";
-                                              // "link-chain-tar": links through a "d/l1 -> .." link)
+                                              // "link-chain-tar": links through a "d/l1 -> .." link;
+                                              // "hidden-local-zip": local entries its central directory omits)
+        var symlinks: [String: String]?       // path → link text (a safe relative path; created, never followed)
 
         /// Every relative path the fixture names (validated before anything is created).
         var allPaths: [String] {
@@ -43,6 +45,7 @@ struct ScenarioFile: Codable {
                 + Array((mtimeDays ?? [:]).keys) + Array((tags ?? [:]).keys) + Array((comments ?? [:]).keys)
                 + Array((lastOpenedDays ?? [:]).keys) + Array((contents ?? [:]).keys) + Array((binary ?? [:]).keys)
                 + Array((bulk ?? [:]).keys) + (spotlight ?? []).map(\.path) + Array((archives ?? [:]).keys)
+                + Array((symlinks ?? [:]).keys)
         }
     }
     struct FSWrite: Codable { var path: String; var bytes: Int }
@@ -213,7 +216,7 @@ struct ScenarioFile: Codable {
     static let sidebarSections: Set<String> = ["searches"]
     static let errorAnswers: [String: ErrorResolution] = ["retry": .retry, "skip": .skip, "skipAll": .skipAll, "cancel": .cancel,
                                                          "unlockAndContinue": .unlockAndContinue, "continueAnyway": .continueAnyway]
-    static let archiveKinds: Set<String> = ["evil-tar", "link-chain-tar"]
+    static let archiveKinds: Set<String> = ["evil-tar", "link-chain-tar", "hidden-local-zip"]
 
     /// `["--keymap", "p4-x.json"]`: a plain file name (lowercase, digits, dashes) ending in .json.
     static func isValidLaunchArguments(_ args: [String]) -> Bool {
@@ -236,6 +239,7 @@ struct ScenarioFile: Codable {
         for (path, n) in fixture.binary ?? [:] where !(1...Self.maxWriteBytes).contains(n) { throw .badFixture("binary '\(path)' size \(n)") }
         for (path, n) in fixture.bulk ?? [:] where !(1...Self.maxBulkFiles).contains(n) { throw .badFixture("bulk '\(path)' count \(n)") }
         for (path, kind) in fixture.archives ?? [:] where !Self.archiveKinds.contains(kind) { throw .badFixture("archive '\(path)' kind '\(kind)'") }
+        for (path, link) in fixture.symlinks ?? [:] where !ScenarioPath.isSafeRelative(link) { throw .badFixture("symlink '\(path)' -> '\(link)'") }
         if let args = launchArguments, !Self.isValidLaunchArguments(args) { throw .badLaunchArguments(args) }
         for item in fixture.spotlight ?? [] {
             if let kind = item.kind, !SpotlightFixture.kinds.contains(kind) { throw .badFixture("spotlight '\(item.path)' kind '\(kind)'") }

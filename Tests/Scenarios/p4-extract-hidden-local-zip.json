@@ -1,0 +1,12 @@
+{"name": "p4-extract-hidden-local-zip",
+ "fixture": {"files": ["outside/keep.txt"], "dirs": ["work", "outside"], "archives": {"work/hiddenlocal.zip": "hidden-local-zip"}},
+ "steps": [
+  {"doubleClick": "work"},
+  {"waitFor": {"folder": "work", "rows": ["hiddenlocal.zip"]}},
+  {"click": "hiddenlocal.zip"}, {"command": "extractHere"},
+  {"waitFor": {"rows": ["hiddenlocal.zip", "safe.txt"], "filesExist": ["work/safe.txt"]}, "timeoutMs": 10000},
+  {"sleepMs": 300},
+  {"expect": {"rows": ["hiddenlocal.zip", "safe.txt"], "sheetPresent": false,
+              "filesAbsent": ["work/hiddenlocal", "work/hidden-not-in-cd.txt", "work/ABS-ESCAPE.txt", "ABS-ESCAPE.txt"],
+              "filesExist": ["outside/keep.txt"], "fileSizes": {"outside/keep.txt": 1}}}
+ ]}

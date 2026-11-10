@@ -52,6 +52,34 @@ enum Phase4Scenarios {
             try ctx.expectEqual(ctx.text(ctx.path("outside/keep.txt")), "keep", "sibling unchanged")
             try ctx.expectEqual(ctx.entries(ctx.path("outside")), ["keep.txt"], "sibling unchanged")
         },
+        // QA round 2: a zip's local entries missing from its central directory are never written (bsdtar extracts
+        // exactly what it listed and checked).
+        CoreScenario("archive.zipHiddenLocalEntriesNotWritten") { ctx in
+            ctx.file("outside/keep.txt", "keep")
+            ctx.writeData("inbox/hiddenlocal.zip", ScenarioArchives.hiddenLocalZip(absolute: ctx.path("outside").path + "/ABS-ESCAPE.txt"))
+            let o = await ctx.perform(.extract(ctx.path("inbox/hiddenlocal.zip")))
+            try ctx.expectEqual(o.created.map(\.lastPathComponent), ["safe.txt"], "only the listed entry")
+            try ctx.expectEqual(ctx.entries(ctx.path("inbox")).sorted(), ["hiddenlocal.zip", "safe.txt"], "nothing hidden written")
+            try ctx.expectEqual(ctx.entries(ctx.path("outside")), ["keep.txt"], "sibling unchanged")
+        },
+        // QA round 2: a single symlink is zipped as the link, under its own name (as .aar always did).
+        CoreScenario("archive.compressSymlinkStoresTheLink") { ctx in
+            ctx.file("a.txt", "A")
+            let link = ctx.path("link-to-a").path
+            try await ctx.onLane { guard symlink("a.txt", link) == 0 else { throw ScenarioFailure("symlink: \(errno)") } }
+            for format in [ArchiveFormat.zip, .appleArchive] {
+                let o = await ctx.perform(.compress([ctx.path("link-to-a")], format))
+                let name = "link-to-a." + (format == .zip ? "zip" : "aar")
+                try ctx.expectEqual(o.created.map(\.lastPathComponent), [name], "named after the link")
+                ctx.dir("out-\(name)")
+                try ctx.renameRaw(ctx.path(name), to: ctx.path("out-\(name)/\(name)"))
+                let extracted = await ctx.perform(.extract(ctx.path("out-\(name)/\(name)")))
+                try ctx.expectEqual(extracted.created.map(\.lastPathComponent), ["link-to-a"], "the link comes back: \(name)")
+                let back = ctx.path("out-\(name)/link-to-a").path
+                let text = try await ctx.onLane { try FileManager.default.destinationOfSymbolicLink(atPath: back) }
+                try ctx.expectEqual(text, "a.txt", "still a link to a.txt: \(name)")
+            }
+        },
         CoreScenario("batch.renameSameNameInTwoFolders") { ctx in
             ctx.file("p/x.txt", "P"); ctx.file("q/x.txt", "Q")
             var rules = BatchRenameRules()
@@ -128,6 +156,21 @@ enum Phase4Scenarios {
             try ctx.expectEqual(settings.keyBindings.primary(.viewAsDetails), KeyChord(parsing: "cmd+2"), "Details keeps ⌘2")
             try ctx.expectEqual(settings.keymapPreset, .finder, "still the Finder preset")
         },
+        // QA round 2: Finder-like edits on the Explorer base read back as Explorer-based after a relaunch.
+        CoreScenario("keymap.explorerBaseSurvivesRelaunch") { ctx in
+            let storage = InMemorySettingsStorage()
+            let a = Settings(storage: storage, home: ctx.work)
+            let finder = KeyBindings(overrides: KeymapPreset.finder.overrides)
+            for command: Command in [.cut, .copy, .paste, .selectAll, .undo, .redo, .moveToTrash, .deletePermanently,
+                                     .properties, .back, .forward, .up] {
+                for alternate in a.keyBindings.alternates(command) where !finder.alternates(command).contains(alternate) {
+                    a.keyBindingOverrides.removeAlternate(alternate, from: command)
+                }
+            }
+            let b = Settings(storage: storage, home: ctx.work)
+            try ctx.expectEqual(b.keymapBase, .explorer, "base after relaunch")
+            try ctx.expect(b.isShortcutModified(.copy) && !b.isShortcutModified(.rename), "modified relative to Explorer")
+        },
         CoreScenario("keymap.importRejectsConflicts") { _ in
             let bad = Data(#"{"format":"macexplorer-keymap","version":1,"base":"explorer","bindings":{"newFolder":{"primary":"cmd+l"}}}"#.utf8)
             let accepted: Bool
@@ -154,7 +197,7 @@ enum Phase4Scenarios {
     ]
 }
 
-/// Crafted tars (a copy of the tar writer in the CoreTests' CraftedArchives: the scenario target can't import test code).
+/// Crafted tars and zips (a copy of the writers in the CoreTests' CraftedArchives: the scenario target can't import test code).
 enum ScenarioArchives {
     /// One entry, `../escape.txt`.
     static func traversalTar() -> Data { tar([(path: "../escape.txt", type: 0x30, link: "", contents: Data("escaped".utf8))]) }
@@ -164,6 +207,39 @@ enum ScenarioArchives {
         tar([(path: "d/", type: 0x35, link: "", contents: Data()), (path: "d/l1", type: 0x32, link: "..", contents: Data()),
              (path: "l2", type: 0x32, link: "d/l1/..", contents: Data()),
              (path: "l3", type: 0x32, link: "d/l1/../../outside/keep.txt", contents: Data())])
+    }
+
+    /// QA round 2: local entries "hidden-not-in-cd.txt" and `absolute` that the central directory omits, then
+    /// "safe.txt", which it lists (a stored zip; a copy of CoreTests' CraftedArchives.zip).
+    static func hiddenLocalZip(absolute: String) -> Data {
+        var out = Data(), central = Data()
+        func le16(_ v: Int) -> [UInt8] { [UInt8(v & 0xFF), UInt8((v >> 8) & 0xFF)] }
+        func le32(_ v: UInt32) -> [UInt8] { (0..<4).map { UInt8((v >> (8 * $0)) & 0xFF) } }
+        func crc32(_ data: Data) -> UInt32 {
+            var crc: UInt32 = 0xFFFF_FFFF
+            for byte in data {
+                crc ^= UInt32(byte)
+                for _ in 0..<8 { crc = (crc & 1) != 0 ? (crc >> 1) ^ 0xEDB8_8320 : crc >> 1 }
+            }
+            return ~crc
+        }
+        let entries: [(String, Data, Bool)] = [("hidden-not-in-cd.txt", Data("hidden".utf8), false),
+                                               (absolute, Data("abs".utf8), false), ("safe.txt", Data("safe".utf8), true)]
+        for (path, contents, listed) in entries {
+            let name = Array(path.utf8), crc = crc32(contents), size = UInt32(contents.count), offset = UInt32(out.count)
+            out.append(contentsOf: [0x50, 0x4B, 0x03, 0x04] + le16(10) + le16(0) + le16(0) + le16(0) + le16(0) + le32(crc)
+                       + le32(size) + le32(size) + le16(name.count) + le16(0) + name)
+            out.append(contents)
+            guard listed else { continue }
+            central.append(contentsOf: [0x50, 0x4B, 0x01, 0x02] + le16(0x031E) + le16(10) + le16(0) + le16(0) + le16(0) + le16(0)
+                           + le32(crc) + le32(size) + le32(size) + le16(name.count) + le16(0) + le16(0) + le16(0) + le16(0)
+                           + le32(UInt32(0o100644) << 16) + le32(offset) + name)
+        }
+        let cdOffset = UInt32(out.count)
+        out.append(central)
+        out.append(contentsOf: [0x50, 0x4B, 0x05, 0x06] + le16(0) + le16(0) + le16(1) + le16(1)
+                   + le32(UInt32(central.count)) + le32(cdOffset) + le16(0))
+        return out
     }
 
     /// A ustar archive of `entries` (type '0' file, '2' symlink, '5' folder).

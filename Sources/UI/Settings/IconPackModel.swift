@@ -21,6 +21,10 @@ final class IconPackModel {
     /// `--root` of a sandbox run: a stored pack is used only when it lies inside it. nil (and not sandboxed): any.
     @ObservationIgnored private let sandboxRoot: URL?
     @ObservationIgnored private let isSandboxed: Bool
+    /// Bumped by every choose / clear / restore: an older one still loading or rasterizing when a newer one starts
+    /// neither stores its bookmark nor touches `folderName`, so the popup, the stored bookmark and the applied pack
+    /// always agree (QA round 2).
+    @ObservationIgnored private var generation = 0
 
     init(settings: Core.Settings, lanes: LanePool, icons: IconCache, options: LaunchOptions) {
         self.settings = settings
@@ -48,29 +52,35 @@ final class IconPackModel {
     @discardableResult
     func choose(_ folder: URL) async -> Bool {
         error = nil
+        generation += 1
+        let mine = generation
         let lanes = self.lanes
-        guard let pack = try? await IconPackLoader.load(folder, lanes: lanes), !pack.isEmpty,
-              let bookmark = try? await lanes.perform(on: .unknown, .read, { _ in try folder.bookmarkData(options: []) })
-        else {
+        let pack = try? await IconPackLoader.load(folder, lanes: lanes)
+        let bookmark = pack.map { !$0.isEmpty } == true
+            ? try? await lanes.perform(on: .unknown, .read, { _ in try folder.bookmarkData(options: []) }) : nil
+        guard mine == generation else { return false }             // a newer choice (or None) replaced this one
+        guard let pack, !pack.isEmpty, let bookmark else {
             error = L10n.string("That folder isn't an icon pack.")
             return false
         }
         settings.iconPackBookmark = bookmark
-        await apply(pack)
-        return true
+        return await apply(pack, generation: mine)
     }
 
     /// Back to the system icons.
     func clear() async {
         error = nil
+        generation += 1
         settings.iconPackBookmark = nil
-        await apply(nil)
+        await apply(nil, generation: generation)
     }
 
     /// At launch: resolves the stored bookmark and applies the pack. A pack that can't be found or read now is left
     /// stored (its volume may be back next time) and nothing is shown. Sandbox runs ignore packs outside `--root`.
     func restore() async {
         guard let bookmark = settings.iconPackBookmark else { return }
+        generation += 1
+        let mine = generation
         let root = sandboxRoot, sandboxed = isSandboxed
         let folder = try? await lanes.perform(on: .unknown, .read) { _ -> URL? in
             var stale = false
@@ -84,12 +94,16 @@ final class IconPackModel {
             return path.hasPrefix(prefix) ? url : nil
         }
         guard let folder = folder ?? nil,
-              let pack = try? await IconPackLoader.load(folder, lanes: lanes), !pack.isEmpty else { return }
-        await apply(pack)
+              let pack = try? await IconPackLoader.load(folder, lanes: lanes), !pack.isEmpty,
+              mine == generation else { return }
+        await apply(pack, generation: mine)
     }
 
-    private func apply(_ pack: IconPack?) async {
-        await icons.setIconPack(pack)
+    /// Applies `pack` and shows it in the popup, unless a newer choice replaced it meanwhile (then that one shows).
+    @discardableResult
+    private func apply(_ pack: IconPack?, generation mine: Int) async -> Bool {
+        guard await icons.setIconPack(pack), mine == generation else { return false }
         folderName = pack?.folder.lastPathComponent
+        return true
     }
 }

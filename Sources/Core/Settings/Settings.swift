@@ -69,13 +69,18 @@ public final class Settings {
     public var offerToReportCrashes: Bool { didSet { save(offerToReportCrashes, Key.offerToReportCrashes) } }
     /// Settings › Shortcuts: the user's changes to the key table (sparse; `.empty` = all defaults). Not stored while empty.
     public var keyBindingOverrides: KeyBindingOverrides {
-        didSet { save(keyBindingOverrides.commands.isEmpty ? nil : keyBindingOverrides, Key.keyBindings) }
+        didSet {
+            save(keyBindingOverrides.commands.isEmpty ? nil : keyBindingOverrides, Key.keyBindings)
+            // Edited keys always have their base stored with them (see `keymapBase`), even the default Explorer one.
+            if storage.data(forKey: Key.keymapBase) == nil { save(keymapBase, Key.keymapBase) }
+        }
     }
     /// The resolved table for `keyBindingOverrides`.
     public var keyBindings: KeyBindings { KeyBindings(overrides: keyBindingOverrides) }
     /// The preset the keys are based on (the last one chosen, or the one an imported file is closest to): per-row
-    /// Reset and "modified" in Settings › Shortcuts are relative to it. Not stored while Explorer.
-    public var keymapBase: KeymapPreset { didSet { save(keymapBase == .explorer ? nil : keymapBase, Key.keymapBase) } }
+    /// Reset and "modified" in Settings › Shortcuts are relative to it. Always stored, Explorer included: a missing
+    /// value is guessed from the keys (`init`), and Finder-like edits on Explorer must not read back as Finder.
+    public var keymapBase: KeymapPreset { didSet { save(keymapBase, Key.keymapBase) } }
     /// `.ips` file names already offered (newest first, ≤ 20), so one crash prompts once.
     public private(set) var lastReportedCrashes: [String] { didSet { save(lastReportedCrashes, Key.lastReportedCrashes) } }
     // Phase 3 (schema v3): saved searches, preview pane, search defaults, results columns.
@@ -194,8 +199,17 @@ public final class Settings {
             }
         }
         keyBindingOverrides = overrides
-        // Stored keys from before the base was remembered: the preset they are closest to.
-        keymapBase = Self.load(KeymapPreset.self, Key.keymapBase, from: storage) ?? KeymapPreset.nearest(to: overrides)
+        // Stored keys without a stored base (from before the base was always remembered): the preset they are closest
+        // to, written straight away so the guess is made once and later edits can't change it. No keys: Explorer, not
+        // written (defaults aren't stored; the first edit stores the base with the keys).
+        if let base = Self.load(KeymapPreset.self, Key.keymapBase, from: storage) {
+            keymapBase = base
+        } else if storage.data(forKey: Key.keyBindings) != nil {
+            keymapBase = KeymapPreset.nearest(to: overrides)
+            storage.set(try? JSONEncoder().encode(keymapBase), forKey: Key.keymapBase)
+        } else {
+            keymapBase = .explorer
+        }
         if (stored ?? 0) < Self.schemaVersion {
             storage.set(try? JSONEncoder().encode(Self.schemaVersion), forKey: Self.schemaVersionKey)
         }

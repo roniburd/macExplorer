@@ -165,6 +165,50 @@ final class ExtractTests: FileOpsTestCase {
             try sandbox.remove("work/\(name)")
         }
     }
+    /// QA round 2: a zip's local entries that its central directory doesn't list are never written. The listing
+    /// (bsdtar, central directory) and the extraction must read the same entries; ditto streamed the local headers.
+    func testZipLocalEntriesMissingFromTheCentralDirectoryAreNeverWritten() async throws {
+        try file("outside/keep.txt", "keep")
+        let before = snapshot(url("outside"))
+        let absolute = url("outside").path + "/ABS-ESCAPE.txt"
+        let zip = CraftedArchives.zip([
+            .init(path: "hidden-not-in-cd.txt", contents: Data("hidden".utf8), inCentralDirectory: false),
+            .init(path: absolute, contents: Data("abs".utf8), inCentralDirectory: false),
+            .init(path: "safe.txt", contents: Data("safe".utf8)),
+        ])
+        try sandbox.createFile("work/hiddenlocal.zip", contents: zip)
+        let (queue, journal) = makeQueue()
+        let outcome = try await run(.extract(url("work/hiddenlocal.zip")), on: queue)
+        XCTAssertEqual(outcome.created.map(\.lastPathComponent), ["safe.txt"], "only the listed (checked) entry")
+        XCTAssertEqual(text(url("work/safe.txt")), "safe")
+        XCTAssertEqual(names(url("work")).sorted(), ["hiddenlocal.zip", "safe.txt"], "no hidden entry, no partial")
+        XCTAssertEqual(snapshot(url("outside")), before)
+        let left = await journal.entries()
+        XCTAssertTrue(left.isEmpty)
+    }
+
+    /// Extraction through bsdtar keeps what ditto restored: a Finder/ditto zip's __MACOSX metadata (extended
+    /// attributes) lands on the item, symlinks stay links and executable bits stay set.
+    func testZipExtractionKeepsMetadataLinksAndModes() async throws {
+        try file("src/a.txt", "A")
+        XCTAssertEqual(setxattr(url("src/a.txt").path, "com.example.macx", "v", 1, 0, 0), 0)
+        XCTAssertEqual(chmod(url("src/a.txt").path, 0o755), 0)
+        try sandbox.createSymlink("src/link", target: "a.txt")
+        let (queue, _) = makeQueue()
+        _ = try await run(.compress([url("src")], .zip), on: queue)
+        try dir("work"); try sandbox.rename("src.zip", to: "work/src.zip")
+        let outcome = try await run(.extract(url("work/src.zip")), on: queue)
+        XCTAssertEqual(outcome.created.map(\.lastPathComponent), ["src"])
+        let a = url("work/src/a.txt").path
+        var value = [UInt8](repeating: 0, count: 8)
+        XCTAssertEqual(getxattr(a, "com.example.macx", &value, value.count, 0, 0), 1)
+        var st = stat()
+        XCTAssertEqual(stat(a, &st), 0)
+        XCTAssertEqual(st.st_mode & 0o111, 0o111)
+        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: url("work/src/link").path), "a.txt")
+        XCTAssertFalse(exists(url("work/src/__MACOSX")))
+    }
+
     func testExtractZipWithSingleTopLevelFolderAndNextFreeName() async throws {
         try file("photos/a.jpg", "A"); try file("photos/sub/b.jpg", "B")
         let (queue, _) = makeQueue()

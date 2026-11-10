@@ -9,7 +9,9 @@ public enum ArchiveListError: Error, Sendable, Equatable { case unlistable }
 ///
 /// zip and the tar family: `/usr/bin/tar -tf` (paths) and `-tvf` (types and link targets) in the same order.
 /// Apple Archive: the `ArchiveStream` headers (`PAT`, `TYP`, `LNK`). gzip: one file named after the archive.
-/// The lister always runs the real `/usr/bin/tar` (never `FileOpTuning.toolOverride`): it is the safety check.
+/// The lister always runs the real `/usr/bin/tar` (never `FileOpTuning.toolOverride`): it is the safety check. zip and
+/// the tar family are extracted by that same bsdtar (`ExtractJob`), so exactly the listed entries are written; a zip's
+/// local entries that its central directory doesn't list are neither listed nor extracted.
 enum ArchiveLister {
     static func entries(of url: URL, format: ArchiveFormat, context: LaneContext) throws -> [ArchiveEntry] {
         assertOffMain()

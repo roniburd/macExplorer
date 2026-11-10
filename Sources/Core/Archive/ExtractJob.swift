@@ -5,7 +5,7 @@ import MacxFS
 /// `.extract` jobs (P4-10): Extract Here for zip, the tar family, gzip and Apple Archive.
 ///
 /// Before anything is written the archive is listed and every entry checked (`ArchiveSafety`); an unsafe or
-/// unlistable archive is refused. The tool then extracts into a journaled partial folder next to the archive
+/// unlistable archive is refused. The tool (the same bsdtar that listed it, for zip and the tar family) then extracts into a journaled partial folder next to the archive
 /// (`PartialName`, so `LaunchRecovery` removes it after a crash), which is walked once more (nothing resolves outside
 /// it, no link leaves it, no hard link reaches outside, setuid/setgid cleared) before it is placed: a single top-level
 /// item lands as itself, several land in a folder named after the archive, each at the next free name. Records
@@ -57,7 +57,12 @@ enum ExtractJob {
         // 3. Run the tool, then post-check, retrying on request.
         let tool = { (path: String) in ctx.tuning.toolOverride?(path) ?? path }
         let (executable, arguments, output): (String, [String], ProcessOutput) = switch format {
-        case .zip: (tool("/usr/bin/ditto"), ["-x", "-k", "--sequesterRsrc", "-V", archive.path, partial.path], .discard)
+        // zip goes through bsdtar too, not ditto: the listing above came from bsdtar's central-directory reader, and
+        // ditto streams the local headers, so it would also write local entries the central directory (and the safety
+        // check) never saw (QA round 2). bsdtar still restores a ditto/Finder zip's __MACOSX metadata (extended
+        // attributes) onto its items; --no-same-permissions would drop it, so zip leaves it out (the post-check clears
+        // setuid/setgid either way).
+        case .zip: (tool("/usr/bin/tar"), ["-xvf", archive.path, "-C", partial.path, "--no-same-owner"], .discard)
         case .tar, .tarGzip, .tarBzip2, .tarXz:
             (tool("/usr/bin/tar"), ["-xvf", archive.path, "-C", partial.path, "--no-same-owner", "--no-same-permissions"], .discard)
         case .appleArchive: (tool("/usr/bin/aa"), ["extract", "-i", archive.path, "-d", partial.path], .discard)
@@ -154,7 +159,7 @@ enum ExtractJob {
         return .ready(format, entries, size: Int64(st.st_size))
     }
 
-    /// `tar -v` prints "x path" per entry; `ditto -V` "N bytes for path" per file. Each counts one item.
+    /// `tar -v` prints "x path" per entry (`ditto -V`'s "N bytes for path" is still understood). Each counts one item.
     private static func progress(_ ctx: JobContext, _ line: String, perItem: Int64) {
         if let m = line.wholeMatch(of: /x (.+?)\s*/) {
             ctx.addProgress(items: 1, bytes: perItem, current: (String(m.1) as NSString).lastPathComponent)

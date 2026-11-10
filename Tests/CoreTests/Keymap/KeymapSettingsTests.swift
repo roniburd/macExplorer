@@ -76,6 +76,69 @@ final class KeymapSettingsTests: XCTestCase {
         XCTAssertEqual(fresh.keymapBase, .explorer)
     }
 
+    /// QA round 2: an Explorer base is stored too, so Finder-like edits on Explorer don't turn into a Finder base after
+    /// a relaunch (a missing base used to be guessed from the keys every launch).
+    func testExplorerBaseSurvivesARelaunchAfterFinderLikeEdits() {
+        let storage = InMemorySettingsStorage()
+        let home = URL(filePath: "/tmp/macx-tests-home", directoryHint: .isDirectory)
+        let a = Settings(storage: storage, home: home)
+        let finder = KeyBindings(overrides: KeymapPreset.finder.overrides)
+        let edited: [Command] = [.cut, .copy, .paste, .selectAll, .undo, .redo, .moveToTrash, .deletePermanently,
+                                 .properties, .back, .forward, .up]
+        for command in edited {
+            for alternate in a.keyBindings.alternates(command) where !finder.alternates(command).contains(alternate) {
+                a.keyBindingOverrides.removeAlternate(alternate, from: command)
+            }
+        }
+        XCTAssertEqual(KeymapPreset.nearest(to: a.keyBindingOverrides), .finder, "the keys alone look like Finder's")
+        XCTAssertEqual(a.keymapBase, .explorer)
+        XCTAssertTrue(a.isShortcutModified(.copy))
+        let b = Settings(storage: storage, home: home)
+        XCTAssertEqual(b.keymapBase, .explorer)
+        XCTAssertTrue(b.isShortcutModified(.copy))
+        XCTAssertFalse(b.isShortcutModified(.open)); XCTAssertFalse(b.isShortcutModified(.rename))
+        b.resetShortcut(.rename)
+        XCTAssertEqual(b.keyBindings.primary(.rename), KeyMap.primary(.rename), "Reset keeps Explorer's F2")
+        XCTAssertEqual(KeymapDocument.base(in: b.exportKeymap()), .explorer)
+    }
+
+    /// QA round 2: a file imported with "base": "explorer" stays Explorer-based after a relaunch, whatever its keys.
+    func testImportedExplorerBaseSurvivesARelaunch() throws {
+        let storage = InMemorySettingsStorage()
+        let home = URL(filePath: "/tmp/macx-tests-home", directoryHint: .isDirectory)
+        var finderLike = KeymapPreset.finder.overrides
+        finderLike.setPrimary(k("cmd+9"), for: .open)
+        let a = Settings(storage: storage, home: home)
+        try a.importKeymap(KeymapDocument.export(finderLike, returnKey: .open, base: .explorer))
+        XCTAssertEqual(a.keymapBase, .explorer)
+        XCTAssertTrue(a.isShortcutModified(.open))
+        let b = Settings(storage: storage, home: home)
+        XCTAssertEqual(b.keymapBase, .explorer)
+        XCTAssertTrue(b.isShortcutModified(.open))
+    }
+
+    /// Keys stored before the base was remembered: the nearest preset is guessed once and written, so later edits
+    /// can't change the guess.
+    func testMissingBaseIsGuessedOnceAndStored() {
+        let storage = InMemorySettingsStorage()
+        let home = URL(filePath: "/tmp/macx-tests-home", directoryHint: .isDirectory)
+        let a = Settings(storage: storage, home: home)
+        a.applyKeymapPreset(.finder)
+        storage.set(nil, forKey: "keymapBase")
+        let b = Settings(storage: storage, home: home)
+        XCTAssertEqual(b.keymapBase, .finder)
+        XCTAssertNotNil(storage.data(forKey: "keymapBase"), "the guess is written straight away")
+        b.keyBindingOverrides = .empty                                   // now the keys look like Explorer's
+        XCTAssertEqual(Settings(storage: storage, home: home).keymapBase, .finder)
+        let fresh = InMemorySettingsStorage()
+        let c = Settings(storage: fresh, home: home)
+        XCTAssertEqual(c.keymapBase, .explorer)
+        c.applyKeymapPreset(.finder); c.keyBindingOverrides = .empty
+        c.keymapBase = .explorer
+        c.keyBindingOverrides = KeymapPreset.finder.overrides             // Finder's keys on an Explorer base
+        XCTAssertEqual(Settings(storage: fresh, home: home).keymapBase, .explorer)
+    }
+
     /// An imported keymap is based on the file's base preset (export writes the settings' base).
     func testImportSetsTheNearestBase() throws {
         let a = settings()

@@ -1,0 +1,8 @@
+{"name": "p4-compress-symlink",
+ "fixture": {"files": ["a.txt"], "dirs": [], "symlinks": {"link-to-a": "a.txt"}},
+ "steps": [
+  {"click": "link-to-a"}, {"command": "compressZip"},
+  {"waitFor": {"rows": ["a.txt", "link-to-a", "link-to-a.zip"], "filesExist": ["link-to-a.zip"], "selection": ["link-to-a.zip"]}, "timeoutMs": 10000},
+  {"command": "extractHere"},
+  {"waitFor": {"rows": ["a.txt", "link-to-a", "link-to-a 2", "link-to-a.zip"], "filesExist": ["link-to-a 2"], "filesAbsent": ["a 2.txt"]}, "timeoutMs": 10000}
+ ]}

@@ -25,8 +25,9 @@ enum CraftedArchives {
         return out
     }
 
-    /// Stored (uncompressed) zip; symlinks use Unix mode 0o120777 in the external attributes.
-    struct ZipEntry { var path: String; var contents = Data(); var symlink = false }
+    /// Stored (uncompressed) zip; symlinks use Unix mode 0o120777 in the external attributes. An entry with
+    /// `inCentralDirectory: false` is written as a local entry only (the central directory never mentions it).
+    struct ZipEntry { var path: String; var contents = Data(); var symlink = false; var inCentralDirectory = true }
     static func zip(_ entries: [ZipEntry]) -> Data {
         var out = Data(), central = Data()
         func le16(_ v: Int) -> [UInt8] { [UInt8(v & 0xFF), UInt8((v >> 8) & 0xFF)] }
@@ -39,13 +40,15 @@ enum CraftedArchives {
                        + le32(UInt32(e.contents.count)) + le32(UInt32(e.contents.count)) + le16(name.count) + le16(0) + name)
             out.append(e.contents)
             let mode: UInt32 = e.symlink ? 0o120777 : 0o100644
+            guard e.inCentralDirectory else { continue }
             central.append(contentsOf: [0x50, 0x4B, 0x01, 0x02] + le16(0x031E) + le16(10) + le16(0) + le16(0) + le16(0) + le16(0)
                            + le32(crc) + le32(UInt32(e.contents.count)) + le32(UInt32(e.contents.count)) + le16(name.count)
                            + le16(0) + le16(0) + le16(0) + le16(0) + le32(mode << 16) + le32(offset) + name)
         }
         let cdOffset = UInt32(out.count)
+        let listed = entries.filter(\.inCentralDirectory).count
         out.append(central)
-        out.append(contentsOf: [0x50, 0x4B, 0x05, 0x06] + le16(0) + le16(0) + le16(entries.count) + le16(entries.count)
+        out.append(contentsOf: [0x50, 0x4B, 0x05, 0x06] + le16(0) + le16(0) + le16(listed) + le16(listed)
                    + le32(UInt32(central.count)) + le32(cdOffset) + le16(0))
         return out
     }
