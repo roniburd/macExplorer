@@ -37,6 +37,9 @@ enum CommandStateBuilder {
                 let entry = folder.entry(atRow: row)
                 state.singleFolderSelected = entry.kind == .directory
                 state.targetIsPackage = entry.kind == .package
+                // Extract Here (P4-10): by name only, no I/O.
+                state.selectionIsArchive = entry.kind != .directory
+                    && ArchiveFormat.detect(byName: folder.url(atRow: row).lastPathComponent) != nil
             }
         case .resultsSelection(let results):
             let rows = results.selection.rows.filter { $0 < results.rowCount }

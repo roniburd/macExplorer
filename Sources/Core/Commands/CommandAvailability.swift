@@ -67,7 +67,7 @@ public enum CommandAvailability {
     /// The Phase 4 commands whose feature has landed. Each owning task adds its commands here (P4-03 the palette,
     /// P4-05 Edit Tags, P4-09 compress, P4-10 Extract Here, P4-12 batch rename). Until then a command is disabled,
     /// holds no keys (`KeyBindings`) and is left out of the menus and Settings › Shortcuts.
-    public static let shippedPhase4Commands: Set<Command> = [.showCommandPalette, .editTags, .compressZip, .compressAppleArchive]
+    public static let shippedPhase4Commands: Set<Command> = [.showCommandPalette, .editTags, .compressZip, .compressAppleArchive, .extractHere]
 
     /// False only for a Phase 4 command that hasn't shipped yet.
     public static func isShipped(_ command: Command) -> Bool {

@@ -352,4 +352,38 @@ final class FileCommandTests: XCTestCase {
         w.select([])
         XCTAssertFalse(w.commands.canPerform(.compressZip, target: w.selection), "needs a selection")
     }
+
+    /// P4-10: Extract Here shows under Open With for one archive only; the result lands next to it, is selected, and
+    /// one Undo moves it to the (sandbox) Trash.
+    func testExtractHereFromTheItemMenuSelectsTheResultAndUndoTrashesIt() async throws {
+        let w = try await world { try $0.file("a.txt", contents: Data("A".utf8)); try $0.file("b.txt") }
+        try await w.h.waitUntil("listed") { w.folder.rowCount == 2 }
+        let a = try XCTUnwrap(w.folder.row(named: "a.txt"))
+        let plain = try XCTUnwrap(w.content.contextMenu(forRow: a))
+        XCTAssertNil(plain.items.first { $0.identifier?.rawValue == "macx.menu.extractHere" }, "not for a non-archive")
+        w.select(["a.txt"])
+        try await w.h.waitUntil("a selected") { w.folder.selectedURLs.count == 1 }
+        XCTAssertFalse(w.commands.canPerform(.extractHere, target: w.selection))
+        w.commands.perform(.compressZip, target: w.selection, sender: nil)
+        try await w.h.waitUntil("archived") { w.h.exists("a.txt.zip") }
+        try await w.h.waitUntil("archive selected") { w.folder.selectedURLs.map(\.lastPathComponent) == ["a.txt.zip"] }
+        let zipRow = try XCTUnwrap(w.folder.row(named: "a.txt.zip"))
+        let menu = try XCTUnwrap(w.content.contextMenu(forRow: zipRow))
+        let ids = menu.items.compactMap { $0.identifier?.rawValue }
+        let extract = try XCTUnwrap(ids.firstIndex(of: "macx.menu.extractHere"))
+        XCTAssertEqual(ids[extract - 1], "macx.menu.openWith")
+        let item = menu.items.first { $0.identifier?.rawValue == "macx.menu.extractHere" }!
+        XCTAssertEqual(item.title, "Extract Here")
+        let box = try XCTUnwrap(item.representedObject as? MenuActionBox)
+        XCTAssertEqual(box.command, .extractHere)
+        XCTAssertTrue(box.validateMenuItem(item))
+        box.run(nil)
+        try await w.h.waitUntil("extracted") { w.h.exists("a 2.txt") }
+        try await w.h.waitUntil("result selected") { w.folder.selectedURLs.map(\.lastPathComponent) == ["a 2.txt"] }
+        XCTAssertEqual(String(decoding: try Data(contentsOf: w.h.url("a 2.txt")), as: UTF8.self), "A")
+        try await w.h.waitUntil("undo registered") { w.h.environment.undo.canUndo }
+        w.commands.perform(.undo, target: w.selection, sender: nil)
+        try await w.h.waitUntil("result trashed") { !w.h.exists("a 2.txt") }
+        XCTAssertTrue(w.h.exists("a.txt.zip")); XCTAssertTrue(w.h.exists("a.txt"))
+    }
 }

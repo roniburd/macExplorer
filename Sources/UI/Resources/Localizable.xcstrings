@@ -2303,6 +2303,17 @@
         }
       }
     },
+    "Extract" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extract"
+          }
+        }
+      }
+    },
     "Extract Here" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2310,6 +2321,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Extract Here"
+          }
+        }
+      }
+    },
+    "Extracting %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extracting %@"
           }
         }
       }
@@ -6660,6 +6682,17 @@
         }
       }
     },
+    "You don't have permission to extract '%@'." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You don't have permission to extract '%@'."
+          }
+        }
+      }
+    },
     "You don't have permission to make a link to '%@'." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8017,6 +8050,17 @@
         }
       }
     },
+    "“%@” can't be extracted safely because it contains items that would be written outside the destination folder." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@” can't be extracted safely because it contains items that would be written outside the destination folder."
+          }
+        }
+      }
+    },
     "“%@” can't be found. Right-click to locate it." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8046,6 +8090,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "“%@” for “%@” isn’t a shortcut MacExplorer can read."
+          }
+        }
+      }
+    },
+    "“%@” isn't an archive macExplorer can open." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@” isn't an archive macExplorer can open."
           }
         }
       }

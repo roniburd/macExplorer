@@ -33,6 +33,9 @@ extension ErrorText {
         case .intoItself: String(format: L10n.string("'%@' can't be moved or copied into itself."), name)
         case .changedDuringMove: String(format: L10n.string("'%@' changed while it was being moved, so it was left in place."), name)
         case .noTrash: String(format: L10n.string("'%@' can't be moved to the Trash."), name)
+        case .unsafeArchive:
+            String(format: L10n.string("“%@” can't be extracted safely because it contains items that would be written outside the destination folder."), name)
+        case .unsupportedArchive: String(format: L10n.string("“%@” isn't an archive macExplorer can open."), name)
         case .other(let code, let message):
             String(format: L10n.string("An error occurred with '%@': %@ (error %lld)."), name, message, Int64(code))
         }
@@ -49,6 +52,7 @@ extension ErrorText {
         case .renaming?: "You don't have permission to rename '%@'."
         case .makingAlias?, .makingSymlink?: "You don't have permission to make a link to '%@'."
         case .compressing?: "You don't have permission to compress '%@'."
+        case .extracting?: "You don't have permission to extract '%@'."
         case .changingPermissions?, .changingAttributes?, .tagging?, .changingIcon?, .undoing?, .redoing?, nil: "You don't have permission to change '%@'."
         }
     }

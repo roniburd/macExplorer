@@ -148,7 +148,8 @@ final class FileCommandController: CommandHandler {
         case .editTags: editTags(target)
         case .compressZip: compress(target, .zip)
         case .compressAppleArchive: compress(target, .appleArchive)
-        case .extractHere, .batchRename:
+        case .extractHere: extractHere(target)
+        case .batchRename:
             break   // Phase 4: disabled until shipped (CommandAvailability.shippedPhase4Commands), so perform beeps above
         }
     }
@@ -342,6 +343,12 @@ final class FileCommandController: CommandHandler {
         let urls = subjectURLs(target)
         guard !urls.isEmpty else { return nil }
         return enqueue(.compress(urls, format))
+    }
+
+    /// Extract Here (P4-10): one job per selected archive; each result lands next to its archive and is selected.
+    @discardableResult
+    func extractHere(_ target: CommandTarget) -> [Task<JobOutcome, Never>] {
+        subjectURLs(target).filter { ArchiveFormat.detect(byName: $0.lastPathComponent) != nil }.map { enqueue(.extract($0)) }
     }
 
     @discardableResult

@@ -198,6 +198,7 @@ final class CompressTests: FileOpsTestCase {
         try file("a.txt")
         let (queue, _) = makeQueue()
         let outcome = try await run(.compress([url("a.txt")], .zip), on: queue)
+        XCTAssertEqual(try unzipList(url("a.txt.zip")), ["a.txt"], "a single file is stored without its folder")
         XCTAssertEqual(outcome.record.actions.count, 1)
         _ = try await run(.undo(outcome.record), on: queue)
         XCTAssertFalse(exists(url("a.txt.zip"))); XCTAssertTrue(exists(url("a.txt")))

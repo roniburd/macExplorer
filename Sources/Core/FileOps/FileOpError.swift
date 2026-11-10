@@ -15,6 +15,10 @@ public enum FileOpErrorKind: Sendable, Equatable {
     case intoItself
     case changedDuringMove
     case noTrash
+    /// An archive entry would be written outside the destination (P4-10); nothing was extracted.
+    case unsafeArchive
+    /// Not an archive format Extract Here reads (P4-10).
+    case unsupportedArchive
     case other(code: Int32, message: String)
 
     /// `isLockedItem`: the item (or its parent, for creates) has UF_IMMUTABLE; EPERM then means "locked".
@@ -58,7 +62,7 @@ public enum FileOpErrorKind: Sendable, Equatable {
         case .readOnlyVolume: [.cancel]
         case .noSpace: [.retry, .cancel]
         case .inUse: [.retry, .skip, .cancel]
-        case .nameTooLong, .sourceGone, .intoItself, .noTrash: [.skip, .cancel]
+        case .nameTooLong, .sourceGone, .intoItself, .noTrash, .unsafeArchive, .unsupportedArchive: [.skip, .cancel]
         case .changedDuringMove, .other: [.retry, .skip, .cancel]
         }
     }

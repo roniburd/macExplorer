@@ -88,6 +88,7 @@ enum ContextMenuTitles {
         case .openContainingFolder: L10n.string("Open Containing Folder")
         case .saveSearch: L10n.string("Save Search…")
         case .stopSearch: L10n.string("Stop Search")
+        case .extractHere: L10n.string("Extract Here")
         default: command.rawValue
         }
     }
@@ -118,6 +119,10 @@ final class ContextMenuBuilder {
         }
         add(.open, target, handler, to: menu)
         if let openWith = openWithItem(rows: valid, folder: folder, handler: handler) { menu.addItem(openWith) }
+        if valid.count == 1, let row = valid.first, kinds.first != .directory,
+           ArchiveFormat.detect(byName: folder.url(atRow: row).lastPathComponent) != nil {
+            add(.extractHere, target, handler, to: menu)                 // P4-10: a single archive, under Open With
+        }
         add(.quickLook, target, handler, to: menu)
         if kinds.contains(.directory) {
             add(.openInNewWindow, target, handler, to: menu)

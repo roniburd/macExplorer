@@ -33,8 +33,11 @@ enum CompressJob {
         }
 
         let tool = { (path: String) in ctx.tuning.toolOverride?(path) ?? path }
+        // --keepParent stores a folder as "photos/…"; for a file it would also store the file's own parent folder
+        // ("Documents/a.txt"), so a file is archived as just "a.txt", as Finder does.
+        let keepParent = items[0].entries.first?.type == .directory ? ["--keepParent"] : []
         let (executable, arguments): (String, [String]) = switch (format, needsStaging) {
-        case (.zip, false): (tool("/usr/bin/ditto"), ["-c", "-k", "--sequesterRsrc", "--keepParent", "-V", kept[0].path, partial.path])
+        case (.zip, false): (tool("/usr/bin/ditto"), ["-c", "-k", "--sequesterRsrc"] + keepParent + ["-V", kept[0].path, partial.path])
         case (.zip, true): (tool("/usr/bin/ditto"), ["-c", "-k", "--sequesterRsrc", "-V", staging.path, partial.path])
         default: (tool("/usr/bin/aa"), ["archive", "-d", staging.path, "-o", partial.path, "-a", "lzfse"])
         }

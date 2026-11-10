@@ -288,6 +288,8 @@ extension FileOpErrorKind {
         case .intoItself: "intoItself"
         case .changedDuringMove: "changedDuringMove"
         case .noTrash: "noTrash"
+        case .unsafeArchive: "unsafeArchive"
+        case .unsupportedArchive: "unsupportedArchive"
         case .other(let code, _): "other\(code)"
         }
     }
@@ -354,6 +356,8 @@ enum JobRunner {
             await IconJobs.setCustomIcon(ctx, urls, data)
         case .compress(let urls, let format):
             await CompressJob.compress(ctx, urls, format)
+        case .extract(let url):
+            await ExtractJob.extract(ctx, url)
         case .undo(let record), .redo(let record):
             await UndoPlanner.run(ctx, record)
         }
