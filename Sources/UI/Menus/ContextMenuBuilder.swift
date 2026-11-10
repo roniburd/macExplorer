@@ -141,7 +141,12 @@ final class ContextMenuBuilder {
         for command in [Command.duplicate, .makeAlias, .makeSymlink] { add(command, target, handler, to: menu) }
         menu.addItem(compressItem(names: valid.map { folder.url(atRow: $0).lastPathComponent }, target: target, handler: handler))
         menu.addItem(.separator())
-        for command in [Command.rename, .moveToTrash, .deletePermanently] { add(command, target, handler, to: menu) }
+        if valid.count > 1 {
+            add(.batchRename, target, handler, to: menu).title = Self.batchRenameTitle(count: valid.count)   // P4-12
+        } else {
+            add(.rename, target, handler, to: menu)
+        }
+        for command in [Command.moveToTrash, .deletePermanently] { add(command, target, handler, to: menu) }
         menu.addItem(.separator())
         menu.addItem(newSubmenu(folder: folder, handler: handler))
         add(.revealInFinder, target, handler, to: menu)
@@ -179,7 +184,11 @@ final class ContextMenuBuilder {
         add(.copyAsPath, target, handler, to: menu)
         menu.addItem(CopyPathMenu.submenuItem(target: target, handler: handler))
         menu.addItem(.separator())
-        add(.rename, target, handler, to: menu)
+        if valid.count > 1 {
+            add(.batchRename, target, handler, to: menu).title = Self.batchRenameTitle(count: valid.count)   // P4-12
+        } else {
+            add(.rename, target, handler, to: menu)
+        }
         add(.moveToTrash, target, handler, to: menu)
         menu.addItem(.separator())
         add(.properties, target, handler, to: menu).title = L10n.string("Get Info")
@@ -330,6 +339,12 @@ final class ContextMenuBuilder {
         }
         item.submenu = submenu
         return item
+    }
+
+    /// "Rename 3 Items…" (P4-12).
+    static func batchRenameTitle(count: Int) -> String {
+        // The sheet's title plus an ellipsis (a separate "…" key would clash in the String Catalog's symbols).
+        String(format: L10n.string("Rename %lld Items"), Int64(count)) + "…"
     }
 
     static func compressTitle(_ command: Command, names: [String]) -> String {

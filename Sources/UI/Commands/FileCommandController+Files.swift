@@ -218,6 +218,10 @@ extension FileCommandController {
 
     func rename(_ target: CommandTarget) {
         switch target {
+        case .contentSelection(let folder) where folder.selection.rows.count > 1:
+            batchRename(target)
+        case .resultsSelection(let results) where results.selection.rows.count > 1:
+            batchRename(target)
         case .contentSelection(let folder):
             guard let row = folder.selection.cursor.flatMap({ folder.row(of: $0) }) ?? folder.selection.rows.first,
                   let content = contentController() else { return }

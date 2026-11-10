@@ -146,8 +146,7 @@ final class FileCommandController: CommandHandler {
         case .compressZip: compress(target, .zip)
         case .compressAppleArchive: compress(target, .appleArchive)
         case .extractHere: extractHere(target)
-        case .batchRename:
-            break   // Phase 4: disabled until shipped (CommandAvailability.shippedPhase4Commands), so perform beeps above
+        case .batchRename: batchRename(target)
         }
     }
 
@@ -340,6 +339,22 @@ final class FileCommandController: CommandHandler {
         let urls = subjectURLs(target)
         guard !urls.isEmpty else { return nil }
         return enqueue(.compress(urls, format))
+    }
+
+    /// Rename N Items… (P4-12): the batch rename sheet for a multi-selection (F2 and Return-as-rename on several items
+    /// come here through `rename`).
+    @discardableResult
+    func batchRename(_ target: CommandTarget) -> BatchRenameSheet? {
+        guard let host = window?.window else { return nil }
+        switch target {
+        case .contentSelection(let folder):
+            return BatchRenameSheet.present(for: folder.selectedURLs, folder: folder, on: host, context: context, origin: window?.origin)
+        case .resultsSelection(let results):
+            return BatchRenameSheet.present(for: results.selectedURLs, caseSensitive: results.caseSensitive, on: host,
+                                            context: context, origin: window?.origin)
+        default:
+            return nil
+        }
     }
 
     /// Extract Here (P4-10): one job per selected archive; each result lands next to its archive and is selected.

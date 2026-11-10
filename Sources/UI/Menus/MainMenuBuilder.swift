@@ -97,7 +97,7 @@ import Core
             item(.newWindow), item(.newTab), item(.newFolder), item(.newTextFile), item(.newEmptyFile), .separator(),
             item(.open), item(.openInNewWindow), item(.openInNewTab), item(.quickLook), item(.showPackageContents), item(.openInTerminal), item(.revealInFinder),
             .separator(),
-            item(.rename), item(.duplicate), item(.makeAlias), item(.makeSymlink),
+            item(.rename), item(.batchRename), item(.duplicate), item(.makeAlias), item(.makeSymlink),
             submenu(L10n.string("Compress"), id: "compress", [item(.compressZip), item(.compressAppleArchive)]), item(.extractHere), .separator(),
             item(.moveToTrash), item(.deletePermanently), .separator(),
             item(.share), item(.properties), .separator(),

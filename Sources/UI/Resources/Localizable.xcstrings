@@ -718,6 +718,17 @@
         }
       }
     },
+    "Add numbers" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add numbers"
+          }
+        }
+      }
+    },
     "Address" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -740,6 +751,17 @@
         }
       }
     },
+    "After" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "After"
+          }
+        }
+      }
+    },
     "Allow" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -758,6 +780,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Allow MacExplorer in System Settings › Privacy & Security, then try again."
+          }
+        }
+      }
+    },
+    "Already exists" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Already exists"
           }
         }
       }
@@ -905,6 +938,17 @@
         }
       }
     },
+    "Apply to:" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apply to:"
+          }
+        }
+      }
+    },
     "Are you sure you want to change the extension?" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -956,6 +1000,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Back"
+          }
+        }
+      }
+    },
+    "Base name:" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Base name:"
+          }
+        }
+      }
+    },
+    "Before" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Before"
           }
         }
       }
@@ -1111,6 +1177,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Capacity"
+          }
+        }
+      }
+    },
+    "Case:" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Case:"
           }
         }
       }
@@ -2006,6 +2083,17 @@
         }
       }
     },
+    "Digits:" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Digits:"
+          }
+        }
+      }
+    },
     "Dismiss" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2068,6 +2156,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Documents"
+          }
+        }
+      }
+    },
+    "Don't Change" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Don't Change"
           }
         }
       }
@@ -2189,6 +2288,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Duplicate"
+          }
+        }
+      }
+    },
+    "Duplicate name" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Duplicate name"
           }
         }
       }
@@ -2424,6 +2534,17 @@
         }
       }
     },
+    "Extension changes" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extension changes"
+          }
+        }
+      }
+    },
     "External disks" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2563,6 +2684,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Filters on"
+          }
+        }
+      }
+    },
+    "Find:" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Find:"
           }
         }
       }
@@ -3117,6 +3249,28 @@
         }
       }
     },
+    "Invalid name" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Invalid name"
+          }
+        }
+      }
+    },
+    "Invalid pattern" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Invalid pattern"
+          }
+        }
+      }
+    },
     "Invert Selection" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3491,6 +3645,17 @@
         }
       }
     },
+    "Match case" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Match case"
+          }
+        }
+      }
+    },
     "Maximum, e.g. 1 GB" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3795,6 +3960,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Name"
+          }
+        }
+      }
+    },
+    "Name and extension" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Name and extension"
           }
         }
       }
@@ -4427,6 +4603,28 @@
         }
       }
     },
+    "Position:" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Position:"
+          }
+        }
+      }
+    },
+    "Prefix:" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prefix:"
+          }
+        }
+      }
+    },
     "Preparing…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4724,6 +4922,17 @@
         }
       }
     },
+    "Regular expression" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Regular expression"
+          }
+        }
+      }
+    },
     "Relative" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4845,6 +5054,17 @@
         }
       }
     },
+    "Rename %lld Items" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rename %lld Items"
+          }
+        }
+      }
+    },
     "Rename Items…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4918,6 +5138,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Replace it with the item you're copying or moving, skip this item, or keep both."
+          }
+        }
+      }
+    },
+    "Replace name" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replace name"
+          }
+        }
+      }
+    },
+    "Replace with:" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replace with:"
           }
         }
       }
@@ -5314,6 +5556,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Send Feedback"
+          }
+        }
+      }
+    },
+    "Sentence case" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sentence case"
+          }
+        }
+      }
+    },
+    "Separator:" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Separator:"
           }
         }
       }
@@ -5736,6 +6000,17 @@
         }
       }
     },
+    "Start at:" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start at:"
+          }
+        }
+      }
+    },
     "Startup folder:" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5743,6 +6018,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Startup folder:"
+          }
+        }
+      }
+    },
+    "Status" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Status"
+          }
+        }
+      }
+    },
+    "Step:" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Step:"
           }
         }
       }
@@ -5820,6 +6117,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Subfolders only"
+          }
+        }
+      }
+    },
+    "Suffix:" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suffix:"
           }
         }
       }
@@ -6286,6 +6594,17 @@
         }
       }
     },
+    "Title Case" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Title Case"
+          }
+        }
+      }
+    },
     "To" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6381,6 +6700,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Type shortcut…"
+          }
+        }
+      }
+    },
+    "UPPERCASE" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "UPPERCASE"
+          }
+        }
+      }
+    },
+    "Unchanged" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unchanged"
           }
         }
       }
@@ -7174,6 +7515,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "iCloud Drive"
+          }
+        }
+      }
+    },
+    "lowercase" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "lowercase"
           }
         }
       }

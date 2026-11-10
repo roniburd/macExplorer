@@ -29,8 +29,15 @@ final class CommandAvailabilityTests: XCTestCase {
         }
     }
 
-    func testRenameNeedsExactlyOneItem() {
-        XCTAssertFalse(enabled(.rename, .content, CommandState(selectionCount: 2)))
+    /// P4-12: Rename (F2) on several items opens the batch rename sheet, so it is enabled there in the content view
+    /// and search results; elsewhere (sidebar trees) it still needs exactly one item.
+    func testRenameWithMultiSelectionMapsToBatchRename() {
+        XCTAssertTrue(enabled(.rename, .content, CommandState(selectionCount: 2)))
+        XCTAssertTrue(enabled(.rename, .searchResults, CommandState(selectionCount: 2)))
+        XCTAssertFalse(enabled(.rename, .content, CommandState(selectionCount: 2, folderIsReadOnly: true)))
+        XCTAssertFalse(enabled(.rename, .sidebarFolders, CommandState(selectionCount: 2)))
+        XCTAssertTrue(enabled(.batchRename, .content, CommandState(selectionCount: 2)))
+        XCTAssertFalse(enabled(.batchRename, .content, CommandState(selectionCount: 1)))
         XCTAssertTrue(enabled(.moveToTrash, .content, CommandState(selectionCount: 2)))
     }
 

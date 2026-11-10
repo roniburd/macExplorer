@@ -125,6 +125,13 @@ extension BrowserWindowController {
         }
     }
 
+    /// The attached sheet's title, or its SwiftUI content controller's (P4-12).
+    var probeSheetTitle: String? {
+        guard let sheet = window?.attachedSheet else { return nil }
+        if !sheet.title.isEmpty { return sheet.title }
+        return sheet.contentViewController?.title
+    }
+
     func probePerformDrop(sources: [URL], onto targetName: String, modifiers: DragModifiers, secondary: Bool,
                           menuChoice: DragOperation?) async {
         await scenarioHooks.performDrop?(sources, targetName, modifiers, secondary, menuChoice)

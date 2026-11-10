@@ -57,6 +57,8 @@ import MacxFS
     var probePreviewState: String? { get }         // nil while the preview pane is collapsed
     var probePreviewText: String? { get }          // the text preview's first 200 characters
     var probeSidebarSearches: [String] { get }     // SEARCHES rows, in order
+    // Phase 4 (plan P4-12)
+    var probeSheetTitle: String? { get }           // the attached sheet's title (batch rename: "Rename 2 Items"); nil: none
     /// Scenario-only drop entry point (drag sessions can't be synthesized in-process). Runs the same
     /// DropPolicy + DropMenu + job path as a real drop onto `targetName` ("" = current folder).
     func probePerformDrop(sources: [URL], onto targetName: String, modifiers: DragModifiers, secondary: Bool, menuChoice: DragOperation?) async

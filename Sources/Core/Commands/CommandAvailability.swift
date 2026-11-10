@@ -67,7 +67,8 @@ public enum CommandAvailability {
     /// The Phase 4 commands whose feature has landed. Each owning task adds its commands here (P4-03 the palette,
     /// P4-09 compress, P4-10 Extract Here, P4-12 batch rename). Until then a command is disabled,
     /// holds no keys (`KeyBindings`) and is left out of the menus and Settings › Shortcuts.
-    public static let shippedPhase4Commands: Set<Command> = [.showCommandPalette, .compressZip, .compressAppleArchive, .extractHere]
+    public static let shippedPhase4Commands: Set<Command> = [.showCommandPalette, .compressZip, .compressAppleArchive, .extractHere,
+                                                             .batchRename]
 
     /// False only for a Phase 4 command that hasn't shipped yet.
     public static func isShipped(_ command: Command) -> Bool {
@@ -138,7 +139,10 @@ public enum CommandAvailability {
         case .selectNone: return section.hasItemSelection && selected
         case .undo: return state.canUndo
         case .redo: return state.canRedo
-        case .rename: return state.selectionCount == 1 && writable
+        // P4-12: Rename (F2, Return) on several items in the content view opens the batch rename sheet.
+        case .rename:
+            return writable && (state.selectionCount == 1
+                || (state.selectionCount > 1 && section == .content && shippedPhase4Commands.contains(.batchRename)))
         case .moveToTrash, .deletePermanently, .duplicate, .makeAlias, .makeSymlink: return selected && writable
         case .newFolder, .newTextFile, .newEmptyFile: return writable
         case .back: return state.canGoBack
