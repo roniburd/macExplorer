@@ -619,6 +619,17 @@
         }
       }
     },
+    "A symlink made on the remote computer stores a path like /home/you/file, which doesn't exist on this Mac. When such a link is broken here, macExplorer looks for the same path inside the mounted folder. Works with sshfs mounts (fuse-t and macFUSE)." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A symlink made on the remote computer stores a path like /home/you/file, which doesn't exist on this Mac. When such a link is broken here, macExplorer looks for the same path inside the mounted folder. Works with sshfs mounts (fuse-t and macFUSE)."
+          }
+        }
+      }
+    },
     "About %@ remaining" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2479,6 +2490,17 @@
         }
       }
     },
+    "Experimental" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Experimental"
+          }
+        }
+      }
+    },
     "Explorer (default)" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2761,6 +2783,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Folders that have their own view settings will be reset to this view."
+          }
+        }
+      }
+    },
+    "Follow remote symlinks on SSH mounts" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Follow remote symlinks on SSH mounts"
           }
         }
       }

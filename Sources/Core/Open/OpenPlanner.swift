@@ -113,7 +113,9 @@ enum LinkTarget: Sendable, Equatable {
 enum LinkResolver {
     static let maxHops = 32
 
-    static func resolve(_ url: URL) -> LinkTarget {
+    /// `remap` (link path, absolute stored target) → a local path to follow instead; default: the experimental
+    /// RemoteLinkRemap, a no-op unless it's turned on in Settings.
+    static func resolve(_ url: URL, remap: (String, String) -> String? = RemoteLinkRemap.remap) -> LinkTarget {
         assertOffMain()
         var current = url.standardizedFileURL
         for _ in 0..<maxHops {
@@ -126,7 +128,7 @@ enum LinkResolver {
             case S_IFLNK:
                 guard let destination = try? FileManager.default.destinationOfSymbolicLink(atPath: path) else { return .broken }
                 current = destination.hasPrefix("/")
-                    ? URL(filePath: destination).standardizedFileURL
+                    ? URL(filePath: remap(path, destination) ?? destination).standardizedFileURL
                     : current.deletingLastPathComponent().appending(path: destination).standardizedFileURL
             case S_IFDIR:
                 let values = try? current.resourceValues(forKeys: [.isApplicationKey, .isPackageKey])

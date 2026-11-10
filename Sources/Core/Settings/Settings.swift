@@ -67,6 +67,14 @@ public final class Settings {
     /// A rollback swap in flight across the quit/relaunch; the next launch reconciles and clears it.
     public var pendingRollback: PendingRollback? { didSet { save(pendingRollback, Key.pendingRollback) } }
     public var offerToReportCrashes: Bool { didSet { save(offerToReportCrashes, Key.offerToReportCrashes) } }
+    /// Experimental (Settings › Advanced, off by default): follow symlinks on SSH/FUSE mounts whose absolute target is
+    /// a path on the remote computer. Mirrored into `RemoteLinkRemap` for the lanes.
+    public var experimentalRemoteLinkRemap: Bool {
+        didSet {
+            RemoteLinkRemap.setEnabled(experimentalRemoteLinkRemap)
+            save(experimentalRemoteLinkRemap, Key.experimentalRemoteLinkRemap)
+        }
+    }
     /// Settings › Shortcuts: the user's changes to the key table (sparse; `.empty` = all defaults). Not stored while empty.
     public var keyBindingOverrides: KeyBindingOverrides {
         didSet {
@@ -186,6 +194,9 @@ public final class Settings {
         updateChannel = Self.load(UpdateChannel.self, Key.updateChannel, from: storage) ?? .release
         checkForUpdatesAutomatically = Self.load(Bool.self, Key.checkForUpdatesAutomatically, from: storage) ?? true
         offerToReportCrashes = Self.load(Bool.self, Key.offerToReportCrashes, from: storage) ?? true
+        let remoteLinkRemap = Self.load(Bool.self, Key.experimentalRemoteLinkRemap, from: storage) ?? false
+        experimentalRemoteLinkRemap = remoteLinkRemap
+        RemoteLinkRemap.setEnabled(remoteLinkRemap)   // didSet doesn't run in init
         updateSkipThroughBuild = Self.load(Int.self, Key.updateSkipThroughBuild, from: storage)
         pendingRollback = Self.load(PendingRollback.self, Key.pendingRollback, from: storage)
         lastReportedCrashes = Array((Self.load([String].self, Key.lastReportedCrashes, from: storage) ?? []).prefix(Self.lastReportedCrashesLimit))
@@ -283,6 +294,7 @@ public final class Settings {
         static let offerToReportCrashes = "offerToReportCrashes", lastReportedCrashes = "lastReportedCrashes"
         static let keyBindings = "keyBindings", finderViewsIgnoredBefore = "finderViewsIgnoredBefore"
         static let builtInFolderViewsOff = "builtInFolderViewsOff"
+        static let experimentalRemoteLinkRemap = "experimentalRemoteLinkRemap"
         static let updateSkipThroughBuild = "updateSkipThroughBuild", pendingRollback = "pendingRollback"
         static let savedSearches = "savedSearches", previewPaneVisible = "previewPaneVisible", previewPaneWidth = "previewPaneWidth"
         static let searchScope = "searchScope", searchMode = "searchMode", searchIncludesPackages = "searchIncludesPackages"
