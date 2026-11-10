@@ -5362,6 +5362,28 @@
         }
       }
     },
+    "Tag" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tag"
+          }
+        }
+      }
+    },
+    "Tagging %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tagging %@"
+          }
+        }
+      }
+    },
     "Tags" : {
       "extractionState" : "manual",
       "localizations" : {

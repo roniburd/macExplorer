@@ -173,7 +173,7 @@ final class PropertiesViewModel {
                     mapped[index] = to.standardizedFileURL
                     touched = true
                 }
-            case .attributesChanged(let url, _, _), .modeChanged(let url, _, _):
+            case .attributesChanged(let url, _, _), .modeChanged(let url, _, _), .tagsChanged(let url, _, _):
                 if mapped.contains(url.standardizedFileURL) { touched = true }
             default:
                 break
