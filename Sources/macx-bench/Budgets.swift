@@ -44,6 +44,9 @@ enum Budgets {
                    spec: "§4.4 no main-thread hang > 100 ms: synchronous folder-view flush (termination)"),
             Budget(metric: "folderViews.save", sizes: nil, limit: 2, unit: "ms",
                    spec: "§4.4 no main-thread hang > 100 ms: saving one folder's view into a full store"),
+            // P4-03 review fix: the palette re-ranks on every keystroke (was a debug-build timing in PaletteCatalogTests).
+            Budget(metric: "palette.rank", sizes: nil, limit: 2, unit: "ms",
+                   spec: "Phase 4: palette ranking over every command plus 20 favorites plus 20 recents < 2 ms"),
         ]
         // P3-13: the This folder search filter is a re-sort with criteria (§4.4 re-sort 100k < 30 ms).
         t.append(Budget(metric: "search-filter-100k", sizes: [100_000], limit: 30, unit: "ms",

@@ -17,9 +17,11 @@ final class BenchSmokeTests: XCTestCase {
         expected.insert("resort.grouped.nameFirstLetter.nonASCII")                           // P2-09 review
         expected.formUnion(["folderSize.scan", "extattrs.read"])                            // P2-20, reported only
         expected.formUnion(Self.searchMetrics.keys)                                          // P3-13
+        expected.insert("palette.rank")                                                      // P4-03 review fix
         XCTAssertEqual(Set(report.metrics.map(\.name)), expected)
         XCTAssertTrue(report.metrics.allSatisfy { $0.samples.count == 1 })
-        let fixedSizes = ["folderSize.scan": 10_000, "extattrs.read": 2_000].merging(Self.searchMetrics) { a, _ in a }
+        let fixedSizes = ["folderSize.scan": 10_000, "extattrs.read": 2_000, "palette.rank": PaletteBench.items().count]
+            .merging(Self.searchMetrics) { a, _ in a }
         XCTAssertTrue(report.metrics.allSatisfy {
             $0.size == ($0.name.hasPrefix("folderViews.") ? FolderViewStore.capacity : fixedSizes[$0.name] ?? 300)
         })

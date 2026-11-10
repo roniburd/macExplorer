@@ -40,7 +40,7 @@ final class ShortcutsModelTests: XCTestCase {
         for c: Command in [.compressZip, .compressAppleArchive, .extractHere, .batchRename, .editTags] {
             XCTAssertEqual(group(of: c), "file", "\(c)")
         }
-        XCTAssertEqual(group(of: .showCommandPalette), "window")
+        XCTAssertEqual(group(of: .showCommandPalette), "navigation", "next to its Go menu siblings")
         let m = ShortcutsModel(settings: settings())
         for c in CommandAvailability.phase4Commands { XCTAssertFalse(m.title(c).isEmpty, "\(c)") }
     }

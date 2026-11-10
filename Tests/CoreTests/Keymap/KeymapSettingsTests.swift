@@ -48,6 +48,45 @@ final class KeymapSettingsTests: XCTestCase {
         XCTAssertEqual(b.returnKey, .rename)
     }
 
+    /// Review fix: a user's stored binding on a chord that a later release gives to a new command as its default
+    /// (⇧⌘P, Finder's Show Preview, now Command Palette…) wins; the new command starts with no primary, so there is
+    /// no duplicate, and export → import round-trips.
+    func testStoredOverrideBeatsANewlyAddedDefault() throws {
+        let sandbox = try Sandbox(); defer { sandbox.destroy() }
+        let a = settings()
+        a.keyBindingOverrides.setPrimary(k("shift+cmd+p"), for: .togglePreviewPane)
+        XCTAssertEqual(a.keyBindings.primary(.togglePreviewPane), k("shift+cmd+p"))
+        XCTAssertNil(a.keyBindings.primary(.showCommandPalette))
+        XCTAssertEqual(a.keyBindings.uses(of: .key(k("shift+cmd+p"))),
+                       [KeyBindings.Use(command: .togglePreviewPane, slot: .primary)])
+        XCTAssertEqual(KeymapValidator.issues(a.keyBindingOverrides), [])
+        let url = try sandbox.createFile("k.json", contents: a.exportKeymap())
+        let b = settings()
+        XCTAssertEqual(try b.importKeymap(Data(contentsOf: url)), [])
+        XCTAssertTrue(b.keyBindings.sameTriggers(as: a.keyBindings))
+        // An alternate holding it works the same way; an older command's default still conflicts (import rejects).
+        var o = KeyBindingOverrides.empty
+        o.commands[.refresh] = .init(alternates: [k("shift+cmd+p")])
+        XCTAssertNil(KeyBindings(overrides: o).primary(.showCommandPalette))
+        XCTAssertEqual(KeymapValidator.issues(o), [])
+    }
+
+    /// Review fix: a stored binding on a macOS chord (⌃↑, ⌘Space…) from before they were reserved keeps working;
+    /// only new recordings and imports reject them.
+    func testStoredSystemChordBindingKeepsWorking() {
+        var o = KeyBindingOverrides.empty
+        o.commands[.refresh] = .init(primary: .chord(k("ctrl+up")), alternates: [k("ctrl+down")])
+        let b = KeyBindings(overrides: o)
+        XCTAssertEqual(b.primary(.refresh), k("ctrl+up"))
+        XCTAssertEqual(b.alternates(.refresh), [k("ctrl+down")])
+        XCTAssertEqual(b.alternateCommand(for: k("ctrl+down")), .refresh)
+        XCTAssertEqual(KeyBindings.validate(.key(k("ctrl+up")), as: .primary), .reserved, "new recordings still refuse it")
+        // App-reserved chords still fall back as before.
+        o.commands[.refresh] = .init(primary: .chord(k("cmd+q")), alternates: [k("cmd+`")])
+        XCTAssertEqual(KeyBindings(overrides: o).primary(.refresh), KeyMap.primary(.refresh))
+        XCTAssertEqual(KeyBindings(overrides: o).alternates(.refresh), [])
+    }
+
     func testImportWithoutReturnKeyKeepsTheSetting() throws {
         let s = settings()
         s.returnKey = .rename

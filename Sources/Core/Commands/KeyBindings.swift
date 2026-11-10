@@ -53,10 +53,17 @@ public struct KeyBindings: Sendable, Equatable {
         KeyChord(.character("5"), [.shift, .command]),
         KeyChord(.character("q"), [.control, .command]), KeyChord(.escape, [.option, .command]),
     ]
-    /// The fixed menu items' chords, ⌘` (cycle windows), Tab, ⇧Tab and Esc, and `systemChords`.
-    public static let reservedChords: Set<KeyChord> = Set(fixedMenuChords.values).union([
+    /// The fixed menu items' chords, ⌘` (cycle windows), Tab, ⇧Tab and Esc: the app's own reserved chords.
+    static let appReservedChords: Set<KeyChord> = Set(fixedMenuChords.values).union([
         KeyChord(.character("`"), .command), KeyChord(.tab), KeyChord(.tab, .shift), KeyChord(.escape),
-    ]).union(systemChords)
+    ])
+    /// `appReservedChords` and `systemChords`: what new recordings and imports may not bind.
+    public static let reservedChords: Set<KeyChord> = appReservedChords.union(systemChords)
+    /// Commands whose default keys came after Settings › Shortcuts shipped. Their defaults yield to a stored user
+    /// binding on another command that already holds the chord (⇧⌘P, Finder's Show Preview, rebound to Show Preview
+    /// Pane, keeps working and Command Palette… starts unbound), so an upgrade never leaves two commands on one key.
+    /// Add every command that ships with a default key in a later release.
+    public static let laterDefaultCommands: Set<Command> = CommandAvailability.phase4Commands
 
     public let overrides: KeyBindingOverrides
     public let collidesWithTextEditing: Set<Command>
@@ -73,22 +80,45 @@ public struct KeyBindings: Sendable, Equatable {
         var mouseLists: [Command: [MouseButton]] = [:]
         var alternateTable: [KeyChord: Command] = [:]
         var mouseTable: [MouseButton: Command] = [:]
+        // Stored chords are checked against the app's reserved set only: a binding on a macOS chord (⌃↑, ⌘Space…)
+        // saved before `systemChords` were reserved keeps working; new recordings and imports still refuse them.
+        func storedChordIsValid(_ chord: KeyChord, as slot: Slot) -> Bool {
+            Self.validate(.key(chord), as: slot, reserved: Self.appReservedChords) == nil
+        }
+        func storedEntry(_ command: Command) -> KeyBindingOverrides.Entry? {
+            Self.fixedCommands.contains(command) || !CommandAvailability.isShipped(command) ? nil : overrides.commands[command]
+        }
+        // The chords each command's stored entry holds, so a later default can yield to them.
+        var userChords: [KeyChord: Set<Command>] = [:]
+        for command in Command.allCases {
+            guard let entry = storedEntry(command) else { continue }
+            if case .chord(let chord)? = entry.primary, storedChordIsValid(chord, as: .primary) {
+                userChords[chord, default: []].insert(command)
+            }
+            for chord in entry.alternates ?? [] where storedChordIsValid(chord, as: .alternate) {
+                userChords[chord, default: []].insert(command)
+            }
+        }
+        func isFree(_ chord: KeyChord, defaultOf command: Command) -> Bool {
+            !Self.laterDefaultCommands.contains(command) || (userChords[chord] ?? []).subtracting([command]).isEmpty
+        }
         // A Phase 4 command that hasn't shipped holds no keys: it has no menu item and does nothing yet, so it
         // must not take a chord from a command the user rebinds (`CommandAvailability.isShipped`).
         for command in Command.allCases where CommandAvailability.isShipped(command) {
-            let entry = Self.fixedCommands.contains(command) ? nil : overrides.commands[command]
+            let entry = storedEntry(command)
+            let defaultPrimary = KeyMap.primary(command).flatMap { isFree($0, defaultOf: command) ? $0 : nil }
             let primary: KeyChord? = switch entry?.primary {
-            case nil: KeyMap.primary(command)
+            case nil: defaultPrimary
             case .unbound?: nil
-            case .chord(let chord)?: Self.validate(.key(chord), as: .primary) == nil ? chord : KeyMap.primary(command)
+            case .chord(let chord)?: storedChordIsValid(chord, as: .primary) ? chord : defaultPrimary
             }
             primaries[command] = primary
             // Stored alternates go through the same check as stored primaries, so hand-edited or stale data can't
             // take Tab, ⇧Tab, Esc or a menu chord away from its owner. (Stored mouse lists need no filtering: they
             // can only hold mouse buttons, and every mouse button is valid in the mouse slot.)
             // Repeats in hand-edited lists are dropped (first kept), so each trigger shows once in Settings.
-            let alternates = entry?.alternates.map { Self.unique($0.filter { Self.validate(.key($0), as: .alternate) == nil }) }
-                ?? KeyMap.alternates(command)
+            let alternates = entry?.alternates.map { Self.unique($0.filter { storedChordIsValid($0, as: .alternate) }) }
+                ?? KeyMap.alternates(command).filter { isFree($0, defaultOf: command) }
             alternateLists[command] = alternates
             let mouse = entry?.mouse.map(Self.unique) ?? KeyMap.defaultMouse(command)
             mouseLists[command] = mouse
@@ -145,11 +175,15 @@ public struct KeyBindings: Sendable, Equatable {
     }
 
     public static func validate(_ trigger: Trigger, as slot: Slot) -> BindingRejection? {
+        validate(trigger, as: slot, reserved: reservedChords)
+    }
+
+    private static func validate(_ trigger: Trigger, as slot: Slot, reserved: Set<KeyChord>) -> BindingRejection? {
         switch (trigger, slot) {
         case (.mouse, .mouse): return nil
         case (.mouse, _), (.key, .mouse): return .wrongSlot
         case (.key(let chord), _):
-            if reservedChords.contains(chord) { return .reserved }
+            if reserved.contains(chord) { return .reserved }
             guard slot == .primary, chord.modifiers.isDisjoint(with: [.command, .control]) else { return nil }
             switch chord.key {
             case .function: return nil

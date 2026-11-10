@@ -27,11 +27,12 @@ final class FuzzyMatcherTests: XCTestCase {
                              FuzzyMatcher.match("new", in: "Show Package Contents in a New Window")!.score)
     }
 
-    func testPerformanceUnderTwoMillisecondsForCatalog() {
+    /// A catalog-sized run is correct; its timing (< 2 ms) is macx-bench's `palette.rank`, not a wall-clock
+    /// assertion here (unit tests carry no timing budgets on a loaded runner).
+    func testMatchesACatalogSizedListOfTitles() {
         let titles = (0..<200).map { "Command number \($0) with some words" }
-        let clock = ContinuousClock()
-        _ = FuzzyMatcher.match("cnw", in: titles[0])   // warm-up
-        let elapsed = clock.measure { for t in titles { _ = FuzzyMatcher.match("cnw", in: t) } }
-        XCTAssertLessThan(elapsed, .milliseconds(8))     // 2 ms budget × 4 in debug
+        let matches = titles.compactMap { FuzzyMatcher.match("cnw", in: $0) }
+        XCTAssertEqual(matches.count, titles.count)
+        XCTAssertEqual(Set(matches.map(\.matchedIndices.first)), [0], "every match starts at the C of Command")
     }
 }

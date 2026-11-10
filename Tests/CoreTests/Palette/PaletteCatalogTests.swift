@@ -54,19 +54,22 @@ final class PaletteCatalogTests: XCTestCase {
         XCTAssertEqual(s.paletteRecentTargets.count, 20)
     }
 
-    func testRankingEveryCommandPlusFortyLocationsIsFast() {
+    /// Every command plus forty locations ranks for typical queries; the < 2 ms budget is macx-bench's
+    /// `palette.rank` (unit tests carry no wall-clock budgets on a loaded runner).
+    func testRankingEveryCommandPlusFortyLocations() {
         var items = Command.allCases.map { item($0, "\($0.rawValue) command title") }
         for i in 0..<40 {
             let url = URL(filePath: "/tmp/macx-x/Folder \(i)")
             items.append(PaletteItem(target: .location(url), title: "Go to Folder \(i)", subtitle: url.path))
         }
         let recent = items.prefix(20).map(\.target)
-        _ = PaletteCatalog.rank(items, query: "cf", recent: recent)   // warm-up
-        let clock = ContinuousClock()
         for query in ["n", "nf", "go fo", "sort by name"] {
-            let elapsed = clock.measure { _ = PaletteCatalog.rank(items, query: query, recent: recent) }
-            XCTAssertLessThan(elapsed, .milliseconds(8), query)   // 2 ms budget × 4 in debug
+            let ranked = PaletteCatalog.rank(items, query: query, recent: recent)
+            XCTAssertFalse(ranked.isEmpty, query)
+            XCTAssertTrue(zip(ranked, ranked.dropFirst()).allSatisfy { $0.match.score >= $1.match.score }, query)
         }
+        let folders = PaletteCatalog.rank(items, query: "go fo", recent: recent).filter { $0.item.title.hasPrefix("Go to Folder") }
+        XCTAssertEqual(folders.count, 40, "every Go to Folder")
     }
 }
 
