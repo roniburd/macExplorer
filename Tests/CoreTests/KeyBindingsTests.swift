@@ -9,10 +9,16 @@ final class KeyBindingsTests: XCTestCase {
 
     func testDefaultsMatchKeyMap() {
         let b = KeyBindings.defaults
-        for c in Command.allCases {
+        for c in Command.allCases where CommandAvailability.isShipped(c) {
             XCTAssertEqual(b.primary(c), KeyMap.primary(c), "\(c)")
             XCTAssertEqual(b.alternates(c), KeyMap.alternates(c), "\(c)")
             XCTAssertEqual(b.mouse(c), KeyMap.defaultMouse(c), "\(c)")
+        }
+        // P4-01: a Phase 4 command holds no keys until its task ships it.
+        for c in Command.allCases where !CommandAvailability.isShipped(c) {
+            XCTAssertNil(b.primary(c), "\(c)")
+            XCTAssertEqual(b.alternates(c), [], "\(c)")
+            XCTAssertEqual(b.mouse(c), [], "\(c)")
         }
         XCTAssertEqual(b.command(for: mouse4), .back)
         XCTAssertEqual(b.command(for: mouse5), .forward)

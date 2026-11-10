@@ -24,9 +24,25 @@ final class ShortcutsModelTests: XCTestCase {
     }
 
     func testGroupsListEveryCommandOnce() {
+        let all = ShortcutsModel.allGroups.flatMap(\.commands)
+        XCTAssertEqual(all.count, Command.allCases.count)
+        XCTAssertEqual(Set(all), Set(Command.allCases))
+        // P4-01: a Phase 4 command is listed (and rebindable) once its task ships it.
+        let shipped = Command.allCases.filter(CommandAvailability.isShipped)
         let listed = ShortcutsModel.groups.flatMap(\.commands)
-        XCTAssertEqual(listed.count, Command.allCases.count)
-        XCTAssertEqual(Set(listed), Set(Command.allCases))
+        XCTAssertEqual(listed.count, shipped.count)
+        XCTAssertEqual(Set(listed), Set(shipped))
+        XCTAssertFalse(ShortcutsModel.groups.contains { $0.commands.isEmpty })
+    }
+
+    func testPhase4CommandsHaveAGroupAndATitle() {
+        func group(of c: Command) -> String? { ShortcutsModel.allGroups.first { $0.commands.contains(c) }?.id }
+        for c: Command in [.compressZip, .compressAppleArchive, .extractHere, .batchRename, .editTags] {
+            XCTAssertEqual(group(of: c), "file", "\(c)")
+        }
+        XCTAssertEqual(group(of: .showCommandPalette), "window")
+        let m = ShortcutsModel(settings: settings())
+        for c in CommandAvailability.phase4Commands { XCTAssertFalse(m.title(c).isEmpty, "\(c)") }
     }
 
     /// P3-07: the Phase 3 commands are listed (so they can be rebound) and found by title and key.
@@ -72,7 +88,7 @@ final class ShortcutsModelTests: XCTestCase {
 
     func testSearchMatchesTitleGlyphTextAndMouse() {
         let m = ShortcutsModel(settings: settings())
-        XCTAssertEqual(m.groups(matching: "").flatMap(\.commands).count, Command.allCases.count)
+        XCTAssertEqual(m.groups(matching: "").flatMap(\.commands).count, Command.allCases.filter(CommandAvailability.isShipped).count)
         XCTAssertTrue(m.groups(matching: "back").flatMap(\.commands).contains(.back))
         XCTAssertTrue(m.groups(matching: "⌘[").flatMap(\.commands).contains(.back))
         XCTAssertTrue(m.groups(matching: "cmd+[").flatMap(\.commands).contains(.back))

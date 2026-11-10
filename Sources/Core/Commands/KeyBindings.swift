@@ -2,7 +2,8 @@ import Foundation
 
 public enum BindingRejection: Sendable, Equatable {
     /// ⌘Q, ⌘H, ⌥⌘H, ⌘M, ⌘, ⌃⌘S, ⌃⌘F, ⌘? (⇧⌘/) and ⌘` belong to fixed menu items (`KeyBindings.fixedMenuChords`)
-    /// and window cycling; Tab, ⇧Tab and Esc to focus and cancel.
+    /// and window cycling; Tab, ⇧Tab and Esc to focus and cancel; ⌘Tab, ⌘Space, ⌃arrows and the like to macOS
+    /// (`KeyBindings.systemChords`).
     case reserved
     /// A primary with no ⌘ or ⌃ that isn't a function key, other than ⌥ with a key that doesn't type (arrows, ↩, ⌤,
     /// ⌫, Del). So: a character or space with any mix of ⌥/⇧ (⌥L types @ on a German layout), or a bare/⇧ Return,
@@ -41,10 +42,21 @@ public struct KeyBindings: Sendable, Equatable {
         "Minimize": KeyChord(.character("m"), .command),
         "MacExplorer Help": KeyChord(.character("/"), [.shift, .command]),
     ]
-    /// The fixed menu items' chords, ⌘` (cycle windows), and Tab, ⇧Tab and Esc.
+    /// Chords macOS takes before the app sees them (app switcher, Spotlight and input sources, Mission Control and
+    /// App Exposé, screenshots, Lock Screen, Force Quit), so binding one would never fire. ⌃← / ⌃→ (switch Space)
+    /// stay bindable: users turn that shortcut off, and a field editor uses them (`KeyMap.textEditingChords`).
+    public static let systemChords: Set<KeyChord> = [
+        KeyChord(.tab, .command), KeyChord(.tab, [.shift, .command]),
+        KeyChord(.space, .command), KeyChord(.space, .control),
+        KeyChord(.up, .control), KeyChord(.down, .control),
+        KeyChord(.character("3"), [.shift, .command]), KeyChord(.character("4"), [.shift, .command]),
+        KeyChord(.character("5"), [.shift, .command]),
+        KeyChord(.character("q"), [.control, .command]), KeyChord(.escape, [.option, .command]),
+    ]
+    /// The fixed menu items' chords, ⌘` (cycle windows), Tab, ⇧Tab and Esc, and `systemChords`.
     public static let reservedChords: Set<KeyChord> = Set(fixedMenuChords.values).union([
         KeyChord(.character("`"), .command), KeyChord(.tab), KeyChord(.tab, .shift), KeyChord(.escape),
-    ])
+    ]).union(systemChords)
 
     public let overrides: KeyBindingOverrides
     public let collidesWithTextEditing: Set<Command>
@@ -61,7 +73,9 @@ public struct KeyBindings: Sendable, Equatable {
         var mouseLists: [Command: [MouseButton]] = [:]
         var alternateTable: [KeyChord: Command] = [:]
         var mouseTable: [MouseButton: Command] = [:]
-        for command in Command.allCases {
+        // A Phase 4 command that hasn't shipped holds no keys: it has no menu item and does nothing yet, so it
+        // must not take a chord from a command the user rebinds (`CommandAvailability.isShipped`).
+        for command in Command.allCases where CommandAvailability.isShipped(command) {
             let entry = Self.fixedCommands.contains(command) ? nil : overrides.commands[command]
             let primary: KeyChord? = switch entry?.primary {
             case nil: KeyMap.primary(command)

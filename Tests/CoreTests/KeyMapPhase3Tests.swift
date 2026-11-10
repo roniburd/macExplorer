@@ -13,7 +13,9 @@ final class KeyMapPhase3Tests: XCTestCase {
     static let later: [Command] = [.showInPreview, .previewZoomIn, .previewZoomOut, .previewActualSize]
 
     func testPhase3CommandsExistInOrder() {
-        XCTAssertEqual(Array(Command.allCases.suffix(Self.phase3.count + Self.later.count)), Self.phase3 + Self.later)
+        // The Phase 4 commands follow (KeymapPresetTests).
+        let beforePhase4 = Command.allCases.dropLast(CommandAvailability.phase4Commands.count)
+        XCTAssertEqual(Array(beforePhase4.suffix(Self.phase3.count + Self.later.count)), Self.phase3 + Self.later)
         XCTAssertNil(KeyMap.primary(.showInPreview), "Preview has no default shortcut")
     }
 

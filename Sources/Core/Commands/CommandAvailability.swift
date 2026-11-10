@@ -28,12 +28,14 @@ public struct CommandState: Sendable, Equatable {
     public var showingResults: Bool
     /// Phase 3: the preview pane is open (Download for Preview).
     public var previewPaneVisible: Bool
+    /// Phase 4: exactly one item is selected and its name is an archive Extract Here handles (Extract Here).
+    public var selectionIsArchive: Bool
     public init(selectionCount: Int = 0, singleFolderSelected: Bool = false, canPaste: Bool = false,
                 canUndo: Bool = false, canRedo: Bool = false, canGoBack: Bool = false, canGoForward: Bool = false,
                 canGoUp: Bool = false, targetIsEjectable: Bool = false, targetIsPackage: Bool = false,
                 folderIsReadOnly: Bool = false, selectedFolderCount: Int = 0, quickLookVisible: Bool = false,
                 viewMode: ViewMode = .details, isSearching: Bool = false, hasSearchQuery: Bool = false,
-                showingResults: Bool = false, previewPaneVisible: Bool = false) {
+                showingResults: Bool = false, previewPaneVisible: Bool = false, selectionIsArchive: Bool = false) {
         self.selectionCount = selectionCount
         self.singleFolderSelected = singleFolderSelected
         self.canPaste = canPaste
@@ -52,10 +54,26 @@ public struct CommandState: Sendable, Equatable {
         self.hasSearchQuery = hasSearchQuery
         self.showingResults = showingResults
         self.previewPaneVisible = previewPaneVisible
+        self.selectionIsArchive = selectionIsArchive
     }
 }
 
 public enum CommandAvailability {
+    /// The Phase 4 commands (spec §11 "Phase 4 — Power", without the items moved to Phase 6).
+    public static let phase4Commands: Set<Command> = [
+        .showCommandPalette, .compressZip, .compressAppleArchive, .extractHere, .batchRename, .editTags,
+    ]
+
+    /// The Phase 4 commands whose feature has landed. Each owning task adds its commands here (P4-03 the palette,
+    /// P4-05 Edit Tags, P4-09 compress, P4-10 Extract Here, P4-12 batch rename). Until then a command is disabled,
+    /// holds no keys (`KeyBindings`) and is left out of the menus and Settings › Shortcuts.
+    public static let shippedPhase4Commands: Set<Command> = []
+
+    /// False only for a Phase 4 command that hasn't shipped yet.
+    public static func isShipped(_ command: Command) -> Bool {
+        !phase4Commands.contains(command) || shippedPhase4Commands.contains(command)
+    }
+
     /// Encodes §5.3 enablement and the §5.4 sidebar table (e.g. Favorites: Del = removeFromFavorites,
     /// ⇧Del/⌘X/⌘D/F2 disabled; Locations: ⌘E eject, Del/⇧Del/⌘X/⌘D/F2 disabled).
     ///
@@ -66,6 +84,11 @@ public enum CommandAvailability {
     /// because the field editor validates them itself.
     public static func isEnabled(_ command: Command, focus: FocusContext, state: CommandState,
                                  collidesWithTextEditing: Set<Command> = KeyBindings.defaults.collidesWithTextEditing) -> Bool {
+        if phase4Commands.contains(command) {
+            guard shippedPhase4Commands.contains(command) else { return false }
+            if focus == .fieldEditor, collidesWithTextEditing.contains(command) { return false }
+            return phase4Enabled(command, focus: focus, state: state)
+        }
         if focus == .fieldEditor {
             if collidesWithTextEditing.contains(command) { return false }
             if fieldEditorOwned.contains(command) { return true }
@@ -148,8 +171,44 @@ public enum CommandAvailability {
         case .togglePreviewPane, .openContainingFolder, .saveSearch, .stopSearch,
              .searchScopeThisFolder, .searchScopeSubfolders, .searchScopeThisMac, .searchModeName, .searchModeContents,
              .renameSavedSearch, .removeSavedSearch, .downloadForPreview, .showInPreview, .viewAsIcons, .viewAsColumns,
-             .previewZoomIn, .previewZoomOut, .previewActualSize:
+             .previewZoomIn, .previewZoomOut, .previewActualSize,
+             .showCommandPalette, .compressZip, .compressAppleArchive, .extractHere, .batchRename, .editTags:
             return false   // decided above
+        }
+    }
+
+    /// The Phase 4 rows, as they apply once a command ships (`isEnabled` checks `shippedPhase4Commands` first).
+    /// Search results act like the content view, except that Compress and Extract Here write next to the items and
+    /// results have no single folder.
+    static func phase4Enabled(_ command: Command, focus: FocusContext, state: CommandState) -> Bool {
+        let selected = state.selectionCount > 0
+        let writable = !state.folderIsReadOnly
+        let inContent = focus == .content || focus == .searchResults
+        switch command {
+        case .showCommandPalette: return true
+        case .compressZip, .compressAppleArchive:
+            return selected && writable && (focus == .content || focus == .sidebarFolders)
+        case .extractHere: return state.selectionIsArchive && writable && focus == .content
+        case .batchRename: return state.selectionCount > 1 && writable && inContent
+        case .editTags: return selected && (inContent || focus == .sidebarFolders)
+        case .open, .openInNewWindow, .showPackageContents, .openInTerminal, .revealInFinder,
+             .cut, .copy, .paste, .moveItemHere, .selectAll, .undo, .redo, .selectNone, .invertSelection,
+             .rename, .moveToTrash, .deletePermanently, .duplicate, .makeAlias, .makeSymlink,
+             .newFolder, .newTextFile, .newEmptyFile, .copyAsPath, .properties, .share,
+             .back, .forward, .up, .focusAddressBar, .focusSearch, .cycleFocusForward, .cycleFocusBackward, .refresh,
+             .newWindow, .closeWindow, .showOperations,
+             .viewAsDetails, .viewAsIcons, .iconSizeSmall, .iconSizeMedium, .iconSizeLarge,
+             .densityCompact, .densityRegular, .densityComfortable, .toggleHidden, .toggleCommandBar,
+             .sortByName, .sortByDateModified, .sortBySize, .sortByKind, .sortByDateCreated, .sortAscending, .sortDescending,
+             .useViewAsDefault, .resetFolderView, .eject, .removeFromFavorites, .cancelOperation,
+             .newTab, .nextTab, .previousTab, .showTabBar, .showAllTabs, .moveTabToNewWindow, .mergeAllWindows, .openInNewTab,
+             .quickLook, .viewAsColumns, .groupByNone, .groupByKind, .groupByDateModified, .groupBySize, .groupByName,
+             .toggleFolderSizes, .applyViewToAllFolders, .copyPathTilde, .copyPathFileURL, .copyName, .copyPathShellQuoted,
+             .togglePreviewPane, .openContainingFolder, .saveSearch, .stopSearch,
+             .searchScopeThisFolder, .searchScopeSubfolders, .searchScopeThisMac, .searchModeName, .searchModeContents,
+             .renameSavedSearch, .removeSavedSearch, .downloadForPreview, .showInPreview,
+             .previewZoomIn, .previewZoomOut, .previewActualSize:
+            return false   // not a Phase 4 command
         }
     }
 

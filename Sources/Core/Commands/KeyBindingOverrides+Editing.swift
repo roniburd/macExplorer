@@ -66,14 +66,20 @@ extension KeyBindingOverrides {
     }
 
     private mutating func update(_ command: Command, _ change: (inout Slots) -> Void) {
-        guard !KeyBindings.fixedCommands.contains(command) else { return }
+        guard !KeyBindings.fixedCommands.contains(command), CommandAvailability.isShipped(command) else { return }
         let current = KeyBindings(overrides: self)
         var slots = Slots(primary: current.primary(command), alternates: current.alternates(command), mouse: current.mouse(command))
         change(&slots)
+        commands[command] = Self.normalizedEntry(command, primary: slots.primary, alternates: slots.alternates, mouse: slots.mouse)
+    }
+
+    /// The entry that gives `command` these slots: only the slots that differ from the `KeyMap` defaults, or nil
+    /// when none does.
+    static func normalizedEntry(_ command: Command, primary: KeyChord?, alternates: [KeyChord], mouse: [MouseButton]) -> Entry? {
         var entry = Entry()
-        if slots.primary != KeyMap.primary(command) { entry.primary = slots.primary.map(PrimaryOverride.chord) ?? .unbound }
-        if slots.alternates != KeyMap.alternates(command) { entry.alternates = slots.alternates }
-        if slots.mouse != KeyMap.defaultMouse(command) { entry.mouse = slots.mouse }
-        commands[command] = entry.isEmpty ? nil : entry
+        if primary != KeyMap.primary(command) { entry.primary = primary.map(PrimaryOverride.chord) ?? .unbound }
+        if alternates != KeyMap.alternates(command) { entry.alternates = alternates }
+        if mouse != KeyMap.defaultMouse(command) { entry.mouse = mouse }
+        return entry.isEmpty ? nil : entry
     }
 }

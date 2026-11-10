@@ -96,4 +96,11 @@ extension CommandHandlingViewController {
     @objc func macx_renameSavedSearch(_ sender: Any?) { run(.renameSavedSearch, sender: sender) }
     @objc func macx_removeSavedSearch(_ sender: Any?) { run(.removeSavedSearch, sender: sender) }
     @objc func macx_downloadForPreview(_ sender: Any?) { run(.downloadForPreview, sender: sender) }
+    // Phase 4 (disabled until shipped: CommandAvailability.shippedPhase4Commands)
+    @objc func macx_showCommandPalette(_ sender: Any?) { run(.showCommandPalette, sender: sender) }
+    @objc func macx_compressZip(_ sender: Any?) { run(.compressZip, sender: sender) }
+    @objc func macx_compressAppleArchive(_ sender: Any?) { run(.compressAppleArchive, sender: sender) }
+    @objc func macx_extractHere(_ sender: Any?) { run(.extractHere, sender: sender) }
+    @objc func macx_batchRename(_ sender: Any?) { run(.batchRename, sender: sender) }
+    @objc func macx_editTags(_ sender: Any?) { run(.editTags, sender: sender) }
 }

@@ -103,6 +103,13 @@ import Core
         case .renameSavedSearch: L10n.string("Rename Saved Search")
         case .removeSavedSearch: L10n.string("Remove Saved Search")
         case .downloadForPreview: L10n.string("Download for Preview")
+        // Phase 4 (menu items land with each feature's task; see CommandAvailability.shippedPhase4Commands).
+        case .showCommandPalette: L10n.string("Command Palette…")
+        case .compressZip: L10n.string("Compress to .zip")
+        case .compressAppleArchive: L10n.string("Compress to .aar")
+        case .extractHere: L10n.string("Extract Here")
+        case .batchRename: L10n.string("Rename Items…")
+        case .editTags: L10n.string("Edit Tags…")
         }
     }
 }

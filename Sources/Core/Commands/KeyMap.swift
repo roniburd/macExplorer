@@ -1,6 +1,7 @@
 import Foundation
 
-/// The §5.6 built-in key table (defaults; the user's changes live in Settings › Shortcuts, see KeyBindings).
+/// The §5.6 built-in key table (defaults; the user's changes live in Settings › Shortcuts, see KeyBindings). This
+/// table is the Explorer keymap preset; `KeymapPreset.finder` is a set of overrides on top of it.
 /// Each command has at most one primary (its menu key equivalent) and any number of alternates, which only the
 /// content views and sidebar handle (through `KeyDispatcher`).
 public enum KeyMap {
@@ -46,6 +47,7 @@ public enum KeyMap {
         case .previewZoomIn: cmd("=")
         case .previewZoomOut: cmd("-")
         case .previewActualSize: cmd("0")
+        case .showCommandPalette: KeyChord(.character("p"), [.shift, .command])
         case .openInNewWindow, .showPackageContents, .openInTerminal, .revealInFinder,
              .selectNone, .invertSelection, .makeAlias, .makeSymlink, .newTextFile, .newEmptyFile, .share,
              .cycleFocusForward, .cycleFocusBackward, .showOperations,
@@ -59,7 +61,8 @@ public enum KeyMap {
              .toggleFolderSizes, .applyViewToAllFolders, .useViewAsDefault, .resetFolderView,
              .copyPathTilde, .copyPathFileURL, .copyName, .copyPathShellQuoted,
              .saveSearch, .stopSearch, .searchScopeThisFolder, .searchScopeSubfolders, .searchScopeThisMac,
-             .searchModeName, .searchModeContents, .renameSavedSearch, .removeSavedSearch, .downloadForPreview, .showInPreview:
+             .searchModeName, .searchModeContents, .renameSavedSearch, .removeSavedSearch, .downloadForPreview, .showInPreview,
+             .compressZip, .compressAppleArchive, .extractHere, .batchRename, .editTags:
             nil
         }
     }
@@ -105,7 +108,8 @@ public enum KeyMap {
              .togglePreviewPane, .openContainingFolder, .saveSearch, .stopSearch,
              .searchScopeThisFolder, .searchScopeSubfolders, .searchScopeThisMac, .searchModeName, .searchModeContents,
              .renameSavedSearch, .removeSavedSearch, .downloadForPreview, .showInPreview,
-             .previewZoomIn, .previewZoomOut, .previewActualSize:
+             .previewZoomIn, .previewZoomOut, .previewActualSize,
+             .showCommandPalette, .compressZip, .compressAppleArchive, .extractHere, .batchRename, .editTags:
             []
         }
     }

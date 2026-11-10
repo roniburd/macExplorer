@@ -1269,6 +1269,17 @@
         }
       }
     },
+    "Command Palette…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Command Palette…"
+          }
+        }
+      }
+    },
     "Comments" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1298,6 +1309,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Compare…"
+          }
+        }
+      }
+    },
+    "Compress to .aar" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compress to .aar"
+          }
+        }
+      }
+    },
+    "Compress to .zip" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compress to .zip"
           }
         }
       }
@@ -1940,6 +1973,17 @@
         }
       }
     },
+    "Edit Tags…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit Tags…"
+          }
+        }
+      }
+    },
     "Eject" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2068,6 +2112,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "External disks"
+          }
+        }
+      }
+    },
+    "Extract Here" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extract Here"
           }
         }
       }
@@ -4214,6 +4269,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Rename"
+          }
+        }
+      }
+    },
+    "Rename Items…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rename Items…"
           }
         }
       }

@@ -16,8 +16,15 @@ enum ShortcutApply: Equatable {
 @MainActor struct ShortcutsModel {
     let settings: Core.Settings
 
+    /// The commands Settings › Shortcuts lists: `allGroups` without the Phase 4 commands that haven't shipped yet
+    /// (they hold no keys until then, see `CommandAvailability.isShipped`); groups left empty are dropped.
+    static let groups: [ShortcutGroup] = allGroups.compactMap { group in
+        let commands = group.commands.filter(CommandAvailability.isShipped)
+        return commands.isEmpty ? nil : ShortcutGroup(id: group.id, title: group.title, commands: commands)
+    }
+
     /// Main-menu order. Every Command appears exactly once.
-    static let groups: [ShortcutGroup] = [
+    static let allGroups: [ShortcutGroup] = [
         ShortcutGroup(id: "open", title: L10n.string("Open"),
                       commands: [.open, .openInNewWindow, .openInNewTab, .quickLook, .showPackageContents, .openInTerminal,
                                  .revealInFinder]),
@@ -26,14 +33,15 @@ enum ShortcutApply: Equatable {
                                  .copyPathTilde, .copyPathFileURL, .copyName, .copyPathShellQuoted]),
         ShortcutGroup(id: "selection", title: L10n.string("Selection"), commands: [.selectAll, .selectNone, .invertSelection]),
         ShortcutGroup(id: "file", title: L10n.string("File"),
-                      commands: [.newFolder, .newTextFile, .newEmptyFile, .rename, .duplicate, .makeAlias, .makeSymlink,
-                                 .moveToTrash, .deletePermanently, .share, .properties]),
+                      commands: [.newFolder, .newTextFile, .newEmptyFile, .rename, .batchRename, .duplicate, .makeAlias,
+                                 .makeSymlink, .compressZip, .compressAppleArchive, .extractHere,
+                                 .moveToTrash, .deletePermanently, .editTags, .share, .properties]),
         ShortcutGroup(id: "navigation", title: L10n.string("Navigation"),
                       commands: [.back, .forward, .up, .focusAddressBar, .focusSearch, .refresh,
                                  .openContainingFolder, .cycleFocusForward, .cycleFocusBackward, .cancelOperation]),
         ShortcutGroup(id: "window", title: L10n.string("Window"),
                       commands: [.newWindow, .newTab, .closeWindow, .showTabBar, .showAllTabs, .previousTab, .nextTab,
-                                 .moveTabToNewWindow, .mergeAllWindows, .showOperations]),
+                                 .moveTabToNewWindow, .mergeAllWindows, .showOperations, .showCommandPalette]),
         ShortcutGroup(id: "view", title: L10n.string("View"),
                       commands: [.viewAsDetails, .viewAsIcons, .viewAsColumns, .iconSizeSmall, .iconSizeMedium, .iconSizeLarge,
                                  .densityCompact, .densityRegular, .densityComfortable, .toggleFolderSizes,

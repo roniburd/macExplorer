@@ -142,6 +142,8 @@ final class FileCommandController: CommandHandler {
         case .downloadForPreview: window?.splitController?.previewPane.performDownload()
         case .newTab, .nextTab, .previousTab, .showTabBar, .showAllTabs, .moveTabToNewWindow, .mergeAllWindows:
             break   // pendingCommands: canPerform is false, so perform beeps above
+        case .showCommandPalette, .compressZip, .compressAppleArchive, .extractHere, .batchRename, .editTags:
+            break   // Phase 4: disabled until shipped (CommandAvailability.shippedPhase4Commands), so perform beeps above
         }
     }
 

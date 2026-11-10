@@ -33,7 +33,7 @@ public struct KeyChord: Hashable, Sendable, CustomStringConvertible {
     /// Parses "cmd+shift+n", "F2", "opt+left", "ctrl+c", "fn+delete" (= forwardDelete), "return", "esc".
     /// Modifiers (any order, case-insensitive): cmd/command, shift, opt/option/alt, ctrl/control, fn.
     /// Keys: a single character, up/down/left/right, return, enter, tab, esc/escape, space, delete/backspace (⌫),
-    /// del/forwarddelete (Del), F1–F20. "fn" is accepted only with delete (→ Del) and F-keys.
+    /// del/forwarddelete/fwddelete (Del), plus (+), F1–F20. "fn" is accepted only with delete (→ Del) and F-keys.
     public init?(parsing text: String) {
         var tokens = text.split(separator: "+", omittingEmptySubsequences: false).map(String.init)
         let keyToken: String
@@ -92,7 +92,8 @@ public struct KeyChord: Hashable, Sendable, CustomStringConvertible {
         case "esc", "escape", "⎋": return .escape
         case "space": return .space
         case "delete", "backspace", "⌫": return .backspace
-        case "del", "forwarddelete", "⌦": return .forwardDelete
+        case "del", "forwarddelete", "fwddelete", "⌦": return .forwardDelete
+        case "plus": return .character("+")
         default:
             guard lower.hasPrefix("f"), let n = Int(lower.dropFirst()), (1...20).contains(n),
                   lower.dropFirst().allSatisfy(\.isASCII) else { return nil }

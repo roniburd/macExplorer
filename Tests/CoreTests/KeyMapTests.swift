@@ -128,6 +128,8 @@ final class KeyMapTests: XCTestCase {
             .togglePreviewPane: "opt+p", .openContainingFolder: "cmd+opt+r",
             // Preview pane zoom
             .previewZoomIn: "cmd+=", .previewZoomOut: "cmd+-", .previewActualSize: "cmd+0",
+            // Phase 4 (spec §11): the command palette
+            .showCommandPalette: "cmd+shift+p",
         ]
         for c in Command.allCases {
             if let text = expected[c] {

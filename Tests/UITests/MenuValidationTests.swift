@@ -65,7 +65,8 @@ final class MenuValidationTests: XCTestCase {
 
     func testEveryCommandHasExactlyOneMainMenuItem() {
         let all = Self.items(in: MainMenuBuilder.build())
-        for command in Command.allCases where !MainMenuBuilder.notInMenu.contains(command) {
+        // A Phase 4 command gets its menu item when its task ships it (CommandAvailability.shippedPhase4Commands).
+        for command in Command.allCases where !MainMenuBuilder.notInMenu.contains(command) && CommandAvailability.isShipped(command) {
             // Copy Path As ▸ POSIX Path also sends copyAsPath; Edit › Copy as Path is the command's item (⇧⌘C).
             let matching = all.filter { $0.action == Selector(command.selectorName) && $0.identifier?.rawValue != CopyPathMenu.posixItemID }
             XCTAssertEqual(matching.count, 1, "\(command) needs one main-menu item")
@@ -125,6 +126,14 @@ final class MenuValidationTests: XCTestCase {
         XCTAssertEqual(copyPathAs?.isHidden, false)
         XCTAssertEqual(copyPathAs?.submenu?.items.map(\.title), ["POSIX Path", "~ Path", "File URL", "Name", "Quoted for Shell"])
         XCTAssertEqual(Self.items(in: menu).filter { $0.action == Selector(Command.copyAsPath.selectorName) }.count, 2)
+    }
+
+    /// P4-01: an unshipped Phase 4 command has no main-menu item yet (and a responder method that does nothing).
+    func testUnshippedPhase4CommandsAreNotInTheMenu() {
+        let all = Self.items(in: MainMenuBuilder.build())
+        for command in Command.allCases where !CommandAvailability.isShipped(command) {
+            XCTAssertFalse(all.contains { $0.action == Selector(command.selectorName) }, "\(command)")
+        }
     }
 
     func testKeyEquivalentsComeFromKeyMapPrimaries() throws {
