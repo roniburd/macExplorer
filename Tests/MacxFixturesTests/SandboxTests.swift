@@ -1,4 +1,5 @@
 import Darwin
+import Darwin.membership
 import Foundation
 import XCTest
 @testable import MacxFixtures
@@ -48,6 +49,31 @@ final class SandboxTests: XCTestCase {
         XCTAssertEqual(lstat(sandbox.url("sparse.bin").path(percentEncoded: false), &st), 0)
         XCTAssertEqual(st.st_size, 1 << 20)
         XCTAssertThrowsError(try sandbox.createFile("a/link"), "createFile must not write through a symlink")
+    }
+
+    /// ACL tests (P4-14/P4-18) put "everyone deny delete" entries on sandbox files; teardown must still remove them.
+    func testDestroyRemovesContentWithDenyDeleteACLs() throws {
+        let child = try sandbox.createFile("d/c.txt").path(percentEncoded: false)
+        let dir = sandbox.url("d").path(percentEncoded: false)
+        for (path, perms) in [(child, [ACL_DELETE]), (dir, [ACL_DELETE, ACL_DELETE_CHILD])] {
+            var acl = acl_init(1)
+            var entry: acl_entry_t?
+            XCTAssertEqual(acl_create_entry(&acl, &entry), 0)
+            XCTAssertEqual(acl_set_tag_type(entry, ACL_EXTENDED_DENY), 0)
+            var uuid = [UInt8](repeating: 0, count: 16)
+            XCTAssertEqual(mbr_gid_to_uuid(12, &uuid), 0)   // gid 12 = everyone
+            XCTAssertEqual(acl_set_qualifier(entry, uuid), 0)
+            var set: acl_permset_t?
+            XCTAssertEqual(acl_get_permset(entry, &set), 0)
+            for p in perms { XCTAssertEqual(acl_add_perm(set, p), 0) }
+            XCTAssertEqual(acl_set_permset(entry, set), 0)
+            XCTAssertEqual(acl_set_link_np(path, ACL_TYPE_EXTENDED, acl), 0)
+            acl_free(UnsafeMutableRawPointer(acl))
+        }
+        XCTAssertNotEqual(unlink(child), 0, "the deny-delete ACL is in effect")
+        let path = sandbox.root.path(percentEncoded: false)
+        sandbox.destroy()
+        XCTAssertNotEqual(access(path, F_OK), 0, "destroy must strip ACLs before removing")
     }
 
     func testDestroyRemovesLockedAndUnreadableContent() throws {
