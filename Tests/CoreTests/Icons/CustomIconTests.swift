@@ -11,8 +11,15 @@ final class FakeIconWriter: CustomIconWriting, @unchecked Sendable {
     private let lock = NSLock()
     private var icons: [String: IconImageData] = [:]
     private var failingPaths: [String: Int32] = [:]
+    /// Each read returns a fresh copy of the bytes (as the real writer, which reads the fork back every time).
+    var copiesOnRead = false
     func fail(_ url: URL, with code: Int32) { lock.withLock { failingPaths[url.path] = code } }
-    func currentCustomIcon(_ url: URL) throws -> IconImageData? { lock.withLock { icons[url.path] } }
+    func currentCustomIcon(_ url: URL) throws -> IconImageData? {
+        lock.withLock {
+            guard let icon = icons[url.path] else { return nil }
+            return copiesOnRead ? IconImageData(bytes: Data(Array(icon.bytes))) : icon
+        }
+    }
     func setIcon(_ data: IconImageData?, for url: URL) throws {
         try lock.withLock {
             if let code = failingPaths[url.path] { throw TagIOError(code: code) }
@@ -250,7 +257,84 @@ final class CustomIconTests: FileOpsTestCase {
         XCTAssertFalse(Self.xattrNames(link.path).contains { $0 == "com.apple.FinderInfo" || $0 == "com.apple.ResourceFork" })
     }
 
+    /// kHasCustomIcon set with no readable icns (no fork, a garbage fork, a folder without `Icon\r`): Remove still
+    /// clears the mark; setting a new icon skips with a reason (Undo couldn't restore the original) and changes nothing.
+    func testUnreadableCustomIconIsRemovableButNeverSilentlyReplaced() async throws {
+        let noFork = try file("nofork.txt"), garbage = try file("garbage.txt"), folder = try dir("Folder")
+        for p in [noFork.path, garbage.path, folder.path] { Self.setCustomIconFlag(p) }
+        let junk = Data("not a resource fork".utf8)
+        XCTAssertEqual(junk.withUnsafeBytes { setxattr(garbage.path, "com.apple.ResourceFork", $0.baseAddress, junk.count, 0, XATTR_NOFOLLOW) }, 0)
+        let writer = WorkspaceIconWriter()
+        let states = try await LanePool().perform(on: .unknown, .fileOp) { _ in
+            [try writer.storedCustomIcon(noFork), try writer.storedCustomIcon(garbage), try writer.storedCustomIcon(folder)]
+        }
+        XCTAssertEqual(states, [.unreadable, .unreadable, .unreadable])
+        let queue = FileOpQueue(lanes: LanePool(), trash: SandboxTrash(directory: trashDir), journal: Journal(fileURL: journalURL),
+                                interaction: ScriptedInteraction(), iconWriter: writer)
+        let set = try await run(.setCustomIcon([noFork, garbage, folder], IconImageData(bytes: TestImages.png())), on: queue)
+        XCTAssertTrue(set.record.actions.isEmpty)
+        XCTAssertEqual(set.skipped.map(\.url), [noFork, garbage, folder])
+        XCTAssertEqual(set.skipped.map(\.reason), Array(repeating: IconJobs.unreadableIcon, count: 3))
+        for p in [noFork.path, garbage.path, folder.path] { XCTAssertTrue(Self.hasCustomIconFlag(p), p) }
+        XCTAssertEqual(WorkspaceIconWriter.xattr(garbage.path, "com.apple.ResourceFork"), junk, "left as it was")
+
+        let removal = try await run(.setCustomIcon([noFork, garbage, folder], nil), on: queue)
+        XCTAssertTrue(removal.skipped.isEmpty)
+        for p in [noFork.path, garbage.path, folder.path] { XCTAssertFalse(Self.hasCustomIconFlag(p), p) }
+        XCTAssertEqual(removal.record.actions.map(\.urls), [[noFork], [garbage], [folder]], "recorded so the UI refreshes")
+        XCTAssertTrue(removal.localChanges.contains { $0.modified.contains("garbage.txt") })
+        let after = try await LanePool().perform(on: .unknown, .fileOp) { _ in try writer.storedCustomIcon(garbage) }
+        XCTAssertEqual(after, StoredCustomIcon.none)
+        XCTAssertEqual(WorkspaceIconWriter.xattr(garbage.path, "com.apple.ResourceFork"), junk, "data it can't parse is kept")
+    }
+
+    /// Undo never writes over an icon that can't be read (someone else put it there).
+    func testUndoSkipsItemWhoseIconBecameUnreadable() async throws {
+        let f = try file("u.txt")
+        let queue = FileOpQueue(lanes: LanePool(), trash: SandboxTrash(directory: trashDir), journal: Journal(fileURL: journalURL),
+                                interaction: ScriptedInteraction(), iconWriter: WorkspaceIconWriter())
+        let removalOfNothing = JobRecord(id: JobID(), verb: .changingIcon,
+                                         actions: [.customIconChanged(f, previous: IconImageData(bytes: TestImages.png()), new: nil)])
+        Self.setCustomIconFlag(f.path)
+        let undo = try await run(.undo(removalOfNothing), on: queue)
+        XCTAssertEqual(undo.skipped.map(\.reason), [.changedDuringMove])
+        XCTAssertTrue(Self.hasCustomIconFlag(f.path))
+        XCTAssertNil(WorkspaceIconWriter.xattr(f.path, "com.apple.ResourceFork"))
+    }
+
+    /// One image dropped on many items: the undo record holds one copy of the stored bytes, not one per item.
+    func testRecordSharesIdenticalIconBytesAcrossItems() async throws {
+        let urls = try (0..<5).map { try file("i\($0).txt") }
+        let fake = FakeIconWriter(); fake.copiesOnRead = true
+        let old = IconImageData(bytes: TestImages.png(red: 0.2))
+        for u in urls { try fake.setIcon(IconImageData(bytes: Data(Array(old.bytes))), for: u) }
+        let queue = queue(fake)
+        let outcome = try await run(.setCustomIcon(urls, IconImageData(bytes: TestImages.png(red: 0.8))), on: queue)
+        XCTAssertEqual(outcome.record.actions.count, 5)
+        var storedBuffers = Set<UInt>(), previousBuffers = Set<UInt>()
+        for case .customIconChanged(_, let previous?, let new?) in outcome.record.actions {
+            storedBuffers.insert(Self.address(new.bytes)); previousBuffers.insert(Self.address(previous.bytes))
+        }
+        XCTAssertEqual(storedBuffers.count, 1)
+        XCTAssertEqual(previousBuffers.count, 1)
+        let undo = try await run(.undo(outcome.record), on: queue)
+        var undoBuffers = Set<UInt>()
+        for case .customIconChanged(_, let previous?, _) in undo.record.actions { undoBuffers.insert(Self.address(previous.bytes)) }
+        XCTAssertEqual(undo.record.actions.count, 5)
+        XCTAssertEqual(undoBuffers.count, 1, "the undo's own record shares too")
+    }
+
     // MARK: helpers
+
+    static func address(_ data: Data) -> UInt { data.withUnsafeBytes { UInt(bitPattern: $0.baseAddress) } }
+
+    /// Sets kHasCustomIcon in a sandbox file's FinderInfo (this test's own file), with no icon stored.
+    static func setCustomIconFlag(_ path: String) {
+        var info = [UInt8](repeating: 0, count: 32)
+        _ = getxattr(path, "com.apple.FinderInfo", &info, 32, 0, XATTR_NOFOLLOW)
+        info[8] |= 0x04
+        XCTAssertEqual(setxattr(path, "com.apple.FinderInfo", info, 32, 0, XATTR_NOFOLLOW), 0)
+    }
 
     static func xattrNames(_ path: String) -> [String] {
         let size = listxattr(path, nil, 0, XATTR_NOFOLLOW)

@@ -9,6 +9,9 @@ enum IconJobs {
     static let notAnImage = FileOpErrorKind.other(code: EINVAL, message: "not an image")
     /// The writer refuses symlinks (ENOTSUP): skipped with this reason, no question (Retry could never help).
     static let symlinkRefused = FileOpErrorKind(errno: ENOTSUP, isLockedItem: false)
+    /// The item is marked as having a custom icon that can't be read: setting a new one is skipped with this reason,
+    /// because Undo couldn't restore the original. Remove Custom Icon still works.
+    static let unreadableIcon = FileOpErrorKind.other(code: EFTYPE, message: "its current custom icon can't be read, so Undo couldn't restore it (remove it first)")
 
     static func setCustomIcon(_ ctx: JobContext, _ urls: [URL], _ data: IconImageData?) async {
         ctx.setTotals(items: urls.count, bytes: 0)
@@ -21,22 +24,47 @@ enum IconJobs {
             return
         }
         let writer = ctx.iconWriter
-        struct Step: Sendable { var code: Int32; var previous: IconImageData? = nil; var stored: IconImageData? = nil }
+        struct Step: Sendable {
+            var code: Int32
+            var changed = false
+            var previous: IconImageData? = nil
+            var stored: IconImageData? = nil
+            var unreadable = false
+        }
+        // One copy of each distinct icon in the record: the read-back of the same image dropped on many items is
+        // the same bytes every time (multi-MB ICNS), so the undo record keeps one buffer, not one per item.
+        _ = ctx.shareIcon(data)
         items: for url in urls {
             guard await ctx.checkpoint() else { break }
             while true {
                 let r = (try? await ctx.onLane { _ -> Step in
                     do {
-                        let previous = try writer.currentCustomIcon(url)
-                        if previous == nil && data == nil { return Step(code: 0) }     // nothing to remove: leave it alone
-                        try writer.setIcon(data, for: url)
-                        let stored = data == nil ? nil : ((try? writer.currentCustomIcon(url)) ?? data)
-                        return Step(code: 0, previous: previous, stored: stored)
+                        let before = try writer.storedCustomIcon(url)
+                        switch (before, data) {
+                        case (.none, nil): return Step(code: 0)                       // nothing to remove: leave it alone
+                        case (.unreadable, .some):
+                            // Replacing it would lose the original for good: Undo could never put it back.
+                            return Step(code: 0, unreadable: true)
+                        case (.unreadable, nil):
+                            // The item is marked as having a custom icon: Remove clears the mark (the writer leaves an
+                            // unparseable fork alone). Nothing readable to keep for Undo, which leaves the item as it is.
+                            try writer.setIcon(nil, for: url)
+                            return Step(code: 0, changed: true)
+                        case (.none, .some), (.image, _):
+                            try writer.setIcon(data, for: url)
+                            let stored = data == nil ? nil : ((try? writer.currentCustomIcon(url)) ?? data)
+                            let previous = before.image
+                            return Step(code: 0, changed: previous != stored, previous: previous, stored: stored)
+                        }
                     } catch { return Step(code: (error as? any ErrnoCarrying)?.errnoCode ?? EIO) }
                 }) ?? Step(code: EIO)
                 if r.code == 0 {
-                    if r.previous != r.stored {
-                        ctx.record(.customIconChanged(url, previous: r.previous, new: r.stored))
+                    if r.unreadable {
+                        ctx.skip(url, reason: unreadableIcon)
+                        continue items
+                    }
+                    if r.changed {
+                        ctx.record(.customIconChanged(url, previous: ctx.shareIcon(r.previous), new: ctx.shareIcon(r.stored)))
                         ctx.noteModified(url)
                     }
                     ctx.addProgress(items: 1, current: url.lastPathComponent)
@@ -63,11 +91,14 @@ enum IconJobs {
         while true {
             let r = (try? await ctx.onLane { _ -> Check in
                 guard PosixFS.exists(url.path) else { return .gone }
-                let current: IconImageData?
-                do { current = try writer.currentCustomIcon(url) } catch {
+                let onDisk: StoredCustomIcon
+                do { onDisk = try writer.storedCustomIcon(url) } catch {
                     let code = (error as? any ErrnoCarrying)?.errnoCode ?? EIO
                     return code == ENOENT ? .gone : .failed(code)
                 }
+                // An unreadable icon was put there by someone else: never written over (it could not be put back).
+                guard onDisk != .unreadable else { return .changed }
+                let current = onDisk.image
                 guard IconCompare.sameImage(current, expected) else { return .changed }
                 if current == nil && restore == nil { return .written(current: nil, stored: nil) }
                 do { try writer.setIcon(restore, for: url) } catch { return .failed((error as? any ErrnoCarrying)?.errnoCode ?? EIO) }
@@ -82,7 +113,7 @@ enum IconJobs {
                 ctx.skip(url, reason: .changedDuringMove)
                 return .skipped
             case .written(let current, let stored):
-                ctx.record(.customIconChanged(url, previous: current, new: stored))
+                ctx.record(.customIconChanged(url, previous: ctx.shareIcon(current), new: ctx.shareIcon(stored)))
                 ctx.noteModified(url)
                 return .done
             case .failed(let code):
@@ -93,5 +124,25 @@ enum IconJobs {
                 }
             }
         }
+    }
+}
+
+/// Keeps one buffer per distinct icon image seen by a job (byte-equal data reuses the first copy). Bounded: only the
+/// last few distinct images are compared against.
+struct IconShare: Sendable {
+    static let limit = 4
+    private var seen: [IconImageData] = []
+
+    @discardableResult
+    mutating func note(_ icon: IconImageData?) -> IconImageData? {
+        guard let icon else { return nil }
+        if let index = seen.firstIndex(where: { $0.bytes.count == icon.bytes.count && $0.bytes == icon.bytes }) {
+            let match = seen.remove(at: index)
+            seen.append(match)
+            return match
+        }
+        seen.append(icon)
+        if seen.count > Self.limit { seen.removeFirst() }
+        return icon
     }
 }

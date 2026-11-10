@@ -60,7 +60,7 @@ public enum TagEdit: Sendable, Codable, Equatable {
 
 extension TagEdit {
     /// Pure. `toggle` is resolved to `add`/`remove` by the job before items are edited; here it behaves as `add`.
-    func applied(to current: [FileTag]) -> [FileTag] {
+    public func applied(to current: [FileTag]) -> [FileTag] {
         switch self {
         case .set(let tags): return TagIO.normalize(tags)
         case .add(let tag):

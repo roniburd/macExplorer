@@ -16,6 +16,8 @@ final class TagTokenFieldController: NSObject, NSTokenFieldDelegate {
     let model: TagEditorModel
     let field = NSTokenField()
     private var shownRevision = -1
+    /// What the field showed when the user's current edit started: the base the edit is replayed from.
+    private var shown: [FileTag] = []
 
     init(model: TagEditorModel) {
         self.model = model
@@ -33,11 +35,17 @@ final class TagTokenFieldController: NSObject, NSTokenFieldDelegate {
         refresh()
     }
 
-    /// Shows the model's tokens when the model reloaded (never while the user is mid-edit on the same revision).
+    /// Shows the model's tokens when the model reloaded, but never while the user is typing in the field (the
+    /// reload is picked up when editing ends).
     func refresh() {
-        guard model.revision != shownRevision else { return }
+        guard model.revision != shownRevision, field.currentEditor() == nil else { return }
         shownRevision = model.revision
-        field.objectValue = model.tokens.map(TagToken.init)
+        show(model.tokens)
+    }
+
+    private func show(_ tags: [FileTag]) {
+        shown = tags
+        field.objectValue = tags.map(TagToken.init)
     }
 
     /// The tags the field shows now: tokens plus any typed text not yet tokenized.
@@ -60,7 +68,11 @@ final class TagTokenFieldController: NSObject, NSTokenFieldDelegate {
     }
 
     private func syncAndCommit() {
-        model.tokens = TagIO.normalize(fieldTags())
+        let edited = TagIO.normalize(fieldTags())
+        model.stage(edited: edited, shown: shown)
+        shownRevision = model.revision
+        // The model may hold tags the field never showed (a reload while the user typed): show them too.
+        if model.tokens != edited { show(model.tokens) } else { shown = edited }
         Task { [model] in await model.commit() }
     }
 

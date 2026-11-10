@@ -18,10 +18,29 @@ public struct IconImageData: Sendable, Codable, Equatable {
 
 /// Reads and writes an item's stored custom icon. Lane only: implementations do file-system I/O.
 public protocol CustomIconWriting: Sendable {
-    /// The stored custom icon, nil when the item has none.
+    /// The stored custom icon, nil when the item has none or it can't be read (see `storedCustomIcon`).
     func currentCustomIcon(_ url: URL) throws -> IconImageData?
+    /// Tells "no custom icon" apart from "marked as having one that can't be read". Default: from `currentCustomIcon`.
+    func storedCustomIcon(_ url: URL) throws -> StoredCustomIcon
     /// nil removes the custom icon.
     func setIcon(_ data: IconImageData?, for url: URL) throws
+}
+
+/// What an item's custom icon is, as far as it can be read back.
+public enum StoredCustomIcon: Sendable, Equatable {
+    case none
+    case image(IconImageData)
+    /// The item is marked as having a custom icon (kHasCustomIcon), but no icon could be read: no `Icon\r`, no
+    /// icns resource, or a malformed resource fork. Undo could never put it back.
+    case unreadable
+
+    public var image: IconImageData? { if case .image(let data) = self { data } else { nil } }
+}
+
+extension CustomIconWriting {
+    public func storedCustomIcon(_ url: URL) throws -> StoredCustomIcon {
+        try currentCustomIcon(url).map(StoredCustomIcon.image) ?? .none
+    }
 }
 
 /// Undo uses this to tell whether an item still has the icon a job gave it: macOS re-encodes what it stores (a PNG

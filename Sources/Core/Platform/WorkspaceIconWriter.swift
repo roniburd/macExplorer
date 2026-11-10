@@ -22,17 +22,22 @@ public struct WorkspaceIconWriter: CustomIconWriting {
     static let iconResourceID: Int16 = -16455
     static let folderIconFile = "Icon\r"
 
-    public func currentCustomIcon(_ url: URL) throws -> IconImageData? {
+    public func currentCustomIcon(_ url: URL) throws -> IconImageData? { try storedCustomIcon(url).image }
+
+    /// The kHasCustomIcon bit decides whether there is a custom icon (as for Properties' "Remove Custom Icon"); with
+    /// the bit set, a missing or unparseable icns resource is `.unreadable`, not "none".
+    public func storedCustomIcon(_ url: URL) throws -> StoredCustomIcon {
         assertOffMain()
         let path = url.path(percentEncoded: false)
         var st = stat()
         guard lstat(path, &st) == 0 else { throw IconWriteError(code: errno) }
-        guard Self.finderFlags(path) & Self.customIconBit != 0 else { return nil }
+        guard Self.finderFlags(path) & Self.customIconBit != 0 else { return .none }
         let isDir = (st.st_mode & S_IFMT) == S_IFDIR
         let carrier = isDir ? url.appending(path: Self.folderIconFile).path(percentEncoded: false) : path
         guard let fork = Self.xattr(carrier, "com.apple.ResourceFork"),
-              let icns = ResourceFork.resource(type: "icns", id: Self.iconResourceID, in: fork) else { return nil }
-        return IconImageData(bytes: icns)
+              let icns = ResourceFork.resource(type: "icns", id: Self.iconResourceID, in: fork),
+              !icns.isEmpty else { return .unreadable }
+        return .image(IconImageData(bytes: icns))
     }
 
     public func setIcon(_ data: IconImageData?, for url: URL) throws {
@@ -43,6 +48,12 @@ public struct WorkspaceIconWriter: CustomIconWriting {
         // NSWorkspace.setIcon follows symlinks: it would change the link's target (any writable file, maybe outside
         // the selection), and undo, which reads the link itself, could never take it back. Links are refused.
         guard (st.st_mode & S_IFMT) != S_IFLNK else { throw IconWriteError(code: ENOTSUP) }
+        if data == nil, try storedCustomIcon(url) == .unreadable {
+            // NSWorkspace can't remove an icon it can't read. Clearing kHasCustomIcon is what makes the item show its
+            // usual icon again; a resource fork or `Icon\r` that can't be parsed is left alone (it may hold other data).
+            try Self.clearCustomIconBit(path)
+            return
+        }
         var image: NSImage?
         if let data {
             guard data.isDecodableImage, let decoded = NSImage(data: data.bytes) else { throw IconWriteError(code: EINVAL) }
@@ -54,6 +65,15 @@ public struct WorkspaceIconWriter: CustomIconWriting {
             if st.st_flags & UInt32(UF_IMMUTABLE) != 0 { throw IconWriteError(code: EPERM) }
             throw IconWriteError(code: access(path, W_OK) == 0 ? EIO : EACCES)
         }
+    }
+
+    static func clearCustomIconBit(_ path: String) throws {
+        guard var info = xattr(path, "com.apple.FinderInfo").map(Array.init), info.count >= 10 else { return }
+        info[8] &= ~UInt8(customIconBit >> 8)          // Finder flags: bytes 8–9, big-endian
+        let result = info.allSatisfy({ $0 == 0 })
+            ? removexattr(path, "com.apple.FinderInfo", XATTR_NOFOLLOW)
+            : setxattr(path, "com.apple.FinderInfo", info, info.count, 0, XATTR_NOFOLLOW)
+        guard result == 0 else { throw IconWriteError(code: errno) }
     }
 
     static func finderFlags(_ path: String) -> UInt16 {

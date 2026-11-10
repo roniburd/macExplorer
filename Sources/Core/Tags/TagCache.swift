@@ -37,10 +37,19 @@ public final class TagCache {
                 order.removeFirst(head)
                 head = 0
             }
+            // Removed keys leave stale slots behind (and re-storing one adds a slot), so below capacity the list would
+            // grow by one per invalidate-and-reread. Once stale slots outnumber live ones, keep only the live slots.
+            if order.count - head > 2 * values.count + 64 {
+                order = order[head...].filter { values[$0.key]?.seq == $0.seq }
+                head = 0
+            }
         }
 
-        /// Its order slot goes stale and is skipped when reached.
+        /// Its order slot goes stale and is skipped when reached (or dropped when `store` compacts).
         mutating func remove(_ key: String) { values[key] = nil }
+
+        /// Order slots still held, live or stale (for the bound test).
+        var orderSlots: Int { order.count - head }
 
         var keys: Dictionary<String, (tags: [FileTag], seq: Int)>.Keys { values.keys }
     }

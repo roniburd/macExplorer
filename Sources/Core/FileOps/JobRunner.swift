@@ -63,6 +63,7 @@ final class JobContext: Sendable {
         /// Compare answers, and the top-level sources that dialog answered (keys missing from the map = Skip).
         var perItemConflicts: [URL: ConflictAction] = [:]
         var perItemAnswered: Set<URL> = []
+        var icons = IconShare()
     }
     private let state: Mutex<State>
 
@@ -140,6 +141,8 @@ final class JobContext: Sendable {
 
     // MARK: record
     func record(_ action: ItemAction) { state.withLock { $0.actions.append(action) } }
+    /// Byte-equal icon data recorded by this job shares one buffer (undo/redo of a many-item icon change).
+    func shareIcon(_ icon: IconImageData?) -> IconImageData? { state.withLock { $0.icons.note(icon) } }
     func removeLastAction(where match: (ItemAction) -> Bool) {
         state.withLock { s in if let i = s.actions.lastIndex(where: match) { s.actions.remove(at: i) } }
     }

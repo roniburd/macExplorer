@@ -62,6 +62,23 @@ import MacxFS
         XCTAssertEqual(order.count, 3)
     }
 
+    /// Removing and re-storing a key below capacity must not grow the order list without bound.
+    func testTagCacheOrderStaysBoundedUnderRemoveAndStore() {
+        var storage = TagCache.Storage(capacity: 100)
+        for i in 0..<10 { storage.store("/keep\(i)", []) }
+        for _ in 0..<10_000 {
+            storage.remove("/busy")
+            storage.store("/busy", [FileTag(name: "Log")])
+        }
+        XCTAssertEqual(storage.count, 11)
+        XCTAssertLessThanOrEqual(storage.orderSlots, 2 * storage.count + 64)
+        XCTAssertEqual(storage.value("/busy"), [FileTag(name: "Log")])
+        for i in 0..<10 { XCTAssertEqual(storage.value("/keep\(i)"), []) }
+        for i in 0..<100 { storage.store("/new\(i)", []) }       // eviction still goes oldest-first
+        XCTAssertNil(storage.value("/keep0"))
+        XCTAssertEqual(storage.count, 100)
+    }
+
     func testTagMenuStatesComeFromCache() async throws {
         let ui = try await ContentTestHarness.make(self)
         let a = try ui.file("a.txt"), b = try ui.file("b.txt")
@@ -236,6 +253,69 @@ import MacxFS
             (try? TagIOTestRead.sync(a)) == [FileTag(name: "Work"), FileTag(name: "Home", color: .red)]
                 && (try? TagIOTestRead.sync(b)) == [FileTag(name: "Work")]
         }
+    }
+
+    /// An edit made while an earlier commit's job is still running reaches disk: the first commit's reload must not
+    /// overwrite it, and the queued pass diffs it against what the first commit applied.
+    func testEditDuringRunningCommitIsNotLost() async throws {
+        let ui = try await ContentTestHarness.make(self)
+        let a = try ui.file("a.txt")
+        try await write([FileTag(name: "Work"), FileTag(name: "Home")], a, ui)
+        let model = TagEditorModel(urls: [a], context: ui.context)
+        try await ui.waitUntil("model loaded") { model.tokens.count == 2 }
+        let operations = ui.context.environment.operations
+        var gate: CheckedContinuation<Void, Never>?
+        var calls = 0
+        model.perform = { kind in
+            calls += 1
+            if calls == 1 { await withCheckedContinuation { gate = $0 } }
+            return await operations.perform(JobRequest(kind, origin: nil))
+        }
+        model.setColor(.blue, forTokenNamed: "Work")
+        let first = Task { await model.commit() }
+        try await ui.waitUntil("first job started") { gate != nil }
+        model.tokens.removeAll { $0.name == "Home" }
+        let second = Task { await model.commit() }
+        await second.value                      // queued behind the first: returns at once
+        gate?.resume()
+        await first.value
+        let onDisk = try await read(a, ui)
+        XCTAssertEqual(onDisk, [FileTag(name: "Work", color: .blue)])
+        XCTAssertEqual(model.tokens, [FileTag(name: "Work", color: .blue)])
+    }
+
+    /// A reload (another job on the item finished) keeps edits the user hasn't committed yet.
+    func testReloadKeepsUncommittedEdits() async throws {
+        let ui = try await ContentTestHarness.make(self)
+        let a = try ui.file("a.txt")
+        try await write([FileTag(name: "Work"), FileTag(name: "Home")], a, ui)
+        let model = TagEditorModel(urls: [a], context: ui.context)
+        try await ui.waitUntil("model loaded") { model.tokens.count == 2 }
+        model.tokens.removeAll { $0.name == "Home" }
+        try await write([FileTag(name: "Work"), FileTag(name: "Home"), FileTag(name: "Elsewhere")], a, ui)
+        await model.reload()
+        XCTAssertEqual(model.tokens.map(\.name), ["Work"], "the pending removal survives the reload")
+        await model.commit()
+        let onDisk = try await read(a, ui)
+        XCTAssertEqual(onDisk.map(\.name), ["Work", "Elsewhere"], "only the user's edit is applied")
+        XCTAssertEqual(model.tokens.map(\.name), ["Work", "Elsewhere"])
+    }
+
+    /// The field commits what it shows relative to what it showed when editing started, so a reload that happened
+    /// meanwhile (adding a tag the field never displayed) is not reverted.
+    func testCommitFromStaleFieldRebasesOntoReloadedTags() async throws {
+        let ui = try await ContentTestHarness.make(self)
+        let a = try ui.file("a.txt")
+        try await write([FileTag(name: "Work")], a, ui)
+        let model = TagEditorModel(urls: [a], context: ui.context)
+        try await ui.waitUntil("model loaded") { model.tokens.count == 1 }
+        let shown = model.tokens
+        try await write([FileTag(name: "Work"), FileTag(name: "Elsewhere")], a, ui)
+        await model.reload()
+        model.stage(edited: [FileTag(name: "Work"), FileTag(name: "New")], shown: shown)
+        await model.commit()
+        let onDisk = try await read(a, ui)
+        XCTAssertEqual(onDisk.map(\.name), ["Work", "Elsewhere", "New"])
     }
 
     func testRecolorEditKeepsNameSpellingAndOtherTags() {
