@@ -11,6 +11,8 @@ public struct FileOpTuning: Sendable {
     /// Pretends every volume's case-sensitivity lookup failed (falls back to case-insensitive).
     var forceCaseInsensitive = false
     var bodyOverride: (@Sendable (JobContext) async -> Void)? = nil
+    /// Maps an archive tool's path (/usr/bin/ditto, /usr/bin/aa) to a replacement, e.g. /usr/bin/false.
+    var toolOverride: (@Sendable (String) -> String)? = nil
     public init(progressInterval: Duration = .milliseconds(100), copyChunkBytes: Int = 1 << 20,
                 faultHook: (@Sendable (FaultPoint, JobID) -> Void)? = nil) {
         self.progressInterval = progressInterval; self.copyChunkBytes = copyChunkBytes; self.faultHook = faultHook

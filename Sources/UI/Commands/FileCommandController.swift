@@ -146,7 +146,9 @@ final class FileCommandController: CommandHandler {
             break   // pendingCommands: canPerform is false, so perform beeps above
         case .showCommandPalette: window?.showCommandPalette()
         case .editTags: editTags(target)
-        case .compressZip, .compressAppleArchive, .extractHere, .batchRename:
+        case .compressZip: compress(target, .zip)
+        case .compressAppleArchive: compress(target, .appleArchive)
+        case .extractHere, .batchRename:
             break   // Phase 4: disabled until shipped (CommandAvailability.shippedPhase4Commands), so perform beeps above
         }
     }
@@ -331,6 +333,15 @@ final class FileCommandController: CommandHandler {
 
     func contentController() -> ContentViewController? {
         window?.contentViewController?.firstDescendant(of: ContentViewController.self)
+    }
+
+    /// File › Compress ▸ (P4-09): one job for the whole selection; the archive lands next to the first item and is
+    /// selected there.
+    @discardableResult
+    func compress(_ target: CommandTarget, _ format: ArchiveFormat) -> Task<JobOutcome, Never>? {
+        let urls = subjectURLs(target)
+        guard !urls.isEmpty else { return nil }
+        return enqueue(.compress(urls, format))
     }
 
     @discardableResult

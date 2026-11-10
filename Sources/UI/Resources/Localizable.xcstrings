@@ -1390,6 +1390,28 @@
         }
       }
     },
+    "Compress" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compress"
+          }
+        }
+      }
+    },
+    "Compress %lld Items to %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compress %lld Items to %@"
+          }
+        }
+      }
+    },
     "Compress to .aar" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1408,6 +1430,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Compress to .zip"
+          }
+        }
+      }
+    },
+    "Compress “%@” to %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compress “%@” to %@"
+          }
+        }
+      }
+    },
+    "Compressing %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compressing %@"
           }
         }
       }
@@ -6557,6 +6601,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "You don't have permission to change '%@'."
+          }
+        }
+      }
+    },
+    "You don't have permission to compress '%@'." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You don't have permission to compress '%@'."
           }
         }
       }

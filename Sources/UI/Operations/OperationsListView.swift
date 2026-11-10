@@ -24,6 +24,7 @@ enum JobTitle {
         case .changingAttributes: return String(format: L10n.string("Changing attributes of %@"), what)
         case .tagging: return String(format: L10n.string("Tagging %@"), what)
         case .changingIcon: return String(format: L10n.string("Changing the icon of %@"), what)
+        case .compressing: return String(format: L10n.string("Compressing %@"), what)
         case .undoing: return String(format: L10n.string("Undoing changes to %@"), what)
         case .redoing: return String(format: L10n.string("Redoing changes to %@"), what)
         }

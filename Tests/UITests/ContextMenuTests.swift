@@ -56,7 +56,7 @@ final class ContextMenuTests: XCTestCase {
         let content = try h.content(of: try await h.openBrowserWindow())
         XCTAssertEqual(ids(content.contextMenu(forRow: 0)), [
             "macx.menu.showInPreview", "macx.menu.open", "macx.menu.openWith", "macx.menu.quickLook", "macx.menu.cut", "macx.menu.copy", "macx.menu.copyAsPath",
-            "macx.menu.copyPathAs", "macx.menu.duplicate", "macx.menu.makeAlias", "macx.menu.makeSymlink", "macx.menu.rename",
+            "macx.menu.copyPathAs", "macx.menu.duplicate", "macx.menu.makeAlias", "macx.menu.makeSymlink", "macx.menu.compress", "macx.menu.rename",
             "macx.menu.tags", "macx.menu.moveToTrash", "macx.menu.deletePermanently", "macx.menu.new", "macx.menu.revealInFinder",
             "macx.menu.openInTerminal", "macx.menu.share", "macx.menu.properties",
         ])

@@ -352,6 +352,8 @@ enum JobRunner {
             await TagJobs.setTags(ctx, urls, edit)
         case .setCustomIcon(let urls, let data):
             await IconJobs.setCustomIcon(ctx, urls, data)
+        case .compress(let urls, let format):
+            await CompressJob.compress(ctx, urls, format)
         case .undo(let record), .redo(let record):
             await UndoPlanner.run(ctx, record)
         }

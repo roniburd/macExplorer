@@ -321,4 +321,35 @@ final class FileCommandTests: XCTestCase {
         let sidebar = try XCTUnwrap(w.browser.contentViewController?.firstDescendant(of: SidebarViewController.self))
         XCTAssertTrue(sidebar.handler === w.commands)
     }
+
+    /// P4-09: Compress ▸ in the item menu names what it compresses; the archive lands next to the items, is selected,
+    /// and one Undo moves it to the (sandbox) Trash.
+    func testCompressFromTheItemMenuSelectsTheArchiveAndUndoTrashesIt() async throws {
+        let w = try await world { try $0.file("a.txt"); try $0.file("b.txt") }
+        try await w.h.waitUntil("listed") { w.folder.rowCount == 2 }
+        let row = try XCTUnwrap(w.folder.row(named: "a.txt"))
+        let menu = try XCTUnwrap(w.content.contextMenu(forRow: row))
+        let compress = try XCTUnwrap(menu.items.first { $0.identifier?.rawValue == "macx.menu.compress" }?.submenu)
+        XCTAssertEqual(compress.items.map(\.title), ["Compress “a.txt” to .zip", "Compress “a.txt” to .aar"])
+        let zip = try XCTUnwrap(compress.items.first?.representedObject as? MenuActionBox)
+        XCTAssertEqual(zip.command, .compressZip)
+        XCTAssertTrue(zip.validateMenuItem(compress.items[0]))
+        zip.run(nil)
+        try await w.h.waitUntil("archived") { w.h.exists("a.txt.zip") }
+        try await w.h.waitUntil("archive selected") { w.folder.selectedURLs.map(\.lastPathComponent) == ["a.txt.zip"] }
+        XCTAssertTrue(w.h.exists("a.txt"))
+        try await w.h.waitUntil("undo registered") { w.h.environment.undo.canUndo }
+        w.commands.perform(.undo, target: w.selection, sender: nil)
+        try await w.h.waitUntil("archive trashed") { !w.h.exists("a.txt.zip") }
+        XCTAssertTrue(w.h.exists("a.txt"))
+
+        w.select(["a.txt", "b.txt"])
+        try await w.h.waitUntil("both selected") { w.folder.selectedURLs.count == 2 }
+        XCTAssertEqual(ContextMenuBuilder.compressTitle(.compressZip, names: ["a.txt", "b.txt"]), "Compress 2 Items to .zip")
+        XCTAssertTrue(w.commands.canPerform(.compressAppleArchive, target: w.selection))
+        w.commands.perform(.compressAppleArchive, target: w.selection, sender: nil)
+        try await w.h.waitUntil("Archive.aar") { w.h.exists("Archive.aar") }
+        w.select([])
+        XCTAssertFalse(w.commands.canPerform(.compressZip, target: w.selection), "needs a selection")
+    }
 }

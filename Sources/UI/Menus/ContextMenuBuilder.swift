@@ -134,6 +134,7 @@ final class ContextMenuBuilder {
         menu.addItem(CopyPathMenu.submenuItem(target: target, handler: handler))
         menu.addItem(.separator())
         for command in [Command.duplicate, .makeAlias, .makeSymlink] { add(command, target, handler, to: menu) }
+        menu.addItem(compressItem(names: valid.map { folder.url(atRow: $0).lastPathComponent }, target: target, handler: handler))
         menu.addItem(.separator())
         add(.rename, target, handler, to: menu)
         if let tags = tagsItem(urls: valid.map { folder.url(atRow: $0) }, target: target, handler: handler) { menu.addItem(tags) }
@@ -314,6 +315,27 @@ final class ContextMenuBuilder {
         default: false
         }
         return on ? .on : .off
+    }
+
+    /// Compress ▸ (P4-09): "Compress “name” to .zip" for one item, "Compress 3 Items to .zip" for several, and the same
+    /// for .aar.
+    private func compressItem(names: [String], target: CommandTarget, handler: CommandHandler) -> NSMenuItem {
+        let item = NSMenuItem(title: L10n.string("Compress"), action: nil, keyEquivalent: "")
+        item.identifier = NSUserInterfaceItemIdentifier("macx.menu.compress")
+        let submenu = NSMenu(title: item.title)
+        for command in [Command.compressZip, .compressAppleArchive] {
+            add(command, target, handler, to: submenu).title = Self.compressTitle(command, names: names)
+        }
+        item.submenu = submenu
+        return item
+    }
+
+    static func compressTitle(_ command: Command, names: [String]) -> String {
+        let ext = command == .compressAppleArchive ? ".aar" : ".zip"
+        if names.count == 1, let name = names.first {
+            return String(format: L10n.string("Compress “%@” to %@"), name, ext)
+        }
+        return String(format: L10n.string("Compress %lld Items to %@"), Int64(names.count), ext)
     }
 
     /// Tags ▸ (P4-05): the known tags with their states from the tag cache (the selection is prefetched now),
