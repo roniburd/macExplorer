@@ -15,6 +15,7 @@ public struct IconWriteError: Error, Sendable, Equatable, ErrnoCarrying {
 /// - folders: the hidden file `Icon\r` inside the folder carries the resource fork; the folder's FinderInfo has the bit.
 /// Writing goes through `NSWorkspace.setIcon(_:forFile:options:)` (safe off the main thread; nil removes). Reading
 /// parses the resource fork, because `NSWorkspace.icon(forFile:)` returns the composed icon, not the stored one.
+/// Symbolic links are refused with ENOTSUP (setIcon would write onto the link's target).
 public struct WorkspaceIconWriter: CustomIconWriting {
     public init() {}
     static let customIconBit: UInt16 = 0x0400
@@ -39,6 +40,9 @@ public struct WorkspaceIconWriter: CustomIconWriting {
         let path = url.path(percentEncoded: false)
         var st = stat()
         guard lstat(path, &st) == 0 else { throw IconWriteError(code: errno) }
+        // NSWorkspace.setIcon follows symlinks: it would change the link's target (any writable file, maybe outside
+        // the selection), and undo, which reads the link itself, could never take it back. Links are refused.
+        guard (st.st_mode & S_IFMT) != S_IFLNK else { throw IconWriteError(code: ENOTSUP) }
         var image: NSImage?
         if let data {
             guard data.isDecodableImage, let decoded = NSImage(data: data.bytes) else { throw IconWriteError(code: EINVAL) }

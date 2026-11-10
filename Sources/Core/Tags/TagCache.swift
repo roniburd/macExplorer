@@ -41,6 +41,8 @@ public final class TagCache {
 
         /// Its order slot goes stale and is skipped when reached.
         mutating func remove(_ key: String) { values[key] = nil }
+
+        var keys: Dictionary<String, (tags: [FileTag], seq: Int)>.Keys { values.keys }
     }
 
     public static let capacity = 20_000
@@ -74,11 +76,42 @@ public final class TagCache {
     /// `invalidate` for many URLs: one prefetch (so at most `batchLimit` are read again right away; the rest are
     /// read when next shown or asked for).
     public func invalidate(_ urls: [URL]) {
+        invalidate(keys: urls.map(Self.key), onlyKnown: false)
+    }
+
+    /// Like `invalidate`, but only for URLs cached or being read: an uncached URL has nothing stale and is read when
+    /// next shown or asked for (watcher events would otherwise read every changed item of a busy folder).
+    public func invalidateCached(_ urls: [URL]) {
+        invalidate(keys: urls.map(Self.key), onlyKnown: true)
+    }
+
+    /// The folder's watcher reported a change it can't pin to names (full rescan, F5, root changed): every cached
+    /// direct child of `directory` is invalidated.
+    public func invalidateChildren(of directory: URL) {
+        let parent = Self.key(directory)
+        invalidate(keys: knownKeys.filter { ($0 as NSString).deletingLastPathComponent == parent }, onlyKnown: true)
+    }
+
+    /// Items moved, renamed or trashed: each root and everything cached under it (cached or pending only) (paths reused later must not show
+    /// the old item's tags).
+    public func invalidateSubtrees(_ roots: [URL]) {
+        guard !roots.isEmpty else { return }
+        let rootKeys = Set(roots.map(Self.key))
+        let prefixes = rootKeys.map { $0.hasSuffix("/") ? $0 : $0 + "/" }
+        invalidate(keys: knownKeys.filter { key in rootKeys.contains(key) || prefixes.contains { key.hasPrefix($0) } },
+                   onlyKnown: true)
+    }
+
+    /// Keys cached or being read.
+    private var knownKeys: [String] { Array(storage.keys) + pending }
+
+    private func invalidate(keys: [String], onlyKnown: Bool) {
         var again: [URL] = []
-        for url in urls {
-            let key = Self.key(url)
+        for key in keys {
+            if pending.contains(key) { rereads.insert(key); continue }
+            if onlyKnown && storage.value(key) == nil { continue }
             storage.remove(key)
-            if pending.contains(key) { rereads.insert(key) } else { again.append(url) }
+            again.append(URL(filePath: key))
         }
         prefetch(again)
     }

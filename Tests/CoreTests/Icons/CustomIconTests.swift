@@ -225,7 +225,41 @@ final class CustomIconTests: FileOpsTestCase {
         XCTAssertNotNil(try fake.currentCustomIcon(b))
     }
 
+    /// NSWorkspace.setIcon follows symlinks: the real writer refuses a link (ENOTSUP) so the target, which may be
+    /// outside the selection, is never changed; the job skips the link with a reason and records nothing.
+    func testSymlinkIsRefusedAndItsTargetKeepsItsXattrs() async throws {
+        let target = try file("target.txt")
+        let link = url("link")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)   // inside this test's sandbox
+        let before = Self.xattrNames(target.path)
+        let code = try await LanePool().perform(on: .unknown, .fileOp) { _ -> Int32? in
+            do { try WorkspaceIconWriter().setIcon(IconImageData(bytes: TestImages.png()), for: link); return nil }
+            catch let e as IconWriteError { return e.code }
+        }
+        XCTAssertEqual(code, ENOTSUP)
+        let interaction = ScriptedInteraction()
+        let queue = FileOpQueue(lanes: LanePool(), trash: SandboxTrash(directory: trashDir), journal: Journal(fileURL: journalURL),
+                                interaction: interaction, iconWriter: WorkspaceIconWriter())
+        let outcome = try await run(.setCustomIcon([link], IconImageData(bytes: TestImages.png())), on: queue)
+        XCTAssertTrue(outcome.record.actions.isEmpty)
+        XCTAssertEqual(outcome.skipped.map(\.url), [link])
+        XCTAssertNotNil(outcome.skipped.first?.reason)
+        XCTAssertTrue(interaction.askedErrors().isEmpty, "skipped without a pointless Retry question")
+        XCTAssertEqual(Self.xattrNames(target.path), before)
+        XCTAssertFalse(Self.hasCustomIconFlag(target.path))
+        XCTAssertFalse(Self.xattrNames(link.path).contains { $0 == "com.apple.FinderInfo" || $0 == "com.apple.ResourceFork" })
+    }
+
     // MARK: helpers
+
+    static func xattrNames(_ path: String) -> [String] {
+        let size = listxattr(path, nil, 0, XATTR_NOFOLLOW)
+        guard size > 0 else { return [] }
+        var buffer = [CChar](repeating: 0, count: size)
+        let n = listxattr(path, &buffer, size, XATTR_NOFOLLOW)
+        guard n > 0 else { return [] }
+        return buffer.prefix(n).split(separator: 0).map { String(decoding: $0.map { UInt8(bitPattern: $0) }, as: UTF8.self) }.sorted()
+    }
 
     static func hasCustomIconFlag(_ path: String) -> Bool {
         var info = [UInt8](repeating: 0, count: 32)

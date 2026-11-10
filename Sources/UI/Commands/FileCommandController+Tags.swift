@@ -10,7 +10,7 @@ extension FileCommandController {
         _ = await run(.setTags(urls, edit))
         switch edit {
         case .add(let tag), .toggle(let tag): environment.settings.noteTagUsed(tag)
-        case .remove, .set: break
+        case .remove, .set, .recolor: break
         }
     }
 

@@ -52,7 +52,11 @@ public enum AttributeEdit: Sendable, Codable, Equatable {
 
 /// A tag change applied to every item of a `.setTags` job. Names match case-insensitively.
 /// `toggle`: Finder semantics — if any item lacks the tag it is added everywhere, otherwise removed everywhere.
-public enum TagEdit: Sendable, Codable, Equatable { case set([FileTag]), add(FileTag), remove(String), toggle(FileTag) }
+/// `recolor`: items that have the tag (by name) get its colour; it is never added. Applied to each item's tags as
+/// read by the job, so a tag editor never writes back a stale snapshot.
+public enum TagEdit: Sendable, Codable, Equatable {
+    case set([FileTag]), add(FileTag), remove(String), toggle(FileTag), recolor(FileTag)
+}
 
 extension TagEdit {
     /// Pure. `toggle` is resolved to `add`/`remove` by the job before items are edited; here it behaves as `add`.
@@ -66,6 +70,9 @@ extension TagEdit {
             let n = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             return current.filter { $0.name.lowercased() != n }
         case .toggle(let tag): return TagEdit.add(tag).applied(to: current)
+        case .recolor(let tag):
+            let name = tag.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return current.map { $0.name.lowercased() == name ? FileTag(name: $0.name, color: tag.color) : $0 }
         }
     }
 }

@@ -120,11 +120,11 @@ final class PropertiesViewModel {
         return !(UTType(item.typeIdentifier)?.conforms(to: .application) ?? false)
     }
 
-    /// The icon well takes drops and pastes (P4-08): items (not a volume, not a symlink) on a writable volume.
+    /// The icon well takes drops and pastes (P4-08): items (not a volume, no symlink) on a writable volume.
     var canEditIcon: Bool {
         switch content {
         case .item(let item): item.kind != .symlink && !isOnReadOnlyVolume
-        case .items: !isOnReadOnlyVolume
+        case .items(let multi): multi.symlinks == 0 && !isOnReadOnlyVolume
         case .loading, .volume, .failed: false
         }
     }

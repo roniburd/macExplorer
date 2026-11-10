@@ -18,7 +18,7 @@ public enum PropertiesLoader {
     public static func loadMany(_ urls: [URL], lanes: LanePool, volume: VolumeID) async throws -> MultiProperties {
         try await lanes.perform(on: volume, .read) { context in
             try withNoMaterialization {
-                var files = 0, folders = 0
+                var files = 0, folders = 0, symlinks = 0
                 var total: Int64 = 0
                 var locked: [Bool] = [], hidden: [Bool] = [], extensionHidden: [Bool] = [], customIcon: [Bool] = []
                 for url in urls {
@@ -30,6 +30,7 @@ public enum PropertiesLoader {
                     let values = try? fresh.resourceValues(forKeys: [.isPackageKey, .hasHiddenExtensionKey])
                     let kind = kind(of: st, values: values)
                     if kind == .directory { folders += 1 } else { files += 1 }
+                    if kind == .symlink { symlinks += 1 }
                     if kind == .directory || kind == .package {
                         total += FolderCounter.walk(path, shouldStop: { context.isCancelled },
                                                     heartbeat: { context.heartbeat() })?.bytes ?? 0
@@ -44,7 +45,7 @@ public enum PropertiesLoader {
                 if context.isCancelled { throw LaneError.cancelled }
                 return MultiProperties(count: urls.count, files: files, folders: folders, totalSize: total,
                                        locked: .of(locked), hidden: .of(hidden), extensionHidden: .of(extensionHidden),
-                                       customIcon: .of(customIcon))
+                                       customIcon: .of(customIcon), symlinks: symlinks)
             }
         }
     }

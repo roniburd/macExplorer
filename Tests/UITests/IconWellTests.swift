@@ -76,6 +76,21 @@ final class IconWellTests: XCTestCase {
         m.close()
     }
 
+    func testMultiSelectionWithSymlinkCannotEditIcon() async throws {
+        let ui = try await ContentTestHarness.make(self)
+        let target = try ui.file("a.txt")
+        try FileManager.default.createSymbolicLink(at: ui.url("link"), withDestinationURL: target)   // sandbox only
+        let m = model(ui, ["a.txt", "link"])
+        await m.load()
+        XCTAssertEqual(multi(m)?.symlinks, 1)
+        XCTAssertFalse(m.canEditIcon, "a symlink's icon would land on its target")
+        m.close()
+        let plain = model(ui, ["a.txt"])
+        await plain.load()
+        XCTAssertTrue(plain.canEditIcon)
+        plain.close()
+    }
+
     func testWellRefusesNonImagesAndHugeFiles() async throws {
         let ui = try await ContentTestHarness.make(self)
         let text = try ui.file("t.txt")

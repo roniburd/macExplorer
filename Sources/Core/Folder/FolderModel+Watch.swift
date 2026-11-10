@@ -44,6 +44,10 @@ extension FolderModel {
         // Before any patch: an xattr-only change (tags, comment) leaves mtime alone, so the store diff reports
         // nothing; the event itself is what re-reads the item's extended attributes (P2-15, Review Focus 2).
         invalidateExtendedAttributes(for: event)
+        switch event {
+        case .items(let names): context.itemsChanged(directory, names)
+        case .fullRescan, .rootChanged: context.itemsChanged(directory, nil)
+        }
         switch state {
         case .complete: applyWatch(event)
         case .loading, .partial, .unresponsive, .waitingForPermission: watchBuffer.add(event)

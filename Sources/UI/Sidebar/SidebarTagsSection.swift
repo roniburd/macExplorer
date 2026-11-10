@@ -37,7 +37,7 @@ final class SidebarTagsSection {
             _ = await environment.operations.perform(JobRequest(.setTags(urls, edit)))
             switch edit {
             case .add(let tag), .toggle(let tag): environment.settings.noteTagUsed(tag)
-            case .remove, .set: break
+            case .remove, .set, .recolor: break
             }
         }
         rows = Self.rows(sidebarTags: settings.sidebarTags, knownTags: settings.knownTags)

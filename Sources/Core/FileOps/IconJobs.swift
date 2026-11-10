@@ -7,6 +7,8 @@ import MacxFS
 /// compare against what is really stored.
 enum IconJobs {
     static let notAnImage = FileOpErrorKind.other(code: EINVAL, message: "not an image")
+    /// The writer refuses symlinks (ENOTSUP): skipped with this reason, no question (Retry could never help).
+    static let symlinkRefused = FileOpErrorKind(errno: ENOTSUP, isLockedItem: false)
 
     static func setCustomIcon(_ ctx: JobContext, _ urls: [URL], _ data: IconImageData?) async {
         ctx.setTotals(items: urls.count, bytes: 0)
@@ -38,6 +40,10 @@ enum IconJobs {
                         ctx.noteModified(url)
                     }
                     ctx.addProgress(items: 1, current: url.lastPathComponent)
+                    continue items
+                }
+                if r.code == ENOTSUP {
+                    ctx.skip(url, reason: symlinkRefused)
                     continue items
                 }
                 switch await ctx.resolveFailure(r.code, url: url) {

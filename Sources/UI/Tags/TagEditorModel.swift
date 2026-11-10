@@ -3,8 +3,8 @@ import Core
 import MacxFS
 
 /// The tag editor's state (P4-05), shared by the Edit Tags… popover and the Properties "Tags" row.
-/// Loads every item's tags with one lane call. `tokens` is the union in first-seen order; `mixed` holds the names
-/// only some items have. `commit()` turns the user's edits into undoable `setTags` jobs, each its own undo entry,
+/// Loads every item's tags with one lane call per volume. `tokens` is the union in first-seen order; `mixed` holds the names
+/// only some items have. `commit()` turns the user's edits into undoable `setTags` jobs, one undo entry per edit,
 /// and never rewrites tags it wasn't asked to change, so in a multi-selection every item keeps its other tags.
 @MainActor @Observable
 final class TagEditorModel {
@@ -21,7 +21,6 @@ final class TagEditorModel {
     @ObservationIgnored var perform: @MainActor (JobKind) async -> JobOutcome
     /// A job skipped an item with a reason (locked, permission…).
     @ObservationIgnored var onSkipped: (@MainActor (SkippedItem, JobVerb) -> Void)?
-    @ObservationIgnored private var loadedPerItem: [[FileTag]] = []
     @ObservationIgnored private var loadedTokens: [FileTag] = []
     @ObservationIgnored private var loadGeneration = 0
     @ObservationIgnored private var committing = false
@@ -43,17 +42,26 @@ final class TagEditorModel {
     func reload() async {
         loadGeneration += 1
         let generation = loadGeneration
-        let urls = self.urls
-        let volume = urls.first.flatMap { environment.volumes.volume(for: $0)?.id } ?? .unknown
-        let perItem = (try? await environment.lanes.perform(on: volume, .read) { _ in
-            withNoMaterialization { urls.map { (try? TagIO.read($0)) ?? [] } }
-        }) ?? urls.map { _ in [] }
+        // One lane call per volume (like TagCache.prefetch): an ejected or hung volume's reads stay on its own lane.
+        let volumes = environment.volumes, lanes = environment.lanes
+        let groups = Dictionary(grouping: urls.indices) { volumes.volume(for: urls[$0])?.id ?? .unknown }
+        var perItem = urls.map { _ in [FileTag]() }
+        await withTaskGroup(of: [(Int, [FileTag])].self) { group in
+            for (volume, indices) in groups {
+                let batch = indices.map { ($0, urls[$0]) }
+                group.addTask {
+                    (try? await lanes.perform(on: volume, .read) { _ in
+                        withNoMaterialization { batch.map { ($0.0, (try? TagIO.read($0.1)) ?? []) } }
+                    }) ?? []
+                }
+            }
+            for await results in group { for (index, tags) in results { perItem[index] = tags } }
+        }
         guard generation == loadGeneration else { return }
         apply(perItem)
     }
 
     private func apply(_ perItem: [[FileTag]]) {
-        loadedPerItem = perItem
         var union: [FileTag] = []
         var counts: [String: Int] = [:]
         for tags in perItem {
@@ -99,9 +107,9 @@ final class TagEditorModel {
         tokens[index].color = color
     }
 
-    /// Diffs `tokens` against what was loaded: colour changes first (one `.set` job per item that has the tag,
-    /// from that item's tags with the colour replaced), then one `.remove` job per deleted token and one `.add` job
-    /// per new token over all items. Added tags go to the front of the known tags. Then reloads.
+    /// Diffs `tokens` against what was loaded: colour changes first (one `.recolor` job per recoloured tag over all
+    /// items, applied to each item's tags as the job reads them), then one `.remove` job per deleted token and one
+    /// `.add` job per new token over all items. Added tags go to the front of the known tags. Then reloads.
     func commit() async {
         if committing { commitAgain = true; return }
         committing = true
@@ -119,16 +127,9 @@ final class TagEditorModel {
         let loadedByKey = Dictionary(loaded.map { (Self.key($0.name), $0) }, uniquingKeysWith: { first, _ in first })
         let currentKeys = Set(current.map { Self.key($0.name) })
         var jobs: [JobKind] = []
-        var recolored = loadedPerItem
         for tag in current {
             guard let before = loadedByKey[Self.key(tag.name)], before.color != tag.color else { continue }
-            for (index, url) in urls.enumerated() {
-                let tags = recolored[index]
-                guard tags.contains(where: { Self.key($0.name) == Self.key(tag.name) }) else { continue }
-                let updated = tags.map { Self.key($0.name) == Self.key(tag.name) ? FileTag(name: $0.name, color: tag.color) : $0 }
-                recolored[index] = updated
-                jobs.append(.setTags([url], .set(updated)))
-            }
+            jobs.append(.setTags(urls, .recolor(tag)))       // one job (one undo) over all items, on current tags
         }
         for tag in loaded where !currentKeys.contains(Self.key(tag.name)) {
             jobs.append(.setTags(urls, .remove(tag.name)))

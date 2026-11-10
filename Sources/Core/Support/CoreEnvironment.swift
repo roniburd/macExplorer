@@ -114,10 +114,21 @@ public final class CoreEnvironment {
         let tagCache = TagCache(lanes: lanes, volumeID: { [weak volumes] url in volumes?.volume(for: url)?.id ?? .unknown })
         self.tagCache = tagCache
         tokens.append(operations.onFinished { _, outcome in
-            let changed = outcome.record.actions.compactMap { action -> URL? in
-                if case .tagsChanged(let url, _, _) = action { url } else { nil }
+            // Items whose tags the job changed are read again even if uncached (the next menu shows them). Other
+            // touched paths only drop what is cached; moved, renamed, trashed and replaced items with everything
+            // under them, so a path reused later (rename a→b, then c→a) never shows the old item's tags.
+            var tagged: [URL] = [], exact: [URL] = [], subtrees: [URL] = []
+            for action in outcome.record.actions {
+                switch action {
+                case .tagsChanged(let url, _, _): tagged.append(url)
+                case .moved, .renamed, .trashed, .replaced: subtrees += action.urls
+                case .created, .createdDirectory, .modeChanged, .attributesChanged, .customIconChanged, .deleted:
+                    exact += action.urls
+                }
             }
-            if !changed.isEmpty { tagCache.invalidate(changed) }
+            if !tagged.isEmpty { tagCache.invalidate(tagged) }
+            if !exact.isEmpty { tagCache.invalidateCached(exact) }
+            tagCache.invalidateSubtrees(subtrees)
         })
 
         // §4.2 release (S1 contract note 15): cancel this volume's reads first, then pause the jobs touching it.
@@ -152,7 +163,14 @@ public final class CoreEnvironment {
                 guard let location = Self.protectedLocation(url, settings: settings, volumes: volumes) else { return }
                 settings.recordTCCOutcome(granted ? .granted : .denied, for: location)
             },
-            home: settings.home, ownerNames: ownerNames)
+            home: settings.home, ownerNames: ownerNames,
+            itemsChanged: { [tagCache] directory, names in
+                if let names {
+                    tagCache.invalidateCached(names.map { directory.appending(path: $0) })
+                } else {
+                    tagCache.invalidateChildren(of: directory)
+                }
+            })
     }
 
     static func protectedLocation(_ url: URL, settings: Settings, volumes: Volumes) -> ProtectedLocation? {

@@ -107,6 +107,57 @@ import MacxFS
         try await ui.waitUntil("cache invalidated by the finished job") { cache.cachedTags(for: a) == [FileTag(name: "Work")] }
     }
 
+    /// Tags written behind the app's back (another app, Finder) reach the cache through the folder's watcher, and
+    /// the Tags submenu follows.
+    func testCacheFollowsTagsChangedOutsideTheApp() async throws {
+        let ui = try await ContentTestHarness.make(self)
+        let a = try ui.file("a.txt")
+        _ = try await ui.openBrowserWindow()
+        let cache = ui.context.environment.tagCache
+        cache.prefetch([a])
+        try await ui.waitUntil("cached") { cache.cachedTags(for: a) == [] }
+        try await write([FileTag(name: "Red", color: .red)], a, ui)          // not a job: only the watcher sees it
+        try await ui.waitUntil("cache follows the watcher") { cache.cachedTags(for: a) == [FileTag(name: "Red", color: .red)] }
+        let menu = TagMenu.build(for: [a], cache: cache, settings: ui.context.environment.settings) { _ in }
+        XCTAssertEqual(menu.items.first { $0.title == "Red" }?.state, .on)
+    }
+
+    /// A path reused after renames (a→b, then c→a) never shows the old item's tags.
+    func testCacheFollowsRenamesThatReusePaths() async throws {
+        let ui = try await ContentTestHarness.make(self)
+        let a = try ui.file("a.txt"), c = try ui.file("c.txt")
+        try await write([FileTag(name: "Red", color: .red)], a, ui)
+        let cache = ui.context.environment.tagCache
+        cache.prefetch([a, c])
+        try await ui.waitUntil("cached") { cache.cachedTags(for: a) == [FileTag(name: "Red", color: .red)] && cache.cachedTags(for: c) != nil }
+        let operations = ui.context.environment.operations
+        _ = await operations.perform(JobRequest(.rename(a, to: "b.txt"), origin: nil))
+        _ = await operations.perform(JobRequest(.rename(c, to: "a.txt"), origin: nil))
+        try await ui.waitUntil("reused path re-read") { cache.cachedTags(for: a) == [] }
+        XCTAssertEqual(cache.cachedTags(for: c) ?? [], [], "c.txt is gone")
+    }
+
+    func testCacheInvalidationIgnoresUncachedAndDropsChildren() async throws {
+        let ui = try await ContentTestHarness.make(self)
+        let a = try ui.file("d/a.txt"), b = try ui.file("d/sub/b.txt"), other = try ui.file("e.txt")
+        let cache = ui.context.environment.tagCache
+        cache.invalidateCached([a])
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertNil(cache.cachedTags(for: a), "not cached: nothing to read again")
+        cache.prefetch([a, b, other])
+        try await ui.waitUntil("cached") { [a, b, other].allSatisfy { cache.cachedTags(for: $0) != nil } }
+        try await write([FileTag(name: "Blue", color: .blue)], a, ui)
+        try await write([FileTag(name: "Blue", color: .blue)], b, ui)
+        try await write([FileTag(name: "Blue", color: .blue)], other, ui)
+        cache.invalidateChildren(of: ui.url("d"))
+        try await ui.waitUntil("children re-read") { cache.cachedTags(for: a) == [FileTag(name: "Blue", color: .blue)] }
+        XCTAssertEqual(cache.cachedTags(for: b), [], "only direct children")
+        XCTAssertEqual(cache.cachedTags(for: other), [])
+        cache.invalidateSubtrees([ui.url("d")])
+        try await ui.waitUntil("subtree re-read") { cache.cachedTags(for: b) == [FileTag(name: "Blue", color: .blue)] }
+        XCTAssertEqual(cache.cachedTags(for: other), [])
+    }
+
     func testChoosingTagRunsJobUpdatesCacheAndUndoes() async throws {
         let ui = try await ContentTestHarness.make(self)
         let a = try ui.file("a.txt")
@@ -159,6 +210,39 @@ import MacxFS
         try await ui.waitUntil("first undo") { (try? TagIOTestRead.sync(a)) == [FileTag(name: "Work", color: .blue), FileTag(name: "Home")] }
         undo.undo()
         try await ui.waitUntil("second undo") { (try? TagIOTestRead.sync(a)) == [FileTag(name: "Work"), FileTag(name: "Home")] }
+    }
+
+    /// Recolouring is one job over all items, applied to each item's tags on disk at commit time: tags added
+    /// elsewhere since the editor opened survive, and one undo restores every item.
+    func testEditorRecolourKeepsNewerTagsAndIsOneUndo() async throws {
+        let ui = try await ContentTestHarness.make(self)
+        let a = try ui.file("a.txt"), b = try ui.file("b.txt")
+        try await write([FileTag(name: "Work")], a, ui)
+        try await write([FileTag(name: "Work")], b, ui)
+        let model = TagEditorModel(urls: [a, b], context: ui.context)
+        var performed: [JobKind] = []
+        let operations = ui.context.environment.operations
+        model.perform = { kind in performed.append(kind); return await operations.perform(JobRequest(kind, origin: nil)) }
+        try await ui.waitUntil("model loaded") { model.isLoaded }
+        try await write([FileTag(name: "Work"), FileTag(name: "Home", color: .red)], a, ui)    // after the editor read it
+        model.setColor(.blue, forTokenNamed: "Work")
+        await model.commit()
+        XCTAssertEqual(performed, [.setTags([a, b], .recolor(FileTag(name: "Work", color: .blue)))])
+        let ta = try await read(a, ui), tb = try await read(b, ui)
+        XCTAssertEqual(ta, [FileTag(name: "Work", color: .blue), FileTag(name: "Home", color: .red)])
+        XCTAssertEqual(tb, [FileTag(name: "Work", color: .blue)])
+        ui.context.environment.undo.undoManager.undo()
+        try await ui.waitUntil("one undo restores both") {
+            (try? TagIOTestRead.sync(a)) == [FileTag(name: "Work"), FileTag(name: "Home", color: .red)]
+                && (try? TagIOTestRead.sync(b)) == [FileTag(name: "Work")]
+        }
+    }
+
+    func testRecolorEditKeepsNameSpellingAndOtherTags() {
+        let edit = TagEdit.recolor(FileTag(name: "work", color: .green))
+        XCTAssertEqual(edit.applied(to: [FileTag(name: "Home"), FileTag(name: "Work", color: .red)]),
+                       [FileTag(name: "Home"), FileTag(name: "Work", color: .green)])
+        XCTAssertEqual(edit.applied(to: [FileTag(name: "Home")]), [FileTag(name: "Home")], "never adds the tag")
     }
 
     func testEditorCompletionsFilterKnownTagsByPrefix() async throws {

@@ -103,9 +103,12 @@ public struct MultiProperties: Sendable, Equatable {
     public var extensionHidden: Tri
     /// Which items have a custom icon (P4-08).
     public var customIcon: Tri
+    /// How many selected items are symbolic links (the icon well refuses a selection with any: setting an icon
+    /// would change the link's target).
+    public var symlinks: Int
 
     public init(count: Int, files: Int, folders: Int, totalSize: Int64, locked: Tri, hidden: Tri, extensionHidden: Tri,
-                customIcon: Tri = .off) {
+                customIcon: Tri = .off, symlinks: Int = 0) {
         self.count = count
         self.files = files
         self.folders = folders
@@ -114,6 +117,7 @@ public struct MultiProperties: Sendable, Equatable {
         self.hidden = hidden
         self.extensionHidden = extensionHidden
         self.customIcon = customIcon
+        self.symlinks = symlinks
     }
 }
 
