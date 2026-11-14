@@ -1,6 +1,7 @@
 import Foundation
 import CoreGraphics
 import MacxFS
+import MacxPluginKit
 
 /// One breadcrumb segment: the volume root (index 0) or one path component below it (§5.2).
 struct BreadcrumbSegment: Equatable {
@@ -9,6 +10,8 @@ struct BreadcrumbSegment: Equatable {
     var isVolumeRoot: Bool
     /// SF Symbol for the volume segment (nil for folders).
     var symbolName: String? = nil
+    /// Hover text; nil shows the POSIX path (local folders).
+    var toolTip: String? = nil
 }
 
 /// Pure breadcrumb math (no file-system access).
@@ -36,6 +39,21 @@ enum BreadcrumbPath {
         for component in components.dropFirst(rootCount) {
             url.append(path: component, directoryHint: .isDirectory)
             segments.append(BreadcrumbSegment(title: component, url: url, isVolumeRoot: false))
+        }
+        return segments
+    }
+
+    /// A remote folder (spec §4.2): the repository root (provider symbol + `rootTitle`), then one segment per path
+    /// component; every URL keeps the folder's ref. Pure.
+    static func remoteSegments(for location: RemoteLocation, rootTitle: String, symbol: String) -> [BreadcrumbSegment] {
+        var current = location
+        current.path = []
+        var segments = [BreadcrumbSegment(title: rootTitle, url: current.url, isVolumeRoot: true, symbolName: symbol,
+                                          toolTip: rootTitle)]
+        for component in location.path {
+            current = current.appending(component)
+            segments.append(BreadcrumbSegment(title: component, url: current.url, isVolumeRoot: false,
+                                              toolTip: rootTitle + "/" + current.pathString))
         }
         return segments
     }

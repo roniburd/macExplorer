@@ -180,9 +180,14 @@ final class BrowserSession {
         navigate(to: folder.directory.deletingLastPathComponent(), selecting: child)
     }
 
-    /// F5/⌘R: re-read + diff of the same model (retry from an error state).
+    /// F5/⌘R: re-read + diff of the same model (retry from an error state). A remote folder first drops what its
+    /// provider cached for that ref (spec §4.1), so the re-read sees the repository as it is now.
     func reload() {
         if let results { results.rerun(); return }                          // results: search again
+        if folder.isRemote, let location = RemoteLocation(url: folder.directory),
+           let provider = environment.remote.provider(id: location.provider) {
+            provider.invalidate(repo: location.repo, ref: location.ref)
+        }
         folder.refresh()
         sizeSession?.retry()
     }

@@ -7,6 +7,7 @@ final class AXIDTests: XCTestCase {
         XCTAssertEqual(AXID.window, "macx.window")
         XCTAssertEqual(AXID.addressBar, "macx.addressBar")
         XCTAssertEqual(AXID.addressField, "macx.addressField")
+        XCTAssertEqual(AXID.refChip, "macx.refChip")
         XCTAssertEqual(AXID.breadcrumbSegment(3), "macx.breadcrumb.3")
         XCTAssertEqual(AXID.search, "macx.search")
         XCTAssertEqual(AXID.detailsTable, "macx.details")

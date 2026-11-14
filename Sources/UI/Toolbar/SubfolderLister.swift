@@ -1,6 +1,7 @@
 import Foundation
 import Core
 import MacxFS
+import MacxPluginKit
 
 /// Subfolders of one folder for the breadcrumb's › menus (§5.2). Reads through the folder's volume's
 /// `DirectoryReader` (directories only, no materialization), so it runs on an I/O lane, never on main.
@@ -8,11 +9,17 @@ enum SubfolderLister {
     static let limit = 1_000
 
     /// Folder names (not packages), sorted like Finder; hidden ones only with `showHidden`. [] when unreadable.
-    static func list(_ directory: URL, readers: DirectoryReaders, showHidden: Bool) async -> [String] {
+    static func list(_ directory: URL, readers: DirectoryReaders, remote: ProviderRegistry? = nil,
+                     showHidden: Bool) async -> [String] {
         var options = ReadOptions()
         options.directoriesOnly = true
         options.noMaterialization = true
-        let stream = await readers.reader(for: directory).read(directory, generation: .initial, options: options)
+        let stream: AsyncStream<ReadEvent>
+        if let remote, RemoteLocation(url: directory) != nil {
+            stream = RemoteListingSource(registry: remote, types: .shared).read(directory, generation: .initial, options: options)
+        } else {
+            stream = await readers.reader(for: directory).read(directory, generation: .initial, options: options)
+        }
         var names: [String] = []
         loop: for await event in stream {
             switch event {

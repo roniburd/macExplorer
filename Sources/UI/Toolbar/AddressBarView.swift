@@ -20,6 +20,8 @@ final class AddressBarView: NSView {
     let errorLabel = NSTextField(labelWithString: "")
     /// Search results (P3-10): one non-navigating segment instead of the breadcrumb ("Search Results in “X”").
     let searchSegment = NSButton(title: "", target: nil, action: nil)
+    /// The ref chip after a remote folder's root segment (spec §4.2).
+    let refChip = RefChipController()
     /// The title while search results show; nil shows the breadcrumb.
     private(set) var searchTitle: String?
     private(set) var isEditing = false
@@ -45,11 +47,20 @@ final class AddressBarView: NSView {
 
     required init?(coder: NSCoder) { fatalError("created in code") }
 
-    /// Shows `url` (breadcrumb from `volume`). While editing, the typed text is kept.
+    /// Shows `url` (breadcrumb from `volume`; a remote folder's from its provider, with the ref chip). While editing,
+    /// the typed text is kept.
     func show(_ url: URL, volume: VolumeInfo?) {
         currentURL = url
         searchTitle = nil
-        breadcrumb.show(BreadcrumbPath.segments(for: url, volume: volume))
+        if let location = RemoteLocation(url: url), let provider = environment.remote.provider(id: location.provider) {
+            breadcrumb.show(BreadcrumbPath.remoteSegments(for: location, rootTitle: provider.displayRoot(location),
+                                                          symbol: provider.iconSymbol))
+            refChip.show(location: location, provider: provider)
+            breadcrumb.accessoryAfterRoot = refChip.button
+        } else {
+            breadcrumb.show(BreadcrumbPath.segments(for: url, volume: volume))
+            breadcrumb.accessoryAfterRoot = nil
+        }
         if !isEditing { showDisplayMode() }
     }
 
@@ -184,7 +195,16 @@ final class AddressBarView: NSView {
         searchSegment.action = #selector(searchSegmentClicked(_:))
         let environment = self.environment
         breadcrumb.listSubfolders = { url in
-            await SubfolderLister.list(url, readers: environment.readers, showHidden: environment.settings.showHidden)
+            await SubfolderLister.list(url, readers: environment.readers, remote: environment.remote,
+                                       showHidden: environment.settings.showHidden)
+        }
+        refChip.onChoose = { [weak self] ref in
+            guard let self, let location = self.refChip.location else { return }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let target = await RefSwitch.target(from: location, to: ref, registry: self.environment.remote)
+                self.onNavigate?(target.url, nil)
+            }
         }
         editField.suggestionProvider = { [weak self] text in
             guard let self, let current = self.currentURL else { return [] }

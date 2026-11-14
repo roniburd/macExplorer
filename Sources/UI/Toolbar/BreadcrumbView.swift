@@ -1,6 +1,7 @@
 import AppKit
 import Core
 import MacxFS
+import MacxPluginKit
 
 /// One clickable breadcrumb segment. Segments accept drops (§5.6, P1-36) through their FolderDropForwarder.
 @MainActor
@@ -28,6 +29,15 @@ final class BreadcrumbView: NSView {
     var listSubfolders: ((URL) async -> [String])?
     /// Drops onto segments (P1-36); installed by AddressBarView, which has the UIContext.
     var dropTarget: DropTarget?
+    /// Shown right after the root segment (the remote ref chip, spec §4.2); nil for local folders.
+    var accessoryAfterRoot: NSView? {
+        didSet {
+            guard oldValue !== accessoryAfterRoot else { return }
+            oldValue?.removeFromSuperview()
+            if let accessoryAfterRoot { addSubview(accessoryAfterRoot) }
+            needsLayout = true
+        }
+    }
 
     private(set) var segments: [BreadcrumbSegment] = []
     private(set) var segmentButtons: [BreadcrumbSegmentButton] = []
@@ -76,7 +86,10 @@ final class BreadcrumbView: NSView {
     override func layout() {
         super.layout()
         let height = bounds.height
-        let widths = segmentButtons.map { ceil($0.fittingSize.width) }
+        let buttonWidths = segmentButtons.map { ceil($0.fittingSize.width) }
+        let accessoryWidth = accessoryAfterRoot.map { ceil($0.fittingSize.width) } ?? 0
+        var widths = buttonWidths
+        if !widths.isEmpty { widths[0] += accessoryWidth }      // the chip travels with the root segment
         let chevronWidth = chevronButtons.first.map { ceil($0.fittingSize.width) } ?? 0
         let overflowWidth = ceil(overflowButton.fittingSize.width)
         collapsedCount = BreadcrumbPath.collapsedCount(segmentWidths: widths, chevronWidth: chevronWidth,
@@ -89,13 +102,15 @@ final class BreadcrumbView: NSView {
         }
         overflowButton.isHidden = collapsedCount == 0
         if collapsedCount > 0 { place(overflowButton, width: overflowWidth) }
+        accessoryAfterRoot?.isHidden = segmentButtons.isEmpty || collapsedCount > 0
         for index in segmentButtons.indices {
             let hidden = index < collapsedCount
             segmentButtons[index].isHidden = hidden
             chevronButtons[index].isHidden = hidden
             guard !hidden else { continue }
             let room = max(0, bounds.width - x - chevronWidth)
-            place(segmentButtons[index], width: min(widths[index], room))
+            place(segmentButtons[index], width: min(buttonWidths[index], room))
+            if index == 0, let accessory = accessoryAfterRoot { place(accessory, width: accessoryWidth) }
             place(chevronButtons[index], width: chevronWidth)
         }
     }
@@ -155,10 +170,15 @@ final class BreadcrumbView: NSView {
             return menu
         }
         for name in names {
-            menu.addItem(folderItem(title: name, url: folder.appending(path: name, directoryHint: .isDirectory),
+            menu.addItem(folderItem(title: name, url: childURL(folder, name),
                                     target: target, symbol: "folder"))
         }
         return menu
+    }
+
+    /// A subfolder's URL: through RemoteLocation for remote folders (escaping stays the location's), else a path.
+    static func childURL(_ folder: URL, _ name: String) -> URL {
+        RemoteLocation(url: folder).map { $0.appending(name).url } ?? folder.appending(path: name, directoryHint: .isDirectory)
     }
 
     private static func folderItem(title: String, url: URL, target: BreadcrumbView, symbol: String) -> NSMenuItem {
@@ -180,7 +200,7 @@ final class BreadcrumbView: NSView {
         button.showsBorderOnlyWhileMouseInside = true
         button.lineBreakMode = .byTruncatingMiddle
         button.setAccessibilityIdentifier(AXID.breadcrumbSegment(index))
-        button.toolTip = BreadcrumbPath.posixPath(segment.url)
+        button.toolTip = segment.toolTip ?? BreadcrumbPath.posixPath(segment.url)
         if let symbol = segment.symbolName {
             button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
             button.imagePosition = .imageLeading

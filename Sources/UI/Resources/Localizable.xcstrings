@@ -1081,6 +1081,17 @@
         }
       }
     },
+    "Branch or Tag" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Branch or Tag"
+          }
+        }
+      }
+    },
     "Bring All to Front" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1863,6 +1874,17 @@
         }
       }
     },
+    "Couldn't load branches and tags" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't load branches and tags"
+          }
+        }
+      }
+    },
     "Counting…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2035,6 +2057,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dates:"
+          }
+        }
+      }
+    },
+    "Default Branch" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Default Branch"
           }
         }
       }
@@ -2739,6 +2772,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Filter This Folder"
+          }
+        }
+      }
+    },
+    "Filter branches and tags, or type a commit" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filter branches and tags, or type a commit"
           }
         }
       }

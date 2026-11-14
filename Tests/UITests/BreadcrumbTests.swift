@@ -3,6 +3,7 @@ import AppKit
 @testable import UI
 import Core
 import MacxFS
+import MacxPluginKit
 
 @MainActor
 final class BreadcrumbTests: XCTestCase {
@@ -147,5 +148,40 @@ final class BreadcrumbTests: XCTestCase {
         XCTAssertEqual(Set(all), [".secret", "alpha", "Beta"])
         let missing = await SubfolderLister.list(h.url("nope"), readers: readers, showHidden: false)
         XCTAssertEqual(missing, [])
+    }
+
+    // MARK: remote folders (spec §4.2)
+
+    func testRemoteSegmentsRunFromTheRepositoryRoot() {
+        let location = RemoteLocation(provider: "test.fake", repo: "octo/demo", ref: "main", path: ["src", "lib"])
+        let segments = BreadcrumbPath.remoteSegments(for: location, rootTitle: "octo/demo", symbol: "shippingbox")
+        XCTAssertEqual(segments.map(\.title), ["octo/demo", "src", "lib"])
+        XCTAssertEqual(segments.map(\.isVolumeRoot), [true, false, false])
+        XCTAssertEqual(segments.first?.symbolName, "shippingbox")
+        XCTAssertEqual(segments.map { RemoteLocation(url: $0.url)?.path }, [[], ["src"], ["src", "lib"]])
+        XCTAssertEqual(segments.map { RemoteLocation(url: $0.url)?.ref }, ["main", "main", "main"])
+        XCTAssertEqual(segments.last?.toolTip, "octo/demo/src/lib")
+    }
+
+    func testSubfolderMenuItemsOfARemoteFolderStayRemote() {
+        let folder = RemoteLocation(provider: "test.fake", repo: "octo/demo", ref: "main", path: ["src"])
+        let child = BreadcrumbView.childURL(folder.url, "my lib")
+        XCTAssertEqual(RemoteLocation(url: child), folder.appending("my lib"))
+        let local = BreadcrumbView.childURL(dir("/a"), "b")
+        XCTAssertEqual(local.path(percentEncoded: false), "/a/b/")
+    }
+
+    func testAccessoryAfterRootSitsBetweenTheRootAndItsChevron() {
+        let view = BreadcrumbView(frame: NSRect(x: 0, y: 0, width: 600, height: 28))
+        let location = RemoteLocation(provider: "test.fake", repo: "octo/demo", ref: "main", path: ["src"])
+        view.show(BreadcrumbPath.remoteSegments(for: location, rootTitle: "octo/demo", symbol: "shippingbox"))
+        let chip = NSButton(title: "main ▾", target: nil, action: nil)
+        view.accessoryAfterRoot = chip
+        view.layout()
+        XCTAssertFalse(chip.isHidden)
+        XCTAssertGreaterThanOrEqual(chip.frame.minX, view.segmentButtons[0].frame.maxX)
+        XCTAssertLessThanOrEqual(chip.frame.maxX, view.chevronButtons[0].frame.minX)
+        view.accessoryAfterRoot = nil
+        XCTAssertNil(chip.superview)
     }
 }

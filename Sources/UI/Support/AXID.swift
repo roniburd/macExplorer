@@ -5,6 +5,7 @@ enum AXID {
     static let window = "macx.window"
     static let addressBar = "macx.addressBar"
     static let addressField = "macx.addressField"
+    static let refChip = "macx.refChip"
     static func breadcrumbSegment(_ index: Int) -> String { "macx.breadcrumb.\(index)" }
     static let search = "macx.search"
     static let detailsTable = "macx.details"
