@@ -43,6 +43,16 @@ public final class Clipboard {
         observers.send(())
     }
 
+    /// ⌘C in a repository folder: remote URLs for an in-app paste, web URLs as text for other apps (spec §4.5).
+    public func copyRemote(_ urls: [URL], webURLs: [URL]) {
+        guard !urls.isEmpty else { return }
+        backend.writeRemoteItems(urls, webText: webURLs.map(\.absoluteString).joined(separator: "\n"))
+        resetCut()
+    }
+
+    /// What ⌘V downloads, when the pasteboard holds remote items.
+    public var remoteItems: [URL] { backend.readRemoteItems() }
+
     /// Valid only while backend.changeCount == the count recorded at cut time, in this process.
     public var cutURLs: Set<URL> { isCutValid ? cutSet : [] }
 
@@ -72,7 +82,7 @@ public final class Clipboard {
         resetCut()
     }
 
-    public var canPaste: Bool { backend.hasFileURLs() }
+    public var canPaste: Bool { backend.hasFileURLs() || backend.hasRemoteItems() }
 
     /// moveItemHere: ⌥⌘V (move whatever file URLs are present). Returns nil when nothing pasteable.
     public func pastePlan(into folder: URL, moveItemHere: Bool) -> PastePlan? {

@@ -8,6 +8,9 @@ import Foundation
     public static let cutMarkerType: String = "com.macexplorer.cut"
     static let filenamesType = NSPasteboard.PasteboardType("NSFilenamesPboardType")
     static let markerType = NSPasteboard.PasteboardType(cutMarkerType)
+    /// One remote URL per pasteboard item (⌘C in a repository folder, and our own remote drags; spec §4.5).
+    nonisolated public static let remoteItemsType = "com.macexplorer.remote-items"
+    static let remoteType = NSPasteboard.PasteboardType(remoteItemsType)
 
     private let pasteboard: NSPasteboard
 
@@ -73,6 +76,27 @@ import Foundation
         guard let types = pasteboard.types else { return false }
         return types.contains(.fileURL) || types.contains(Self.filenamesType)
     }
+
+    @discardableResult public func writeRemoteItems(_ urls: [URL], webText: String) -> Int {
+        pasteboard.clearContents()
+        provider = nil
+        guard !urls.isEmpty else { return pasteboard.changeCount }
+        let items = urls.map { url -> NSPasteboardItem in
+            let item = NSPasteboardItem()
+            item.setString(url.absoluteString, forType: Self.remoteType)
+            return item
+        }
+        items[0].setString(webText, forType: .string)
+        pasteboard.writeObjects(items)
+        return pasteboard.changeCount
+    }
+
+    public func readRemoteItems() -> [URL] {
+        guard hasRemoteItems() else { return [] }
+        return (pasteboard.pasteboardItems ?? []).compactMap { $0.string(forType: Self.remoteType).flatMap(URL.init(string:)) }
+    }
+
+    public func hasRemoteItems() -> Bool { pasteboard.types?.contains(Self.remoteType) ?? false }
 
     public func hasCutMarker() -> Bool {
         pasteboard.types?.contains(Self.markerType) ?? false

@@ -43,7 +43,7 @@ extension ErrorText {
 
     private static func permissionKey(_ verb: JobVerb?) -> String {
         switch verb {
-        case .copying?: "You don't have permission to copy '%@'."
+        case .copying?, .downloading?: "You don't have permission to copy '%@'."
         case .moving?: "You don't have permission to move '%@'."
         case .trashing?: "You don't have permission to move '%@' to the Trash."
         case .deleting?: "You don't have permission to delete '%@'."

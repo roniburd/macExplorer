@@ -2,6 +2,7 @@
 import AppKit
 import Core
 import MacxFS
+import MacxPluginKit
 
 /// Drag pasteboard payload (§5.6): every URL as its own public.file-url item (the legacy NSFilenamesPboardType path
 /// list is derived from them by the pasteboard), and the secondary-drag marker for right-drags.
@@ -91,16 +92,28 @@ final class DragSourceController: NSObject, NSDraggingSource {
     private let icons: IconCache
     private var pendingURLs: [URL] = []
     private var pendingSecondary = false
+    /// A drag of remote rows (file promises, copy only; spec §4.5) is in progress.
+    private var pendingRemote = false
+    private var promiseDelegate: RemoteFilePromiseDelegate?
+    private let environment: CoreEnvironment?
     private(set) var isDragging = false
 
-    init(icons: IconCache) {
+    /// `environment` is needed only for drags out of repository folders (nil: remote rows can't be dragged).
+    init(icons: IconCache, environment: CoreEnvironment? = nil) {
         self.icons = icons
+        self.environment = environment
         super.init()
     }
 
     func begin(event: NSEvent, rows: IndexSet, source: any RowSource, view: NSView, rowFrame: (Int) -> NSRect, secondary: Bool) {
         let valid = rows.filteredIndexSet { $0 < source.rowCount }
         guard !valid.isEmpty else { return }
+        if let folder = source as? FolderModel, folder.isRemote {
+            if let environment {
+                beginRemote(event: event, rows: Array(valid), folder: folder, view: view, rowFrame: rowFrame, environment: environment)
+            }
+            return
+        }
         let sample = Array(valid.prefix(5))
         begin(event: event, urls: valid.map { source.url(atRow: $0) }, typeIndices: sample.map { source.entry(atRow: $0).typeIndex },
               view: view, frame: { rowFrame(sample[$0]) }, secondary: secondary)
@@ -131,16 +144,49 @@ final class DragSourceController: NSObject, NSDraggingSource {
         session.draggingFormation = .none
     }
 
+    /// Remote rows (spec §4.5): one file promise per item, downloaded only when dropped.
+    private func beginRemote(event: NSEvent, rows: [Int], folder: FolderModel, view: NSView, rowFrame: (Int) -> NSRect,
+                             environment: CoreEnvironment) {
+        guard !isDragging else { return }
+        let delegate = RemoteFilePromiseDelegate(environment: environment)
+        promiseDelegate = delegate
+        pendingRemote = true
+        isDragging = true
+        let scale = Double(view.window?.backingScaleFactor ?? 2)
+        let sample = Array(rows.prefix(5))
+        let composite = DragImageComposer.image(icons: sample.map { icons.typeIcon(folder.entry(atRow: $0).typeIndex, points: 48, scale: scale) },
+                                                count: rows.count, scale: CGFloat(scale))
+        let items: [NSDraggingItem] = rows.enumerated().map { index, row in
+            let kind: RemoteItemKind = folder.entry(atRow: row).kind == .directory ? .directory : .file
+            let provider = RemoteFilePromiseProvider(
+                remoteURL: folder.url(atRow: row),
+                fileType: RemoteFilePromiseProvider.fileType(for: RemoteItem(name: folder.name(atRow: row), kind: kind)),
+                delegate: delegate)
+            let item = NSDraggingItem(pasteboardWriter: provider)
+            let origin = index < sample.count ? rowFrame(row).origin : rowFrame(sample[0]).origin
+            item.setDraggingFrame(NSRect(origin: origin, size: index == 0 ? composite.size : NSSize(width: 1, height: 1)),
+                                  contents: index == 0 ? composite : nil)
+            return item
+        }
+        let session = view.beginDraggingSession(with: items, event: event, source: self)
+        session.animatesToStartingPositionsOnCancelOrFail = true
+        session.draggingFormation = .none
+    }
+
     func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
-        [.copy, .move, .link, .generic]
+        pendingRemote ? [.copy] : [.copy, .move, .link, .generic]
     }
 
     func draggingSession(_ session: NSDraggingSession, willBeginAt screenPoint: NSPoint) {
-        DragPasteboard.write(pendingURLs, secondary: pendingSecondary, to: session.draggingPasteboard)
+        // Remote drags carry their own pasteboard writers (the file promises); file URLs would point at nothing.
+        if !pendingRemote { DragPasteboard.write(pendingURLs, secondary: pendingSecondary, to: session.draggingPasteboard) }
     }
 
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
         pendingURLs = []
+        pendingRemote = false
         isDragging = false
+        // promiseDelegate stays until the next remote drag: a receiving app (Finder) asks for the promised files
+        // after the drop, possibly after the session ended, and NSFilePromiseProvider's delegate is weak.
     }
 }

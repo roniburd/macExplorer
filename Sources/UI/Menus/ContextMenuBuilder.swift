@@ -1,6 +1,7 @@
 import AppKit
 import Core
 import MacxFS
+import MacxPluginKit
 
 /// Retains the (command, target) of a context-menu item and validates it through the handler. NSMenuItem.target is
 /// weak, so the item's representedObject holds the box.
@@ -155,6 +156,19 @@ final class ContextMenuBuilder {
         let share = NSSharingServicePicker(items: valid.map { folder.url(atRow: $0) }).standardShareMenuItem
         share.identifier = NSUserInterfaceItemIdentifier("macx.menu.share")
         menu.addItem(share)
+        if folder.isRemote, let location = RemoteLocation(url: folder.directory),
+           let provider = context.environment.remote.provider(id: location.provider),
+           case let urls = valid.map({ folder.url(atRow: $0) }).compactMap({ RemoteLocation(url: $0).flatMap(provider.webURL) }),
+           !urls.isEmpty {
+            // "Open on <provider>" (spec §4.5): the items' web pages; left out for a provider without web pages.
+            let item = NSMenuItem(title: String(format: L10n.string("Open on %@"), provider.displayName),
+                                  action: #selector(RemoteMenuTarget.open(_:)), keyEquivalent: "")
+            RemoteMenuTarget.shared.opener = ExternalOpeners.opener(for: context.options)
+            item.target = RemoteMenuTarget.shared
+            item.representedObject = urls
+            item.identifier = NSUserInterfaceItemIdentifier("macx.menu.openOnProvider")
+            menu.addItem(item)
+        }
         menu.addItem(.separator())
         add(.properties, target, handler, to: menu)
         return menu   // AppKit appends Services ▸ for the list views' NSServicesMenuRequestor when it pops the menu

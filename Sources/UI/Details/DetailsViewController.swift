@@ -189,7 +189,7 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     var mapping: RowMapping { groupedRows.map(RowMapping.grouped) ?? .identity(count: source?.rowCount ?? 0) }
     /// Model rows of collapsed groups (FileListView): ⌘A and Invert Selection leave them out (QA round 2).
     var hiddenModelRows: IndexSet { mapping.hiddenModelRows }
-    lazy var dragSource = DragSourceController(icons: context.icons)
+    lazy var dragSource = DragSourceController(icons: context.icons, environment: context.environment)
     var rightDrag = RightDragTracker()
     var rightDownEvent: NSEvent?
     /// A press on blank space that a drag turns into a selection box (DetailsViewController+RubberBand).

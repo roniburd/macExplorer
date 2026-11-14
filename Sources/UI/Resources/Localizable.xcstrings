@@ -2303,6 +2303,17 @@
         }
       }
     },
+    "Download" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download"
+          }
+        }
+      }
+    },
     "Download for Preview" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2321,6 +2332,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Download to preview (%@)"
+          }
+        }
+      }
+    },
+    "Downloading %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Downloading %@"
+          }
+        }
+      }
+    },
+    "Downloading %@ from %@ to %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Downloading %@ from %@ to %@"
+          }
+        }
+      }
+    },
+    "Downloading %@ to %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Downloading %@ to %@"
           }
         }
       }
@@ -4576,6 +4620,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Open in Terminal"
+          }
+        }
+      }
+    },
+    "Open on %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open on %@"
           }
         }
       }

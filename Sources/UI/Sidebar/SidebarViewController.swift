@@ -16,7 +16,7 @@ final class SidebarViewController: CommandHandlingViewController {
     let session: BrowserSession
     let outlineView = SidebarOutlineView()
     /// Right-drags from FOLDERS tree rows (§5.6).
-    private(set) lazy var dragSource = DragSourceController(icons: context.icons)
+    private(set) lazy var dragSource = DragSourceController(icons: context.icons, environment: context.environment)
     let tree: FolderTreeController
     let favorites: SidebarFavoritesModel
     /// Middle-click / ⌘-click on a row (P2-06): a background tab of this window (tests replace it).

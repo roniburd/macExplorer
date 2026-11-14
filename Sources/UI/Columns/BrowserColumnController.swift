@@ -117,7 +117,7 @@ final class BrowserColumnController: NSViewController, FileListView, FocusableLi
     let mouse = ListMouseHandler()
     let typeSelect = TypeSelect()
     private(set) var renameController: InlineRenameController?
-    lazy var dragSource = DragSourceController(icons: context.icons)
+    lazy var dragSource = DragSourceController(icons: context.icons, environment: context.environment)
     private var rightDrag = RightDragTracker()
     private var rightDownEvent: NSEvent?
     private var middleClick = MiddleClickTracker()

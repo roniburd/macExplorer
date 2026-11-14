@@ -8,6 +8,7 @@ import MacxFS
 public final class OperationsCenter {
     public private(set) var jobs: [JobSnapshot] = []
     private var revealed: Set<JobID> = []
+    @ObservationIgnored private var externalCancels: [JobID: @MainActor () -> Void] = [:]
 
     private let queue: FileOpQueue
     private let undo: FileOpUndoStack
@@ -93,6 +94,39 @@ public final class OperationsCenter {
             guard let self, self.jobs.contains(where: { $0.id == id }) else { return }
             self.revealed.insert(id)
         }
+    }
+
+    // MARK: external activities (remote downloads, spec §4.5)
+
+    /// A row for work that does not run in the FileOpQueue (downloads from a repository). Revealed after the same
+    /// delay as jobs; the panel's cancel button calls `cancel`.
+    public func beginExternal(_ description: JobDescription, cancel: @escaping @MainActor () -> Void) -> JobID {
+        let id = JobID()
+        externalCancels[id] = cancel
+        jobs.append(JobSnapshot(id: id, description: description, state: .running, progress: JobProgress(),
+                                origin: nil, startedAt: .now))
+        scheduleReveal(id)
+        return id
+    }
+
+    public func updateExternal(_ id: JobID, _ progress: JobProgress) {
+        guard let i = jobs.firstIndex(where: { $0.id == id }) else { return }
+        jobs[i].progress = progress
+    }
+
+    public func endExternal(_ id: JobID) {
+        externalCancels[id] = nil
+        jobs.removeAll { $0.id == id }
+        revealed.remove(id)
+    }
+
+    /// true when `id` is an external activity (its cancel handler ran); false for queue jobs.
+    @discardableResult
+    public func cancelExternal(_ id: JobID) -> Bool {
+        guard let cancel = externalCancels[id] else { return false }
+        if let i = jobs.firstIndex(where: { $0.id == id }) { jobs[i].state = .cancelling }
+        cancel()
+        return true
     }
 
     /// Returns after the finished job's changes were posted and its undo entry registered.

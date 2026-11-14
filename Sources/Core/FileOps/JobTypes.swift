@@ -149,7 +149,7 @@ public enum JobState: Sendable, Equatable { case queued, planning, running, paus
 
 public enum JobVerb: String, Sendable, Codable {
     case copying, moving, trashing, deleting, duplicating, creating, renaming, makingAlias, makingSymlink,
-         changingPermissions, changingAttributes, changingAccess, changingIcon, compressing, extracting, batchRenaming, undoing, redoing
+         changingPermissions, changingAttributes, changingAccess, changingIcon, compressing, extracting, batchRenaming, undoing, redoing, downloading
 }
 
 /// UI formats "Copying 1,204 items from Downloads to Backup".

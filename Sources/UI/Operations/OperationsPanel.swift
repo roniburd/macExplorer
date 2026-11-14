@@ -77,7 +77,10 @@ final class OperationsUI {
         return OperationsListView(operations: context.environment.operations, actions: JobActions(
             pause: { id in Task { await queue.pause(id) } },
             resume: { id in Task { await queue.resume(id) } },
-            cancel: { id in Task { await queue.cancel(id) } },
+            cancel: { [operations = context.environment.operations] id in
+                // External activities (remote downloads) cancel through their own handler, not the queue.
+                if !operations.cancelExternal(id) { Task { await queue.cancel(id) } }
+            },
             showQuestion: { [weak router] id in router?.revealQuestion(for: id) }))
     }
 }

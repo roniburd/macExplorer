@@ -13,6 +13,11 @@ import Foundation
     @discardableResult func writeString(_ string: String) -> Int
     /// The plain-text contents, or nil when the pasteboard holds no text.
     func readString() -> String?
+    /// Remote items (⌘C in a repository folder, spec §4.5): the private remote-items type (one remote URL each) and
+    /// their web URLs as plain text, no file URLs. Returns the new changeCount.
+    @discardableResult func writeRemoteItems(_ urls: [URL], webText: String) -> Int
+    func readRemoteItems() -> [URL]
+    func hasRemoteItems() -> Bool
 }
 
 /// In-process pasteboard for tests and scenarios. Never touches NSPasteboard.
@@ -21,12 +26,14 @@ import Foundation
     private var urls: [URL] = []
     private var marker = false
     private var text: String?
+    private var remote: [URL] = []
 
     public init() {}
 
     @discardableResult public func writeFileURLs(_ urls: [URL], cutMarker: Bool) -> Int {
         self.urls = urls
         marker = cutMarker
+        remote = []
         text = urls.isEmpty ? nil : urls.map { PathFormatter.posixPath($0) }.joined(separator: "\n")
         changeCount += 1
         return changeCount
@@ -35,10 +42,22 @@ import Foundation
     @discardableResult public func writeString(_ string: String) -> Int {
         urls = []
         marker = false
+        remote = []
         text = string
         changeCount += 1
         return changeCount
     }
+
+    @discardableResult public func writeRemoteItems(_ urls: [URL], webText: String) -> Int {
+        self.urls = []
+        marker = false
+        remote = urls
+        text = webText
+        changeCount += 1
+        return changeCount
+    }
+    public func readRemoteItems() -> [URL] { remote }
+    public func hasRemoteItems() -> Bool { !remote.isEmpty }
 
     public func readString() -> String? { text }
 

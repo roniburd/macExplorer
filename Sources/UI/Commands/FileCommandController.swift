@@ -1,6 +1,7 @@
 import AppKit
 import Core
 import MacxFS
+import MacxPluginKit
 
 /// Runs every Command for every CommandTarget (§5.3, §5.4, §5.6, §5.7). The responder-chain @objc actions in
 /// CommandHandlingViewController, the command bar, context menus and KeyRouter alternates all end here.
@@ -86,7 +87,9 @@ final class FileCommandController: CommandHandler {
         case .openInTerminal: openInTerminal(target)
         case .revealInFinder: reveal(target)
         case .cut: environment.clipboard.cut(subjectURLs(target))
-        case .copy: environment.clipboard.copy(subjectURLs(target))
+        case .copy:
+            if case .contentSelection(let folder) = target, folder.isRemote { copyRemote(subjectURLs(target)) }
+            else { environment.clipboard.copy(subjectURLs(target)) }
         case .paste: paste(target, moveItemHere: false)
         case .moveItemHere: paste(target, moveItemHere: true)
         case .selectAll: select(.allVisible(excluding: hiddenModelRows(target)), target)
@@ -261,6 +264,10 @@ final class FileCommandController: CommandHandler {
     /// --pasteboard or, in a sandboxed run without one, memory (never NSPasteboard.general). A stale favorite gives no
     /// items, so nothing is copied. `perform` revalidates the clipboard afterwards, which drops a replaced cut.
     private func copyPaths(_ style: PathStyle, target: CommandTarget) {
+        if let text = remotePathText(style, target: target) {
+            environment.clipboard.backend.writeString(text)
+            return
+        }
         let items = Self.pathItems(for: target)
         guard !items.isEmpty else { return }
         environment.clipboard.backend.writeString(PathFormatter.format(items, style: style, home: environment.settings.home))
@@ -288,6 +295,44 @@ final class FileCommandController: CommandHandler {
         case .volume(let volume): [PathItem(url: volume.mountPoint, isDirectory: true)]
         case .savedSearch: []
         }
+    }
+
+    // MARK: remote (spec §4.5)
+
+    func copyRemote(_ urls: [URL]) {
+        environment.clipboard.copyRemote(urls, webURLs: urls.compactMap(webURL))
+    }
+
+    func webURL(_ url: URL) -> URL? {
+        guard let location = RemoteLocation(url: url) else { return nil }
+        return environment.remote.provider(id: location.provider)?.webURL(location)
+    }
+
+    /// Copy as Path in a repository folder copies web URLs; Copy Name stays the names. nil = not remote, or the
+    /// selection's names (PathFormatter's name style already gives the rows' raw names).
+    private func remotePathText(_ style: PathStyle, target: CommandTarget) -> String? {
+        let urls: [URL]
+        switch target {
+        case .contentSelection(let folder) where folder.isRemote:
+            if style == .name { return nil }
+            urls = subjectURLs(target)
+        case .currentFolder(let folder) where folder.isRemote:
+            if style == .name {
+                guard let l = RemoteLocation(url: folder.directory) else { return nil }
+                return l.name ?? environment.remote.provider(id: l.provider)?.displayRoot(l) ?? l.repo
+            }
+            urls = [folder.directory]
+        default: return nil
+        }
+        return urls.isEmpty ? nil : urls.map(webText).joined(separator: "\n")
+    }
+
+    /// The web URL, or "<display root>/<path>" for a provider without web pages.
+    func webText(_ url: URL) -> String {
+        if let web = webURL(url) { return web.absoluteString }
+        guard let l = RemoteLocation(url: url) else { return url.absoluteString }
+        let root = environment.remote.provider(id: l.provider)?.displayRoot(l) ?? l.repo
+        return l.path.isEmpty ? root : root + "/" + l.pathString
     }
 
     // MARK: subjects and destinations

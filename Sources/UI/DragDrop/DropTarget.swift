@@ -98,6 +98,8 @@ final class DropTarget {
 
     func validate(_ info: any NSDraggingInfo, destination: URL) -> NSDragOperation {
         if RemoteScheme.isRemote(destination) { info.numberOfValidItemsForDrop = 0; return [] }
+        // Our own drag out of a repository (spec §4.5): copy only, downloaded then copied by RemoteTransfer.
+        if !RemoteItemsPasteboard.read(info.draggingPasteboard).isEmpty { return destination.isFileURL ? .copy : [] }
         if Self.isPromiseOnly(info.draggingPasteboard) { return .copy }
         let urls = sources(info)
         let op = operation(sources: urls, destination: destination, modifiers: DragModifiers(NSEvent.modifierFlags),
@@ -108,6 +110,10 @@ final class DropTarget {
 
     func perform(_ info: any NSDraggingInfo, destination: URL, in view: NSView) -> Bool {
         if RemoteScheme.isRemote(destination) { return false }
+        let remote = RemoteItemsPasteboard.read(info.draggingPasteboard)
+        if !remote.isEmpty {
+            return RemoteTransfer.copy(remote, into: destination, environment: context.environment, origin: origin) != nil
+        }
         if Self.isPromiseOnly(info.draggingPasteboard) { return receivePromises(info.draggingPasteboard, destination: destination) }
         let urls = sources(info)
         let op = operation(sources: urls, destination: destination, modifiers: DragModifiers(NSEvent.modifierFlags),

@@ -156,7 +156,7 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
     /// Installed by ContentViewController (P2-06): a middle-click on item `row` (the selection is not touched).
     var onNewTabGesture: ((NewTabGesture, Int) -> Void)?
     private var middleClick = MiddleClickTracker()
-    lazy var dragSource = DragSourceController(icons: context.icons)
+    lazy var dragSource = DragSourceController(icons: context.icons, environment: context.environment)
     var rightDrag = RightDragTracker()
     var rightDownEvent: NSEvent?
     var focusView: NSView { collectionView }

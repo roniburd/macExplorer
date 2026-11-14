@@ -28,6 +28,8 @@ enum JobTitle {
         case .extracting: return String(format: L10n.string("Extracting %@"), what)
         case .undoing: return String(format: L10n.string("Undoing changes to %@"), what)
         case .redoing: return String(format: L10n.string("Redoing changes to %@"), what)
+        case .downloading:
+            return route(L10n.string("Downloading %@"), L10n.string("Downloading %@ to %@"), L10n.string("Downloading %@ from %@ to %@"), what, from, to)
         }
     }
 

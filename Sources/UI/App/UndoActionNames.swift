@@ -22,6 +22,7 @@ public enum UndoActionNames {
         case .batchRenaming: L10n.string("Rename")
         case .undoing: L10n.string("Undo")
         case .redoing: L10n.string("Redo")
+        case .downloading: L10n.string("Download")     // a download never registers undo
         }
     }
 }
