@@ -58,4 +58,15 @@ final class RemoteGuardsTests: XCTestCase {
         let slash = FolderViewLocator(url: URL(string: remote.absoluteString + "/")!, volume: nil, fileID: nil)
         XCTAssertEqual(slash.path, remote.absoluteString)
     }
+
+    /// One folder, one key: a URL built by `appending(path:)` (double-click) leaves "@", "(", ")" unencoded, while
+    /// `RemoteLocation.url` (breadcrumb, address bar, ref switch, restore) encodes them.
+    func testFolderViewLocatorCanonicalizesRemoteEncoding() throws {
+        let loc = try XCTUnwrap(RemoteLocation(url: remote))
+        for name in ["a@b(1)", "it's", "a+b", "x=y,z;"] {
+            let appended = remote.appending(path: name, directoryHint: .isDirectory)
+            XCTAssertEqual(FolderViewLocator(url: appended, volume: nil, fileID: nil).path,
+                           FolderViewLocator(url: loc.appending(name).url, volume: nil, fileID: nil).path, name)
+        }
+    }
 }

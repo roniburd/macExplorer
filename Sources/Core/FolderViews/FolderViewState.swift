@@ -1,5 +1,6 @@
 import Foundation
 import MacxFS
+import MacxPluginKit
 
 /// The view a folder is shown with, every field resolved (spec §11 Phase 2 + design 2026-11-05 §2): mode, columns,
 /// sort, icon size, row density, Group by, and whether folder sizes are calculated. Built field by field by
@@ -60,10 +61,11 @@ public struct FolderViewLocator: Sendable, Equatable {
         self.fileID = fileID
     }
 
-    /// Standardized absolute path without a trailing slash ("/" stays "/"); a remote folder's URL string.
+    /// Standardized absolute path without a trailing slash ("/" stays "/"); a remote folder's canonical URL string
+    /// (re-encoded through `RemoteLocation`, since `URL.appending(path:)` leaves "@", "(", "+" etc. unencoded).
     public static func standardPath(_ url: URL) -> String {
         if RemoteScheme.isRemote(url) {
-            var s = url.absoluteString
+            var s = RemoteLocation(url: url)?.url.absoluteString ?? url.absoluteString
             while s.hasSuffix("/") { s.removeLast() }
             return s
         }
