@@ -107,7 +107,11 @@ public final class Volumes {
         await refresh()
     }
 
-    public func volume(for url: URL) -> VolumeInfo? { mountTable.volume(containing: url.path(percentEncoded: false)) }
+    /// Remote URLs get their repository's synthetic volume (their path would otherwise match "/").
+    public func volume(for url: URL) -> VolumeInfo? {
+        if RemoteScheme.isRemote(url) { return VolumeInfo.remote(url: url) }
+        return mountTable.volume(containing: url.path(percentEncoded: false))
+    }
 
     public func cachedAvailableCapacity(_ volume: VolumeID) -> Int64? { capacity[volume] }
 

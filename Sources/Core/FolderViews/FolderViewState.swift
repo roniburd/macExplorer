@@ -60,14 +60,22 @@ public struct FolderViewLocator: Sendable, Equatable {
         self.fileID = fileID
     }
 
-    /// Standardized absolute path without a trailing slash ("/" stays "/").
+    /// Standardized absolute path without a trailing slash ("/" stays "/"); a remote folder's URL string.
     public static func standardPath(_ url: URL) -> String {
+        if RemoteScheme.isRemote(url) {
+            var s = url.absoluteString
+            while s.hasSuffix("/") { s.removeLast() }
+            return s
+        }
         var p = url.standardizedFileURL.path(percentEncoded: false)
         while p.count > 1, p.hasSuffix("/") { p.removeLast() }
         return p
     }
 
-    public var url: URL { URL(filePath: path, directoryHint: .isDirectory) }
+    public var url: URL {
+        if path.hasPrefix(RemoteScheme.name + "://"), let remote = URL(string: path) { return remote }
+        return URL(filePath: path, directoryHint: .isDirectory)
+    }
 
     public var objectKey: FolderViewKey? {
         guard let volume, volume.capabilities.idStable, volume.id.raw.hasPrefix("uuid:"), let fileID else { return nil }

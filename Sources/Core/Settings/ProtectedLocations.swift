@@ -6,6 +6,7 @@ public enum ProtectedLocations {
     /// `volume` is the volume containing `url` (or nil when unknown). Home-relative folders win over the volume kind.
     /// Paths are compared standardized, with `/private/var` ≡ `/var` (and `/tmp`, `/etc`), and case-insensitively.
     public static func classify(_ url: URL, home: URL, volume: VolumeInfo?) -> ProtectedLocation? {
+        if RemoteScheme.isRemote(url) { return nil }   // remote folders need no macOS permission
         let path = components(url)
         let base = components(home)
         if path.count > base.count, zip(base, path).allSatisfy({ same($0, $1) }) {
