@@ -1,4 +1,5 @@
 import Foundation
+import MacxPluginKit
 
 /// What a palette row does: run a command through the target window's responder chain, or go to a folder.
 /// Equal when their `encoded` forms are: a folder is the same row with or without a trailing slash.
@@ -9,10 +10,12 @@ public enum PaletteTarget: Sendable, Hashable {
     public static func == (a: PaletteTarget, b: PaletteTarget) -> Bool { a.encoded == b.encoded }
     public func hash(into hasher: inout Hasher) { hasher.combine(encoded) }
 
-    /// The stored form in `Settings.paletteRecent`: "cmd:<raw>" or "loc:<path>".
+    /// The stored form in `Settings.paletteRecent`: "cmd:<raw>", "loc:<path>", or "loc:<remote URL>" for a remote
+    /// folder (never a path: a remote URL's path would read back as a boot-volume folder).
     public var encoded: String {
         switch self {
         case .command(let command): "cmd:" + command.rawValue
+        case .location(let url) where RemoteLocation(url: url) != nil: "loc:" + url.absoluteString
         case .location(let url): "loc:" + Self.path(of: url)
         }
     }
@@ -21,6 +24,9 @@ public enum PaletteTarget: Sendable, Hashable {
     public init?(encoded: String) {
         if encoded.hasPrefix("cmd:"), let command = Command(rawValue: String(encoded.dropFirst(4))) {
             self = .command(command)
+        } else if encoded.hasPrefix("loc:" + RemoteLocation.scheme + ":") {
+            guard let url = URL(string: String(encoded.dropFirst(4))), RemoteLocation(url: url) != nil else { return nil }
+            self = .location(url)
         } else if encoded.hasPrefix("loc:"), encoded.count > 4 {
             self = .location(URL(filePath: String(encoded.dropFirst(4)), directoryHint: .isDirectory))
         } else {

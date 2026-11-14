@@ -3,6 +3,8 @@ import AppKit
 @testable import UI
 import Core
 import MacxFS
+import MacxFixtures
+import MacxPluginKit
 
 /// P4-03: the command palette (⌘⇧P) over a real browser window on a Sandbox folder. Rows run through the target
 /// window's responder chain; no system pasteboard, no panels, files only in the harness sandbox.
@@ -85,6 +87,36 @@ import MacxFS
         // The next palette lists it first on an empty query (MRU).
         let again = CommandPaletteController.show(over: window.window!, context: ui.context)
         XCTAssertEqual(again.visibleItems.first?.target, .location(projects))
+    }
+
+    func testRemoteRecentsBecomeRemoteRowsAndNeverFileURLs() async throws {
+        try XCTSkipUnless(NSScreen.main != nil, "needs a window server")
+        let ui = try await ContentTestHarness.make(self)
+        _ = ui.context.environment.remote.register([FakeRemoteProvider()], source: "test")
+        let src = RemoteLocation(provider: "test.fake", repo: "demo", ref: "main", path: ["src"])
+        let root = RemoteLocation(provider: "test.fake", repo: "other", ref: "dev")
+        let settings = ui.context.environment.settings
+        settings.recentLocations = [
+            src.url.absoluteString,                                  // a remote URL (provider without a web URL)
+            "fake:other@dev",                                        // a provider address with a plain ref
+            "https://github.com/o/r/tree/main/src",                  // web address: ref and path can't be split here
+            "fake:demo",                                             // ref unresolved
+            RemoteLocation(provider: "no.such", repo: "x", ref: "main").url.absoluteString,   // unknown provider
+            "relative/text",
+        ]
+        let window = try await ui.openBrowserWindow()
+        let palette = CommandPaletteController.show(over: window.window!, context: ui.context)
+        let locations = palette.visibleItems.compactMap { item -> URL? in
+            if case .location(let url) = item.target { return url } else { return nil }
+        }
+        XCTAssertTrue(locations.allSatisfy { !$0.isFileURL || !$0.path(percentEncoded: false).contains("github.com") },
+                      "\(locations)")
+        XCTAssertFalse(locations.contains { $0.isFileURL && $0.path(percentEncoded: false).contains("relative/text") })
+        let remote = palette.visibleItems.filter { if case .location(let url) = $0.target { RemoteLocation(url: url) != nil } else { false } }
+        XCTAssertEqual(remote.map(\.title).sorted(), ["Go to other", "Go to src"])
+        XCTAssertEqual(remote.first { $0.title == "Go to src" }?.target, .location(src.url))
+        XCTAssertEqual(remote.first { $0.title == "Go to src" }?.subtitle, src.url.absoluteString)
+        XCTAssertEqual(remote.first { $0.title == "Go to other" }?.target, .location(root.url))
     }
 
     func testEscapeClosesAndSecondShowToggles() async throws {

@@ -1,5 +1,6 @@
 import AppKit
 import Core
+import MacxPluginKit
 
 /// The palette's window: a borderless-looking titled panel that takes the keyboard but never becomes main, so the
 /// browser window it opened over stays the main window (menu validation and key equivalents keep following it).
@@ -97,23 +98,43 @@ final class CommandPaletteController: NSObject, NSTableViewDataSource, NSTableVi
         }
         guard let browser = window.windowController as? BrowserWindowController else { return items }
         var seen = Set<PaletteTarget>()
-        func addLocation(_ url: URL, name: String) {
+        func addLocation(_ url: URL, name: String, subtitle: String? = nil) {
             let target = PaletteTarget.location(url)
             guard seen.insert(target).inserted else { return }
             items.append(PaletteItem(target: target, title: String(format: L10n.string("Go to %@"), name),
-                                     subtitle: url.path(percentEncoded: false)))
+                                     subtitle: subtitle ?? url.path(percentEncoded: false)))
         }
         if let sidebar = browser.sidebarPane as? SidebarViewController {
             for row in sidebar.favorites.rows where !row.isStale {
                 if let url = row.url { addLocation(url, name: row.name) }
             }
         }
-        for path in browser.context.environment.settings.recentLocations.prefix(Settings.recentLocationsLimit) {
-            let url = URL(filePath: path, directoryHint: .isDirectory)
-            let name = url.lastPathComponent.isEmpty || path == "/" ? path : url.lastPathComponent
-            addLocation(url, name: name)
+        let environment = browser.context.environment
+        for text in environment.settings.recentLocations.prefix(Settings.recentLocationsLimit) {
+            if text.hasPrefix("/") {
+                let url = URL(filePath: text, directoryHint: .isDirectory)
+                let name = url.lastPathComponent.isEmpty || text == "/" ? text : url.lastPathComponent
+                addLocation(url, name: name)
+            } else if let location = recentRemoteLocation(text, registry: environment.remote),
+                      let provider = environment.remote.provider(id: location.provider) {
+                addLocation(location.url, name: location.name ?? provider.displayRoot(location), subtitle: text)
+            }
         }
         return items
+    }
+
+    /// The remote folder a non-POSIX recent names (the address bar keeps a provider web address or the remote URL):
+    /// a remote URL of a registered provider, or a provider address whose ref needs no resolving. A parsed ref that is
+    /// missing or contains "/" (a web URL's "main/src" holds the ref and the path) can only be split by the provider's
+    /// async `resolveRef`, so that entry gets no row rather than a wrong folder. Anything else is skipped.
+    static func recentRemoteLocation(_ text: String, registry: ProviderRegistry) -> RemoteLocation? {
+        if text.lowercased().hasPrefix(RemoteLocation.scheme + ":") {
+            guard let url = URL(string: text), let location = RemoteLocation(url: url),
+                  registry.provider(id: location.provider) != nil, location.ref != nil else { return nil }
+            return location
+        }
+        guard let location = registry.parse(address: text), let ref = location.ref, !ref.contains("/") else { return nil }
+        return location
     }
 
     /// NSWindow validates its tab actions as enabled even for a window without tabs; the palette leaves out the ones

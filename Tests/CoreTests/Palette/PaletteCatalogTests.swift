@@ -1,4 +1,5 @@
 import XCTest
+import MacxPluginKit
 @testable import Core
 
 /// P4-03: palette items, ranking, the MRU boost and the stored recents (`Settings.paletteRecent`).
@@ -36,6 +37,17 @@ final class PaletteCatalogTests: XCTestCase {
         XCTAssertNil(PaletteTarget(encoded: "cmd:noSuchCommand"))
         XCTAssertNil(PaletteTarget(encoded: "loc:"))
         XCTAssertNil(PaletteTarget(encoded: "garbage"))
+    }
+
+    func testRemoteFolderTargetsKeepTheirRemoteURL() {
+        let remote = RemoteLocation(provider: "test.fake", repo: "demo", ref: "main", path: ["src"]).url
+        let target = PaletteTarget.location(remote)
+        XCTAssertEqual(target.encoded, "loc:" + remote.absoluteString, "never the URL's path (a boot-volume folder)")
+        XCTAssertEqual(PaletteTarget(encoded: target.encoded), target)
+        guard case .location(let decoded)? = PaletteTarget(encoded: target.encoded) else { return XCTFail() }
+        XCTAssertEqual(decoded, remote)
+        XCTAssertNotEqual(target, .location(URL(filePath: "/demo@main/src", directoryHint: .isDirectory)))
+        XCTAssertNil(PaletteTarget(encoded: "loc:" + RemoteLocation.scheme + "://bad%20host/x"))
     }
 
     func testNotePaletteUsedKeepsTwentyMostRecentFirstAndPersists() {

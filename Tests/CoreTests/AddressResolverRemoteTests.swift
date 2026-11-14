@@ -46,6 +46,17 @@ final class AddressResolverRemoteTests: XCTestCase {
     func testMissingAndFailingRemotesAreReported() async {
         let missing = await resolve("fake:demo/nope")
         XCTAssertEqual(missing, .notFound("fake:demo/nope"))
+        // A root is listed before it is reported as a folder: a mistyped ref or repo is not found, not a folder.
+        let badRef = await resolve("fake:demo@nope")
+        XCTAssertEqual(badRef, .notFound("fake:demo@nope"))
+        let badRefURL = await resolve(loc(ref: "nope").url.absoluteString)
+        XCTAssertEqual(badRefURL, .notFound(loc(ref: "nope").url.absoluteString))
+        let onlyDemo = FakeRemoteProvider()
+        onlyDemo.setTree(repo: "demo", ["": []])
+        let badRepo = await resolve("fake:nosuch", registry: registry(onlyDemo))
+        XCTAssertEqual(badRepo, .notFound("fake:nosuch"))
+        let emptyRoot = await resolve("fake:demo", registry: registry(onlyDemo))
+        XCTAssertEqual(emptyRoot, .remote(loc().url), "an empty repository is still a folder")
         let failing = Self.demo()
         failing.failure = .rateLimited(resetAt: nil)
         let refused = await resolve("fake:demo", registry: registry(failing))

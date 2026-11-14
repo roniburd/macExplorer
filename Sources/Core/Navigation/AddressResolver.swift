@@ -79,11 +79,14 @@ public enum AddressResolver {
     }
 
     /// resolveRef, then what the location is: a folder → .remote; a file or link → its folder with it selected;
-    /// a submodule (not browsable, spec §3) or any failure but "not found" → .noAccess.
+    /// a submodule (not browsable, spec §3) or any failure but "not found" → .noAccess. A repository root is listed
+    /// first (`ProviderRegistry.item(at:)` makes it up without asking), so a mistyped repo or ref is "not found" here
+    /// instead of a folder whose listing fails.
     static func resolveRemote(_ location: RemoteLocation, input: String, registry: ProviderRegistry) async -> AddressResult {
         guard let provider = registry.provider(id: location.provider) else { return .notFound(input) }
         do {
             let resolved = try await provider.resolveRef(location)
+            if resolved.path.isEmpty { try await checkRootExists(resolved, provider: provider) }
             let item = try await registry.item(at: resolved)
             switch item.kind {
             case .directory:
@@ -100,6 +103,17 @@ public enum AddressResolver {
             return .notFound(input)
         } catch {
             return .noAccess(input)
+        }
+    }
+
+    /// Reads the first chunk of the root's listing; throws what the listing throws (`.notFound` for no such repo/ref).
+    private static func checkRootExists(_ root: RemoteLocation, provider: any RemoteProvider) async throws(RemoteError) {
+        do {
+            for try await _ in provider.list(root) { break }
+        } catch let error as RemoteError {
+            throw error
+        } catch {
+            throw .network(String(describing: error))
         }
     }
 

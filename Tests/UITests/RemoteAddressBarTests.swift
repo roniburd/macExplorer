@@ -55,6 +55,16 @@ final class RemoteAddressBarTests: XCTestCase {
         XCTAssertEqual(controller.addressBar.errorText, "Can't find 'fake:demo/nope'")
         XCTAssertTrue(controller.addressBar.isEditing)
     }
+
+    func testAMistypedRefShowsTheInlineErrorAndIsNotRemembered() async throws {
+        let (h, controller) = try await harness()
+        let before = (h.environment.settings.recentRepositories, h.environment.settings.recentLocations)
+        await controller.addressBar.submitForTesting("fake:demo@nope")
+        XCTAssertEqual(controller.addressBar.errorText, "Can't find 'fake:demo@nope'")
+        XCTAssertTrue(controller.addressBar.isEditing)
+        XCTAssertEqual(h.environment.settings.recentRepositories, before.0)
+        XCTAssertEqual(h.environment.settings.recentLocations, before.1)
+    }
 }
 
 /// The CoreTests fixture tree, duplicated here (UITests can't import CoreTests).
