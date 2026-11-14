@@ -80,8 +80,13 @@ public actor RemoteFileCache {
     private func abandon(_ task: Task<URL, any Error>, key: String) {
         guard var flight = inFlight[key], flight.task == task else { return }
         flight.waiters -= 1
-        inFlight[key] = flight
-        if flight.waiters <= 0 { task.cancel() }
+        if flight.waiters <= 0 {
+            // Forget the cancelled download now so a request arriving while it unwinds starts a fresh one.
+            inFlight[key] = nil
+            task.cancel()
+        } else {
+            inFlight[key] = flight
+        }
     }
 
     /// Bytes of every cached file (logical sizes).

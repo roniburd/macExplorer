@@ -111,9 +111,15 @@ final class QuickLookController {
 
     var isVisible: Bool { panel().isVisible }
 
-    /// The selection's URLs in display order, built on first use after a change.
+    /// The selection's URLs in display order, built on first use after a change. A remote selection is never handed
+    /// out as `macx-remote://` URLs (Quick Look cannot read them): until its local copies arrive this is empty, and a
+    /// visible panel (e.g. this window just took it over from another) starts fetching them and reloads when they land.
     var items: [URL] {
         if let builtItems { return builtItems }
+        if selectionIsRemote, localize != nil {
+            if localizeTask == nil, panel().isVisible { localizeItems(thenShow: false) }
+            return []
+        }
         let built = buildItems()
         builtItems = built
         return built

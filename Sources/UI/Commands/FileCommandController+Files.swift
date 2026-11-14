@@ -134,14 +134,24 @@ extension FileCommandController {
             let env = environment
             Task {
                 guard let local = await RemotePreview.localCopies([file], registry: env.remote, cache: env.remoteFiles).local.first,
-                      !RemoteScheme.isRemote(local) else { return }
-                self.chooseDefaultApp(for: local)
+                      !RemoteScheme.isRemote(local) else {
+                    await self.prompts.inform(.openFailed(file: file.lastPathComponent, app: nil,
+                                                          message: L10n.string("The file couldn't be downloaded.")),
+                                              window: self.window?.window)
+                    return
+                }
+                // The read-only cached copy takes no per-file default (and it would only stick to a throwaway copy).
+                self.presentDefaultAppSheet(for: local, perFileDefault: false)
             }
             return
         }
+        presentDefaultAppSheet(for: file, perFileDefault: true)
+    }
+
+    private func presentDefaultAppSheet(for file: URL, perFileDefault: Bool) {
         guard let hostWindow = window?.window else { return }
         let context = self.context
-        Task { await DefaultAppSheet.present(for: file, on: hostWindow, context: context) }
+        Task { await DefaultAppSheet.present(for: file, on: hostWindow, context: context, perFileDefault: perFileDefault) }
     }
 
     /// Open With errors are an alert naming the app (§5.7).

@@ -192,6 +192,27 @@ final class RemotePreviewPaneTests: XCTestCase {
         XCTAssertFalse(panel.isVisible)
     }
 
+    /// Review (Task 11): the panel is shown by another window while this one's remote selection changes; when this
+    /// window takes the panel over, its items are never the `macx-remote://` URLs: they are fetched, then reloaded.
+    func testTakingOverTheVisiblePanelFetchesCopiesInsteadOfRemoteURLs() async {
+        let m = await remoteFolder()
+        let (ql, panel, gate) = gatedQuickLook(m)
+        panel.isVisible = true
+        panel.controlsPanel = false
+        m.select(.names(["a.txt"]))
+        XCTAssertEqual(gate.requests.count, 0, "no fetch while another window controls the panel")
+        panel.controlsPanel = true
+        XCTAssertEqual(ql.items, [], "no remote URLs reach Quick Look")
+        XCTAssertTrue(ql.isLocalizing)
+        let reloads = panel.reloads
+        await waitUntil("fetching") { gate.requests.count == 1 }
+        gate.open()
+        await waitUntil("copies arrive") { panel.reloads > reloads }
+        XCTAssertEqual(ql.items.count, 1)
+        XCTAssertTrue(ql.items[0].isFileURL)
+        XCTAssertEqual(ql.items[0].lastPathComponent, "a.txt")
+    }
+
     func testQuickLookGetsLocalCopies() async {
         let m = await remoteFolder()
         let panel = FakeQuickLookPanel()

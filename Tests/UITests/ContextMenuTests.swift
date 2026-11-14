@@ -196,4 +196,15 @@ final class ContextMenuTests: XCTestCase {
         XCTAssertTrue(once.defaultsSet().isEmpty)
         XCTAssertEqual(once.opened().count, 1)
     }
+
+    /// Review (Task 11): a remote file's read-only cached copy gets only the content-type default, then opens.
+    func testDefaultAppChoiceWithoutAPerFileDefaultSetsOnlyTheTypeDefault() async throws {
+        let h = try await ContentTestHarness.make(self)
+        let file = try h.file("a.custom-ext")
+        let app = URL(filePath: "/Applications/Other.app")
+        let fake = FakeLaunchServices()
+        try await DefaultAppChoice.apply(app: app, file: file, always: true, perFile: false, provider: fake)
+        XCTAssertEqual(fake.defaultsSet().map(\.forType), [true])
+        XCTAssertEqual(fake.opened().map(\.files), [[file]])
+    }
 }

@@ -3,12 +3,15 @@ import UniformTypeIdentifiers
 import Core
 
 /// §5.7: checked → set the content-type default (works for dyn.* types), then the per-file default (so an existing
-/// per-file override can't keep winning), then open; unchecked → open once with the app.
+/// per-file override can't keep winning), then open; unchecked → open once with the app. `perFile: false` skips the
+/// per-file default: a remote file's read-only cached copy (spec §4.3) can't take one, and it would only stick to a
+/// throwaway copy.
 enum DefaultAppChoice {
-    static func apply(app: URL, file: URL, always: Bool, provider: any LaunchServicesProviding) async throws {
+    static func apply(app: URL, file: URL, always: Bool, perFile: Bool = true,
+                      provider: any LaunchServicesProviding) async throws {
         if always {
             try await provider.setDefaultApplication(app, forContentTypeOf: file)
-            try await provider.setDefaultApplication(app, forFile: file)
+            if perFile { try await provider.setDefaultApplication(app, forFile: file) }
         }
         try await provider.open([file], withApplicationAt: app)
     }
@@ -31,10 +34,13 @@ final class DefaultAppSheet: NSObject, NSTableViewDataSource, NSTableViewDelegat
     private let table = NSTableView()
     private let always: NSButton
     private let opensFile: Bool
+    private let perFileDefault: Bool
     private var continuation: CheckedContinuation<AppInfo?, Never>?
 
-    static func present(for file: URL, on window: NSWindow, context: UIContext) async {
-        await present(for: file, on: window, context: context, alwaysChecked: false, opensFile: true)
+    /// `perFileDefault: false`: "Always use this app" sets only the content-type default (a remote file's cached copy).
+    static func present(for file: URL, on window: NSWindow, context: UIContext, perFileDefault: Bool = true) async {
+        await DefaultAppSheet(file: file, context: context, alwaysChecked: false, opensFile: true,
+                              perFileDefault: perFileDefault).run(on: window)
     }
 
     /// Properties' Change All… opens the sheet with the checkbox already on (P1-37).
@@ -45,11 +51,13 @@ final class DefaultAppSheet: NSObject, NSTableViewDataSource, NSTableViewDelegat
     /// `opensFile: false` (Properties' Change… / Change All…): set the default only; the checkbox means "all files
     /// of this type" (§5.8).
     static func present(for file: URL, on window: NSWindow, context: UIContext, alwaysChecked: Bool, opensFile: Bool) async {
-        await DefaultAppSheet(file: file, context: context, alwaysChecked: alwaysChecked, opensFile: opensFile).run(on: window)
+        await DefaultAppSheet(file: file, context: context, alwaysChecked: alwaysChecked, opensFile: opensFile,
+                              perFileDefault: true).run(on: window)
     }
 
-    private init(file: URL, context: UIContext, alwaysChecked: Bool, opensFile: Bool) {
+    private init(file: URL, context: UIContext, alwaysChecked: Bool, opensFile: Bool, perFileDefault: Bool) {
         self.opensFile = opensFile
+        self.perFileDefault = perFileDefault
         self.file = file
         self.context = context
         let ext = file.pathExtension
@@ -103,7 +111,8 @@ final class DefaultAppSheet: NSObject, NSTableViewDataSource, NSTableViewDelegat
         let provider = context.environment.launchServices.provider
         do {
             if opensFile {
-                try await DefaultAppChoice.apply(app: chosen.url, file: file, always: always.state == .on, provider: provider)
+                try await DefaultAppChoice.apply(app: chosen.url, file: file, always: always.state == .on,
+                                             perFile: perFileDefault, provider: provider)
             } else {
                 try await DefaultAppChoice.setDefault(app: chosen.url, file: file, allOfType: always.state == .on, provider: provider)
             }

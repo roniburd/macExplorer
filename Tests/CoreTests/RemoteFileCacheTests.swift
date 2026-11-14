@@ -12,8 +12,8 @@ final class GatedRemoteProvider: RemoteProvider, Sendable {
     let displayName = "Gated"
     let iconSymbol = "shippingbox"
     let content: String
-    private let state = Mutex<(fetches: Int, gate: CheckedContinuation<Void, Never>?, held: Bool, failure: RemoteError?,
-                               cancelled: Bool)>((0, nil, false, nil, false))
+    private let state = Mutex<(fetches: Int, gates: [CheckedContinuation<Void, Never>], held: Bool, failure: RemoteError?,
+                               cancelled: Bool)>((0, [], false, nil, false))
 
     init(content: String = "0123456789", held: Bool = false) {
         self.content = content
@@ -23,8 +23,8 @@ final class GatedRemoteProvider: RemoteProvider, Sendable {
     var sawCancellation: Bool { state.withLock { $0.cancelled } }
     func fail(with error: RemoteError?) { state.withLock { $0.failure = error } }
     func release() {
-        let gate = state.withLock { s -> CheckedContinuation<Void, Never>? in s.held = false; defer { s.gate = nil }; return s.gate }
-        gate?.resume()
+        let gates = state.withLock { s -> [CheckedContinuation<Void, Never>] in s.held = false; defer { s.gates = [] }; return s.gates }
+        gates.forEach { $0.resume() }
     }
 
     func parseAddress(_ text: String) -> RemoteLocation? { nil }
@@ -42,7 +42,7 @@ final class GatedRemoteProvider: RemoteProvider, Sendable {
             await withCheckedContinuation { continuation in
                 let resumeNow = state.withLock { s -> Bool in
                     guard s.held else { return true }
-                    s.gate = continuation
+                    s.gates.append(continuation)
                     return false
                 }
                 if resumeNow { continuation.resume() }
@@ -138,6 +138,25 @@ final class RemoteFileCacheTests: XCTestCase {
         let url = try await second.value
         XCTAssertFalse(provider.sawCancellation)
         XCTAssertEqual(provider.fetches, 1)
+        XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), "0123456789")
+    }
+
+    /// Review (Task 11): a request arriving while a cancelled download is still unwinding starts a fresh download
+    /// instead of joining the cancelled one.
+    func testARequestAfterTheLastCancellationStartsAFreshDownload() async throws {
+        let cache = RemoteFileCache(root: root)
+        let provider = GatedRemoteProvider(held: true)
+        let location = loc(["a.txt"]), item = file("a.txt", id: "b1")
+        let cancelled = Task { try await cache.localURL(for: location, item: item, provider: provider) }
+        while provider.fetches == 0 { try await Task.sleep(for: .milliseconds(5)) }
+        cancelled.cancel()
+        try await Task.sleep(for: .milliseconds(50))   // abandoned; its fetch is still held, so it has not unwound
+        let fresh = Task { try await cache.localURL(for: location, item: item, provider: provider) }
+        while provider.fetches < 2 { try await Task.sleep(for: .milliseconds(5)) }
+        provider.release()
+        do { _ = try await cancelled.value; XCTFail("a cancelled request has no copy") } catch {}
+        let url = try await fresh.value
+        XCTAssertEqual(provider.fetches, 2)
         XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), "0123456789")
     }
 
