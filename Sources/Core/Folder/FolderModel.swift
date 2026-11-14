@@ -1,6 +1,7 @@
 import CoreServices
 import Foundation
 import MacxFS
+import MacxPluginKit
 
 public enum RelocationReason: Sendable, Equatable { case movedOrDeleted(name: String), volumeGone }
 
@@ -41,6 +42,8 @@ public struct FolderContext {
     public var resortCoalescing: Duration
     /// uid → user name for the Owner column (P2-15); CoreEnvironment shares one cache across folders.
     public var ownerNames: OwnerNameCache
+    /// The remote providers for `x-macexplorer-remote` folders; nil lists every remote folder as "not found".
+    public var remote: ProviderRegistry?
 
     public init(readers: DirectoryReaders, lanes: LanePool, volumes: Volumes, changeBus: ChangeBus,
                 types: TypeRegistry = .shared, pacer: any FramePacer = TimerFramePacer(),
@@ -51,9 +54,11 @@ public struct FolderContext {
                 now: @escaping @Sendable () -> Date = { Date() },
                 calendar: Calendar = .autoupdatingCurrent,
                 resortCoalescing: Duration = .milliseconds(500),
-                ownerNames: OwnerNameCache = OwnerNameCache()) {
+                ownerNames: OwnerNameCache = OwnerNameCache(),
+                remote: ProviderRegistry? = nil) {
         self.home = home
         self.ownerNames = ownerNames
+        self.remote = remote
         self.resortCoalescing = resortCoalescing
         self.now = now
         self.calendar = calendar
@@ -79,6 +84,8 @@ public final class FolderModel {
     typealias ItemSource = @MainActor ([String], URL, Generation) async throws -> ItemReadResult
 
     public let directory: URL
+    /// An `x-macexplorer-remote` folder: listed through its provider, never watched, never relocated.
+    public let isRemote: Bool
     public private(set) var state: FolderState = .loading
     public private(set) var store: EntryStore {
         didSet { pruneFolderSizes(); storeChangedForAttributes() }
@@ -210,17 +217,32 @@ public final class FolderModel {
         self.directory = directory
         self.context = context
         self.query = query
+        let remote = RemoteScheme.isRemote(directory)
+        self.isRemote = remote
         let mode = context.volumes.volume(for: directory)?.capabilities.identityMode ?? .objectID
         self.store = EntryStore(identityMode: mode)
-        self.openedVolume = context.volumes.volume(for: directory)?.id
+        // A remote folder has no volume to leave: it never relocates on volume-list changes.
+        self.openedVolume = remote ? nil : context.volumes.volume(for: directory)?.id
         self.worker = FolderWorker(types: context.types)
         self.dateBuckets = DateBuckets(now: context.now(), calendar: context.calendar)
-        let readers = context.readers
-        readSource = { directory, generation, options in
-            await readers.reader(for: directory).read(directory, generation: generation, options: options)
-        }
-        itemSource = { names, directory, generation in
-            try await readers.reader(for: directory).readItems(names, in: directory, generation: generation)
+        if remote, let registry = context.remote {
+            let listing = RemoteListingSource(registry: registry, types: context.types)
+            readSource = { directory, generation, options in listing.read(directory, generation: generation, options: options) }
+            itemSource = { names, directory, generation in try await listing.readItems(names, in: directory, generation: generation) }
+        } else if remote {
+            // No registry (tests, early launch): "not found", never a POSIX read of the URL's path.
+            readSource = { _, _, _ in
+                AsyncStream { $0.yield(.failed(RemoteListingSource.failure(for: .notFound))); $0.finish() }
+            }
+            itemSource = { names, _, generation in ItemReadResult(batch: Batch(generation: generation), missing: names, errors: [:]) }
+        } else {
+            let readers = context.readers
+            readSource = { directory, generation, options in
+                await readers.reader(for: directory).read(directory, generation: generation, options: options)
+            }
+            itemSource = { names, directory, generation in
+                try await readers.reader(for: directory).readItems(names, in: directory, generation: generation)
+            }
         }
     }
 
@@ -235,7 +257,7 @@ public final class FolderModel {
         started = true
         busToken = context.changeBus.observe(directory: directory) { [weak self] change in self?.applyLocalChange(change) }
         volumeToken = context.volumes.observe { [weak self] list in self?.volumesChanged(list) }
-        startEventID = FSEventsGetCurrentEventId()
+        startEventID = isRemote ? 0 : FSEventsGetCurrentEventId()
         beginLoad()
     }
 
@@ -767,7 +789,7 @@ public final class FolderModel {
 
     private func startWatcher() {
         guard watcher == nil, !closed, !relocated else { return }
-        let w = context.makeWatcher(directory, startEventID) { [weak self] event in
+        let w: any ContentWatching = isRemote ? NoopWatcher() : context.makeWatcher(directory, startEventID) { [weak self] event in
             Task { @MainActor in self?.handleWatch(event) }
         }
         watcher = w

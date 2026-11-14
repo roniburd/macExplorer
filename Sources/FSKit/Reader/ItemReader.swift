@@ -6,6 +6,12 @@ public struct ItemReadResult: Sendable {
     public var batch: Batch               // entries for names that exist
     public var missing: [String]          // names that no longer exist (ENOENT / ENOTDIR only)
     public var errors: [String: Int32]    // names that could not be read for another reason (errno); keep their rows
+
+    public init(batch: Batch, missing: [String], errors: [String: Int32]) {
+        self.batch = batch
+        self.missing = missing
+        self.errors = errors
+    }
 }
 
 public enum ItemReader {

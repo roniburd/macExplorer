@@ -18,7 +18,7 @@ extension FolderModel {
     /// request is remembered and re-issued after the watcher invalidates entries or the rows change. At most one
     /// read runs; a request made meanwhile waits, and only the latest one is kept.
     public func requestExtendedAttributes(rows: IndexSet, _ wanted: ExtendedAttributeSet) {
-        guard !closed, !wanted.isEmpty else { return }
+        guard !closed, !isRemote, !wanted.isEmpty else { return }
         let count = rowCount
         let valid = rows.filteredIndexSet { $0 >= 0 && $0 < count }
         lastAttributeRequest = AttributeRequest(rows: valid, wanted: wanted)

@@ -26,7 +26,9 @@ struct EmptyStateContent: Equatable {
     var showsSpinner = false
 
     @MainActor
-    static func make(state: FolderState, folderName: String, visibleCount: Int, filter: String) -> EmptyStateContent? {
+    static func make(state: FolderState, folderName: String, visibleCount: Int, filter: String,
+                     remoteProvider: String? = nil) -> EmptyStateContent? {
+        if let provider = remoteProvider, let remote = remoteContent(state: state, provider: provider) { return remote }
         func titled(_ key: String) -> String { String(format: L10n.string(key), folderName) }
         switch state {
         case .loading, .partial:
@@ -48,11 +50,35 @@ struct EmptyStateContent: Equatable {
             case .other(let code):
                 return EmptyStateContent(title: titled("Can't open '%@'"), detail: "\(String(cString: strerror(code))) (\(code))",
                                          action: .retry)
+            case .rateLimited:
+                return EmptyStateContent(title: titled("Can't open '%@'"), action: .retry)   // local folders never get it
             }
         case .unresponsive:
             return EmptyStateContent(title: L10n.string("Location not responding"), action: .retry)
         case .waitingForPermission:
             return EmptyStateContent(title: L10n.string("Waiting for macOS permission…"), showsSpinner: true)
+        }
+    }
+
+    /// A remote folder's errors: no relocation, no Privacy settings, no Properties (spec §4.8).
+    @MainActor
+    private static func remoteContent(state: FolderState, provider: String) -> EmptyStateContent? {
+        switch state {
+        case .error(.notFound), .error(.volumeGone):
+            return EmptyStateContent(title: L10n.string("Folder not found"), action: .retry)
+        case .error(.rateLimited(let resetAt)):
+            guard let resetAt else {
+                return EmptyStateContent(title: String(format: L10n.string("%@ rate limit reached — try again later"), provider), action: .retry)
+            }
+            let time = DateFormatter.localizedString(from: resetAt, dateStyle: .none, timeStyle: .short)   // local zone
+            return EmptyStateContent(title: String(format: L10n.string("%@ rate limit reached — resets at %@"), provider, time),
+                                     action: .retry)
+        case .error(.permissionPOSIX), .error(.permissionTCC):
+            return EmptyStateContent(title: String(format: L10n.string("%@ refused access to this folder"), provider), action: .retry)
+        case .unresponsive:
+            return EmptyStateContent(title: String(format: L10n.string("Can't reach %@"), provider), action: .retry)
+        default:
+            return nil
         }
     }
 }

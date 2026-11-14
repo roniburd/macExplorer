@@ -1,5 +1,6 @@
 import Foundation
 import MacxFS
+import MacxPluginKit
 
 /// Every Core service, wired once per app (or per test/scenario sandbox). §3.12.
 @MainActor
@@ -29,6 +30,8 @@ public final class CoreEnvironment {
     public let termination: TerminationCoordinator
     /// Spotlight, index status and iCloud downloads for search and preview (P3-06). Sandboxed environments use fakes.
     public let searchServices: SearchServices
+    /// Remote repository providers (GitHub built in; plugins register later) for `x-macexplorer-remote` folders.
+    public let remote: ProviderRegistry
     /// Custom-icon storage for `.setCustomIcon` jobs (P4-07): `WorkspaceIconWriter` live and in sandbox mode (the
     /// sandbox only ever points it at sandbox files).
     public let iconWriter: any CustomIconWriting = WorkspaceIconWriter()
@@ -57,7 +60,7 @@ public final class CoreEnvironment {
                             pasteboard: any PasteboardBackend, launchServices: any LaunchServicesProviding,
                             ejector: any Ejecting, trash: any TrashService, fileOpTuning: FileOpTuning = FileOpTuning(),
                             home: URL = FileManager.default.homeDirectoryForCurrentUser,
-                            searchServices: SearchServices) {
+                            searchServices: SearchServices, remoteProviders: [any RemoteProvider] = []) {
         // `searchServices` has no default (review P3-05..08): every caller chooses real or fake explicitly, so no
         // test harness gets real Spotlight ("This Mac"), mdutil or iCloud downloads by omission. The app passes
         // SearchServices.forLaunch(_:lanes:); tests pass .fake().
@@ -66,17 +69,19 @@ public final class CoreEnvironment {
         self.init(statePaths: statePaths, lanes: lanes, settingsStorage: settingsStorage, volumeScanner: volumeScanner,
                   volumeEvents: volumeEvents, pasteboard: pasteboard, launchServices: launchServices, ejector: ejector,
                   trash: trash, fileOpTuning: fileOpTuning, home: home,
-                  interactionTarget: nil, searchServices: searchServices)
+                  interactionTarget: nil, searchServices: searchServices, remoteProviders: remoteProviders)
     }
 
     init(statePaths: StatePaths, lanes: LanePool, settingsStorage: any SettingsStorage,
          volumeScanner: any VolumeScanning, volumeEvents: (any VolumeEventSource)?,
          pasteboard: any PasteboardBackend, launchServices provider: any LaunchServicesProviding,
          ejector: any Ejecting, trash: any TrashService, fileOpTuning: FileOpTuning,
-         home: URL, interactionTarget: (any FileOpInteraction)?, searchServices: SearchServices) {
+         home: URL, interactionTarget: (any FileOpInteraction)?, searchServices: SearchServices,
+         remoteProviders: [any RemoteProvider] = []) {
         self.statePaths = statePaths
         self.lanes = lanes
         self.searchServices = searchServices
+        self.remote = ProviderRegistry(builtIns: remoteProviders)
         self.types = .shared
         let volumes = Volumes(lanes: lanes, scanner: volumeScanner, events: volumeEvents)
         self.volumes = volumes
@@ -142,7 +147,7 @@ public final class CoreEnvironment {
                 guard let location = Self.protectedLocation(url, settings: settings, volumes: volumes) else { return }
                 settings.recordTCCOutcome(granted ? .granted : .denied, for: location)
             },
-            home: settings.home, ownerNames: ownerNames)
+            home: settings.home, ownerNames: ownerNames, remote: remote)
     }
 
     static func protectedLocation(_ url: URL, settings: Settings, volumes: Volumes) -> ProtectedLocation? {
@@ -205,7 +210,8 @@ public final class CoreEnvironment {
 
     /// Test/scenario factory (§3.12). Everything lives inside `root`; nothing is written until used. Search services
     /// default to fakes: no Spotlight index access, no real iCloud downloads.
-    public static func sandboxed(root: URL, searchServices: SearchServices = .fake()) -> CoreEnvironment {
+    public static func sandboxed(root: URL, searchServices: SearchServices = .fake(),
+                                 remoteProviders: [any RemoteProvider] = []) -> CoreEnvironment {
         precondition(isSandboxRoot(root), "CoreEnvironment.sandboxed requires a macx-* sandbox root in the temporary directory, got \(root.path)")
         // Keep the caller's spelling (standardizedFileURL turns an existing /private/var root into /var), so
         // service paths compare equal to the URLs the caller builds from the same root.
@@ -218,6 +224,6 @@ public final class CoreEnvironment {
             ejector: SandboxEjector(root: base, lanes: lanes),
             trash: SandboxTrash(directory: base.appending(path: ".trash", directoryHint: .isDirectory)),
             fileOpTuning: FileOpTuning(), home: base, interactionTarget: ScriptedInteraction(),
-            searchServices: searchServices)
+            searchServices: searchServices, remoteProviders: remoteProviders)
     }
 }

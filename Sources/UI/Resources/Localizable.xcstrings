@@ -177,6 +177,39 @@
         }
       }
     },
+    "%@ rate limit reached — resets at %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ rate limit reached — resets at %@"
+          }
+        }
+      }
+    },
+    "%@ rate limit reached — try again later" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ rate limit reached — try again later"
+          }
+        }
+      }
+    },
+    "%@ refused access to this folder" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ refused access to this folder"
+          }
+        }
+      }
+    },
     "%@ selected" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1122,6 +1155,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Can't open '%@'"
+          }
+        }
+      }
+    },
+    "Can't reach %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can't reach %@"
           }
         }
       }
@@ -2761,6 +2805,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Folder"
+          }
+        }
+      }
+    },
+    "Folder not found" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Folder not found"
           }
         }
       }

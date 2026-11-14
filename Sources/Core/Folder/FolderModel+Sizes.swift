@@ -13,7 +13,7 @@ extension FolderModel {
     /// `.folderSizes` for every row that had a size (so cells go back to "--") and, under the size sort, re-sorts
     /// folders back into name order.
     public func setFolderSizesEnabled(_ on: Bool) {
-        guard on != folderSizesEnabled, !closed else { return }
+        guard on != folderSizesEnabled, !closed, !(on && isRemote) else { return }
         folderSizesEnabled = on
         selectionTotals = nil
         guard !on else { return }

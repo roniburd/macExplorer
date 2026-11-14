@@ -344,7 +344,9 @@ final class ContentViewController: CommandHandlingViewController {
             return
         }
         emptyState.show(EmptyStateContent.make(state: folder.state, folderName: folder.directory.lastPathComponent,
-                                               visibleCount: folder.rowCount, filter: filterText(folder)))
+                                               visibleCount: folder.rowCount, filter: filterText(folder),
+                                               remoteProvider: context.environment.remote.provider(for: folder.directory)?.displayName
+                                                   ?? (folder.isRemote ? folder.volume?.name : nil)))
     }
 
     /// The text the folder is filtered by: the This folder search (P3-10) or a Phase 1 filter.

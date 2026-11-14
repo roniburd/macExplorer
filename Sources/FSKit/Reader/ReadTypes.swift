@@ -1,3 +1,5 @@
+import Foundation
+
 public struct ReadOptions: Sendable, Hashable {
     public var directoriesOnly: Bool = false       // tree children
     public var noMaterialization: Bool = false     // background/tree re-reads (§4.2 list)
@@ -35,7 +37,9 @@ public struct ReadFailure: Error, Sendable, Equatable {
     public enum Stage: Sendable, Equatable { case open, read, unresponsiveVolume }
     public var code: Int32        // errno (ENOENT, ENOTDIR, EACCES, EPERM, ENXIO, ...)
     public var stage: Stage
-    public init(code: Int32, stage: Stage) { self.code = code; self.stage = stage }
+    /// Remote rate limits (EAGAIN): when the provider accepts requests again, if it said.
+    public var resetAt: Date?
+    public init(code: Int32, stage: Stage, resetAt: Date? = nil) { self.code = code; self.stage = stage; self.resetAt = resetAt }
 }
 
 /// Batching policy: flush at `batchSize` entries or when `interval` has passed since the last flush.

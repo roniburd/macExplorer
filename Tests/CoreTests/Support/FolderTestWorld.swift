@@ -131,6 +131,7 @@ final class FolderTestWorld {
     var realWatcher = false
     let scanner: RootVolumeScanner
     var pending: Set<String> = []
+    var remote: ProviderRegistry?
     private(set) var outcomes: [(String, Bool)] = []
     private(set) var watchers: [RecordingWatcher] = []
     private var models: [FolderModel] = []
@@ -174,7 +175,7 @@ final class FolderTestWorld {
                       },
                       permissionPending: { [weak self] url in self?.pending.contains(url.lastPathComponent) ?? false },
                       recordPermissionOutcome: { [weak self] url, granted in self?.outcomes.append((url.lastPathComponent, granted)) },
-                      home: sandbox.root)
+                      home: sandbox.root, remote: remote)
     }
 
     var outcomeLog: [String] { outcomes.map { "\($0.0):\($0.1)" } }

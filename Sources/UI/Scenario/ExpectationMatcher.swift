@@ -69,6 +69,7 @@ enum ScenarioStrings {
         case .permissionTCC: "permissionTCC"
         case .volumeGone: "volumeGone"
         case .other(let code): "other.\(code)"
+        case .rateLimited: "rateLimited"
         }
     }
     static func focus(_ f: FocusContext) -> String { String(describing: f) }

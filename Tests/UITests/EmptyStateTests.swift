@@ -32,6 +32,26 @@ final class EmptyStateTests: XCTestCase {
                        EmptyStateContent(title: "Waiting for macOS permission…", detail: nil, action: nil, showsSpinner: true))
     }
 
+    func testRemoteEmptyStates() {
+        let reset = Calendar.current.date(from: DateComponents(year: 2026, month: 11, day: 13, hour: 15, minute: 42))!
+        let limited = EmptyStateContent.make(state: .error(.rateLimited(resetAt: reset)), folderName: "Sources",
+                                             visibleCount: 0, filter: "", remoteProvider: "GitHub")
+        let time = DateFormatter.localizedString(from: reset, dateStyle: .none, timeStyle: .short)
+        XCTAssertEqual(limited?.title, "GitHub rate limit reached — resets at \(time)")
+        XCTAssertEqual(limited?.action, .retry)
+        XCTAssertEqual(EmptyStateContent.make(state: .error(.rateLimited(resetAt: nil)), folderName: "x", visibleCount: 0,
+                                              filter: "", remoteProvider: "GitHub")?.title, "GitHub rate limit reached — try again later")
+        let missing = EmptyStateContent.make(state: .error(.notFound), folderName: "Sources", visibleCount: 0, filter: "",
+                                             remoteProvider: "GitHub")
+        XCTAssertEqual(missing?.title, "Folder not found")
+        XCTAssertNil(EmptyStateContent.make(state: .error(.notFound), folderName: "x", visibleCount: 0, filter: ""),
+                     "local not-found still relocates instead")
+        XCTAssertEqual(EmptyStateContent.make(state: .unresponsive, folderName: "x", visibleCount: 0, filter: "",
+                                              remoteProvider: "GitHub")?.title, "Can't reach GitHub")
+        XCTAssertEqual(EmptyStateContent.make(state: .error(.permissionPOSIX), folderName: "x", visibleCount: 0, filter: "",
+                                              remoteProvider: "GitHub")?.action, .retry, "no Properties for remote")
+    }
+
     func testActionTitles() {
         XCTAssertEqual(EmptyStateAction.openPrivacySettings.title, "Open Privacy Settings")
         XCTAssertEqual(EmptyStateAction.properties.title, "Properties")

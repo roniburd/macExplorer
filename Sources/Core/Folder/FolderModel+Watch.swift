@@ -100,6 +100,7 @@ extension FolderModel {
 
     /// Stats the folder on a lane: still there → full re-read; gone → relocate to the nearest existing ancestor.
     func checkRoot() {
+        guard !isRemote else { return }   // nothing to stat; a remote error stays shown
         let directory = self.directory, lanes = context.lanes
         let volume = openedVolume ?? .unknown
         Task { @MainActor [weak self] in

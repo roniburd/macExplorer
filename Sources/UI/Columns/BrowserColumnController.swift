@@ -496,7 +496,9 @@ final class BrowserColumnController: NSViewController, FileListView, FocusableLi
     func updateEmptyState() {
         guard isViewLoaded else { return }
         emptyState.show(bound ? EmptyStateContent.make(state: model.state, folderName: Self.displayName(of: model.directory),
-                                                       visibleCount: model.rowCount, filter: model.query.filter) : nil)
+                                                       visibleCount: model.rowCount, filter: model.query.filter,
+                                                       remoteProvider: context.environment.remote.provider(for: model.directory)?.displayName
+                                                           ?? (model.isRemote ? model.volume?.name : nil)) : nil)
     }
 
     private func requestFileIcon(entry: Entry, name: String, row: Int, rowID: RowID, cell: ColumnCellView, scale: Double) {

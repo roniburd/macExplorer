@@ -125,7 +125,7 @@ extension FolderModel {
         columnResortTask?.cancel()
         columnResortTask = nil
         let wanted = query
-        guard wanted.sort.field.isExtended, state == .complete, !closed else { return }
+        guard wanted.sort.field.isExtended, state == .complete, !closed, !isRemote else { return }
         ensureSortColumn(wanted.sort.field)             // kept current by the reads below
         extendedSortTask = Task { @MainActor [weak self] in
             await self?.loadSortColumn()
