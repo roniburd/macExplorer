@@ -38,6 +38,13 @@ public struct SystemPluginBundleLoader: PluginBundleLoading {
 /// `MacxPluginAPIVersion` has the app's major version and its signature passes `codeCheck`; then its principal class
 /// is created once on the main actor and its providers are registered. Nothing here ever stops the app: every
 /// problem becomes a `PluginLoadFailure`.
+///
+/// The signature check runs per bundle on the main actor, immediately before that bundle's code is loaded, and again
+/// immediately after: when the code identity (cdhash) differs, the bundle was swapped on disk in between and the
+/// plugin is refused before its principal class is created (load-time initializers in the image have run by then).
+/// Remaining race: the loaded image can't be unloaded, and
+/// a swap that is reverted between the load and the second check isn't seen; the kernel's page-level code-signing
+/// enforcement of the mapped file is what guards that last window.
 @MainActor
 public final class PluginLoader {
     public static var defaultDirectory: URL {
@@ -59,17 +66,17 @@ public final class PluginLoader {
         self.bundleLoader = bundleLoader
     }
 
-    private struct Candidate: Sendable { var url: URL; var info: [String: String]; var signed: Bool }
+    private struct Candidate: Sendable { var url: URL; var info: [String: String] }
 
     public func loadAll(into registry: ProviderRegistry) async -> [PluginLoadFailure] {
-        let directory = self.directory, check = self.codeCheck
+        let directory = self.directory
         let candidates = await Task.detached(priority: .userInitiated) { () -> [Candidate] in
             let urls = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
             return urls.filter { $0.pathExtension == "macxplugin" }
                 .sorted { $0.lastPathComponent < $1.lastPathComponent }
                 .map { url in
                     let raw = NSDictionary(contentsOf: url.appending(path: "Contents/Info.plist")) as? [String: Any] ?? [:]
-                    return Candidate(url: url, info: raw.compactMapValues { $0 as? String }, signed: check.signedLikeApp(url))
+                    return Candidate(url: url, info: raw.compactMapValues { $0 as? String })
                 }
         }.value
         var failures: [PluginLoadFailure] = []
@@ -78,10 +85,16 @@ public final class PluginLoader {
             guard let version = declared.flatMap(APIVersion.init(string:)), version.isCompatible(with: appAPI) else {
                 failures.append(PluginLoadFailure(bundle: c.url, reason: .apiMismatch(declared))); continue
             }
-            guard c.signed else { failures.append(PluginLoadFailure(bundle: c.url, reason: .signatureMismatch)); continue }
+            // Checked here, right before the load, not at scan time (see the type comment).
+            guard let checked = codeCheck.codeIdentity(c.url) else {
+                failures.append(PluginLoadFailure(bundle: c.url, reason: .signatureMismatch)); continue
+            }
             let type: MacxPlugin.Type
             do { type = try bundleLoader.principalClass(of: c.url) } catch {
                 failures.append(PluginLoadFailure(bundle: c.url, reason: error)); continue
+            }
+            guard codeCheck.codeIdentity(c.url) == checked else {
+                failures.append(PluginLoadFailure(bundle: c.url, reason: .signatureMismatch)); continue
             }
             let plugin = type.init()
             let providers = plugin.makeProviders()
