@@ -1,0 +1,11 @@
+{"sha": "t0", "truncated": false, "tree": [
+  {"path": "README.md", "mode": "100644", "type": "blob", "sha": "b1", "size": 12},
+  {"path": "docs", "mode": "040000", "type": "tree", "sha": "t2"},
+  {"path": "docs/guide.md", "mode": "100644", "type": "blob", "sha": "b5", "size": 30},
+  {"path": "empty", "mode": "040000", "type": "tree", "sha": "t3"},
+  {"path": "src", "mode": "040000", "type": "tree", "sha": "t1"},
+  {"path": "src/link", "mode": "120000", "type": "blob", "sha": "b4", "size": 7},
+  {"path": "src/main.swift", "mode": "100644", "type": "blob", "sha": "b2", "size": 20},
+  {"path": "src/tool.sh", "mode": "100755", "type": "blob", "sha": "b3", "size": 9},
+  {"path": "vendor", "mode": "160000", "type": "commit", "sha": "s1"}
+]}

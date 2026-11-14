@@ -1,5 +1,6 @@
 import AppKit
 import Core
+import GitHubProvider
 import MacxFS
 import UI
 
@@ -31,11 +32,13 @@ enum AppBootstrap {
         let launchServices: any LaunchServicesProviding = options.fakeLaunchServices ? FakeLaunchServices()
                                                                                        : WorkspaceLaunchServices(lanes: lanes)
         let home = (sandboxed ? options.root : nil) ?? FileManager.default.homeDirectoryForCurrentUser
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
         let environment = CoreEnvironment(
             statePaths: statePaths, lanes: lanes, settingsStorage: settings, volumeScanner: SystemVolumeScanner(),
             volumeEvents: WorkspaceVolumeEvents(), pasteboard: makePasteboard(options: options),
             launchServices: launchServices, ejector: ejector, trash: trash, home: home,
-            searchServices: SearchServices.forLaunch(options, lanes: lanes))
+            searchServices: SearchServices.forLaunch(options, lanes: lanes),
+            remoteProviders: [GitHubProvider(appVersion: version)])
         environment.undoActionName = { UndoActionNames.name(for: $0) }
         return environment
     }
