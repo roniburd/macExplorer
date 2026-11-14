@@ -65,6 +65,21 @@ final class RemoteAddressBarTests: XCTestCase {
         XCTAssertEqual(h.environment.settings.recentRepositories, before.0)
         XCTAssertEqual(h.environment.settings.recentLocations, before.1)
     }
+
+    func testAnUnregisteredProviderStillShowsRemoteSegmentsWithoutTheChip() async throws {
+        let h = try await ShellHarness.make(self)
+        let controller = try await h.openWindow()
+        let location = RemoteLocation(provider: "test.missing", repo: "octo/demo", ref: "main", path: ["src"])
+        controller.addressBar.show(location.url, volume: nil)
+        let segments = controller.addressBar.breadcrumb.segments
+        XCTAssertEqual(segments.map(\.title), ["octo/demo", "src"])
+        XCTAssertEqual(segments.first?.symbolName, AddressBarView.missingProviderSymbol)
+        for segment in segments {
+            XCTAssertFalse(segment.url.isFileURL, "\(segment.url)")
+            XCTAssertEqual(RemoteLocation(url: segment.url)?.provider, "test.missing")
+        }
+        XCTAssertNil(controller.addressBar.breadcrumb.accessoryAfterRoot)
+    }
 }
 
 /// The CoreTests fixture tree, duplicated here (UITests can't import CoreTests).

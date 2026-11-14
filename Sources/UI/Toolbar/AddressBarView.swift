@@ -28,6 +28,9 @@ final class AddressBarView: NSView {
     private(set) var errorText: String?
     private(set) var currentURL: URL?
 
+    /// The root segment's symbol for a remote folder whose provider isn't registered.
+    static let missingProviderSymbol = "questionmark.folder"
+
     private let environment: CoreEnvironment
     private var editToken = 0
     private var fieldBeforeError: NSLayoutConstraint?
@@ -52,11 +55,19 @@ final class AddressBarView: NSView {
     func show(_ url: URL, volume: VolumeInfo?) {
         currentURL = url
         searchTitle = nil
-        if let location = RemoteLocation(url: url), let provider = environment.remote.provider(id: location.provider) {
-            breadcrumb.show(BreadcrumbPath.remoteSegments(for: location, rootTitle: provider.displayRoot(location),
-                                                          symbol: provider.iconSymbol))
-            refChip.show(location: location, provider: provider)
-            breadcrumb.accessoryAfterRoot = refChip.button
+        if let location = RemoteLocation(url: url) {
+            if let provider = environment.remote.provider(id: location.provider) {
+                breadcrumb.show(BreadcrumbPath.remoteSegments(for: location, rootTitle: provider.displayRoot(location),
+                                                              symbol: provider.iconSymbol))
+                refChip.show(location: location, provider: provider)
+                breadcrumb.accessoryAfterRoot = refChip.button
+            } else {
+                // Provider removed or disabled (a restored window, a stale favorite): still remote segments, never
+                // the URL read as a POSIX path (Review Focus #2); no ref chip without a provider to list refs.
+                breadcrumb.show(BreadcrumbPath.remoteSegments(for: location, rootTitle: location.repo,
+                                                              symbol: Self.missingProviderSymbol))
+                breadcrumb.accessoryAfterRoot = nil
+            }
         } else {
             breadcrumb.show(BreadcrumbPath.segments(for: url, volume: volume))
             breadcrumb.accessoryAfterRoot = nil
