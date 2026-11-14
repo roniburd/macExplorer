@@ -99,6 +99,23 @@ final class RemoteListingSourceTests: XCTestCase {
         XCTAssertEqual(summary.entryCount, 3)
     }
 
+    func testOutOfRangeDatesAndNegativeSizesDoNotTrap() {
+        for date in [Date.distantFuture, Date.distantPast, Date(timeIntervalSince1970: .infinity),
+                     Date(timeIntervalSince1970: -.infinity), Date(timeIntervalSince1970: .nan),
+                     Date(timeIntervalSince1970: 253_402_300_799)] {   // year 9999
+            let item = RemoteItem(name: "f.txt", kind: .file, size: -5, modified: date)
+            let (entry, _) = RemoteListingSource.entry(for: item, fullPath: "x-macexplorer-remote://test.fake/o/r/main/f.txt", types: .shared)
+            XCTAssertEqual(entry.mtime, 0, "out-of-range date \(date) is unknown, not a crash")
+            XCTAssertEqual(entry.ctime, 0)
+            XCTAssertEqual(entry.size, 0, "negative size clamped")
+            XCTAssertEqual(entry.allocSize, 0)
+        }
+        let ok = RemoteListingSource.entry(for: RemoteItem(name: "g", kind: .file, size: 7, modified: Date(timeIntervalSince1970: 10)),
+                                           fullPath: "x-macexplorer-remote://test.fake/o/r/main/g", types: .shared).entry
+        XCTAssertEqual(ok.mtime, 10_000_000_000)
+        XCTAssertEqual(ok.size, 7)
+    }
+
     func testUnknownProviderIsNotFound() async {
         let source = RemoteListingSource(registry: ProviderRegistry(builtIns: []), types: .shared)
         let events = await collect(source.read(root.url, generation: .initial, options: ReadOptions()))

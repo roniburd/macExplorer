@@ -101,12 +101,18 @@ public struct RemoteListingSource: Sendable {
         var flags: EntryFlags = [.readable]
         if name.hasPrefix(".") { flags.insert(.dotName) }
         if item.executable, kind == .file { flags.insert(.executable) }
-        let size = (kind == .file || kind == .symlink) ? (item.size ?? 0) : 0
-        let mtime = item.modified.map { Int64(($0.timeIntervalSince1970 * 1e9).rounded()) } ?? 0
+        let size = (kind == .file || kind == .symlink) ? max(0, item.size ?? 0) : 0   // untrusted: no negative sizes
+        let mtime = item.modified.map { nanoseconds(since1970: $0) } ?? 0
         let id = SpotlightSearch.fnv1a(fullPath)
         let entry = Entry(rowID: id, fileID: id, size: size, allocSize: size, mtime: mtime, ctime: mtime, nameOffset: 0,
                           nameLen: UInt16(min(name.utf8.count, Int(UInt16.max))), kind: kind, flags: flags, typeIndex: typeIndex)
         return (entry, name)
+    }
+
+    /// A provider's date as ns since 1970, or 0 (unknown) when it is NaN, infinite or outside Int64's range
+    /// (about 1678...2262, e.g. `Date.distantFuture`). `Int64(_: Double)` would trap on those.
+    static func nanoseconds(since1970 date: Date) -> Int64 {
+        Int64(exactly: (date.timeIntervalSince1970 * 1e9).rounded()) ?? 0
     }
 
     public static func failure(for error: RemoteError) -> ReadFailure {
