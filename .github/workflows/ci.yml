@@ -41,7 +41,7 @@ jobs:
       - name: Resolve packages (retries network errors)
         run: scripts/resolve-packages.sh
       - name: Layering checks
-        run: scripts/check-layering.sh && scripts/test-check-layering.sh
+        run: scripts/check-layering.sh && scripts/test-check-layering.sh && scripts/check-no-internal.sh && scripts/test-check-no-internal.sh
       - name: Build (release, warnings fail)
         run: |
           swift build -c release 2>&1 | tee "$RUNNER_TEMP/build-release.log"
@@ -89,6 +89,8 @@ jobs:
         run: scripts/run-scenarios.sh release
       - name: UI scenarios (bundled app, sandboxed)
         run: scripts/ui-scenarios.sh --require-gui
+      - name: Plugin load gate
+        run: scripts/test-plugin-load.sh release
       - name: Upload scenario reports
         if: always()
         uses: actions/upload-artifact@v4

@@ -2,7 +2,7 @@
 # Runs every Phase 1 gate (overview "Phase 1 working definition" 1-6) and then checks that the runners left
 # nothing behind. Gate logs live in ONE fresh ${TMPDIR}/macx-verify-<UUID> run directory, copied to
 # .build/verify-phase1/<run>/ before it is deleted. Usage: scripts/verify-phase1.sh [--skip-ui]
-# --skip-ui records the two gates that need a GUI session (app-launch, ui-scenarios) as SKIPPED.
+# --skip-ui records the three gates that need a GUI session (app-launch, ui-scenarios, plugin-load) as SKIPPED.
 # Exit 0 when every gate passed, 1 when any gate failed, 3 when all ran gates passed but GUI gates were skipped.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 2
@@ -126,6 +126,8 @@ DEFAULTS_BEFORE="$(defaults_digest)"
 
 gate layering scripts/check-layering.sh
 gate layering-selftest scripts/test-check-layering.sh
+gate internal-strings scripts/check-no-internal.sh
+gate internal-strings-selftest scripts/test-check-no-internal.sh
 gate build-release build_clean release
 gate build-debug build_clean debug
 GENERAL_BEFORE="$(general_changecount)"
@@ -133,6 +135,7 @@ gate test swift test --parallel
 if [ "$SKIP_UI" = 1 ]; then echo "GATE app-launch SKIPPED (--skip-ui)"; skipped=$((skipped + 1)); else gate app-launch app_launch; fi
 gate core-scenarios scripts/run-scenarios.sh release
 if [ "$SKIP_UI" = 1 ]; then echo "GATE ui-scenarios SKIPPED (--skip-ui)"; skipped=$((skipped + 1)); else gate ui-scenarios scripts/ui-scenarios.sh --require-gui; fi
+if [ "$SKIP_UI" = 1 ]; then echo "GATE plugin-load SKIPPED (--skip-ui)"; skipped=$((skipped + 1)); else gate plugin-load scripts/test-plugin-load.sh release; fi
 gate bench bench
 gate safety safety
 

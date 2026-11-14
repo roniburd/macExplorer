@@ -16,6 +16,12 @@ struct ScenarioFile: Codable {
         var size: Int?
         static let kinds: Set<String> = ["file", "folder", "app"]
     }
+    /// A repository the scenario provider serves (remote-repo-plugins): ref name → file path → UTF-8 content.
+    /// Nothing is created on disk for it.
+    struct RemoteFixture: Codable, Equatable {
+        var repo: String
+        var refs: [String: [String: String]]
+    }
     struct Fixture: Codable {
         var files: [String]
         var dirs: [String]
@@ -38,6 +44,7 @@ struct ScenarioFile: Codable {
                                               // "link-chain-tar": links through a "d/l1 -> .." link;
                                               // "hidden-local-zip": local entries its central directory omits)
         var symlinks: [String: String]?       // path → link text (a safe relative path; created, never followed)
+        var remote: RemoteFixture?            // remote-repo-plugins: a repository the scenario provider serves (fake:<repo>[@ref][/path])
 
         /// Every relative path the fixture names (validated before anything is created).
         var allPaths: [String] {
@@ -152,6 +159,9 @@ struct ScenarioFile: Codable {
         var showHidden: Bool?                 // Settings.showHidden
         // Phase 4 (P4-23)
         var sheetTitle: String?               // the browser window's attached sheet title ("Rename 2 Items"); "" = no sheet
+        // remote-repo-plugins
+        var remoteFolder: String?             // "<repo>@<ref>[/<path>]" of the shown remote folder
+        var disabledCommands: [String]?       // Command raw values that must be disabled for the content selection
     }
     var name: String
     var indexStatus: String?                  // P3-13: --index-status for this file ("enabled" | "disabled" | "unknown")
@@ -245,6 +255,10 @@ struct ScenarioFile: Codable {
             if let kind = item.kind, !SpotlightFixture.kinds.contains(kind) { throw .badFixture("spotlight '\(item.path)' kind '\(kind)'") }
             if let size = item.size, size < 0 { throw .badFixture("spotlight '\(item.path)' size \(size)") }
         }
+        if let remote = fixture.remote {
+            guard !remote.refs.isEmpty, !remote.repo.isEmpty, !remote.repo.contains("/") else { throw .badFixture("remote repo '\(remote.repo)'") }
+            for path in remote.refs.values.flatMap(\.keys) where !ScenarioPath.isSafeRelative(path) { throw .unsafePath(path) }
+        }
         for (index, step) in steps.enumerated() {
             let actions = step.actions
             guard actions.count == 1 else { throw .actionCount(step: index, actions: actions) }
@@ -265,6 +279,9 @@ struct ScenarioFile: Codable {
             if let scope = step.setSearchScope, !Self.searchScopes.contains(scope) { throw .badSearchScope(step: index, scope) }
             if let answer = step.answerError, Self.errorAnswers[answer] == nil { throw .badErrorAnswer(step: index, answer) }
             for expectation in [step.waitFor, step.expect].compactMap({ $0 }) {
+                for command in expectation.disabledCommands ?? [] where Command(rawValue: command) == nil {
+                    throw .badCommand(step: index, command)
+                }
                 if let problem = ExpectationMatcher.formatProblem(expectation) { throw .badExpectation(step: index, problem) }
             }
             let dropPaths = step.drop.map { $0.sources + [$0.onto] } ?? []

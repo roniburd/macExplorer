@@ -1,0 +1,20 @@
+{"name": "remote-repo-browse",
+ "fixture": {"files": [], "dirs": ["dest"],
+   "remote": {"repo": "demo", "refs": {
+     "main": {"README.md": "hello remote\n", "src/a.txt": "alpha\n"},
+     "dev": {"README.md": "dev branch\n", "src/b.txt": "beta\n"}}}},
+ "steps": [
+  {"key": "cmd+l"}, {"type": "fake:demo@main"}, {"key": "return"},
+  {"waitFor": {"remoteFolder": "demo@main", "rows": ["src", "README.md"]}},
+  {"doubleClick": "src"}, {"waitFor": {"remoteFolder": "demo@main/src", "rows": ["a.txt"]}},
+  {"click": "a.txt"},
+  {"expect": {"disabledCommands": ["rename", "moveToTrash", "newFolder", "paste"]}},
+  {"key": "opt+p"}, {"waitFor": {"previewState": "text", "previewTextPrefix": "alpha"}},
+  {"key": "cmd+c"},
+  {"key": "cmd+l"}, {"type": "fake:demo@dev/src"}, {"key": "return"},
+  {"waitFor": {"remoteFolder": "demo@dev/src", "rows": ["b.txt"]}},
+  {"key": "cmd+["}, {"key": "cmd+["}, {"key": "cmd+["},
+  {"waitFor": {"folder": "", "rows": ["dest"]}},
+  {"doubleClick": "dest"}, {"waitFor": {"folder": "dest"}},
+  {"key": "cmd+v"}, {"waitFor": {"filesExist": ["dest/a.txt"], "rows": ["a.txt"]}}
+ ]}

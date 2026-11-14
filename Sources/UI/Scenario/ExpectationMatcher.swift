@@ -1,6 +1,7 @@
 import Core
 import Foundation
 import MacxFS
+import MacxPluginKit
 
 struct ProbeSnapshot: Equatable {
     var rows: [String] = []
@@ -48,6 +49,9 @@ struct ProbeSnapshot: Equatable {
     var sidebarSearches: [String] = []
     var windowStates: [String] = []          // every browser window's folder state, in window-list order
     var showHidden = false
+    // remote-repo-plugins
+    var remoteFolder: String?                // "<repo>@<ref>[/<path>]"; nil = a local folder
+    var disabledCommands: [String]?          // the requested Command raw values that are disabled
 }
 
 enum ScenarioStrings {
@@ -104,6 +108,8 @@ extension ScenarioFile.Expectation {
         e.notices = notices?.map(sub)
         e.previewTextPrefix = previewTextPrefix.map(sub)
         e.sidebarSearches = sidebarSearches?.map(sub)
+        e.remoteFolder = remoteFolder.map(sub)
+        e.disabledCommands = disabledCommands?.map(sub)
         return e
     }
 }
@@ -164,6 +170,7 @@ enum ExpectationMatcher {
         }
         phase2Mismatches(e, s, into: &m)
         phase3Mismatches(e, s, into: &m)
+        remoteMismatches(e, s, into: &m)
         return m
     }
 }
@@ -238,5 +245,17 @@ extension ExpectationMatcher {
         check("sidebarSearches", e.sidebarSearches, s.sidebarSearches)
         check("windowStates", e.windowStates, s.windowStates)
         check("showHidden", e.showHidden, s.showHidden)
+    }
+}
+
+extension ExpectationMatcher {
+    static func remoteMismatches(_ e: ScenarioFile.Expectation, _ s: ProbeSnapshot, into m: inout [String]) {
+        if let want = e.remoteFolder, want != s.remoteFolder {
+            m.append("remoteFolder: expected '\(want)', got \(s.remoteFolder.map { "'\($0)'" } ?? "a local folder")")
+        }
+        if let want = e.disabledCommands {
+            let enabled = want.filter { !(s.disabledCommands ?? []).contains($0) }
+            if !enabled.isEmpty { m.append("disabledCommands: still enabled \(enabled)") }
+        }
     }
 }

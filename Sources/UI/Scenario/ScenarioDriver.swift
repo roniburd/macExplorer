@@ -2,6 +2,7 @@ import AppKit
 import Core
 import Darwin
 import MacxFS
+import MacxPluginKit
 
 struct KeyCandidate: Equatable, Sendable {
     var isVisible: Bool
@@ -162,6 +163,9 @@ final class ScenarioDriver {
             return (resolved, canonical)
         }
         rootReal = real
+        if let remote = fixture.remote {
+            _ = context.environment.remote.register([ScenarioRemoteProvider(remote)], source: "scenario")
+        }
         // Scenario runs never reach the real Spotlight index (SearchServices.forLaunch gives sandboxed runs the fake);
         // fixture items are what the fake returns for every query (P3-13).
         guard let spotlight = context.environment.searchServices.metadataQuery as? FakeMetadataQuery else {
@@ -808,6 +812,16 @@ final class ScenarioDriver {
         s.windowCount = context.windows.windows.count
         s.windowStates = context.windows.windows.map { ScenarioStrings.state($0.probeFolderState) }
         s.showHidden = context.environment.settings.showHidden
+        if let loc = RemoteLocation(url: w.session.folder.directory) {
+            s.remoteFolder = "\(loc.repo)@\(loc.ref ?? "-")" + (loc.path.isEmpty ? "" : "/" + loc.pathString)
+        }
+        if let wanted = expectation.disabledCommands {
+            let state = CommandStateBuilder.state(for: .contentSelection(w.session.folder), session: w.session,
+                                                  environment: context.environment, previewPaneVisible: false)
+            s.disabledCommands = wanted.filter { raw in
+                Command(rawValue: raw).map { !CommandAvailability.isEnabled($0, focus: .content, state: state) } ?? false
+            }
+        }
         addPhase2(to: &s, from: w, for: expectation)
         addPhase3(to: &s, from: w)
         let paths = ExpectationMatcher.requestedPaths(expectation).filter(ScenarioPath.isSafeRelative)
