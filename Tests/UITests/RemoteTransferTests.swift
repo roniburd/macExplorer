@@ -25,6 +25,28 @@ struct WebURLProvider: RemoteProvider {
     func invalidate(repo: String, ref: String?) { base.invalidate(repo: repo, ref: ref) }
 }
 
+/// FakeRemoteProvider that cancels the calling task right after fetching `cancelAfter`, without throwing: a provider
+/// that ignores cancellation (or a fast or cached fetch).
+struct CancellingProvider: RemoteProvider {
+    let base: FakeRemoteProvider
+    let cancelAfter: String
+    var id: String { base.id }
+    var displayName: String { base.displayName }
+    var iconSymbol: String { base.iconSymbol }
+    func parseAddress(_ text: String) -> RemoteLocation? { base.parseAddress(text) }
+    func completions(for text: String) async -> [String] { await base.completions(for: text) }
+    func displayRoot(_ location: RemoteLocation) -> String { base.displayRoot(location) }
+    func webURL(_ l: RemoteLocation) -> URL? { nil }
+    func listRefs(repo: String) async throws(RemoteError) -> [RemoteRef] { try await base.listRefs(repo: repo) }
+    func resolveRef(_ location: RemoteLocation) async throws(RemoteError) -> RemoteLocation { try await base.resolveRef(location) }
+    func list(_ location: RemoteLocation) -> AsyncThrowingStream<[RemoteItem], any Error> { base.list(location) }
+    func fetch(_ location: RemoteLocation, item: RemoteItem, to destination: URL) async throws(RemoteError) {
+        try await base.fetch(location, item: item, to: destination)
+        if location.pathString == cancelAfter { withUnsafeCurrentTask { $0?.cancel() } }
+    }
+    func invalidate(repo: String, ref: String?) { base.invalidate(repo: repo, ref: ref) }
+}
+
 @MainActor
 final class RemoteTransferTests: XCTestCase {
     var sandbox: Sandbox!
@@ -147,6 +169,26 @@ final class RemoteTransferTests: XCTestCase {
         _ = await task.value
         XCTAssertEqual(reported, [])
         XCTAssertTrue(env.operations.jobs.isEmpty)
+    }
+
+    func testCancelDuringTheLastFetchCopiesNothingAndCleansStaging() async throws {
+        let environment = CoreEnvironment.sandboxed(root: sandbox.root,
+                                                    remoteProviders: [CancellingProvider(base: fake, cancelAfter: "src/b.txt")])
+        _ = await environment.start()
+        let dest = sandbox.url("dest")
+        var reported: [RemoteTransfer.Failure] = []
+        let task = try XCTUnwrap(RemoteTransfer.copy([url("a.txt"), url("src")], into: dest, environment: environment,
+                                                     origin: nil, report: { failure, _ in reported.append(failure) }))
+        let ok = await task.value
+        XCTAssertFalse(ok)
+        XCTAssertEqual(reported, [])
+        XCTAssertEqual(fake.fetchCount, 2, "the last file was fetched before the cancel was seen")
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: dest.path(percentEncoded: false)), [],
+                       "nothing copied after Cancel")
+        let staging = environment.statePaths.root.appending(path: "remote-staging")
+        let left = (try? FileManager.default.contentsOfDirectory(atPath: staging.path(percentEncoded: false))) ?? []
+        XCTAssertEqual(left, [], "staging folder removed although the task was cancelled")
+        XCTAssertTrue(environment.operations.jobs.isEmpty)
     }
 
     func testPasteOfCopiedRemoteItemsIntoALocalFolderDownloadsThem() async throws {

@@ -53,13 +53,26 @@ enum RemoteTransfer {
                 return false
             }
             operations.endExternal(id)
+            // Cancel can land while the last file is fetched by a provider that doesn't throw on cancellation: the
+            // user cancelled, so nothing is copied.
+            if Task.isCancelled {
+                await removeStaging(staged.directory, lanes: lanes)
+                return false
+            }
             _ = await operations.perform(JobRequest(.copy(sources: staged.items, destination: destination), origin: origin))
-            let directory = staged.directory
-            _ = try? await lanes.perform(on: .unknown, .fileOp) { _ in try? FileManager.default.removeItem(at: directory) }
+            await removeStaging(staged.directory, lanes: lanes)
             return true
         }
         box.task = task
         return task
+    }
+
+    /// Removes a staging folder on the file-op lane from a task of its own: the caller may be cancelled, and
+    /// `LanePool.perform` skips the work of a cancelled caller.
+    private static func removeStaging(_ directory: URL, lanes: LanePool) async {
+        await Task.detached {
+            _ = try? await lanes.perform(on: .unknown, .fileOp) { _ in try? FileManager.default.removeItem(at: directory) }
+        }.value
     }
 
     static func failure(_ error: any Error, sources: [URL], provider: String?) -> Failure {
