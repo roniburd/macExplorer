@@ -97,4 +97,34 @@ final class RepositoriesSidebarTests: XCTestCase {
         XCTAssertEqual(sidebar.favoritesDropOperation(pasteboard, childIndex: 0), .link, "dragged remote items add favorites")
         XCTAssertEqual(sidebar.children(of: .repositoriesHeader), [.repository(RemoteLocation(provider: "test.fake", repo: "demo").url)])
     }
+
+    func testRemoteSidebarRowsDisableLocalAndMutatingCommandsInALocalWindow() throws {
+        let sandbox = try Sandbox()
+        addTeardownBlock { sandbox.destroy() }
+        let environment = CoreEnvironment.sandboxed(root: sandbox.root, remoteProviders: [FakeRemoteProvider()])
+        let session = BrowserSession(environment: environment, initialURL: sandbox.root)   // a local folder
+        addTeardownBlock { @MainActor in session.close() }
+        let repo = RemoteLocation(provider: "test.fake", repo: "owner/repo").url
+        let favorite = ResolvedFavorite(favorite: FavoritesResolver.makeRemoteFavorite(url: repo, displayName: "repo"),
+                                        url: repo, isStale: false)
+        let rows: [(SidebarItem, FocusContext)] = [(.repository(repo), .sidebarLocations),
+                                                    (.favorite(SidebarFavorite(resolved: favorite)), .sidebarFavorites)]
+        for (item, focus) in rows {
+            XCTAssertEqual(item.focusContext, focus)
+            var state = CommandStateBuilder.state(for: item.commandTarget, session: session, environment: environment,
+                                                  previewPaneVisible: false)
+            state.canPaste = true   // something is on the clipboard
+            XCTAssertTrue(state.targetIsRemote, "\(item)")
+            for c: Command in [.paste, .moveItemHere, .properties, .openInTerminal, .revealInFinder, .share,
+                               .copyPathTilde, .copyPathFileURL, .copyPathShellQuoted] {
+                XCTAssertFalse(CommandAvailability.isEnabled(c, focus: focus, state: state), "\(c) on \(item)")
+            }
+            for c: Command in [.open, .copy, .copyAsPath] {
+                XCTAssertTrue(CommandAvailability.isEnabled(c, focus: focus, state: state), "\(c) on \(item)")
+            }
+        }
+        let local = CommandStateBuilder.state(for: .location(sandbox.root), session: session, environment: environment,
+                                              previewPaneVisible: false)
+        XCTAssertFalse(local.targetIsRemote, "a local row is not gated")
+    }
 }

@@ -128,6 +128,25 @@ final class RemoteTransferTests: XCTestCase {
         XCTAssertEqual(env.clipboard.backend.readString(), "a.txt")
     }
 
+    func testRepositoryRowInALocalWindowCopiesRemoteItemsAndRefusesPaste() async throws {
+        // A REPOSITORIES row focused while the window shows a local folder (spec §4.7).
+        let browser = BrowserWindowController(context: context, initialURL: sandbox.url("dest"))
+        addTeardownBlock { @MainActor in browser.close() }
+        let commands = FileCommandController(context: context, window: browser)
+        let row = CommandTarget.location(url())
+        commands.perform(.copy, target: row, sender: nil)
+        XCTAssertEqual(env.clipboard.remoteItems, [url()], "remote items, not a file URL")
+        commands.perform(.copyAsPath, target: row, sender: nil)
+        XCTAssertEqual(env.clipboard.backend.readString(), "https://fake.example/demo/main/")
+        commands.perform(.copyName, target: row, sender: nil)
+        XCTAssertEqual(env.clipboard.backend.readString(), fake.displayRoot(try XCTUnwrap(RemoteLocation(url: url()))))
+        let local = try sandbox.createFile("local.txt")
+        env.clipboard.copy([local])
+        XCTAssertFalse(commands.canPerform(.paste, target: row))
+        commands.paste(row, moveItemHere: false)   // even called directly, nothing is queued into the remote URL
+        XCTAssertTrue(env.operations.jobs.isEmpty)
+    }
+
     func testCopyCommandWithoutWebURLsWritesDisplayRootPaths() async throws {
         // The plain fake has no web pages: the text flavour falls back to "<display root>/<path>", as Copy as Path does.
         var options = LaunchOptions()

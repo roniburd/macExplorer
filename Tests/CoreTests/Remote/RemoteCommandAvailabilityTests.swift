@@ -41,4 +41,26 @@ final class RemoteCommandAvailabilityTests: XCTestCase {
         XCTAssertTrue(CommandAvailability.isEnabled(.rename, focus: .content, state: s))
         XCTAssertTrue(CommandAvailability.isEnabled(.openInTerminal, focus: .content, state: s))
     }
+
+    func testRemoteSidebarRowIsGatedEvenInALocalWindow() {
+        // A REPOSITORIES row or remote favorite focused while the window shows a local folder.
+        var s = CommandState(selectionCount: 1, singleFolderSelected: true, canPaste: true, folderIsReadOnly: true)
+        s.targetIsRemote = true
+        for focus: FocusContext in [.sidebarLocations, .sidebarFavorites] {
+            for c in CommandAvailability.remoteDenied {
+                XCTAssertFalse(CommandAvailability.isEnabled(c, focus: focus, state: s), "\(c) in \(focus)")
+            }
+            for c: Command in [.open, .openInNewWindow, .openInNewTab, .copy, .copyAsPath, .copyName] {
+                XCTAssertTrue(CommandAvailability.isEnabled(c, focus: focus, state: s), "\(c) in \(focus)")
+            }
+        }
+        XCTAssertTrue(CommandAvailability.isEnabled(.removeFromFavorites, focus: .sidebarFavorites, state: s))
+    }
+
+    func testRemoteSessionDoesNotGateALocalSidebarRow() {
+        var s = CommandState(selectionCount: 1, singleFolderSelected: true, canPaste: true)
+        s.isRemote = true   // the window shows a repository; the focused row is a local folder
+        XCTAssertTrue(CommandAvailability.isEnabled(.paste, focus: .sidebarFolders, state: s))
+        XCTAssertTrue(CommandAvailability.isEnabled(.openInTerminal, focus: .sidebarLocations, state: s))
+    }
 }

@@ -1,5 +1,6 @@
 import Foundation
 import Core
+import MacxFS
 import MacxPluginKit
 
 /// CommandState (§5.3 enablement inputs) for a target. Pure in-memory: model, clipboard, undo, history.
@@ -78,6 +79,21 @@ enum CommandStateBuilder {
         case nil:
             break
         }
+        // A REPOSITORIES row or a remote favorite (spec §4.7): read-only, no local-only commands, whatever the window shows.
+        if let url = Self.sidebarURL(of: target), RemoteScheme.isRemote(url) {
+            state.targetIsRemote = true
+            state.folderIsReadOnly = true
+        }
         return state
+    }
+
+    /// The URL a sidebar row's target points at (nil for content targets, saved searches and stale favorites).
+    static func sidebarURL(of target: CommandTarget?) -> URL? {
+        switch target {
+        case .folder(let url)?, .location(let url)?: url
+        case .favorite(let favorite)?: favorite.url
+        case .volume(let volume)?: volume.mountPoint
+        case .contentSelection?, .resultsSelection?, .currentFolder?, .savedSearch?, nil: nil
+        }
     }
 }

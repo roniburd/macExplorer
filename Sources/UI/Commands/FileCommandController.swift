@@ -88,8 +88,9 @@ final class FileCommandController: CommandHandler {
         case .revealInFinder: reveal(target)
         case .cut: environment.clipboard.cut(subjectURLs(target))
         case .copy:
-            if case .contentSelection(let folder) = target, folder.isRemote { copyRemote(subjectURLs(target)) }
-            else { environment.clipboard.copy(subjectURLs(target)) }
+            // A repository selection, REPOSITORIES row or remote favorite: never a remote URL as a file URL.
+            let urls = subjectURLs(target)
+            if urls.contains(where: RemoteScheme.isRemote) { copyRemote(urls) } else { environment.clipboard.copy(urls) }
         case .paste: paste(target, moveItemHere: false)
         case .moveItemHere: paste(target, moveItemHere: true)
         case .selectAll: select(.allVisible(excluding: hiddenModelRows(target)), target)
@@ -317,14 +318,22 @@ final class FileCommandController: CommandHandler {
             if style == .name { return nil }
             urls = subjectURLs(target)
         case .currentFolder(let folder) where folder.isRemote:
-            if style == .name {
-                guard let l = RemoteLocation(url: folder.directory) else { return nil }
-                return l.name ?? environment.remote.provider(id: l.provider)?.displayRoot(l) ?? l.repo
-            }
-            urls = [folder.directory]
+            return remoteFolderText(style, url: folder.directory)
+        case .folder(let url), .location(let url):   // a REPOSITORIES row
+            return RemoteScheme.isRemote(url) ? remoteFolderText(style, url: url) : nil
+        case .favorite(let favorite):
+            guard let url = favorite.url, RemoteScheme.isRemote(url) else { return nil }
+            return remoteFolderText(style, url: url)
         default: return nil
         }
         return urls.isEmpty ? nil : urls.map(webText).joined(separator: "\n")
+    }
+
+    /// Copy as Path for one remote folder: its name for Copy Name, else its web text.
+    private func remoteFolderText(_ style: PathStyle, url: URL) -> String? {
+        guard style == .name else { return webText(url) }
+        guard let l = RemoteLocation(url: url) else { return nil }
+        return l.name ?? environment.remote.provider(id: l.provider)?.displayRoot(l) ?? l.repo
     }
 
     /// The web URL, or "<display root>/<path>" for a provider without web pages.

@@ -32,6 +32,9 @@ public struct CommandState: Sendable, Equatable {
     public var selectionIsArchive: Bool
     /// The command target is a remote (provider) folder: read-only, no local-only features (spec §4.7).
     public var isRemote: Bool = false
+    /// The focused sidebar row itself points at a remote URL (a REPOSITORIES row, a remote favorite). Sidebar foci act
+    /// on their row, not on the session folder, so `isRemote` doesn't cover them; this applies the same gate there.
+    public var targetIsRemote: Bool = false
     public init(selectionCount: Int = 0, singleFolderSelected: Bool = false, canPaste: Bool = false,
                 canUndo: Bool = false, canRedo: Bool = false, canGoBack: Bool = false, canGoForward: Bool = false,
                 canGoUp: Bool = false, targetIsEjectable: Bool = false, targetIsPackage: Bool = false,
@@ -87,9 +90,9 @@ public enum CommandAvailability {
     /// because the field editor validates them itself.
     public static func isEnabled(_ command: Command, focus: FocusContext, state: CommandState,
                                  collidesWithTextEditing: Set<Command> = KeyBindings.defaults.collidesWithTextEditing) -> Bool {
-        // Every non-sidebar focus acts on the session folder (sidebar rows act on their own target). The field editor
-        // keeps its own text edit actions (⌘X/⌘V in the search field).
-        if state.isRemote, remoteDenied.contains(command), !focus.isSidebar,
+        // Every non-sidebar focus acts on the session folder; sidebar rows act on their own target (`targetIsRemote`).
+        // The field editor keeps its own text edit actions (⌘X/⌘V in the search field).
+        if (focus.isSidebar ? state.targetIsRemote : state.isRemote), remoteDenied.contains(command),
            !(focus == .fieldEditor && fieldEditorOwned.contains(command)) { return false }
         if phase4Commands.contains(command) {
             guard shippedPhase4Commands.contains(command) else { return false }

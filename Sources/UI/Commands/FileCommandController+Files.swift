@@ -224,6 +224,8 @@ extension FileCommandController {
     // MARK: clipboard (§5.6)
 
     func paste(_ target: CommandTarget, moveItemHere: Bool) {
+        // Remote folders are read-only (spec §4.7): never a copy or move job into the POSIX form of a remote URL.
+        guard !RemoteScheme.isRemote(destinationFolder(target)) else { NSSound.beep(); return }
         let remote = environment.clipboard.remoteItems
         if !remote.isEmpty {
             // Items copied in a repository folder (spec §4.5): download, then a normal copy job.

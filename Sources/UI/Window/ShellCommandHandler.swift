@@ -58,6 +58,10 @@ final class ShellCommandHandler: CommandHandler {
             focus = .sidebarSavedSearch
             state.selectionCount = 1
         }
+        if let url = CommandStateBuilder.sidebarURL(of: target), RemoteScheme.isRemote(url) {
+            state.targetIsRemote = true   // a REPOSITORIES row or a remote favorite (spec §4.7)
+            state.folderIsReadOnly = true
+        }
         return CommandAvailability.isEnabled(command, focus: focus, state: state,
                                              collidesWithTextEditing: ActiveKeyBindings.current.collidesWithTextEditing)
     }
