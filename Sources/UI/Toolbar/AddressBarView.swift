@@ -33,6 +33,9 @@ final class AddressBarView: NSView {
 
     private let environment: CoreEnvironment
     private var editToken = 0
+    /// Bumped by each ref choice and each move to another folder: a ref switch still listing the new ref when the
+    /// user moves on (or picks again) must not drag the window back when it finishes.
+    private var refSwitchToken = 0
     private var fieldBeforeError: NSLayoutConstraint?
     private var fieldTrailing: NSLayoutConstraint?
 
@@ -53,6 +56,7 @@ final class AddressBarView: NSView {
     /// Shows `url` (breadcrumb from `volume`; a remote folder's from its provider, with the ref chip). While editing,
     /// the typed text is kept.
     func show(_ url: URL, volume: VolumeInfo?) {
+        if url != currentURL { refSwitchToken += 1 }
         currentURL = url
         searchTitle = nil
         if let location = RemoteLocation(url: url) {
@@ -78,6 +82,7 @@ final class AddressBarView: NSView {
     /// Search results (P3-10): one segment titled `title` (magnifying glass); editing (click, ⌘L, ⌥D, F4) starts
     /// from the search root's POSIX path. `show(_:volume:)` restores the breadcrumb.
     func showSearch(title: String, root: URL) {
+        refSwitchToken += 1
         currentURL = root
         searchTitle = title
         searchSegment.title = title
@@ -211,9 +216,12 @@ final class AddressBarView: NSView {
         }
         refChip.onChoose = { [weak self] ref in
             guard let self, let location = self.refChip.location else { return }
+            self.refSwitchToken += 1
+            let token = self.refSwitchToken
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 let target = await RefSwitch.target(from: location, to: ref, registry: self.environment.remote)
+                guard token == self.refSwitchToken, self.currentURL == location.url else { return }
                 self.onNavigate?(target.url, nil)
             }
         }

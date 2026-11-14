@@ -4,11 +4,24 @@ import MacxPluginKit
 
 /// The picker's rows and Return (spec §4.2). Pure.
 enum RefFilter {
-    /// Branches, then tags, then commits; a case-insensitive substring filter on the name.
+    /// Branches, then tags, then commits; a case-insensitive substring filter on the name. A ref named exactly as
+    /// typed (case-insensitively) comes first.
     static func rows(_ refs: [RemoteRef], matching text: String) -> [RemoteRef] {
         let typed = text.trimmingCharacters(in: .whitespaces)
         let matched = typed.isEmpty ? refs : refs.filter { $0.name.range(of: typed, options: .caseInsensitive) != nil }
-        return matched.filter { $0.kind == .branch } + matched.filter { $0.kind == .tag } + matched.filter { $0.kind == .commit }
+        let ordered = matched.filter { $0.kind == .branch } + matched.filter { $0.kind == .tag }
+            + matched.filter { $0.kind == .commit }
+        guard !typed.isEmpty else { return ordered }
+        let isExact = { (ref: RemoteRef) in ref.name.caseInsensitiveCompare(typed) == .orderedSame }
+        return ordered.filter(isExact) + ordered.filter { !isExact($0) }
+    }
+
+    /// The row to highlight after typing: the one named exactly as typed, else none, so Return takes the typed text
+    /// (a commit SHA or a ref beyond the capped list) rather than whichever listed name merely contains it.
+    static func highlight(text: String, rows: [RemoteRef]) -> Int? {
+        let typed = text.trimmingCharacters(in: .whitespaces)
+        guard !typed.isEmpty else { return nil }
+        return rows.firstIndex { $0.name.caseInsensitiveCompare(typed) == .orderedSame }
     }
 
     /// The highlighted row, else the typed text as is (a commit SHA or a ref beyond the list); nil for nothing.
@@ -158,7 +171,11 @@ final class RefPickerViewController: NSViewController, NSTableViewDataSource, NS
 
     func controlTextDidChange(_ obj: Notification) {
         reload()
-        if !rows.isEmpty { table.selectRowIndexes([0], byExtendingSelection: false) }
+        if let row = RefFilter.highlight(text: searchField.stringValue, rows: rows) {
+            table.selectRowIndexes([row], byExtendingSelection: false)
+        } else if !searchField.stringValue.isEmpty {
+            table.deselectAll(nil)
+        }
     }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
