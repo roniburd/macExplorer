@@ -114,6 +114,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func scheduleSmokeExit(after delay: Duration) {
         Task { @MainActor [options, statePaths] in
             try? await Task.sleep(for: delay)
+            // The plugin load runs detached from launch; wait for it so smoke.json always reports its outcome.
+            while let plugins = self.context?.plugins, !plugins.isFinished { try? await Task.sleep(for: .milliseconds(50)) }
             let titles = NSApp.orderedWindows.filter(\.isVisible).map(\.title)
             let plugins = self.context?.plugins
             let report = SmokeReport(windowTitles: titles, root: options.root?.path(percentEncoded: false),

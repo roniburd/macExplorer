@@ -10,7 +10,10 @@ public final class PluginsModel {
     public private(set) var loaded: [LoadedPlugin] = []
     public private(set) var failures: [PluginLoadFailure] = []
     public private(set) var skipped: SkipReason?
+    /// Set when `load` starts (so a second call is a no-op); `isFinished` is set when it ends.
     public private(set) var didLoad = false
+    /// The load has finished (plugins loaded, refused or skipped); the smoke report waits for it.
+    public private(set) var isFinished = false
     @ObservationIgnored private let environment: CoreEnvironment
 
     init(environment: CoreEnvironment) { self.environment = environment }
@@ -19,6 +22,7 @@ public final class PluginsModel {
     public func load(options: LaunchOptions, optionKeyHeld: Bool) async {
         guard !didLoad else { return }
         didLoad = true
+        defer { isFinished = true }
         if environment.settings.pluginsDisabled { skipped = .disabledInSettings; return }
         if optionKeyHeld { skipped = .optionKey; return }
         let loader: PluginLoader

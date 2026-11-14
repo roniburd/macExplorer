@@ -14,6 +14,7 @@ final class PluginsModelTests: XCTestCase {
         await h.context.plugins.load(options: h.context.options, optionKeyHeld: false)
         XCTAssertEqual(h.context.plugins.skipped, .sandboxed)
         XCTAssertTrue(h.context.plugins.didLoad)
+        XCTAssertTrue(h.context.plugins.isFinished)
         XCTAssertEqual(h.context.plugins.loaded, [])
     }
 
