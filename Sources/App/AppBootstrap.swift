@@ -58,13 +58,15 @@ enum AppBootstrap {
         options.isSandboxed ? FileSettingsStorage(fileURL: statePaths.settingsFile) : UserDefaultsStorage()
     }
 
-    /// Environment → UIContext → launch recovery and Core start → initial windows → AppLifecycle (onboarding sheet,
-    /// recovery notice when the RecoveryReport is not empty, Dock badge) → the updater (nil in debug, sandbox and
-    /// scenario runs, or when Info.plist has no real feed/key). First of all, the previous session's dirty-exit marker
-    /// is read and this session's is written; after a dirty exit the crash-report flow runs (never in scenarios,
-    /// which kill the app on purpose and must not hang on a prompt at their next launch).
+    /// Environment → UIContext → launch recovery and Core start → initial windows → plugins (spec §5.3, skipped while
+    /// ⌥ is held) → AppLifecycle (onboarding sheet, recovery notice when the RecoveryReport is not empty, Dock badge)
+    /// → the updater (nil in debug, sandbox and scenario runs, or when Info.plist has no real feed/key). First of all,
+    /// the previous session's dirty-exit marker is read and this session's is written; after a dirty exit the
+    /// crash-report flow runs (never in scenarios, which kill the app on purpose and must not hang on a prompt at their
+    /// next launch).
     static func launch(options: LaunchOptions, statePaths: StatePaths)
         async -> (context: UIContext, lifecycle: AppLifecycle, updates: UpdateController?, marker: DirtyExitMarker) {
+        let optionKeyHeld = NSEvent.modifierFlags.contains(.option)   // ⌥ at launch skips plugins (spec §5.3)
         let marker = DirtyExitMarker(fileURL: statePaths.sessionMarker)
         let previous = marker.previous()
         let info = Bundle.main.infoDictionary ?? [:]
@@ -84,6 +86,8 @@ enum AppBootstrap {
         let recovery = await environment.start()
         await iconPack
         await context.windows.restoreOrOpenInitial()
+        await context.plugins.load(options: options, optionKeyHeld: optionKeyHeld)
+        context.windows.pluginsDidLoad(providerIDs: context.plugins.loaded.flatMap(\.providerIDs))   // their repositories appear now
         let lifecycle = AppLifecycle(context: context, flushSettings: { (storage as? FileSettingsStorage)?.flush() })
         lifecycle.didLaunch(recovery: recovery)
         if options.scenario == nil { CrashReporting.start(context: context, previous: previous, statePaths: statePaths) }

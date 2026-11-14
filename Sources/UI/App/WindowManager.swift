@@ -1,6 +1,7 @@
 import AppKit
 import Core
 import MacxFS
+import MacxPluginKit
 
 /// Opens, tracks and closes browser windows (§5.1). Closing the last window leaves the app running.
 @MainActor
@@ -65,6 +66,21 @@ public final class WindowManager {
     }
 
     public var windows: [BrowserWindowController] { controllers }
+
+    /// After the launch's plugin load (spec §5.3, which runs after the first window shows): the new providers'
+    /// REPOSITORIES rows appear, and a window restored onto one of their repositories, which could only show
+    /// "Folder not found" until now, reads its folder again.
+    public func pluginsDidLoad(providerIDs: [String]) {
+        guard !providerIDs.isEmpty else { return }
+        let ids = Set(providerIDs)
+        for controller in controllers {
+            controller.splitController?.sidebarController?.rebuildRepositories()
+            let folder = controller.session.folder
+            if folder.isRemote, let location = RemoteLocation(url: folder.directory), ids.contains(location.provider) {
+                folder.refresh()
+            }
+        }
+    }
 
     public func window(for origin: OriginID) -> BrowserWindowController? {
         controllers.first { $0.origin == origin }

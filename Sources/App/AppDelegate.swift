@@ -115,8 +115,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor [options, statePaths] in
             try? await Task.sleep(for: delay)
             let titles = NSApp.orderedWindows.filter(\.isVisible).map(\.title)
+            let plugins = self.context?.plugins
             let report = SmokeReport(windowTitles: titles, root: options.root?.path(percentEncoded: false),
-                                     processID: ProcessInfo.processInfo.processIdentifier)
+                                     processID: ProcessInfo.processInfo.processIdentifier,
+                                     plugins: plugins?.loaded.flatMap(\.providerIDs),
+                                     pluginFailures: plugins?.failures.map { "\($0.bundle.lastPathComponent): \($0.reason)" })
             self.lifecycle?.willTerminate()
             self.sessionMarker?.end()
             do {

@@ -18,6 +18,7 @@ public struct LaunchOptions: Sendable, Equatable {
     /// --keymap <file.json> (P4-02): a keymap file (`KeymapDocument`) to apply to the sandboxed settings at launch.
     /// The app exits 65 if it can't be read or used. Requires --state-dir, so it never changes real settings.
     public var keymapFile: URL? = nil
+    public var pluginsDirectory: URL? = nil   // --plugins-dir <dir>: load plugins from here (sandboxed runs only)
 
     public init() {
         fakeLaunchServices = false
@@ -28,7 +29,7 @@ public struct LaunchOptions: Sendable, Equatable {
 
     /// Parses `CommandLine.arguments` (element 0 is the executable and is skipped).
     /// AppKit/Foundation argument-domain pairs (`-NS… value`, `-Apple… value`) and `-psn_…` are ignored.
-    /// `--root`, `--scenario`, `--smoke-exit-after` and `--keymap` require `--state-dir` (the app exits 64 otherwise).
+    /// `--root`, `--scenario`, `--smoke-exit-after`, `--keymap` and `--plugins-dir` require `--state-dir` (the app exits 64 otherwise).
     /// A directory option naming an existing non-directory fails with `notADirectory`; missing directories are allowed.
     public static func parse(_ arguments: [String]) throws(LaunchOptionsError) -> LaunchOptions {
         var options = LaunchOptions()
@@ -58,6 +59,7 @@ public struct LaunchOptions: Sendable, Equatable {
                 }
                 options.smokeExitAfter = .milliseconds(Int64((seconds * 1000).rounded()))
             case "--keymap": options.keymapFile = file(try value(for: argument))
+            case "--plugins-dir": options.pluginsDirectory = try directory(try value(for: argument))
             case "--index-status":
                 let raw = try value(for: argument)
                 guard let status = IndexingStatus(rawValue: raw) else { throw .invalidValue(option: argument, value: raw) }
@@ -73,7 +75,7 @@ public struct LaunchOptions: Sendable, Equatable {
             index += 1
         }
         let needsState = options.root != nil || options.scenario != nil || options.smokeExitAfter != nil
-            || options.keymapFile != nil
+            || options.keymapFile != nil || options.pluginsDirectory != nil
         if needsState && options.stateDirectory == nil { throw .stateDirectoryRequired }
         return options
     }

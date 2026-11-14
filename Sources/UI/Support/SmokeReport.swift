@@ -9,11 +9,18 @@ public struct SmokeReport: Codable, Sendable, Equatable {
     /// The `--root` path the first window opened, if any.
     public var root: String?
     public var processID: Int32
+    /// Provider ids of the plugins loaded this launch (nil when loading was skipped or hadn't finished).
+    public var plugins: [String]? = nil
+    /// "<bundle>.macxplugin: <reason>" for each plugin bundle refused this launch.
+    public var pluginFailures: [String]? = nil
 
-    public init(windowTitles: [String], root: String?, processID: Int32) {
+    public init(windowTitles: [String], root: String?, processID: Int32, plugins: [String]? = nil,
+                pluginFailures: [String]? = nil) {
         self.windowTitles = windowTitles
         self.root = root
         self.processID = processID
+        self.plugins = plugins
+        self.pluginFailures = pluginFailures
     }
 
     public func write(to url: URL) throws {
