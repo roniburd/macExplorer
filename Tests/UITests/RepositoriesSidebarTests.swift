@@ -20,6 +20,17 @@ final class RepositoriesSidebarTests: XCTestCase {
         XCTAssertEqual(rows, [root("test.a", "b/b"), root("test.a", "y/y"), root("test.b", "m/m"), root("test.b", "z/z")])
     }
 
+    func testSameLocationDistinguishesProvidersWithTheSameRepoPath() {
+        let a = RemoteLocation(provider: "test.a", repo: "owner/repo").url
+        let b = RemoteLocation(provider: "test.b", repo: "owner/repo").url
+        XCTAssertEqual(ChangeBus.key(for: a), ChangeBus.key(for: b))   // the path-only key collides...
+        XCTAssertFalse(SidebarViewController.sameLocation(a, b))       // ...the sidebar comparison doesn't
+        XCTAssertTrue(SidebarViewController.sameLocation(a, RemoteLocation(provider: "test.a", repo: "owner/repo").url))
+        XCTAssertFalse(SidebarViewController.sameLocation(a, URL(filePath: "/owner/repo", directoryHint: .isDirectory)))
+        let dir = URL(filePath: "/tmp/x", directoryHint: .isDirectory)
+        XCTAssertTrue(SidebarViewController.sameLocation(dir, URL(filePath: "/tmp/x/", directoryHint: .isDirectory)))
+    }
+
     func testRowsSkipProvidersThatAreNotLoaded() {
         let rows = RepositoryRows.rows(recent: [RemoteLocation(provider: "gone.plugin", repo: "a/b").url.absoluteString],
                                        favorites: [], registry: ProviderRegistry(builtIns: []))

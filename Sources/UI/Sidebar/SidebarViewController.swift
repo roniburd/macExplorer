@@ -1,6 +1,7 @@
 import AppKit
 import Core
 import MacxFS
+import MacxPluginKit
 
 /// The sidebar (§5.4): one source-list NSOutlineView with FAVORITES, SEARCHES (P3-11, only while there are saved
 /// searches), REPOSITORIES (only while there are recent or favorited repositories), LOCATIONS and FOLDERS sections. Rows navigate the
@@ -287,7 +288,7 @@ final class SidebarViewController: CommandHandlingViewController {
             return
         }
         guard let url = item.url else { return }
-        if ChangeBus.key(for: url) == ChangeBus.key(for: session.folder.directory) { return }
+        if Self.sameLocation(url, session.folder.directory) { return }
         session.navigate(to: url)
     }
 
@@ -351,10 +352,20 @@ final class SidebarViewController: CommandHandlingViewController {
         return row >= 0 ? row : nil
     }
 
+    /// Whether `a` and `b` name the same folder. Remote URLs compare by `RemoteLocation` (provider id + repo + ref +
+    /// path): `ChangeBus.key` keeps only the path, so two providers' `owner/repo` roots would otherwise collide.
+    static func sameLocation(_ a: URL, _ b: URL) -> Bool {
+        if RemoteScheme.isRemote(a) || RemoteScheme.isRemote(b) {
+            guard let la = RemoteLocation(url: a), let lb = RemoteLocation(url: b) else { return a.absoluteString == b.absoluteString }
+            return la == lb
+        }
+        return ChangeBus.key(for: a) == ChangeBus.key(for: b)
+    }
+
     private func applyReveal(_ path: [FolderTreeNode]?, url: URL) {
         // Keep a Favorites/Locations row that points at this folder (its Del means "remove", not "trash").
         if let selected = selectedItem, !isTreeItem(selected), let selectedURL = selected.url,
-           ChangeBus.key(for: selectedURL) == ChangeBus.key(for: url) {
+           Self.sameLocation(selectedURL, url) {
             expandPath(path)
             return
         }
