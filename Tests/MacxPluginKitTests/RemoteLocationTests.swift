@@ -45,6 +45,27 @@ final class RemoteLocationTests: XCTestCase {
         XCTAssertNil(RemoteLocation(url: URL(string: "x-macexplorer-remote://test.fake/o%2Fr@")!))
     }
 
+    func testValidProviderIDsRoundTrip() {
+        for id in ["dev.macexplorer.github", "test.fake", "Test.Fake", "a", "a-b.c-d", "x1.y2"] {
+            XCTAssertTrue(RemoteLocation.isValidProviderID(id), id)
+            let l = RemoteLocation(provider: id, repo: "o/r", ref: "main", path: ["x"])
+            XCTAssertEqual(l.url.host(percentEncoded: false), id)
+            XCTAssertEqual(RemoteLocation(url: l.url), l, l.url.absoluteString)
+        }
+    }
+
+    /// Review finding: ids from third-party plugins must never crash `url` or parse back as a different location.
+    func testInvalidProviderIDsAreRejected() {
+        for id in ["", "a:b", "my provider", "a/b", "a@b", "é.x", "a..b", ".a", "a.", "a_b", "a%2Fb", "a?b", "a#b",
+                   String(repeating: "a", count: 254)] {
+            XCTAssertFalse(RemoteLocation.isValidProviderID(id), id)
+            let url = RemoteLocation(provider: id, repo: "o/r", ref: "main", path: ["x"]).url
+            XCTAssertNil(url.host(percentEncoded: false).flatMap { $0.isEmpty ? nil : $0 }, url.absoluteString)
+            XCTAssertNil(RemoteLocation(url: url), url.absoluteString)
+        }
+        XCTAssertNil(RemoteLocation(url: URL(string: "x-macexplorer-remote://xn--9ca.x_y/o%2Fr")!))
+    }
+
     func testNavigationHelpers() {
         let root = loc()
         XCTAssertNil(root.parent)

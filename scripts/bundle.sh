@@ -1,5 +1,6 @@
 #!/bin/bash
-# scripts/bundle.sh: assembles and signs MacExplorer.app (with an embedded Sparkle.framework) from the SwiftPM build products.
+# scripts/bundle.sh: assembles and signs MacExplorer.app (with an embedded Sparkle.framework and libMacxPluginKit.dylib)
+# from the SwiftPM build products.
 # Usage: scripts/bundle.sh [debug|release] [--bundle-id ID] [--output PATH] [--version X.Y.Z[-beta.N]] [--build N]
 #                          [--sign IDENTITY] [--feed-url URL] [--ed-public-key KEY] [--universal]
 #   default: debug, com.macexplorer.app, .build/MacExplorer.app, version/build/feed/key from Resources/Info.plist,
@@ -103,6 +104,12 @@ if ! otool -l "$exe" | grep -A2 LC_RPATH | grep -qF 'path @executable_path/../Fr
     install_name_tool -add_rpath "@executable_path/../Frameworks" "$exe"
 fi
 
+# MacxPluginKit (plugin API, spec §2.1): a dynamic library from Packages/MacxPluginKit that the app and every plugin
+# load from Contents/Frameworks, so both see one copy of its classes.
+[ -f "$bin/libMacxPluginKit.dylib" ] || { echo "bundle.sh: no libMacxPluginKit.dylib at $bin" >&2; exit 1; }
+otool -L "$exe" | grep -qF '@rpath/libMacxPluginKit.dylib' || { echo "bundle.sh: macExplorer does not link @rpath/libMacxPluginKit.dylib" >&2; exit 1; }
+cp "$bin/libMacxPluginKit.dylib" "$app/Contents/Frameworks/libMacxPluginKit.dylib"
+
 [ -z "$version" ] || /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $version" "$plist"
 [ -z "$build" ] || /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $build" "$plist"
 [ -z "$feed_url" ] || /usr/libexec/PlistBuddy -c "Set :SUFeedURL $feed_url" "$plist"
@@ -132,6 +139,7 @@ done
 sign "$sparkle/Versions/B/Autoupdate"
 sign "$sparkle/Versions/B/Updater.app"
 sign "$sparkle"
+sign "$app/Contents/Frameworks/libMacxPluginKit.dylib"
 sign --entitlements "$entitlements" --identifier "$bundle_id" "$exe"
 sign --entitlements "$entitlements" "$app"
 codesign --verify --deep --strict "$app"
