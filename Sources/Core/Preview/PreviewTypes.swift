@@ -17,6 +17,8 @@ public enum PreviewContent: Sendable, Equatable {
     case folder(URL), text(URL), quickLook(URL)
     /// A word-processing document (Word, OpenDocument) the pane can reflow to its width; Quick Look is the fallback.
     case document(URL)
+    /// A remote file over the auto-preview limit (spec §4.3): nothing is downloaded until the user asks.
+    case remoteDownload(URL, size: Int64)
     case cloudPlaceholder(URL), brokenLink(URL), unavailable(URL, code: Int32)
 }
 

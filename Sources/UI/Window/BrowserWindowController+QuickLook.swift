@@ -12,6 +12,8 @@ extension BrowserWindowController {
         let bridge = qlBridge
         let system = SystemQuickLookPanel(bridge: bridge)
         let controller = QuickLookController(panel: panel ?? { system })
+        let env = context.environment
+        controller.localize = { urls in await RemotePreview.localCopies(urls, registry: env.remote, cache: env.remoteFiles).local }
         quickLook = controller
         bridge.controller = controller
         bridge.forwardKeyEvent = { [weak self] event in

@@ -2314,6 +2314,17 @@
         }
       }
     },
+    "Download to preview (%@)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download to preview (%@)"
+          }
+        }
+      }
+    },
     "Downloading MacExplorer %@…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6429,6 +6440,17 @@
         }
       }
     },
+    "The file couldn't be downloaded." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The file couldn't be downloaded."
+          }
+        }
+      }
+    },
     "The file couldn’t be read." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6590,6 +6612,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "This can't be undone."
+          }
+        }
+      }
+    },
+    "This file is too large to preview automatically." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This file is too large to preview automatically."
           }
         }
       }

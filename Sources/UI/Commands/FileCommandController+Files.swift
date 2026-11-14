@@ -130,6 +130,15 @@ extension FileCommandController {
     }
 
     func chooseDefaultApp(for file: URL) {
+        if RemoteScheme.isRemote(file) {
+            let env = environment
+            Task {
+                guard let local = await RemotePreview.localCopies([file], registry: env.remote, cache: env.remoteFiles).local.first,
+                      !RemoteScheme.isRemote(local) else { return }
+                self.chooseDefaultApp(for: local)
+            }
+            return
+        }
         guard let hostWindow = window?.window else { return }
         let context = self.context
         Task { await DefaultAppSheet.present(for: file, on: hostWindow, context: context) }
@@ -137,6 +146,16 @@ extension FileCommandController {
 
     /// Open With errors are an alert naming the app (§5.7).
     func openWithErrors(_ files: [URL], app: URL?) async {
+        var files = files
+        if files.contains(where: RemoteScheme.isRemote) {
+            let copies = await RemotePreview.localCopies(files, registry: environment.remote, cache: environment.remoteFiles)
+            if let failed = copies.failed.first {
+                await prompts.inform(.openFailed(file: failed.lastPathComponent, app: nil,
+                                                 message: L10n.string("The file couldn't be downloaded.")), window: window?.window)
+                if copies.local.isEmpty { return }
+            }
+            files = copies.local
+        }
         let provider = environment.launchServices.provider
         do {
             if let app { try await provider.open(files, withApplicationAt: app) } else { try await provider.open(files) }

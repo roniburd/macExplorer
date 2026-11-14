@@ -355,12 +355,26 @@ final class ContextMenuBuilder {
         return String(format: L10n.string("Compress %lld Items to %@"), Int64(names.count), ext)
     }
 
+    /// An empty file named like the remote one, so LaunchServices lists the apps for its type (created once).
+    static func typeProbeURL(for remote: URL) -> URL {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "macx-type-probe", directoryHint: .isDirectory)
+        let ext = remote.pathExtension
+        let probe = dir.appending(path: ext.isEmpty ? "probe" : "probe.\(ext)")
+        if !FileManager.default.fileExists(atPath: probe.path(percentEncoded: false)) {
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            FileManager.default.createFile(atPath: probe.path(percentEncoded: false), contents: Data())
+        }
+        return probe
+    }
+
     private func openWithItem(rows: IndexSet, folder: any RowSource, handler: CommandHandler) -> NSMenuItem? {
         guard let commands = handler as? FileCommandController else { return nil }
         let fileRows = rows.filter { folder.entry(atRow: $0).kind != .directory }
         guard let first = fileRows.first else { return nil }
         let files = fileRows.map { folder.url(atRow: $0) }
-        let openWith = OpenWithMenu(files: files, typeIndex: folder.entry(atRow: first).typeIndex,
+        // The app list is looked up by type, so a remote file uses an empty local probe file with the same extension.
+        let lookup = files.map { RemoteScheme.isRemote($0) ? Self.typeProbeURL(for: $0) : $0 }
+        let openWith = OpenWithMenu(files: lookup, typeIndex: folder.entry(atRow: first).typeIndex,
                                     cache: context.environment.launchServices, icons: context.icons,
                                     openWith: { [weak commands] app in commands?.openWith(files, app: app) },
                                     other: { [weak commands] in commands?.openWithOther(files) },

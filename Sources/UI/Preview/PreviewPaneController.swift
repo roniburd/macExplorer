@@ -24,13 +24,29 @@ final class PreviewPaneController: NSViewController {
         case unavailable(URL, Int32)
         /// Text by type but not by content (NUL or control bytes): a message, never Quick Look (QA round 1).
         case binary(URL)
+        /// A remote file over the auto-preview limit: "Download to preview (<size>)".
+        case remoteDownload(URL, Int64)
     }
 
     /// PreviewPlanner on the read lanes: the main thread never stats, opens or sniffs the item (§4.4).
     static func defaultResolve(_ env: CoreEnvironment) -> Resolver {
         { subject in
+            if RemoteScheme.isRemote(subject.url) { return await remoteResolve(subject, env: env, force: false) }
             let volume = env.volumes.volume(for: subject.url)?.id ?? .unknown
             return await PreviewPlanner.resolve(subject, lanes: env.lanes, volume: volume, types: env.types)
+        }
+    }
+
+    /// A remote item: fetched into the cache (≤ the auto limit, or `force`), then planned like any local file.
+    static func remoteResolve(_ subject: PreviewSubject, env: CoreEnvironment, force: Bool) async -> PreviewContent {
+        switch await RemotePreview.prepare(subject.url, registry: env.remote, cache: env.remoteFiles, force: force) {
+        case .folder: return .folder(subject.url)
+        case .needsDownload(let size): return .remoteDownload(subject.url, size: size)
+        case .failed(let code): return .unavailable(subject.url, code: code)
+        case .local(let copy):
+            let local = PreviewSubject(url: copy, kind: .file, typeIndex: subject.typeIndex, flags: [.readable], size: subject.size)
+            let volume = env.volumes.volume(for: copy)?.id ?? .unknown
+            return await PreviewPlanner.resolve(local, lanes: env.lanes, volume: volume, types: env.types)
         }
     }
 
@@ -92,6 +108,8 @@ final class PreviewPaneController: NSViewController {
     private var lastKey: SelectionKey?
     /// The Finder display name of the single subject (the folder message shows it).
     private var subjectName = ""
+    /// The single subject last resolved ("Download to preview" resolves it again with no size limit).
+    private var lastSubject: PreviewSubject?
 
     private(set) var displayState: DisplayState = .hidden
     private(set) var details: PreviewDetails?
@@ -341,6 +359,7 @@ final class PreviewPaneController: NSViewController {
         let e = source.entry(atRow: row)
         subjectName = source.displayName(atRow: row)
         let subject = PreviewSubject(url: source.url(atRow: row), kind: e.kind, typeIndex: e.typeIndex, flags: e.flags, size: e.size)
+        lastSubject = subject
         let content = await resolve(subject)
         guard gen == generation, isActive else { return }
         await show(content, gen: gen)
@@ -370,6 +389,7 @@ final class PreviewPaneController: NSViewController {
         case .cloudPlaceholder(let url): host.show(nil); render(.cloud(url))
         case .brokenLink(let url): host.show(nil); render(.broken(url))
         case .unavailable(let url, let code): host.show(nil); render(.unavailable(url, code))
+        case .remoteDownload(let url, let size): host.show(nil); render(.remoteDownload(url, size))
         case .text(let url):
             textLoads += 1
             render(.loading)
@@ -399,13 +419,14 @@ final class PreviewPaneController: NSViewController {
 
     private func loadDetails(_ subject: PreviewSubject, content: PreviewContent, gen: Int) {
         switch content {
-        case .nothingSelected, .multiple, .brokenLink, .unavailable:
+        case .nothingSelected, .multiple, .brokenLink, .unavailable, .remoteDownload:
             details = nil
             detailsView.isHidden = true
             return
         case .folder, .text, .quickLook, .document, .cloudPlaceholder:
             break
         }
+        if RemoteScheme.isRemote(subject.url) { details = nil; detailsView.isHidden = true; return }   // nothing to stat
         let env = context.environment
         detailsTask = Task { [weak self] in
             let volume = env.volumes.volume(for: subject.url)?.id ?? .unknown
@@ -423,6 +444,17 @@ final class PreviewPaneController: NSViewController {
         let url: URL
         switch displayState {
         case .cloud(let u), .downloadFailed(let u): url = u
+        case .remoteDownload:
+            guard let subject = lastSubject else { return }
+            let env = context.environment, gen = generation
+            render(.loading)
+            downloadTask?.cancel()
+            downloadTask = Task { [weak self] in
+                let content = await Self.remoteResolve(subject, env: env, force: true)
+                guard let self, !Task.isCancelled, gen == self.generation, self.isActive else { return }
+                await self.show(content, gen: gen)
+            }
+            return
         default: return
         }
         let downloader = self.downloader ?? context.environment.searchServices.downloader
@@ -517,6 +549,9 @@ final class PreviewPaneController: NSViewController {
         case .unavailable(_, let code):
             message(symbol: "eye.trianglebadge.exclamationmark", title: L10n.string("preview.unavailable"),
                     detail: POSIXErrorCode(rawValue: code).map { String(cString: strerror($0.rawValue)) })
+        case .remoteDownload(_, let size):
+            message(symbol: "arrow.down.circle", title: L10n.string("This file is too large to preview automatically."),
+                    button: String(format: L10n.string("Download to preview (%@)"), Formatters.bytes(size)))
         }
         switch state {
         case .hidden, .nothing, .multiple: detailsView.isHidden = true
@@ -530,7 +565,8 @@ final class PreviewPaneController: NSViewController {
     }
 
     /// Scenario probe text: "hidden", "nothing", "loading", "multiple:2", "text", "quickLook", "folder", "cloud",
-    /// "downloading", "downloadFailed", "broken", "unavailable", "binary", "empty", "markdown", "markdownSource".
+    /// "downloading", "downloadFailed", "broken", "unavailable", "binary", "empty", "markdown", "markdownSource",
+    /// "remoteDownload".
     var probeState: String {
         switch displayState {
         case .hidden: "hidden"
@@ -549,6 +585,7 @@ final class PreviewPaneController: NSViewController {
         case .unavailable: "unavailable"
         case .binary: "binary"
         case .empty: "empty"
+        case .remoteDownload: "remoteDownload"
         }
     }
 

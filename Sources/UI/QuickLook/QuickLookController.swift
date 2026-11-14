@@ -67,6 +67,28 @@ final class QuickLookController {
 
     init(panel: @escaping @MainActor () -> any QuickLookPanelControlling) { self.panel = panel }
 
+    /// Remote folders (spec §4.3): the selection's remote URLs become local cached copies before Quick Look opens.
+    /// Installed by the window controller; nil = URLs are used as they are.
+    var localize: (@MainActor ([URL]) async -> [URL])?
+    private var localizeTask: Task<Void, Never>?
+
+    private var selectionIsRemote: Bool { folder?.selectedURLs.contains(where: RemoteScheme.isRemote) ?? false }
+
+    /// Fetches the local copies off the main thread's way and shows (`thenShow`) or reloads the panel when they arrive.
+    private func localizeItems(thenShow: Bool) {
+        guard let localize else { return }
+        let selected = folder?.selectedURLs ?? []
+        localizeTask?.cancel()
+        localizeTask = Task { [weak self] in
+            let local = await localize(selected)
+            guard let self, !Task.isCancelled else { return }
+            self.itemBuilds += 1
+            self.builtItems = local
+            let p = self.panel()
+            if thenShow { if !local.isEmpty { p.show() } } else if p.isControlling { p.reloadData() }
+        }
+    }
+
     var isVisible: Bool { panel().isVisible }
 
     /// The selection's URLs in display order, built on first use after a change.
@@ -106,6 +128,7 @@ final class QuickLookController {
     private func selectionChanged() {
         let p = panel()
         guard p.isControlling else { builtItems = nil; return }
+        if selectionIsRemote, localize != nil { localizeItems(thenShow: false); return }
         let previous = builtItems
         let next = buildItems()
         builtItems = next
@@ -116,6 +139,7 @@ final class QuickLookController {
     func toggle() {
         let p = panel()
         if p.isVisible { p.hide(); return }
+        if selectionIsRemote, localize != nil { localizeItems(thenShow: true); return }
         builtItems = buildItems()
         guard !items.isEmpty else { return }
         p.show()

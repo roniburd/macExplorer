@@ -44,6 +44,11 @@ public enum OpenPlanner {
         var targets: [LinkTarget] = []
         targets.reserveCapacity(items.count)
         for item in items {
+            // A remote link has no local target to resolve; its provider serves its content (spec §4.4).
+            if RemoteScheme.isRemote(item.url), item.kind == .symlink || item.kind == .alias {
+                targets.append(.document(item.url))
+                continue
+            }
             switch item.kind {
             case .symlink, .alias:
                 let url = item.url
