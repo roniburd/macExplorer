@@ -79,6 +79,26 @@ final class RemoteListingSourceTests: XCTestCase {
         XCTAssertEqual(result.missing, ["gone"])
     }
 
+    func testInvalidAndDuplicateNamesAreDropped() async {
+        let fake = FakeRemoteProvider()
+        fake.setTree(repo: "o/r", ["": [
+            RemoteItem(name: "", kind: .file), RemoteItem(name: ".", kind: .directory), RemoteItem(name: "..", kind: .directory),
+            RemoteItem(name: "a/b", kind: .file), RemoteItem(name: "../x", kind: .file), RemoteItem(name: "nul\0name", kind: .file),
+            RemoteItem(name: "ok.txt", kind: .file, size: 1), RemoteItem(name: "..hidden", kind: .file),
+            RemoteItem(name: "ok.txt", kind: .file, size: 2), RemoteItem(name: "dup", kind: .directory),
+            RemoteItem(name: "dup", kind: .file),
+        ]])
+        let source = RemoteListingSource(registry: ProviderRegistry(builtIns: [fake]), types: .shared)
+        let events = await collect(source.read(root.url, generation: .initial, options: ReadOptions()))
+        let names = events.flatMap { e -> [String] in
+            guard case .batch(let b) = e else { return [] }
+            return (0..<b.count).map { b.name(at: $0) }
+        }
+        XCTAssertEqual(names.sorted(), ["..hidden", "dup", "ok.txt"], "unsafe names dropped; first of each duplicate kept")
+        guard case .completed(let summary)? = events.last else { return XCTFail("no .completed") }
+        XCTAssertEqual(summary.entryCount, 3)
+    }
+
     func testUnknownProviderIsNotFound() async {
         let source = RemoteListingSource(registry: ProviderRegistry(builtIns: []), types: .shared)
         let events = await collect(source.read(root.url, generation: .initial, options: ReadOptions()))

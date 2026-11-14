@@ -158,6 +158,8 @@ final class IconCache {
 
     func fileIcon(for url: URL, rowID: RowID, points: Double, scale: Double,
                   completion: @escaping @MainActor (CGImage) -> Void) {
+        // Remote rows get type icons only (§4.3): their URL's path is not a local file and their volume has no lanes.
+        guard url.isFileURL else { return }
         let pixels = max(1, Int((points * scale).rounded()))
         let key = FileKey(id: rowID, path: url.path, pixels: pixels)
         if let cached = fileImages[key] { completion(cached); return }

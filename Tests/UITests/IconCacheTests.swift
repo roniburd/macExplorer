@@ -42,6 +42,23 @@ final class IconCacheTests: XCTestCase {
         XCTAssertEqual(image?.width, 32)
     }
 
+    func testRemoteURLNeverReachesFileIcon() async throws {
+        let h = try await ContentTestHarness.make(self)
+        // A local bundle at the same POSIX path as the remote URL's path must not leak its icon onto the remote row.
+        let app = try h.dir("Remote.app/Contents").deletingLastPathComponent()
+        var components = URLComponents()
+        components.scheme = "x-macexplorer-remote"
+        components.host = "test.fake"
+        components.path = app.path
+        let remote = try XCTUnwrap(components.url)
+        XCTAssertEqual(remote.path, app.path)
+        var called = false
+        h.context.icons.fileIcon(for: remote, rowID: .name("Remote.app"), points: 16, scale: 2) { _ in called = true }
+        try await Task.sleep(for: .milliseconds(500))
+        XCTAssertFalse(called)
+        XCTAssertFalse(h.context.icons.hasCachedFileIcon(rowID: .name("Remote.app")))
+    }
+
     func testCancelledFileIconNeverCallsBack() async throws {
         let h = try await ContentTestHarness.make(self)
         let app = try h.dir("Other.app/Contents").deletingLastPathComponent()

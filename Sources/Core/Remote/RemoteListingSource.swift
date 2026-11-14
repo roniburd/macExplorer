@@ -27,11 +27,14 @@ public struct RemoteListingSource: Sendable {
                 return
             }
             var count = 0
+            var seen: Set<String> = []
             do {
                 for try await chunk in provider.list(location) {
                     if Task.isCancelled { break }
                     var batch = Batch(generation: generation)
                     for item in chunk where !options.directoriesOnly || item.kind == .directory {
+                        // Trust boundary: a provider's names must be single, unique path components.
+                        guard Self.isValidName(item.name), seen.insert(item.name).inserted else { continue }
                         let (entry, name) = Self.entry(for: item, fullPath: location.appending(item.name).url.absoluteString, types: types)
                         Array(name.utf8).withUnsafeBufferPointer { batch.append(entry, nameBytes: $0) }
                     }
@@ -51,6 +54,11 @@ public struct RemoteListingSource: Sendable {
         }
         continuation.onTermination = { _ in task.cancel() }
         return stream
+    }
+
+    /// A name local readers could produce: non-empty, not "." or "..", no "/" or NUL.
+    static func isValidName(_ name: String) -> Bool {
+        !name.isEmpty && name != "." && name != ".." && !name.contains("/") && !name.contains("\0")
     }
 
     /// The watcher-patch path: re-lists the folder (providers cache listings) and keeps `names`.
