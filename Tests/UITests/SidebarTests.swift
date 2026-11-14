@@ -281,20 +281,20 @@ final class SidebarTests: XCTestCase {
     func testCloudStorageFoldersAppearAfterICloudDrive() async throws {
         let h = try await SidebarHarness.make(self) {
             try $0.dir("home/Library/Mobile Documents/com~apple~CloudDocs")
-            try $0.dir("home/Library/CloudStorage/OneDrive-amazon.com")
+            try $0.dir("home/Library/CloudStorage/OneDrive-contoso.com")
             try $0.dir("home/Library/CloudStorage/GoogleDrive-me@example.com")
             try $0.dir("home/Library/CloudStorage/.hidden")
         }
         try await h.waitUntil("cloud rows") {
             h.names(in: .locations) == ["Macintosh HD", "iCloud Drive", "Google Drive – me@example.com",
-                                         "OneDrive – amazon.com", "USB"]
+                                         "OneDrive – contoso.com", "USB"]
         }
-        let row = h.row(named: "OneDrive – amazon.com", in: .locations)
-        XCTAssertEqual(h.cell(atRow: row)?.toolTip.map { URL(filePath: $0).lastPathComponent }, "OneDrive-amazon.com")
+        let row = h.row(named: "OneDrive – contoso.com", in: .locations)
+        XCTAssertEqual(h.cell(atRow: row)?.toolTip.map { URL(filePath: $0).lastPathComponent }, "OneDrive-contoso.com")
         h.sidebar.select(row: row)
         XCTAssertEqual(h.sidebar.focusContext, .sidebarLocations)
         guard case .location(let url)? = h.sidebar.commandTarget else { return XCTFail("a Locations target") }
-        XCTAssertEqual(url.lastPathComponent, "OneDrive-amazon.com")
+        XCTAssertEqual(url.lastPathComponent, "OneDrive-contoso.com")
         let recorder = SidebarRecordingHandler()
         h.sidebar.handler = recorder
         for command: Command in [.moveToTrash, .deletePermanently, .rename, .cut] { h.sidebar.run(command, sender: nil) }

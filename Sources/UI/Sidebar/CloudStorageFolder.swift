@@ -16,7 +16,7 @@ struct CloudStorageFolder: Hashable {
         home.appending(path: "Library/CloudStorage", directoryHint: .isDirectory)
     }
 
-    /// `OneDrive-amazon.com` → `OneDrive – amazon.com`, `GoogleDrive-me@x.com` → `Google Drive – me@x.com`,
+    /// `OneDrive-contoso.com` → `OneDrive – contoso.com`, `GoogleDrive-me@x.com` → `Google Drive – me@x.com`,
     /// `Box-Box` → `Box`, `Dropbox` → `Dropbox`.
     static func displayName(folderName: String) -> String {
         guard let dash = folderName.firstIndex(of: "-") else { return providerName(folderName) }
