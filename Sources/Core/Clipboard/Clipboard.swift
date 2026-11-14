@@ -43,10 +43,11 @@ public final class Clipboard {
         observers.send(())
     }
 
-    /// ⌘C in a repository folder: remote URLs for an in-app paste, web URLs as text for other apps (spec §4.5).
-    public func copyRemote(_ urls: [URL], webURLs: [URL]) {
+    /// ⌘C in a repository folder: remote URLs for an in-app paste, plus `webText` (one line per item: its web URL, or
+    /// "<display root>/<path>" without one) as text for other apps (spec §4.5).
+    public func copyRemote(_ urls: [URL], webText: [String]) {
         guard !urls.isEmpty else { return }
-        backend.writeRemoteItems(urls, webText: webURLs.map(\.absoluteString).joined(separator: "\n"))
+        backend.writeRemoteItems(urls, webText: webText.joined(separator: "\n"))
         resetCut()
     }
 

@@ -9,7 +9,7 @@ final class RemoteClipboardTests: XCTestCase {
         let board = InMemoryPasteboard()
         let clipboard = Clipboard(backend: board)
         let a = RemoteLocation(provider: "test.fake", repo: "demo", ref: "main", path: ["a.txt"]).url
-        clipboard.copyRemote([a], webURLs: [URL(string: "https://fake.example/demo/main/a.txt")!])
+        clipboard.copyRemote([a], webText: ["https://fake.example/demo/main/a.txt"])
         XCTAssertEqual(clipboard.remoteItems, [a])
         XCTAssertTrue(clipboard.canPaste)
         XCTAssertFalse(board.hasFileURLs(), "no file URLs, so Finder pastes nothing it can't open")

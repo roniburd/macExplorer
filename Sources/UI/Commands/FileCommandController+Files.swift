@@ -227,7 +227,8 @@ extension FileCommandController {
         let remote = environment.clipboard.remoteItems
         if !remote.isEmpty {
             // Items copied in a repository folder (spec §4.5): download, then a normal copy job.
-            if RemoteTransfer.copy(remote, into: destinationFolder(target), environment: environment, origin: window?.origin) == nil {
+            if RemoteTransfer.copy(remote, into: destinationFolder(target), environment: environment, origin: window?.origin,
+                                   window: window?.window) == nil {
                 NSSound.beep()
             }
             return

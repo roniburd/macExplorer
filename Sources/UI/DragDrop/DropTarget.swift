@@ -112,7 +112,8 @@ final class DropTarget {
         if RemoteScheme.isRemote(destination) { return false }
         let remote = RemoteItemsPasteboard.read(info.draggingPasteboard)
         if !remote.isEmpty {
-            return RemoteTransfer.copy(remote, into: destination, environment: context.environment, origin: origin) != nil
+            return RemoteTransfer.copy(remote, into: destination, environment: context.environment, origin: origin,
+                                       window: view.window) != nil
         }
         if Self.isPromiseOnly(info.draggingPasteboard) { return receivePromises(info.draggingPasteboard, destination: destination) }
         let urls = sources(info)

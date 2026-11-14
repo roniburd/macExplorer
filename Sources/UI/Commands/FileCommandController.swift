@@ -300,7 +300,7 @@ final class FileCommandController: CommandHandler {
     // MARK: remote (spec §4.5)
 
     func copyRemote(_ urls: [URL]) {
-        environment.clipboard.copyRemote(urls, webURLs: urls.compactMap(webURL))
+        environment.clipboard.copyRemote(urls, webText: urls.map(webText))   // same fallback as Copy as Path
     }
 
     func webURL(_ url: URL) -> URL? {

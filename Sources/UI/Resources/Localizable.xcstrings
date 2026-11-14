@@ -111,6 +111,17 @@
         }
       }
     },
+    "%@ can't download this item." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ can't download this item."
+          }
+        }
+      }
+    },
     "%@ files, %@ folders" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -206,6 +217,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ refused access to this folder"
+          }
+        }
+      }
+    },
+    "%@ refused access." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ refused access."
           }
         }
       }
@@ -1863,6 +1885,28 @@
         }
       }
     },
+    "Couldn't download %lld items" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't download %lld items"
+          }
+        }
+      }
+    },
+    "Couldn't download '%@'" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't download '%@'"
+          }
+        }
+      }
+    },
     "Couldn't download from the update server (%@)." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3465,6 +3509,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Invert Selection"
+          }
+        }
+      }
+    },
+    "It no longer exists in the repository." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It no longer exists in the repository."
           }
         }
       }
@@ -6612,6 +6667,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The original item can't be found"
+          }
+        }
+      }
+    },
+    "The repository" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The repository"
           }
         }
       }

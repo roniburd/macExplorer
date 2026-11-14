@@ -106,6 +106,49 @@ final class RemoteTransferTests: XCTestCase {
         XCTAssertEqual(env.clipboard.backend.readString(), "a.txt")
     }
 
+    func testCopyCommandWithoutWebURLsWritesDisplayRootPaths() async throws {
+        // The plain fake has no web pages: the text flavour falls back to "<display root>/<path>", as Copy as Path does.
+        var options = LaunchOptions()
+        options.root = sandbox.root
+        options.stateDirectory = try sandbox.createDirectory("state-plain")
+        let plain = UIContext(environment: CoreEnvironment.sandboxed(root: sandbox.root, remoteProviders: [fake]), options: options)
+        _ = await plain.environment.start()
+        let browser = BrowserWindowController(context: plain, initialURL: url())
+        addTeardownBlock { @MainActor in browser.close() }
+        let m = browser.session.folder
+        await waitUntil("loaded") { m.isRemote && m.state == .complete }
+        m.select(.names(["a.txt", "src"]))
+        FileCommandController(context: plain, window: browser).perform(.copy, target: .contentSelection(m), sender: nil)
+        let root = try fake.displayRoot(XCTUnwrap(RemoteLocation(url: url())))
+        XCTAssertEqual(Set(plain.environment.clipboard.remoteItems.compactMap(RemoteLocation.init(url:))),
+                       Set([url("a.txt"), url("src")].compactMap(RemoteLocation.init(url:))))
+        XCTAssertEqual(Set(plain.environment.clipboard.backend.readString()?.components(separatedBy: "\n") ?? []),
+                       ["\(root)/a.txt", "\(root)/src"])
+    }
+
+    func testFailedDownloadIsReportedAndEndsTheRow() async throws {
+        let dest = sandbox.url("dest")
+        fake.failNext(.network("offline"))
+        var reported: [RemoteTransfer.Failure] = []
+        let task = try XCTUnwrap(RemoteTransfer.copy([url("a.txt")], into: dest, environment: env, origin: nil,
+                                                     report: { failure, _ in reported.append(failure) }))
+        let ok = await task.value
+        XCTAssertFalse(ok)
+        XCTAssertEqual(reported, [RemoteTransfer.Failure(title: "Couldn't download 'a.txt'", detail: "Can't reach Fake (offline)")])
+        XCTAssertTrue(env.operations.jobs.isEmpty, "the Downloading row is gone")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dest.appending(path: "a.txt").path(percentEncoded: false)))
+    }
+
+    func testCancelledDownloadIsNotReported() async throws {
+        var reported: [RemoteTransfer.Failure] = []
+        let task = try XCTUnwrap(RemoteTransfer.copy([url("a.txt"), url("src")], into: sandbox.url("dest"), environment: env,
+                                                     origin: nil, report: { failure, _ in reported.append(failure) }))
+        task.cancel()
+        _ = await task.value
+        XCTAssertEqual(reported, [])
+        XCTAssertTrue(env.operations.jobs.isEmpty)
+    }
+
     func testPasteOfCopiedRemoteItemsIntoALocalFolderDownloadsThem() async throws {
         let remote = BrowserWindowController(context: context, initialURL: url())
         addTeardownBlock { @MainActor in remote.close() }
