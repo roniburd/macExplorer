@@ -27,7 +27,10 @@ public final class PluginsModel {
         if optionKeyHeld { skipped = .optionKey; return }
         let loader: PluginLoader
         if let dir = options.pluginsDirectory {
-            loader = PluginLoader(directory: dir, codeCheck: AnySignatureCheck())
+            // Any signature only where it can't widen trust: a debug build or an ad-hoc-signed app (the scripts' builds).
+            // A certificate-signed app keeps the same-certificate check, or any local process could inject code with
+            // `--plugins-dir` and inherit the app's privacy grants.
+            loader = PluginLoader(directory: dir, codeCheck: await Self.allowsAnySignature() ? AnySignatureCheck() : SecCodePluginCheck())
         } else if options.isSandboxed {
             skipped = .sandboxed; return
         } else {
@@ -35,5 +38,14 @@ public final class PluginsModel {
         }
         failures = await loader.loadAll(into: environment.remote)
         loaded = loader.loaded
+    }
+
+    private static func allowsAnySignature() async -> Bool {
+        #if DEBUG
+        return true
+        #else
+        let app = Bundle.main.bundleURL
+        return await Task.detached(priority: .userInitiated) { !SecCodePluginCheck.hasCertificate(app) }.value
+        #endif
     }
 }

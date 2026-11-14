@@ -57,9 +57,7 @@ public struct RemoteListingSource: Sendable {
     }
 
     /// A name local readers could produce: non-empty, not "." or "..", no "/" or NUL.
-    static func isValidName(_ name: String) -> Bool {
-        !name.isEmpty && name != "." && name != ".." && !name.contains("/") && !name.contains("\0")
-    }
+    static func isValidName(_ name: String) -> Bool { RemoteItem.isValidName(name) }
 
     /// The watcher-patch path: re-lists the folder (providers cache listings) and keeps `names`.
     public func readItems(_ names: [String], in directory: URL, generation: Generation) async throws -> ItemReadResult {

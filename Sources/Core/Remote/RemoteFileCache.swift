@@ -4,9 +4,9 @@ import MacxPluginKit
 
 /// Downloaded remote files for preview and open (spec §2.4, §4.3): `<root>/<provider>/<repo hash>/<key>/<name>`.
 /// `key` is the item's `contentID` (a blob SHA names one content forever, so the entry is immutable) or, with none,
-/// a hash of ref + path that is downloaded again on every request. Files are read-only (0444). When the total passes
-/// `limitBytes` the least recently used key folders go first. Concurrent requests for one entry share one download,
-/// which is cancelled once every request waiting for it has been cancelled.
+/// a hash of ref + path that is downloaded again on every request. Files are quarantined (`RemoteQuarantine`) and
+/// read-only (0444). When the total passes `limitBytes` the least recently used key folders go first. Concurrent
+/// requests for one entry share one download, which is cancelled once every request waiting for it has been cancelled.
 public actor RemoteFileCache {
     public static let autoPreviewLimit: Int64 = 10 * 1024 * 1024
 
@@ -44,6 +44,7 @@ public actor RemoteFileCache {
             let temp = partials.appending(path: UUID().uuidString, directoryHint: .notDirectory)
             do {
                 try await provider.fetch(location, item: item, to: temp)
+                try RemoteQuarantine.mark(temp, webURL: provider.webURL(location))
                 try fm.setAttributes([.posixPermissions: 0o444], ofItemAtPath: temp.path(percentEncoded: false))
                 try fm.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
                 if fm.fileExists(atPath: destination.path(percentEncoded: false)) { try fm.removeItem(at: destination) }

@@ -39,8 +39,8 @@ public struct SystemPluginBundleLoader: PluginBundleLoading {
 /// is created once on the main actor and its providers are registered. Nothing here ever stops the app: every
 /// problem becomes a `PluginLoadFailure`.
 ///
-/// The signature check runs per bundle on the main actor, immediately before that bundle's code is loaded, and again
-/// immediately after: when the code identity (cdhash) differs, the bundle was swapped on disk in between and the
+/// The signature check runs per bundle (off the main actor: it hashes files) immediately before that bundle's code is
+/// loaded on the main actor, and again immediately after: when the code identity (cdhash) differs, the bundle was swapped on disk in between and the
 /// plugin is refused before its principal class is created (load-time initializers in the image have run by then).
 /// Remaining race: the loaded image can't be unloaded, and
 /// a swap that is reverted between the load and the second check isn't seen; the kernel's page-level code-signing
@@ -86,14 +86,14 @@ public final class PluginLoader {
                 failures.append(PluginLoadFailure(bundle: c.url, reason: .apiMismatch(declared))); continue
             }
             // Checked here, right before the load, not at scan time (see the type comment).
-            guard let checked = codeCheck.codeIdentity(c.url) else {
+            guard let checked = await identity(c.url) else {
                 failures.append(PluginLoadFailure(bundle: c.url, reason: .signatureMismatch)); continue
             }
             let type: MacxPlugin.Type
             do { type = try bundleLoader.principalClass(of: c.url) } catch {
                 failures.append(PluginLoadFailure(bundle: c.url, reason: error)); continue
             }
-            guard codeCheck.codeIdentity(c.url) == checked else {
+            guard await identity(c.url) == checked else {
                 failures.append(PluginLoadFailure(bundle: c.url, reason: .signatureMismatch)); continue
             }
             let plugin = type.init()
@@ -109,5 +109,11 @@ public final class PluginLoader {
                                        apiVersion: plugin.apiVersion.description, providerIDs: accepted))
         }
         return failures
+    }
+
+    /// `codeCheck.codeIdentity` off the main actor.
+    private func identity(_ url: URL) async -> Data? {
+        let check = codeCheck
+        return await Task.detached(priority: .userInitiated) { check.codeIdentity(url) }.value
     }
 }

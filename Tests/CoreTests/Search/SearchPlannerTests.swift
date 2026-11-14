@@ -64,6 +64,21 @@ final class SearchPlannerTests: XCTestCase {
         XCTAssertFalse(SearchPlanner.needsIndexStatus(SearchSpec(text: "", scope: .thisMac, root: root)))
     }
 
+    /// Spec §4.7: a repository folder is never crawled or handed to Spotlight; every scope and mode is a name filter.
+    func testRemoteRootIsAlwaysTheFolderFilterByName() {
+        let remote = URL(string: "\(RemoteScheme.name)://test.fake/owner%2Frepo@main/src")!
+        for scope in [SearchScope.thisFolder, .subfolders, .thisMac] {
+            for mode in [SearchMode.name, .contents] {
+                let spec = SearchSpec(text: "tax", scope: scope, mode: mode, root: remote)
+                let p = SearchPlanner.plan(spec, resolved: SearchResolver.resolve(spec, now: now, calendar: cal),
+                                           inputs: PlanInputs(rootIndexing: .enabled, bootIndexing: .enabled, rootIsLocal: true,
+                                                              rootVolumeName: "Data"))
+                XCTAssertEqual(p.engine, .folderFilter(tax), "\(scope) \(mode)")
+                XCTAssertFalse(SearchPlanner.needsIndexStatus(spec), "\(scope) \(mode)")
+            }
+        }
+    }
+
     func testCrawlPermissionsFromTCCOutcomes() {
         let home = URL(filePath: "/Users/someone", directoryHint: .isDirectory)
         let p = CrawlPermissions.make(home: home) { $0 == .documents ? .granted : nil }

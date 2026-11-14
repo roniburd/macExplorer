@@ -61,22 +61,37 @@ final class RemoteFilePromiseDelegate: NSObject, NSFilePromiseProviderDelegate, 
 
     func operationQueue(for filePromiseProvider: NSFilePromiseProvider) -> OperationQueue { Self.queue }
 
+    /// Downloads into a temporary folder and moves the result to `url` only when complete (`RemoteExport.download`),
+    /// so a failure leaves nothing half-written in the drop folder. The write is published as a file `Progress` on
+    /// `url`, so the receiving app (Finder) shows it and can cancel it.
     func filePromiseProvider(_ provider: NSFilePromiseProvider, writePromiseTo url: URL,
                              completionHandler: @escaping @Sendable ((any Error)?) -> Void) {
         guard let remote = (provider as? RemoteFilePromiseProvider)?.remoteURL, let location = RemoteLocation(url: remote) else {
             return completionHandler(RemoteError.notFound)
         }
         let registry = self.registry
-        Task {
+        let progress = Progress(totalUnitCount: -1)
+        progress.kind = .file
+        progress.fileOperationKind = .downloading
+        progress.fileURL = url
+        progress.isCancellable = true
+        progress.publish()          // before the task starts, so its unpublish always comes after
+        let task = Task {
+            defer { progress.unpublish() }
             do {
                 let item = try await registry.item(at: location)
+                if let size = item.size, item.kind == .file { progress.totalUnitCount = size }
                 try await RemoteExport(registry: registry, stagingRoot: url.deletingLastPathComponent())
-                    .download(location, item: item, to: url) { _ in }
+                    .download(location, item: item, to: url) { p in
+                        if progress.totalUnitCount > 0 { progress.completedUnitCount = p.bytesDone }
+                    }
                 completionHandler(nil)
             } catch {
                 completionHandler(error)
             }
         }
+        progress.cancellationHandler = { task.cancel() }
+        if progress.isCancelled { task.cancel() }
     }
 }
 

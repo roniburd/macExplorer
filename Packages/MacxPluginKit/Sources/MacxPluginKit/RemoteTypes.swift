@@ -18,6 +18,12 @@ public struct RemoteItem: Sendable, Codable, Hashable {
         self.contentID = contentID
         self.modified = modified
     }
+
+    /// The trust boundary for provider names: one local path component (non-empty, not "." or "..", no "/" or NUL).
+    /// The app skips items whose name fails this before listing them or writing them to disk.
+    public static func isValidName(_ name: String) -> Bool {
+        !name.isEmpty && name != "." && name != ".." && !name.contains("/") && !name.contains("\0")
+    }
 }
 
 public struct RemoteRef: Sendable, Codable, Hashable {

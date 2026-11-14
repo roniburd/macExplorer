@@ -30,14 +30,21 @@ public struct SearchPlan: Sendable, Equatable {
 
 /// Engine routing (§11 Phase 3): This folder + name stays the in-memory filter, Subfolders + name is our crawler,
 /// This Mac and Contents use Spotlight; Contents on a volume that is not indexed falls back to a name search.
+/// A remote (repository) root only ever gets the folder filter by name (spec §4.7): its URL is no local path, so
+/// neither the crawler nor Spotlight may see it.
 public enum SearchPlanner {
     public static func needsIndexStatus(_ spec: SearchSpec) -> Bool {
-        !spec.isEmptyQuery && (spec.scope == .thisMac || spec.mode == .contents)
+        !spec.isEmptyQuery && !RemoteScheme.isRemote(spec.root) && (spec.scope == .thisMac || spec.mode == .contents)
     }
 
     public static func plan(_ spec: SearchSpec, resolved: ResolvedSearch, inputs: PlanInputs) -> SearchPlan {
         let d = resolved.diagnostics
         guard !spec.isEmptyQuery, !resolved.isEmpty else { return SearchPlan(engine: .none, diagnostics: d) }
+        if RemoteScheme.isRemote(spec.root) {
+            var byName = resolved.criteria
+            byName.nameTerms += resolved.contentTerms.map(NameTerm.init)
+            return SearchPlan(engine: .folderFilter(byName), diagnostics: d)
+        }
         let root = rootURL(spec.root)
         let criteria = resolved.criteria
         let terms = resolved.contentTerms

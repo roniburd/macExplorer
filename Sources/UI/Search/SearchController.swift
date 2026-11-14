@@ -53,9 +53,14 @@ final class SearchController {
     /// Retyping inside results keeps searching the same folder.
     var root: URL { session.results?.spec?.root ?? session.folder.directory }
 
+    /// A repository folder searches only itself, by name (spec §4.7); the saved scope and mode are kept for later.
+    var rootIsRemote: Bool { RemoteScheme.isRemote(root) }
+    var effectiveScope: SearchScope { rootIsRemote ? .thisFolder : scope }
+    var effectiveMode: SearchMode { rootIsRemote ? .name : mode }
+
     /// The spec the current text, scope, mode and filters describe; nil for an empty query.
     func spec() -> SearchSpec? {
-        let s = SearchSpec(text: text, scope: scope, mode: mode, filters: filters, root: root)
+        let s = SearchSpec(text: text, scope: effectiveScope, mode: effectiveMode, filters: filters, root: root)
         return s.isEmptyQuery ? nil : s
     }
 
@@ -66,7 +71,7 @@ final class SearchController {
         text = newText
         diagnostics = QuerySyntax.parse(newText).diagnostics
         onChange?()
-        run(now: scope == .thisFolder && mode == .name)
+        run(now: effectiveScope == .thisFolder && effectiveMode == .name)
     }
 
     /// Return in the field.

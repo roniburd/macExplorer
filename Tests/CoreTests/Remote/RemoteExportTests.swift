@@ -52,6 +52,50 @@ final class RemoteExportTests: XCTestCase {
         do { _ = try await task.value; XCTFail("expected cancellation") } catch is CancellationError {}
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: sandbox.url("staging").path), [])
     }
+
+    func testInvalidAndDuplicateChildNamesAreSkippedAndNothingLeavesTheDestination() async throws {
+        fake.setTree(repo: "demo", [
+            "": [RemoteItem(name: "evil", kind: .directory)],
+            "evil": [RemoteItem(name: "../escaped.txt", kind: .file), RemoteItem(name: "..", kind: .directory),
+                     RemoteItem(name: ".", kind: .directory), RemoteItem(name: "", kind: .file),
+                     RemoteItem(name: "ok.txt", kind: .file), RemoteItem(name: "ok.txt", kind: .file)],
+        ])
+        let staged = try await export.stage([url("evil")]) { _ in }
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: staged.items[0].path), ["ok.txt"])
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: staged.directory.path), ["evil"])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: sandbox.url("staging").appending(path: "escaped.txt").path))
+    }
+
+    func testStagedFilesAndFoldersAreQuarantined() async throws {
+        let staged = try await export.stage([url("src")]) { _ in }
+        for item in [staged.items[0], staged.items[0].appending(path: "lib"), staged.items[0].appending(path: "lib/b.txt")] {
+            let q = try item.resourceValues(forKeys: [.quarantinePropertiesKey]).quarantineProperties
+            XCTAssertEqual(q?["LSQuarantineAgentName"] as? String, RemoteQuarantine.agentName, item.lastPathComponent)
+        }
+    }
+
+    func testDownloadOfARepositoryRootUsesTheRepoName() async throws {
+        fake.setTree(repo: "owner/demo", ["": [RemoteItem(name: "a.txt", kind: .file)]])
+        let root = RemoteLocation(provider: "test.fake", repo: "owner/demo", ref: "main").url
+        let staged = try await export.stage([root]) { _ in }
+        XCTAssertEqual(staged.items.map(\.lastPathComponent), ["demo"])
+    }
+
+    /// A folder download (a file promise) that fails partway leaves nothing at the destination.
+    func testAFailedFolderDownloadLeavesNothingAtTheDestination() async throws {
+        let drop = try sandbox.createDirectory("drop")
+        let destination = drop.appending(path: "src")
+        let location = RemoteLocation(provider: "test.fake", repo: "demo", ref: "main", path: ["src"])
+        let item = RemoteItem(name: "src", kind: .directory)
+        let export = self.export!
+        let task = Task {
+            try await export.download(location, item: item, to: destination) { _ in withUnsafeCurrentTask { $0?.cancel() } }
+        }
+        do { try await task.value; XCTFail("expected cancellation") } catch is CancellationError {}
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: drop.path), [])
+        try await export.download(location, item: item, to: destination) { _ in }
+        XCTAssertEqual(try String(contentsOf: destination.appending(path: "lib/b.txt"), encoding: .utf8), "content of src/lib/b.txt")
+    }
 }
 
 /// Collects progress callbacks from any thread.

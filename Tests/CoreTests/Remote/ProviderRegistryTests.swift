@@ -52,4 +52,15 @@ final class ProviderRegistryTests: XCTestCase {
         do { _ = try await registry.item(at: root.appending("README.md")); XCTFail("expected rateLimited") }
         catch { XCTAssertEqual(error, .rateLimited(resetAt: nil)) }
     }
+
+    func testItemWithAnInvalidNameIsNeverReturned() async {
+        let fake = FakeRemoteProvider()
+        fake.setTree(repo: "o/r", ["": [RemoteItem(name: "..", kind: .directory), RemoteItem(name: "a/b", kind: .file)]])
+        let registry = ProviderRegistry(builtIns: [fake])
+        let root = RemoteLocation(provider: "test.fake", repo: "o/r", ref: "main")
+        for name in ["..", "a/b"] {
+            do { _ = try await registry.item(at: root.appending(name)); XCTFail("expected notFound for \(name)") }
+            catch { XCTAssertEqual(error, .notFound) }
+        }
+    }
 }

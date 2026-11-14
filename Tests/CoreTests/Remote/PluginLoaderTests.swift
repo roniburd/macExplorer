@@ -145,5 +145,6 @@ final class PluginLoaderTests: XCTestCase {
     func testSecCodeCheckRejectsAnUnsignedBundle() throws {
         try bundle("Plain", api: "1.0")
         XCTAssertFalse(SecCodePluginCheck().signedLikeApp(dir.appending(path: "Plain.macxplugin")))
+        XCTAssertFalse(SecCodePluginCheck.hasCertificate(dir.appending(path: "Plain.macxplugin")))
     }
 }

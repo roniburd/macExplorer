@@ -126,8 +126,12 @@ final class SearchScopeBar: NSView {
 
     /// Refreshes every control from the field controller and the session.
     func update(controller: SearchController, session: BrowserSession) {
-        scopeControl.selectedSegment = Self.scopes.firstIndex(of: controller.scope) ?? 0
-        modeControl.selectedSegment = Self.modes.firstIndex(of: controller.mode) ?? 0
+        scopeControl.selectedSegment = Self.scopes.firstIndex(of: controller.effectiveScope) ?? 0
+        modeControl.selectedSegment = Self.modes.firstIndex(of: controller.effectiveMode) ?? 0
+        // Spec §4.7: a repository folder offers only This folder, by name.
+        let remote = controller.rootIsRemote
+        for (i, scope) in Self.scopes.enumerated() { scopeControl.setEnabled(!remote || scope == .thisFolder, forSegment: i) }
+        for (i, mode) in Self.modes.enumerated() { modeControl.setEnabled(!remote || mode == .name, forSegment: i) }
         currentFilters = controller.filters
         filtersBadge.isHidden = controller.filters.isEmpty
         filtersButton.setAccessibilityValue(controller.filters.isEmpty ? nil : L10n.string("Filters on"))

@@ -208,6 +208,23 @@ final class GitHubProviderTests: XCTestCase {
         XCTAssertEqual(stub.count(api + "/git/trees/\(commit)?recursive=1"), 2)
     }
 
+    func testTreeCacheDropsTheLeastRecentlyUsedTrees() {
+        let cache = TreeCache()
+        let tree = TreeCache.Tree(folders: ["": [RemoteItem(name: "a", kind: .file)]], complete: true)
+        for i in 0..<TreeCache.maxTrees { cache.setTree(tree, "o/r", "c\(i)") }
+        XCTAssertNotNil(cache.tree("o/r", "c0"))                // c0 is now the most recently used
+        cache.setTree(tree, "o/r", "new")
+        XCTAssertEqual(cache.treeCount, TreeCache.maxTrees)
+        XCTAssertNil(cache.tree("o/r", "c1"), "the least recently used tree went")
+        XCTAssertNotNil(cache.tree("o/r", "c0"))
+        XCTAssertNotNil(cache.tree("o/r", "new"))
+        let huge = TreeCache.Tree(folders: ["": Array(repeating: RemoteItem(name: "x", kind: .file), count: TreeCache.maxItems + 1)],
+                                  complete: true)
+        cache.setTree(huge, "o/big", "c")
+        XCTAssertEqual(cache.treeCount, 1, "past the item bound only the newest tree stays")
+        XCTAssertNotNil(cache.tree("o/big", "c"))
+    }
+
     func testWebURLUsesBlobForListedFiles() async throws {
         let p = provider(StubTransport.demo())
         _ = try await list(p, loc("main", ["src"]))

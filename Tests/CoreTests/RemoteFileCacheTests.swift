@@ -85,6 +85,9 @@ final class RemoteFileCacheTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), "0123456789")
         let mode = try FileManager.default.attributesOfItem(atPath: url.path(percentEncoded: false))[.posixPermissions] as? Int
         XCTAssertEqual(mode, 0o444)
+        let quarantine = try XCTUnwrap(try url.resourceValues(forKeys: [.quarantinePropertiesKey]).quarantineProperties,
+                                       "a downloaded file is quarantined like a browser download")
+        XCTAssertEqual(quarantine["LSQuarantineAgentName"] as? String, RemoteQuarantine.agentName)
         let again = try await cache.localURL(for: loc(["src", "a.txt"]), item: file("a.txt", id: "b1"), provider: provider)
         XCTAssertEqual(again, url)
         XCTAssertEqual(provider.fetches, 1, "a content-keyed entry is never fetched twice")

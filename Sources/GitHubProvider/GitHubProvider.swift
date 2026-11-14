@@ -94,9 +94,7 @@ public final class GitHubProvider: RemoteProvider, Sendable {
     func items(in location: RemoteLocation) async throws(RemoteError) -> [RemoteItem] {
         let resolved = try await resolveRef(location)
         let commit = try await commit(for: resolved)
-        let items = try await folder(resolved.pathString, repo: resolved.repo, commit: commit)
-        cache.recordKinds(items, in: resolved)
-        return items
+        return try await folder(resolved.pathString, repo: resolved.repo, commit: commit)
     }
 
     func defaultBranch(_ repo: String) async throws(RemoteError) -> String {
@@ -117,11 +115,14 @@ public final class GitHubProvider: RemoteProvider, Sendable {
     /// One folder's items: from the recursive tree (fetched once per commit), or for a truncated tree by walking down
     /// from the root one non-recursive request per folder not seen yet.
     func folder(_ path: String, repo: String, commit: String) async throws(RemoteError) -> [RemoteItem] {
-        if cache.tree(repo, commit) == nil {
+        let tree: TreeCache.Tree
+        if let cached = cache.tree(repo, commit) {
+            tree = cached
+        } else {
             let response = try await client.tree(repo, sha: commit, recursive: true)
-            cache.setTree(TreeCache.build(response.tree, complete: response.truncated != true), repo, commit)
+            tree = TreeCache.build(response.tree, complete: response.truncated != true)
+            cache.setTree(tree, repo, commit)
         }
-        guard let tree = cache.tree(repo, commit) else { throw .notFound }
         if let items = tree.folders[path] { return items }
         if tree.complete { throw .notFound }
         return try await walk(to: path, repo: repo, commit: commit)
@@ -184,8 +185,10 @@ public final class GitHubProvider: RemoteProvider, Sendable {
                 try fm.createSymbolicLink(atPath: destination.path(percentEncoded: false), withDestinationPath: target)
             case .directory:
                 try fm.createDirectory(at: destination, withIntermediateDirectories: false)
+                var seen: Set<String> = []
+                // Trust boundary: a name becomes a path component under `destination`, so it must be one, once.
                 for child in try await folder(location.pathString, repo: location.repo, commit: commit)
-                    where child.kind != .submodule {
+                    where child.kind != .submodule && RemoteItem.isValidName(child.name) && seen.insert(child.name).inserted {
                     try await fetch(location.appending(child.name), item: child, commit: commit,
                                     to: destination.appending(path: child.name,
                                                               directoryHint: child.kind == .directory ? .isDirectory : .notDirectory))

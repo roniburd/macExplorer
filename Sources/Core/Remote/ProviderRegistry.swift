@@ -47,6 +47,7 @@ public final class ProviderRegistry: Sendable {
     }
 
     /// The item at `location`, found by listing its parent; the root is a synthetic directory named after the repo.
+    /// An item whose name is not a valid single path component (`RemoteItem.isValidName`) is never returned.
     public func item(at location: RemoteLocation) async throws(RemoteError) -> RemoteItem {
         guard let provider = provider(id: location.provider) else { throw .notFound }
         guard let parent = location.parent, let name = location.name else {
@@ -54,7 +55,10 @@ public final class ProviderRegistry: Sendable {
         }
         do {
             for try await chunk in provider.list(parent) {
-                if let hit = chunk.first(where: { $0.name == name }) { return hit }
+                if let hit = chunk.first(where: { $0.name == name }) {
+                    guard RemoteItem.isValidName(hit.name) else { throw RemoteError.notFound }
+                    return hit
+                }
             }
         } catch let error as RemoteError {
             throw error
