@@ -89,6 +89,7 @@ final class DropTarget {
     var origin: OriginID? { originView?.window.map { OriginID(raw: $0.windowNumber) } }
 
     func operation(sources: [URL], destination: URL, modifiers: DragModifiers, secondary: Bool) -> DragOperation {
+        if RemoteScheme.isRemote(destination) { return .none }   // remote folders are read-only (spec §4.7)
         guard !sources.isEmpty else { return .none }
         return DropPolicy.operation(sources: sources.map { $0.standardizedFileURL.path },
                                     destination: destination.standardizedFileURL.path, modifiers: modifiers,
@@ -96,6 +97,7 @@ final class DropTarget {
     }
 
     func validate(_ info: any NSDraggingInfo, destination: URL) -> NSDragOperation {
+        if RemoteScheme.isRemote(destination) { info.numberOfValidItemsForDrop = 0; return [] }
         if Self.isPromiseOnly(info.draggingPasteboard) { return .copy }
         let urls = sources(info)
         let op = operation(sources: urls, destination: destination, modifiers: DragModifiers(NSEvent.modifierFlags),
@@ -105,6 +107,7 @@ final class DropTarget {
     }
 
     func perform(_ info: any NSDraggingInfo, destination: URL, in view: NSView) -> Bool {
+        if RemoteScheme.isRemote(destination) { return false }
         if Self.isPromiseOnly(info.draggingPasteboard) { return receivePromises(info.draggingPasteboard, destination: destination) }
         let urls = sources(info)
         let op = operation(sources: urls, destination: destination, modifiers: DragModifiers(NSEvent.modifierFlags),

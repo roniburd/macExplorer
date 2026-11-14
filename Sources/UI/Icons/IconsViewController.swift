@@ -453,6 +453,7 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
     /// The key for row `row`'s thumbnail, nil when the item never gets one. In memory only.
     func thumbnailKey(row: Int, scale: CGFloat) -> ThumbnailKey? {
         guard let source, row < source.rowCount else { return nil }
+        if folder?.isRemote == true { return nil }   // no local file to thumbnail
         let entry = source.entry(atRow: row)
         guard ThumbnailScheduler.isEligible(entry, types: context.environment.types) else { return nil }
         let place: (volume: VolumeID, directory: String)

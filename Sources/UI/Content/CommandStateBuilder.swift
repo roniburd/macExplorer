@@ -1,5 +1,6 @@
 import Foundation
 import Core
+import MacxPluginKit
 
 /// CommandState (§5.3 enablement inputs) for a target. Pure in-memory: model, clipboard, undo, history.
 @MainActor
@@ -16,7 +17,9 @@ enum CommandStateBuilder {
         state.canRedo = environment.undo.canRedo
         state.canGoBack = session.history.canGoBack
         state.canGoForward = session.history.canGoForward
-        state.canGoUp = session.folder.directory.standardizedFileURL.path != "/"
+        let directory = session.folder.directory
+        state.isRemote = session.folder.isRemote
+        state.canGoUp = state.isRemote ? RemoteLocation(url: directory)?.parent != nil : directory.standardizedFileURL.path != "/"
         state.folderIsReadOnly = session.folder.volume?.isReadOnly ?? false
         state.viewMode = session.displayedViewMode   // Details while results show (§11)
         // Search (P3-10): Save Search… and Stop Search work from any focus in the window.

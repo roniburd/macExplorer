@@ -1,4 +1,5 @@
 import AppKit
+import MacxFS
 
 /// AppKit window restoration for browser windows (§5.1; off in sandbox mode, where windows are not restorable).
 /// AppKit calls `restoreWindow` before `applicationDidFinishLaunching`, while Core is still starting, so requests are
@@ -25,12 +26,15 @@ final class BrowserWindowRestoration: NSObject, NSWindowRestoration {
     }
 
     static func encode(_ url: URL, into coder: NSCoder) {
-        coder.encode(url.path(percentEncoded: false) as NSString, forKey: folderKey)
+        let value = RemoteScheme.isRemote(url) ? url.absoluteString : url.path(percentEncoded: false)
+        coder.encode(value as NSString, forKey: folderKey)
     }
 
     static func folderURL(from coder: NSCoder) -> URL? {
-        guard let path = coder.decodeObject(of: NSString.self, forKey: folderKey) as String?, path.hasPrefix("/") else { return nil }
-        return URL(filePath: path, directoryHint: .isDirectory)
+        guard let value = coder.decodeObject(of: NSString.self, forKey: folderKey) as String? else { return nil }
+        if value.hasPrefix(RemoteScheme.name + "://") { return URL(string: value) }
+        guard value.hasPrefix("/") else { return nil }
+        return URL(filePath: value, directoryHint: .isDirectory)
     }
 
     /// Hands every queued request to `open` (nil refuses it) and routes later ones there too.

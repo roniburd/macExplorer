@@ -30,6 +30,8 @@ public struct CommandState: Sendable, Equatable {
     public var previewPaneVisible: Bool
     /// Phase 4: exactly one item is selected and its name is an archive Extract Here handles (Extract Here).
     public var selectionIsArchive: Bool
+    /// The command target is a remote (provider) folder: read-only, no local-only features (spec §4.7).
+    public var isRemote: Bool = false
     public init(selectionCount: Int = 0, singleFolderSelected: Bool = false, canPaste: Bool = false,
                 canUndo: Bool = false, canRedo: Bool = false, canGoBack: Bool = false, canGoForward: Bool = false,
                 canGoUp: Bool = false, targetIsEjectable: Bool = false, targetIsPackage: Bool = false,
@@ -85,6 +87,7 @@ public enum CommandAvailability {
     /// because the field editor validates them itself.
     public static func isEnabled(_ command: Command, focus: FocusContext, state: CommandState,
                                  collidesWithTextEditing: Set<Command> = KeyBindings.defaults.collidesWithTextEditing) -> Bool {
+        if state.isRemote, remoteDenied.contains(command), focus == .content || focus == .searchResults { return false }
         if phase4Commands.contains(command) {
             guard shippedPhase4Commands.contains(command) else { return false }
             if focus == .fieldEditor, collidesWithTextEditing.contains(command) { return false }
@@ -238,6 +241,15 @@ public enum CommandAvailability {
 
     /// In search results there is no single destination folder (paste, new items) and Columns view can't show them.
     static let searchResultsDenied: Set<Command> = [.paste, .moveItemHere, .newFolder, .newTextFile, .newEmptyFile, .viewAsColumns]
+
+    /// A remote folder is read-only and has no local file behind it (spec §4.7): no mutation, no local-only tools, no
+    /// Subfolders/Spotlight search scopes, no POSIX path forms (Copy as Path copies the provider's web URL instead).
+    public static let remoteDenied: Set<Command> = [
+        .cut, .paste, .moveItemHere, .rename, .moveToTrash, .deletePermanently, .duplicate, .makeAlias, .makeSymlink,
+        .newFolder, .newTextFile, .newEmptyFile, .toggleFolderSizes, .properties, .openInTerminal, .revealInFinder,
+        .showPackageContents, .searchScopeSubfolders, .searchScopeThisMac, .searchModeContents, .eject, .share,
+        .compressZip, .compressAppleArchive, .extractHere, .batchRename, .copyPathTilde, .copyPathFileURL, .copyPathShellQuoted,
+    ]
 
     /// A SEARCHES row is a query, not an item: every item-level file command is off there.
     static let savedSearchDenied: Set<Command> = [

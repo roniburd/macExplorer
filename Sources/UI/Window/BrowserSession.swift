@@ -1,6 +1,7 @@
 import Foundation
 import Core
 import MacxFS
+import MacxPluginKit
 
 enum SessionEvent {
     case folderChanged(FolderModel), historyChanged, viewModeChanged(ViewMode), banner(String?)
@@ -166,6 +167,11 @@ final class BrowserSession {
     /// the chain's up: the parent column, or at the column root a new root for the parent (recorded in history).
     func goUp() {
         if let root = results?.spec?.root { navigate(to: root); return }    // results: up is the search root
+        if folder.isRemote {   // up stops at the repository root
+            guard let location = RemoteLocation(url: folder.directory), let parent = location.parent else { return }
+            navigate(to: parent.url, selecting: location.name)
+            return
+        }
         if let chain = columnChain { chain.up(); return }
         let path = folder.directory.standardizedFileURL.path(percentEncoded: false)
         guard path != "/", !path.isEmpty else { return }
@@ -460,7 +466,8 @@ final class BrowserSession {
     }
 
     private static func samePath(_ a: URL, _ b: URL) -> Bool {
-        LexicalPath.standardize(a.path(percentEncoded: false)) == LexicalPath.standardize(b.path(percentEncoded: false))
+        if RemoteScheme.isRemote(a) || RemoteScheme.isRemote(b) { return RemoteLocation(url: a) == RemoteLocation(url: b) }
+        return LexicalPath.standardize(a.path(percentEncoded: false)) == LexicalPath.standardize(b.path(percentEncoded: false))
     }
 
     // MARK: private
@@ -584,7 +591,7 @@ final class BrowserSession {
     /// Folder sizes follow the view state and the displayed mode (Details only): enabled on the model, with one
     /// session while on; off stops the session and clears the sizes.
     private func updateFolderSizes() {
-        let on = viewState.calculateFolderSizes && viewMode == .details
+        let on = !folder.isRemote && viewState.calculateFolderSizes && viewMode == .details
         if on {
             folder.setFolderSizesEnabled(true)
             if sizeSession == nil { sizeSession = environment.folderSizes.attach(to: folder) }
