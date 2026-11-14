@@ -57,6 +57,33 @@ final class RemoteBrowsingTests: XCTestCase {
         XCTAssertEqual(fake.calls.count, listsBefore, "nothing is listed again")
     }
 
+    func testColumnChainUpStopsAtRepositoryRoot() async throws {
+        let h = try await ShellHarness.make(self)
+        let (session, _) = try await makeSession(h)
+        session.navigate(to: root.url)
+        try await h.waitUntil("remote complete") { session.folder.isRemote && session.folder.state == .complete }
+        session.updateViewState { $0.mode = .columns }
+        let chain = try XCTUnwrap(session.columnChain)
+        XCTAssertEqual(chain.activeIndex, 0)
+        chain.up()   // the ⌘↑ key path in Columns (handleColumnKey) calls this directly
+        XCTAssertEqual(RemoteLocation(url: session.folder.directory), root, "nothing above the repository root")
+        XCTAssertEqual(RemoteLocation(url: chain.models[0].directory), root)
+    }
+
+    func testColumnChainUpFromRemoteSubfolderRootGoesToParent() async throws {
+        let h = try await ShellHarness.make(self)
+        let (session, _) = try await makeSession(h)
+        session.navigate(to: root.appending("src").url)
+        try await h.waitUntil("remote complete") { session.folder.isRemote && session.folder.state == .complete }
+        session.updateViewState { $0.mode = .columns }
+        let chain = try XCTUnwrap(session.columnChain)
+        chain.up()
+        try await h.waitUntil("repo root column") {
+            RemoteLocation(url: chain.models[0].directory) == root && chain.models[0].state == .complete
+        }
+        XCTAssertEqual(chain.models[0].directory.absoluteString, root.url.absoluteString, "parent built via RemoteLocation")
+    }
+
     func testCommandStateAndSizes() async throws {
         let h = try await ShellHarness.make(self)
         let (session, _) = try await makeSession(h)

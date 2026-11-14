@@ -1,6 +1,7 @@
 import Foundation
 import Core
 import MacxFS
+import MacxPluginKit
 
 /// The Columns (Miller) view's model (spec §11 Phase 2): one owned `FolderModel` per visible column. Column 0 is
 /// the column root; selecting exactly one folder in column k opens it as column k+1 (closing deeper columns first),
@@ -98,6 +99,11 @@ final class ColumnChain {
         guard !models.isEmpty else { return }
         if activeIndex > 0 { _ = moveLeft(); return }
         let root = models[0].directory
+        if RemoteScheme.isRemote(root) {   // remote: up stops at the repository root
+            guard let location = RemoteLocation(url: root), let parent = location.parent else { return }
+            reroot(parent.url, selecting: location.name)
+            return
+        }
         let path = root.standardizedFileURL.path(percentEncoded: false)
         guard path != "/", !path.isEmpty else { return }       // already at "/"
         reroot(root.deletingLastPathComponent(), selecting: root.lastPathComponent)
