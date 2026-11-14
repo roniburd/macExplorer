@@ -22,6 +22,17 @@ final class ScenarioDriverLogicTests: XCTestCase {
         XCTAssertNil(ScenarioDriver.relativePath("/Library", roots: roots))
     }
 
+    /// A read-only repository folder touches no local files, so it never counts as leaving --root; a file URL outside
+    /// the roots still does, even when its path looks like a repository path.
+    func testBrowsingInsideRootExemptsRemoteFoldersOnly() throws {
+        let roots = ["/var/folders/x/T/macx-scenario-1/a/macx-scenario-root"]
+        let remote = try XCTUnwrap(URL(string: "x-macexplorer-remote://scenario.fake/demo@main/src"))
+        XCTAssertTrue(ScenarioDriver.isBrowsingInsideRoot(remote, roots: roots))
+        XCTAssertTrue(ScenarioDriver.isBrowsingInsideRoot(URL(filePath: roots[0] + "/sub"), roots: roots))
+        XCTAssertFalse(ScenarioDriver.isBrowsingInsideRoot(URL(filePath: "/demo@main"), roots: roots))
+        XCTAssertFalse(ScenarioDriver.isBrowsingInsideRoot(URL(filePath: "/Library"), roots: roots))
+    }
+
     /// QA round 2: a drop destination must resolve inside --root too, not only its sources ("crumb:<n>" above the
     /// root resolved to /var, $TMPDIR, …; a sidebar favorite can point anywhere).
     @MainActor

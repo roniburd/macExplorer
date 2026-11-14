@@ -391,10 +391,16 @@ final class ScenarioDriver {
     /// Safety net for the C3 rule: a step that left a window browsing outside --root fails the run before any
     /// later step (delete, rename, drop) could act there.
     private func requireBrowsingInsideRoot() throws {
-        for window in context.windows.windows {
-            let path = window.probeFolderURL.standardizedFileURL.path
-            if Self.relativePath(path, roots: rootPrefixes) == nil { throw DriverError("a window left --root: it browses \(path)") }
+        for window in context.windows.windows where !Self.isBrowsingInsideRoot(window.probeFolderURL, roots: rootPrefixes) {
+            throw DriverError("a window left --root: it browses \(window.probeFolderURL.standardizedFileURL.path)")
         }
+    }
+
+    /// A repository folder (`x-macexplorer-remote:`) is read-only and touches no local files, so it is never outside
+    /// --root. Its URL path (e.g. `/demo@main`) is not a local path and must not be compared with the roots.
+    nonisolated static func isBrowsingInsideRoot(_ url: URL, roots: [String]) -> Bool {
+        if RemoteScheme.isRemote(url) { return true }
+        return relativePath(url.standardizedFileURL.path, roots: roots) != nil
     }
 
     private func post(_ keys: [SynthKey]) throws {
