@@ -167,6 +167,7 @@ final class BrowserSession {
     /// the chain's up: the parent column, or at the column root a new root for the parent (recorded in history).
     func goUp() {
         if let root = results?.spec?.root { navigate(to: root); return }    // results: up is the search root
+        if let chain = columnChain, chain.activeIndex > 0 { chain.up(); return }   // Columns: the parent column
         if folder.isRemote {   // up stops at the repository root
             guard let location = RemoteLocation(url: folder.directory), let parent = location.parent else { return }
             navigate(to: parent.url, selecting: location.name)

@@ -87,7 +87,10 @@ public enum CommandAvailability {
     /// because the field editor validates them itself.
     public static func isEnabled(_ command: Command, focus: FocusContext, state: CommandState,
                                  collidesWithTextEditing: Set<Command> = KeyBindings.defaults.collidesWithTextEditing) -> Bool {
-        if state.isRemote, remoteDenied.contains(command), focus == .content || focus == .searchResults { return false }
+        // Every non-sidebar focus acts on the session folder (sidebar rows act on their own target). The field editor
+        // keeps its own text edit actions (⌘X/⌘V in the search field).
+        if state.isRemote, remoteDenied.contains(command), !focus.isSidebar,
+           !(focus == .fieldEditor && fieldEditorOwned.contains(command)) { return false }
         if phase4Commands.contains(command) {
             guard shippedPhase4Commands.contains(command) else { return false }
             if focus == .fieldEditor, collidesWithTextEditing.contains(command) { return false }

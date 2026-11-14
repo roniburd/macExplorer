@@ -35,6 +35,28 @@ final class RemoteBrowsingTests: XCTestCase {
         try await h.waitUntil("back to local") { !session.folder.isRemote && session.folder.state == .complete }
     }
 
+    func testUpInColumnsMovesLeftOneColumn() async throws {
+        let h = try await ShellHarness.make(self)
+        let (session, fake) = try await makeSession(h)
+        session.navigate(to: root.url)
+        try await h.waitUntil("remote complete") { session.folder.isRemote && session.folder.state == .complete }
+        session.updateViewState { $0.mode = .columns }
+        let chain = try XCTUnwrap(session.columnChain)
+        chain.models[0].select(.names(["src"]))
+        try await h.waitUntil("src column listed") { chain.models.count >= 2 && chain.models[1].state == .complete }
+        chain.moveRight()
+        XCTAssertEqual(RemoteLocation(url: session.folder.directory), root.appending("src"))
+        let historyBefore = session.history.current
+        let listsBefore = fake.calls.count
+        session.goUp()
+        XCTAssertTrue(session.columnChain === chain)
+        XCTAssertEqual(chain.activeIndex, 0, "up moves left one column")
+        XCTAssertEqual(chain.models.count, 2, "every column stays open")
+        XCTAssertTrue(session.folder === chain.models[0])
+        XCTAssertEqual(session.history.current, historyBefore, "no history visit")
+        XCTAssertEqual(fake.calls.count, listsBefore, "nothing is listed again")
+    }
+
     func testCommandStateAndSizes() async throws {
         let h = try await ShellHarness.make(self)
         let (session, _) = try await makeSession(h)

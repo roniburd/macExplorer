@@ -26,6 +26,16 @@ final class RemoteCommandAvailabilityTests: XCTestCase {
         }
     }
 
+    func testGateAppliesInFieldEditorAndAddressBar() {
+        for focus: FocusContext in [.fieldEditor, .addressBar, .searchResults] {
+            for c in CommandAvailability.remoteDenied where !(focus == .fieldEditor && [.cut, .paste].contains(c)) {
+                XCTAssertFalse(CommandAvailability.isEnabled(c, focus: focus, state: state(2)), "\(c) in \(focus)")
+            }
+        }
+        XCTAssertTrue(CommandAvailability.isEnabled(.cut, focus: .fieldEditor, state: state()), "text editing in the search field")
+        XCTAssertTrue(CommandAvailability.isEnabled(.paste, focus: .fieldEditor, state: state()), "text editing in the search field")
+    }
+
     func testLocalFoldersUnaffected() {
         var s = state(); s.isRemote = false; s.folderIsReadOnly = false
         XCTAssertTrue(CommandAvailability.isEnabled(.rename, focus: .content, state: s))
