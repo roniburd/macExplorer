@@ -1,5 +1,7 @@
 import AppKit
+import Core
 import Markdown
+import MacxFS
 
 extension NSAttributedString.Key {
     /// A heading's GitHub-style anchor slug (`#slug` links scroll to it).
@@ -8,12 +10,14 @@ extension NSAttributedString.Key {
     static let macxImage = NSAttributedString.Key("macx.markdown.image")
 }
 
-/// An image a rendered Markdown file references. Local ones load on the read lanes; remote ones only on a click.
+/// An image a rendered Markdown file references. Local ones (and, in a remote repository, ones in that repository)
+/// load on their own; web ones only on a click.
 struct MarkdownImage: Equatable {
     let index: Int
     let url: URL
     let alt: String
-    var isRemote: Bool { !url.isFileURL }
+    /// A web image (loads on a click). A file or repository image loads with the preview.
+    var isRemote: Bool { !url.isFileURL && !RemoteScheme.isRemote(url) }
 }
 
 struct MarkdownRendering {
@@ -296,7 +300,8 @@ final class MarkdownRenderer {
     /// A placeholder for the image (its alt text); the pane replaces it with the picture once loaded.
     private func image(source: String?, alt: String, _ style: Inline) {
         guard let source, let url = Self.resolve(source, against: fileURL), url.scheme != Self.anchorScheme,
-              url.isFileURL || ["http", "https"].contains(url.scheme?.lowercased() ?? ""), images.count < Self.maxImages else {
+              url.isFileURL || RemoteScheme.isRemote(url) || ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+              images.count < Self.maxImages else {
             if !alt.isEmpty { append(alt, style) }
             return
         }
@@ -306,7 +311,7 @@ final class MarkdownRenderer {
         var s = style
         s.color = .secondaryLabelColor
         let label: String
-        if url.isFileURL {
+        if url.isFileURL || RemoteScheme.isRemote(url) {
             label = "🖼 " + name
         } else {
             label = "🖼 " + String(format: L10n.string("%@ (click to load)"), name)
@@ -381,7 +386,9 @@ final class MarkdownRenderer {
     // MARK: Links and anchors
 
     /// A link or image destination: web and mail links as-is, `#heading` as an anchor in this file, and paths
-    /// relative to the Markdown file's folder as file URLs. Anything else (javascript:, custom schemes) is no link.
+    /// relative to the Markdown file's folder as file URLs. Anything else (javascript:, custom schemes) is no link. In
+    /// a remote repository's file (`fileURL` remote) paths are repository URLs, "/" being the repository root, and a
+    /// path climbing above the root is no link.
     static func resolve(_ destination: String, against fileURL: URL) -> URL? {
         let d = destination.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !d.isEmpty else { return nil }
@@ -399,6 +406,7 @@ final class MarkdownRenderer {
         if let cut = path.firstIndex(where: { $0 == "#" || $0 == "?" }) { path = String(path[..<cut]) }
         path = path.removingPercentEncoding ?? path
         guard !path.isEmpty else { return nil }
+        if RemoteScheme.isRemote(fileURL) { return RemotePreview.linkURL(path, relativeTo: fileURL) }
         let url = path.hasPrefix("/") ? URL(filePath: path) : fileURL.deletingLastPathComponent().appending(path: path)
         return url.standardizedFileURL
     }

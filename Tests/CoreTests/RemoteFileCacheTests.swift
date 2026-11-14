@@ -5,20 +5,22 @@ import Synchronization
 import XCTest
 @testable import Core
 
-/// A provider whose fetch writes `content` and can be held open until `release()`; counts fetches.
+/// A provider whose fetch writes `content` and can be held open until `release()`; counts fetches and records
+/// whether a held fetch was cancelled by the time it was released.
 final class GatedRemoteProvider: RemoteProvider, Sendable {
     let id = "test.gated"
     let displayName = "Gated"
     let iconSymbol = "shippingbox"
     let content: String
-    private let state = Mutex<(fetches: Int, gate: CheckedContinuation<Void, Never>?, held: Bool, failure: RemoteError?)>(
-        (0, nil, false, nil))
+    private let state = Mutex<(fetches: Int, gate: CheckedContinuation<Void, Never>?, held: Bool, failure: RemoteError?,
+                               cancelled: Bool)>((0, nil, false, nil, false))
 
     init(content: String = "0123456789", held: Bool = false) {
         self.content = content
         state.withLock { $0.held = held }
     }
     var fetches: Int { state.withLock { $0.fetches } }
+    var sawCancellation: Bool { state.withLock { $0.cancelled } }
     func fail(with error: RemoteError?) { state.withLock { $0.failure = error } }
     func release() {
         let gate = state.withLock { s -> CheckedContinuation<Void, Never>? in s.held = false; defer { s.gate = nil }; return s.gate }
@@ -45,6 +47,10 @@ final class GatedRemoteProvider: RemoteProvider, Sendable {
                 }
                 if resumeNow { continuation.resume() }
             }
+        }
+        if Task.isCancelled {
+            state.withLock { $0.cancelled = true }
+            throw .network("cancelled")
         }
         if let failure { throw failure }
         do { try Data(content.utf8).write(to: destination) } catch { throw .network("write") }
@@ -99,6 +105,40 @@ final class RemoteFileCacheTests: XCTestCase {
         let (a, b) = try await (first, second)
         XCTAssertEqual(a, b)
         XCTAssertEqual(provider.fetches, 1)
+    }
+
+    /// Review (Task 11): cancelling the only request cancels its download.
+    func testCancellingTheOnlyRequestCancelsTheDownload() async throws {
+        let cache = RemoteFileCache(root: root)
+        let provider = GatedRemoteProvider(held: true)
+        let location = loc(["a.txt"]), item = file("a.txt", id: "b1")
+        let request = Task { try await cache.localURL(for: location, item: item, provider: provider) }
+        while provider.fetches == 0 { try await Task.sleep(for: .milliseconds(5)) }
+        request.cancel()
+        try await Task.sleep(for: .milliseconds(50))   // the cancellation reaches the cache actor
+        provider.release()
+        do { _ = try await request.value; XCTFail("a cancelled request has no copy") } catch {}
+        XCTAssertTrue(provider.sawCancellation, "the download itself was cancelled")
+        let size = await cache.totalSize()
+        XCTAssertEqual(size, 0)
+    }
+
+    /// Review (Task 11): a shared download keeps going while one of its requests still waits.
+    func testCancellingOneOfTwoRequestsKeepsTheSharedDownload() async throws {
+        let cache = RemoteFileCache(root: root)
+        let provider = GatedRemoteProvider(held: true)
+        let location = loc(["a.txt"]), item = file("a.txt", id: "b1")
+        let first = Task { try await cache.localURL(for: location, item: item, provider: provider) }
+        while provider.fetches == 0 { try await Task.sleep(for: .milliseconds(5)) }
+        let second = Task { try await cache.localURL(for: location, item: item, provider: provider) }
+        try await Task.sleep(for: .milliseconds(50))
+        first.cancel()
+        try await Task.sleep(for: .milliseconds(50))
+        provider.release()
+        let url = try await second.value
+        XCTAssertFalse(provider.sawCancellation)
+        XCTAssertEqual(provider.fetches, 1)
+        XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), "0123456789")
     }
 
     func testWithoutAContentIDEveryRequestDownloadsAgain() async throws {

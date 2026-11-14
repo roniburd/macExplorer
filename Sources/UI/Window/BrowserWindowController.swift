@@ -1,6 +1,7 @@
 import AppKit
 import Core
 import MacxFS
+import MacxPluginKit
 
 /// One browser window (§5.1): unified toolbar (ToolbarController, P1-27), sidebar + content split, per-window session.
 @MainActor
@@ -89,10 +90,13 @@ public final class BrowserWindowController: NSWindowController, NSWindowDelegate
     /// A relative link in a Markdown preview: selects its target, in place when it is in the shown folder (no
     /// re-read, no history entry), otherwise by opening its folder.
     func revealLinkedFile(_ url: URL) {
-        let folder = url.deletingLastPathComponent()
+        // A remote repository link: its parent folder in the same repository and ref.
+        let remoteFolder = RemoteLocation(url: url).map { $0.parent?.url ?? $0.url }
+        let folder = remoteFolder ?? url.deletingLastPathComponent()
         let shown = session.folder.directory
-        if session.results == nil, session.columnChain == nil,
-           LexicalPath.standardize(folder.path(percentEncoded: false)) == LexicalPath.standardize(shown.path(percentEncoded: false)) {
+        let inShownFolder = remoteFolder.map { RemoteLocation(url: $0) == RemoteLocation(url: shown) }
+            ?? (LexicalPath.standardize(folder.path(percentEncoded: false)) == LexicalPath.standardize(shown.path(percentEncoded: false)))
+        if session.results == nil, session.columnChain == nil, inShownFolder {
             session.selectWhenListed(url.lastPathComponent)
         } else {
             navigate(to: folder, selecting: url.lastPathComponent)

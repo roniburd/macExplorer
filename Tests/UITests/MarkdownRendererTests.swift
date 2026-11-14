@@ -88,6 +88,20 @@ final class MarkdownRendererTests: XCTestCase {
                        "a remote image loads only on a click")
     }
 
+    /// Review (Task 11): a remote repository's Markdown links and images are repository URLs, not cache paths.
+    func testRemoteFileLinksAndImagesStayInTheRepository() {
+        let readme = URL(string: "x-macexplorer-remote://test.fake/demo@main/docs/README.md")!
+        let r = MarkdownRenderer.render("[g](guide.md#top) [r](/src/a.swift) [x](../../up.md)\n\n![logo](img/logo.png)\n",
+                                        fileURL: readme)
+        XCTAssertEqual(attribute(.link, of: "g", in: r) as? URL, URL(string: "x-macexplorer-remote://test.fake/demo@main/docs/guide.md"))
+        XCTAssertEqual(attribute(.link, of: "r", in: r) as? URL, URL(string: "x-macexplorer-remote://test.fake/demo@main/src/a.swift"),
+                       "a root-relative link starts at the repository root")
+        XCTAssertNil(attribute(.link, of: "x", in: r), "above the repository root: no link")
+        XCTAssertEqual(r.images.map(\.url), [URL(string: "x-macexplorer-remote://test.fake/demo@main/docs/img/logo.png")!])
+        XCTAssertEqual(r.images.map(\.isRemote), [false], "a repository image loads with the preview, not on a click")
+        XCTAssertNil(attribute(.link, of: "logo", in: r))
+    }
+
     func testHTMLImagesBreaksAndTagsAreHandled() {
         let r = render("<p align=\"center\">\n  <img src=\"logo.png\" alt=\"Logo\">\n</p>\n\nA<br>B &amp; <kbd>⌘</kbd>\n\n<!-- hidden -->\n")
         XCTAssertEqual(r.images.map(\.alt), ["Logo"])

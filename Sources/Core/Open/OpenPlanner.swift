@@ -44,7 +44,8 @@ public enum OpenPlanner {
         var targets: [LinkTarget] = []
         targets.reserveCapacity(items.count)
         for item in items {
-            // A remote link has no local target to resolve; its provider serves its content (spec §4.4).
+            // A remote link has no local target to resolve: Open fetches it, and RemotePreview follows it inside its
+            // repository to the file it points to (spec §4.4).
             if RemoteScheme.isRemote(item.url), item.kind == .symlink || item.kind == .alias {
                 targets.append(.document(item.url))
                 continue

@@ -5,13 +5,19 @@ import MacxPluginKit
 /// Downloaded remote files for preview and open (spec §2.4, §4.3): `<root>/<provider>/<repo hash>/<key>/<name>`.
 /// `key` is the item's `contentID` (a blob SHA names one content forever, so the entry is immutable) or, with none,
 /// a hash of ref + path that is downloaded again on every request. Files are read-only (0444). When the total passes
-/// `limitBytes` the least recently used key folders go first. Concurrent requests for one entry share one download.
+/// `limitBytes` the least recently used key folders go first. Concurrent requests for one entry share one download,
+/// which is cancelled once every request waiting for it has been cancelled.
 public actor RemoteFileCache {
     public static let autoPreviewLimit: Int64 = 10 * 1024 * 1024
 
     public nonisolated let root: URL
     public nonisolated let limitBytes: Int64
-    private var inFlight: [String: Task<URL, any Error>] = [:]
+    private struct Flight {
+        var task: Task<URL, any Error>
+        /// Requests waiting for `task` that have not been cancelled.
+        var waiters: Int
+    }
+    private var inFlight: [String: Flight] = [:]
 
     public init(root: URL, limitBytes: Int64 = 1 << 30) {
         self.root = root
@@ -23,7 +29,10 @@ public actor RemoteFileCache {
         guard item.kind == .file else { throw .unsupported }
         let destination = Self.entryURL(root: root, location: location, item: item)
         let key = destination.path(percentEncoded: false)
-        if let running = inFlight[key] { return try await Self.value(of: running) }
+        if let running = inFlight[key] {
+            inFlight[key]?.waiters += 1
+            return try await wait(for: running.task, key: key)
+        }
         if item.contentID != nil, FileManager.default.fileExists(atPath: key) {
             Self.markUsed(destination)
             return destination
@@ -46,11 +55,33 @@ public actor RemoteFileCache {
                 throw error
             }
         }
-        inFlight[key] = task
-        defer { inFlight[key] = nil }
-        let url = try await Self.value(of: task)
+        inFlight[key] = Flight(task: task, waiters: 1)
+        defer { if inFlight[key]?.task == task { inFlight[key] = nil } }
+        let url = try await wait(for: task, key: key)
         trim()
         return url
+    }
+
+    /// Waits for a shared download; a cancelled waiter gives up its share, and the last one cancels the download.
+    private func wait(for task: Task<URL, any Error>, key: String) async throws(RemoteError) -> URL {
+        do {
+            return try await withTaskCancellationHandler {
+                try await task.value
+            } onCancel: {
+                Task { await self.abandon(task, key: key) }
+            }
+        } catch let error as RemoteError {
+            throw error
+        } catch {
+            throw .network(error.localizedDescription)
+        }
+    }
+
+    private func abandon(_ task: Task<URL, any Error>, key: String) {
+        guard var flight = inFlight[key], flight.task == task else { return }
+        flight.waiters -= 1
+        inFlight[key] = flight
+        if flight.waiters <= 0 { task.cancel() }
     }
 
     /// Bytes of every cached file (logical sizes).
@@ -119,11 +150,5 @@ public actor RemoteFileCache {
             }
         }
         return result
-    }
-
-    private static func value(of task: Task<URL, any Error>) async throws(RemoteError) -> URL {
-        do { return try await task.value }
-        catch let error as RemoteError { throw error }
-        catch { throw .network(error.localizedDescription) }
     }
 }

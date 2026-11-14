@@ -401,7 +401,9 @@ final class PreviewPaneController: NSViewController {
                 if preview.text.isEmpty && !preview.truncated {
                     render(.empty(url))
                 } else if MarkdownFiles.isMarkdown(url) {
-                    render(.markdown(preview.text, truncated: preview.truncated, url: url))
+                    // A remote file is read from its cached copy, but its links and images are the repository's.
+                    let base = lastSubject.map(\.url).flatMap { RemoteScheme.isRemote($0) ? $0 : nil } ?? url
+                    render(.markdown(preview.text, truncated: preview.truncated, url: base))
                 } else {
                     render(.text(preview.text, truncated: preview.truncated))
                 }
@@ -741,7 +743,7 @@ final class PreviewPaneController: NSViewController {
         case "http", "https", "mailto":
             openExternal(url)
             return true
-        case "file":
+        case "file", RemoteScheme.name:
             onRevealFile?(url)
             return onRevealFile != nil
         default:
@@ -756,8 +758,16 @@ final class PreviewPaneController: NSViewController {
         let gen = generation
         imageTask = Task { [weak self] in
             for image in local {
-                let volume = env.volumes.volume(for: image.url)?.id ?? .unknown
-                let data = await MarkdownFiles.loadImage(image.url, lanes: env.lanes, volume: volume)
+                var file = image.url
+                if RemoteScheme.isRemote(file) {
+                    // A repository image: its cached copy (fetched now when within the auto-preview limit).
+                    guard case .local(let copy) = await RemotePreview.prepare(file, registry: env.remote, cache: env.remoteFiles,
+                                                                               force: false) else { continue }
+                    guard !Task.isCancelled else { return }
+                    file = copy
+                }
+                let volume = env.volumes.volume(for: file)?.id ?? .unknown
+                let data = await MarkdownFiles.loadImage(file, lanes: env.lanes, volume: volume)
                 guard let self, !Task.isCancelled, gen == self.generation else { return }
                 if let data, let picture = NSImage(data: data) { self.textView.replaceImage(image.index, with: picture) }
             }

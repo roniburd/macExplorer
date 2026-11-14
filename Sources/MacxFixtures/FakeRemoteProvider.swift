@@ -21,6 +21,8 @@ public final class FakeRemoteProvider: RemoteProvider {
         var calls: [String] = []
         var invalidations: [(repo: String, ref: String?)] = []
         var fetchCount = 0
+        var linkTargets: [String: String] = [:]                     // "repo/path" → a symlink item's target
+        var contents: [String: Data] = [:]                          // "repo/path" → a file's bytes
         var defaultRef = "main"
     }
     private let state = Mutex(State())
@@ -41,6 +43,14 @@ public final class FakeRemoteProvider: RemoteProvider {
 
     public func setTree(repo: String, ref: String = "main", _ tree: [String: [RemoteItem]]) {
         state.withLock { $0.trees["\(repo)@\(ref)"] = tree }
+    }
+    /// The target `fetch` writes for the `.symlink` item at `path` ("a/b") of `repo` (any ref).
+    public func setLinkTarget(repo: String, path: String, _ target: String) {
+        state.withLock { $0.linkTargets["\(repo)/\(path)"] = target }
+    }
+    /// The bytes `fetch` writes for the file at `path` of `repo` (any ref); default "content of <path>".
+    public func setContent(repo: String, path: String, _ data: Data) {
+        state.withLock { $0.contents["\(repo)/\(path)"] = data }
     }
     public func setRefs(repo: String, _ refs: [RemoteRef]) { state.withLock { $0.refsByRepo[repo] = refs } }
     public func failNext(_ error: RemoteError) { state.withLock { $0.nextFailure = error } }
@@ -125,10 +135,15 @@ public final class FakeRemoteProvider: RemoteProvider {
         if let e = record("fetch \(location.repo)/\(location.pathString)") { throw e }
         state.withLock { $0.fetchCount += 1 }
         do {
+            let target = state.withLock { $0.linkTargets["\(location.repo)/\(location.pathString)"] }
             if item.kind == .directory {
                 try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: false)
+            } else if item.kind == .symlink, let target {
+                try FileManager.default.createSymbolicLink(atPath: destination.path(percentEncoded: false),
+                                                           withDestinationPath: target)
             } else {
-                try Data("content of \(location.pathString)".utf8).write(to: destination, options: .withoutOverwriting)
+                let data = state.withLock { $0.contents["\(location.repo)/\(location.pathString)"] }
+                try (data ?? Data("content of \(location.pathString)".utf8)).write(to: destination, options: .withoutOverwriting)
             }
         } catch { throw .network(String(describing: error)) }
     }

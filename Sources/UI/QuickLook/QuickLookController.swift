@@ -71,23 +71,43 @@ final class QuickLookController {
     /// Installed by the window controller; nil = URLs are used as they are.
     var localize: (@MainActor ([URL]) async -> [URL])?
     private var localizeTask: Task<Void, Never>?
+    /// The selection `localizeTask` fetches copies for.
+    private var localizeSelection: [URL]?
+    private var localizeGeneration = 0
 
     private var selectionIsRemote: Bool { folder?.selectedURLs.contains(where: RemoteScheme.isRemote) ?? false }
 
     /// Fetches the local copies off the main thread's way and shows (`thenShow`) or reloads the panel when they arrive.
+    /// A rebind, selection change or hide cancels it (and so its remaining downloads); copies of a selection that is
+    /// no longer the folder's are dropped.
     private func localizeItems(thenShow: Bool) {
         guard let localize else { return }
         let selected = folder?.selectedURLs ?? []
-        localizeTask?.cancel()
+        cancelLocalize()
+        localizeSelection = selected
+        localizeGeneration += 1
+        let generation = localizeGeneration
         localizeTask = Task { [weak self] in
             let local = await localize(selected)
-            guard let self, !Task.isCancelled else { return }
+            guard let self, generation == self.localizeGeneration else { return }
+            self.localizeTask = nil
+            self.localizeSelection = nil
+            guard !Task.isCancelled, self.folder?.selectedURLs == selected else { return }
             self.itemBuilds += 1
             self.builtItems = local
             let p = self.panel()
             if thenShow { if !local.isEmpty { p.show() } } else if p.isControlling { p.reloadData() }
         }
     }
+
+    private func cancelLocalize() {
+        localizeTask?.cancel()
+        localizeTask = nil
+        localizeSelection = nil
+    }
+
+    /// Tests: remote copies are being fetched.
+    var isLocalizing: Bool { localizeTask != nil }
 
     var isVisible: Bool { panel().isVisible }
 
@@ -100,6 +120,7 @@ final class QuickLookController {
     }
 
     func bind(_ folder: (any RowSource)?) {
+        cancelLocalize()
         token?.cancel()
         token = nil
         self.folder = folder
@@ -126,9 +147,15 @@ final class QuickLookController {
     /// Hidden, or shown by another window or tab: forget the built items (no URLs are built). Controlled by this
     /// window: rebuild and reload when they changed.
     private func selectionChanged() {
+        // Copies still being fetched for another selection would show or reload the wrong items: stop them. A listing
+        // change that leaves the selection as it was keeps them going.
+        if localizeTask != nil, localizeSelection != folder?.selectedURLs { cancelLocalize() }
         let p = panel()
         guard p.isControlling else { builtItems = nil; return }
-        if selectionIsRemote, localize != nil { localizeItems(thenShow: false); return }
+        if selectionIsRemote, localize != nil {
+            if localizeTask == nil { localizeItems(thenShow: false) }
+            return
+        }
         let previous = builtItems
         let next = buildItems()
         builtItems = next
@@ -138,7 +165,7 @@ final class QuickLookController {
     /// Space: closes a visible panel; otherwise opens it over the selection (nothing selected: nothing happens).
     func toggle() {
         let p = panel()
-        if p.isVisible { p.hide(); return }
+        if p.isVisible { cancelLocalize(); p.hide(); return }
         if selectionIsRemote, localize != nil { localizeItems(thenShow: true); return }
         builtItems = buildItems()
         guard !items.isEmpty else { return }
@@ -149,6 +176,7 @@ final class QuickLookController {
     @discardableResult
     func hideIfVisible() -> Bool {
         let p = panel()
+        cancelLocalize()
         guard p.isVisible else { return false }
         p.hide()
         return true
@@ -159,6 +187,7 @@ final class QuickLookController {
     func handlePanelKey(_ chord: KeyChord, forward: (KeyChord) -> Void) -> Bool {
         switch chord.key {
         case .space where chord.modifiers.isEmpty:
+            cancelLocalize()
             panel().hide()
             return true
         case .up, .down, .left, .right:
