@@ -16,6 +16,13 @@ final class FormattersTests: XCTestCase {
     }
     private func date(_ text: String) -> Date { ISO8601DateFormatter().date(from: text)! }
 
+    /// A date of 0 means "unknown" (a repository listing carries no dates); it must never render as the 1970 epoch.
+    func testUnknownDateIsDashes() {
+        XCTAssertEqual(Formatters.date(nanoseconds: 0, style: .relative, calendar: gmt), "--")
+        XCTAssertEqual(Formatters.date(nanoseconds: 0, style: .absolute, calendar: gmt), "--")
+        XCTAssertNotEqual(Formatters.date(nanoseconds: 1_000_000_000, style: .absolute, calendar: gmt), "--")
+    }
+
     func testFolderAndPackageSizeIsDashes() {
         XCTAssertEqual(Formatters.size(of: entry(.directory, size: 42)), "--")
         XCTAssertEqual(Formatters.size(of: entry(.package, size: 42)), "--")

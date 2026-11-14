@@ -6,6 +6,7 @@ import MacxFS
 @MainActor
 enum Formatters {
     static let folderSize = "--"
+    static let unknownDate = "--"
 
     private static let byteFormatter: ByteCountFormatter = {
         let formatter = ByteCountFormatter()
@@ -24,7 +25,9 @@ enum Formatters {
 
     static func date(nanoseconds: Int64, style: DateStyle, now: Date = Date(),
                      calendar: Calendar = .current, locale: Locale = .current) -> String {
-        date(Date(timeIntervalSince1970: TimeInterval(nanoseconds) / 1_000_000_000),
+        // 0 is "no date" (repository listings, Spotlight items without one), never the 1970 epoch.
+        if nanoseconds == 0 { return unknownDate }
+        return date(Date(timeIntervalSince1970: TimeInterval(nanoseconds) / 1_000_000_000),
              style: style, now: now, calendar: calendar, locale: locale)
     }
 
