@@ -3,7 +3,7 @@ import Core
 
 /// The §7 sections, in tab order.
 enum SettingsSection: String, CaseIterable, Hashable {
-    case general, view, sidebar, shortcuts, advanced
+    case general, view, sidebar, shortcuts, connections, advanced
 
     var title: String {
         switch self {
@@ -11,6 +11,7 @@ enum SettingsSection: String, CaseIterable, Hashable {
         case .view: L10n.string("View")
         case .sidebar: L10n.string("Sidebar")
         case .shortcuts: L10n.string("Shortcuts")
+        case .connections: L10n.string("Connections")
         case .advanced: L10n.string("Advanced")
         }
     }
@@ -21,6 +22,7 @@ enum SettingsSection: String, CaseIterable, Hashable {
         case .view: "eye"
         case .sidebar: "sidebar.left"
         case .shortcuts: "keyboard"
+        case .connections: "network"
         case .advanced: "slider.horizontal.3"
         }
     }

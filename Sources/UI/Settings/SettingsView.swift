@@ -2,7 +2,7 @@ import SwiftUI
 import Core
 import MacxFS
 
-/// §7 Settings (SwiftUI in an NSWindow, SettingsWindowController): General, View, Sidebar, Shortcuts, Advanced tabs. Every control
+/// §7 Settings (SwiftUI in an NSWindow, SettingsWindowController): General, View, Sidebar, Shortcuts, Connections, Advanced tabs. Every control
 /// writes straight to `Settings`, which persists the value and lets the open windows observe it.
 struct SettingsView: View {
     let settings: Core.Settings
@@ -10,11 +10,14 @@ struct SettingsView: View {
     let updates: UpdateModel
     let lanes: LanePool
     let iconPack: IconPackModel?
+    let connections: ConnectionsSettingsView?
     @State private var section: SettingsSection
 
     init(settings: Core.Settings, panels: any SettingsPanels, updates: UpdateModel, lanes: LanePool,
-         iconPack: IconPackModel? = nil, initialSection: SettingsSection = .general) {
+         iconPack: IconPackModel? = nil, connections: ConnectionsSettingsView? = nil,
+         initialSection: SettingsSection = .general) {
         self.iconPack = iconPack
+        self.connections = connections
         self.settings = settings
         self.lanes = lanes
         self.panels = panels
@@ -40,6 +43,7 @@ struct SettingsView: View {
         case .view: ViewSettingsView(settings: settings)
         case .sidebar: SidebarSettingsView(settings: settings)
         case .shortcuts: ShortcutsSettingsView(settings: settings, panels: panels, lanes: lanes)
+        case .connections: if let connections { connections } else { Text(L10n.string("Connections")) }
         case .advanced: AdvancedSettingsView(settings: settings)
         }
     }

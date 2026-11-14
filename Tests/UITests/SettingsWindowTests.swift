@@ -13,7 +13,7 @@ final class SettingsChoicesTests: XCTestCase {
     }
 
     func testSectionsInTabOrder() {
-        XCTAssertEqual(SettingsSection.allCases.map(\.title), ["General", "View", "Sidebar", "Shortcuts", "Advanced"])
+        XCTAssertEqual(SettingsSection.allCases.map(\.title), ["General", "View", "Sidebar", "Shortcuts", "Connections", "Advanced"])
         XCTAssertEqual(SettingsSection.shortcuts.symbolName, "keyboard")
     }
 

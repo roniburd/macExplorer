@@ -23,7 +23,20 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         self.context = context
         let view = SettingsView(settings: context.environment.settings, panels: OpenPanelSettingsPanels(),
                                 updates: context.updates, lanes: context.environment.lanes,
-                                iconPack: context.iconPack)
+                                iconPack: context.iconPack,
+                                connections: ConnectionsSettingsView(
+                                    settings: context.environment.settings, plugins: context.plugins,
+                                    registry: context.environment.remote, cache: context.environment.remoteFiles,
+                                    revealPlugins: { [weak context] in
+                                        guard let context else { return }
+                                        // A sandboxed run never opens the real Plugins folder (tests touch only their own files).
+                                        let dir = context.options.isSandboxed
+                                            ? (context.options.pluginsDirectory ?? context.options.stateDirectory)
+                                            : PluginLoader.defaultDirectory
+                                        guard let dir else { return }
+                                        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                                        context.windows.openWindow(at: dir)   // macExplorer is the file manager
+                                    }))
         let host = NSHostingController(rootView: view)
         host.sizingOptions = [.preferredContentSize]
         let window = NSWindow(contentViewController: host)

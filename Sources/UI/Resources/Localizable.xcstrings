@@ -905,6 +905,17 @@
         }
       }
     },
+    "Another provider already uses the id %@." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Another provider already uses the id %@."
+          }
+        }
+      }
+    },
     "Any" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1132,6 +1143,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Browse…"
+          }
+        }
+      }
+    },
+    "Built for plugin API %@ — this version needs %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Built for plugin API %@ — this version needs %@"
+          }
+        }
+      }
+    },
+    "Built in" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Built in"
+          }
+        }
+      }
+    },
+    "Cache size" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cache size"
           }
         }
       }
@@ -1511,6 +1555,17 @@
         }
       }
     },
+    "Clear Cache" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear Cache"
+          }
+        }
+      }
+    },
     "Close" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1742,6 +1797,17 @@
         }
       }
     },
+    "Connections" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connections"
+          }
+        }
+      }
+    },
     "Contains" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1925,6 +1991,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Couldn't load branches and tags"
+          }
+        }
+      }
+    },
+    "Couldn't load: %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't load: %@"
           }
         }
       }
@@ -2226,6 +2303,17 @@
         }
       }
     },
+    "Disable plugins" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disable plugins"
+          }
+        }
+      }
+    },
     "Dismiss" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2376,6 +2464,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Download to preview (%@)"
+          }
+        }
+      }
+    },
+    "Downloaded files" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Downloaded files"
           }
         }
       }
@@ -4481,6 +4580,17 @@
         }
       }
     },
+    "Not signed with macExplorer's certificate." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not signed with macExplorer's certificate."
+          }
+        }
+      }
+    },
     "Notes ↗" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4856,6 +4966,39 @@
         }
       }
     },
+    "Plugin %@ %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plugin %@ %@"
+          }
+        }
+      }
+    },
+    "Plugins" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plugins"
+          }
+        }
+      }
+    },
+    "Plugins that didn't load" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plugins that didn't load"
+          }
+        }
+      }
+    },
     "Position:" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4940,6 +5083,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Properties"
+          }
+        }
+      }
+    },
+    "Providers" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Providers"
           }
         }
       }
@@ -5989,6 +6143,17 @@
         }
       }
     },
+    "Show Plugins Folder" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Plugins Folder"
+          }
+        }
+      }
+    },
     "Show Preview Pane" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6418,6 +6583,17 @@
         }
       }
     },
+    "Takes effect the next time macExplorer starts. Hold Option while it starts to skip plugins once." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Takes effect the next time macExplorer starts. Hold Option while it starts to skip plugins once."
+          }
+        }
+      }
+    },
     "Terminal" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6458,6 +6634,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "That folder isn't an icon pack."
+          }
+        }
+      }
+    },
+    "The bundle has no plugin class." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The bundle has no plugin class."
           }
         }
       }
@@ -6678,6 +6865,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The original item can't be found"
+          }
+        }
+      }
+    },
+    "The provider id “%@” isn't valid: use letters, digits, “-” and “.” only." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The provider id “%@” isn't valid: use letters, digits, “-” and “.” only."
           }
         }
       }
@@ -8968,6 +9166,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Rename…"
+          }
+        }
+      }
+    },
+    "unknown" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "unknown"
           }
         }
       }
