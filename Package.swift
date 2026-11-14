@@ -2,6 +2,7 @@
 import PackageDescription
 
 let strict: [SwiftSetting] = [.treatAllWarnings(as: .error)]
+let pluginKit: Target.Dependency = .product(name: "MacxPluginKit", package: "MacxPluginKit")
 
 let package = Package(
     name: "macExplorer",
@@ -15,6 +16,7 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.1"),
         .package(url: "https://github.com/swiftlang/swift-markdown", exact: "0.9.0"),
+        .package(path: "Packages/MacxPluginKit"),
     ],
     targets: [
         .target(
@@ -22,24 +24,25 @@ let package = Package(
             cSettings: [.unsafeFlags(["-Wall", "-Wextra", "-Werror"])]
         ),
         .target(name: "MacxFS", dependencies: ["CFSKit"], path: "Sources/FSKit", swiftSettings: strict),
-        .target(name: "Core", dependencies: ["MacxFS"], swiftSettings: strict),
+        .target(name: "Core", dependencies: ["MacxFS", pluginKit], swiftSettings: strict),
         .target(
             name: "UI",
             dependencies: [
-                "Core", "MacxFS", .product(name: "Sparkle", package: "Sparkle"),
+                "Core", "MacxFS", pluginKit, .product(name: "Sparkle", package: "Sparkle"),
                 .product(name: "Markdown", package: "swift-markdown"),
             ],
             resources: [.process("Resources")],
             swiftSettings: strict
         ),
         .executableTarget(name: "macExplorer", dependencies: ["UI", "Core"], path: "Sources/App", swiftSettings: strict),
-        .target(name: "MacxFixtures", dependencies: ["MacxFS"], swiftSettings: strict),
+        .target(name: "MacxFixtures", dependencies: ["MacxFS", pluginKit], swiftSettings: strict),
         .executableTarget(name: "macx-bench", dependencies: ["MacxFS", "Core", "MacxFixtures"], swiftSettings: strict),
         .executableTarget(name: "macx-scenarios", dependencies: ["Core", "MacxFS", "MacxFixtures"], swiftSettings: strict),
         .testTarget(name: "MacxFixturesTests", dependencies: ["MacxFixtures"], swiftSettings: strict),
         .testTarget(name: "FSKitTests", dependencies: ["MacxFS", "CFSKit", "MacxFixtures"], resources: [.copy("Corpus")], swiftSettings: strict),
-        .testTarget(name: "CoreTests", dependencies: ["Core", "MacxFS", "MacxFixtures"], swiftSettings: strict),
-        .testTarget(name: "UITests", dependencies: ["UI", "Core", "MacxFS", "MacxFixtures"], swiftSettings: strict),
+        .testTarget(name: "CoreTests", dependencies: ["Core", "MacxFS", "MacxFixtures", pluginKit], swiftSettings: strict),
+        .testTarget(name: "UITests", dependencies: ["UI", "Core", "MacxFS", "MacxFixtures", pluginKit], swiftSettings: strict),
+        .testTarget(name: "MacxPluginKitTests", dependencies: [pluginKit], swiftSettings: strict),
         .testTarget(name: "BenchTests", dependencies: ["macx-bench", "Core", "MacxFS", "MacxFixtures"], swiftSettings: strict),
         .testTarget(name: "ScenarioRunnerTests", dependencies: ["macx-scenarios", "Core", "MacxFS", "MacxFixtures"], swiftSettings: strict),
     ],
