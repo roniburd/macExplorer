@@ -32,6 +32,8 @@ public final class CoreEnvironment {
     public let searchServices: SearchServices
     /// Remote repository providers (GitHub built in; plugins register later) for `x-macexplorer-remote` folders.
     public let remote: ProviderRegistry
+    /// Downloaded remote files for preview, Quick Look and Open (spec §2.4), trimmed LRU at launch and after downloads.
+    public let remoteFiles: RemoteFileCache
     /// Custom-icon storage for `.setCustomIcon` jobs (P4-07): `WorkspaceIconWriter` live and in sandbox mode (the
     /// sandbox only ever points it at sandbox files).
     public let iconWriter: any CustomIconWriting = WorkspaceIconWriter()
@@ -60,7 +62,8 @@ public final class CoreEnvironment {
                             pasteboard: any PasteboardBackend, launchServices: any LaunchServicesProviding,
                             ejector: any Ejecting, trash: any TrashService, fileOpTuning: FileOpTuning = FileOpTuning(),
                             home: URL = FileManager.default.homeDirectoryForCurrentUser,
-                            searchServices: SearchServices, remoteProviders: [any RemoteProvider] = []) {
+                            searchServices: SearchServices, remoteProviders: [any RemoteProvider] = [],
+                            remoteCacheRoot: URL? = nil) {
         // `searchServices` has no default (review P3-05..08): every caller chooses real or fake explicitly, so no
         // test harness gets real Spotlight ("This Mac"), mdutil or iCloud downloads by omission. The app passes
         // SearchServices.forLaunch(_:lanes:); tests pass .fake().
@@ -69,7 +72,8 @@ public final class CoreEnvironment {
         self.init(statePaths: statePaths, lanes: lanes, settingsStorage: settingsStorage, volumeScanner: volumeScanner,
                   volumeEvents: volumeEvents, pasteboard: pasteboard, launchServices: launchServices, ejector: ejector,
                   trash: trash, fileOpTuning: fileOpTuning, home: home,
-                  interactionTarget: nil, searchServices: searchServices, remoteProviders: remoteProviders)
+                  interactionTarget: nil, searchServices: searchServices, remoteProviders: remoteProviders,
+                  remoteCacheRoot: remoteCacheRoot)
     }
 
     init(statePaths: StatePaths, lanes: LanePool, settingsStorage: any SettingsStorage,
@@ -77,11 +81,14 @@ public final class CoreEnvironment {
          pasteboard: any PasteboardBackend, launchServices provider: any LaunchServicesProviding,
          ejector: any Ejecting, trash: any TrashService, fileOpTuning: FileOpTuning,
          home: URL, interactionTarget: (any FileOpInteraction)?, searchServices: SearchServices,
-         remoteProviders: [any RemoteProvider] = []) {
+         remoteProviders: [any RemoteProvider] = [], remoteCacheRoot: URL? = nil) {
         self.statePaths = statePaths
         self.lanes = lanes
         self.searchServices = searchServices
         self.remote = ProviderRegistry(builtIns: remoteProviders)
+        // nil: inside the state directory (tests and sandboxed runs); the app passes ~/Library/Caches/… (spec §4.3).
+        self.remoteFiles = RemoteFileCache(root: remoteCacheRoot
+            ?? statePaths.root.appending(path: "RemoteCache", directoryHint: .isDirectory))
         self.types = .shared
         let volumes = Volumes(lanes: lanes, scanner: volumeScanner, events: volumeEvents)
         self.volumes = volumes
@@ -177,11 +184,13 @@ public final class CoreEnvironment {
     public func start() async -> RecoveryReport {
         if let startTask { return await startTask.value }
         let journal = self.journal, lanes = self.lanes, queue = fileOps, operations = self.operations, volumes = self.volumes
+        let remoteFiles = self.remoteFiles
         let task = Task { () -> RecoveryReport in
             let report = await LaunchRecovery.run(journal: journal, lanes: lanes)
             operations.start()
             await queue.releaseHold()
             await volumes.start()
+            Task.detached(priority: .utility) { await remoteFiles.trim() }      // spec §2.4: LRU trim on launch
             return report
         }
         startTask = task

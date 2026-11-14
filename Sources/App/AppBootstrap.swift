@@ -33,12 +33,15 @@ enum AppBootstrap {
                                                                                        : WorkspaceLaunchServices(lanes: lanes)
         let home = (sandboxed ? options.root : nil) ?? FileManager.default.homeDirectoryForCurrentUser
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
+        // Real runs cache under ~/Library/Caches (spec §4.3); sandbox runs stay inside their state directory.
+        let remoteCache = sandboxed ? nil : FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appending(path: "macExplorer/Remote", directoryHint: .isDirectory)
         let environment = CoreEnvironment(
             statePaths: statePaths, lanes: lanes, settingsStorage: settings, volumeScanner: SystemVolumeScanner(),
             volumeEvents: WorkspaceVolumeEvents(), pasteboard: makePasteboard(options: options),
             launchServices: launchServices, ejector: ejector, trash: trash, home: home,
             searchServices: SearchServices.forLaunch(options, lanes: lanes),
-            remoteProviders: [GitHubProvider(appVersion: version)])
+            remoteProviders: [GitHubProvider(appVersion: version)], remoteCacheRoot: remoteCache)
         environment.undoActionName = { UndoActionNames.name(for: $0) }
         return environment
     }
