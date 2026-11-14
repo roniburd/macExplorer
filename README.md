@@ -54,6 +54,7 @@ finding what's big. MacExplorer keeps the Mac habits and borrows the Explorer id
 | Run any command | Not available | **Command palette** (⇧⌘P) |
 | Unpack an archive | Archive Utility | **Extract Here**, which refuses archives that would write outside the folder |
 | Use your own keys | Only through System Settings | **Settings › Shortcuts**: Explorer or Finder preset, import and export |
+| Look inside a GitHub repo | Clone it first | **Type `gh:owner/repo` or paste a github.com URL.** Browse, preview and copy files out, and switch branches, without a clone |
 
 <table>
 <tr>
@@ -63,6 +64,10 @@ finding what's big. MacExplorer keeps the Mac habits and borrows the Explorer id
 <tr>
 <td><img src="site/assets/shots/group-by-date.png" alt="Downloads grouped into Today, Yesterday, Last week and Last month."><br><b>Group by date</b>, kind, size or name. Each folder remembers its view.</td>
 <td><img src="site/assets/shots/tabs.png" alt="A window with three tabs: Documents, Downloads and Pictures."><br><b>Tabs</b>, plus Details, Icons and Columns views.</td>
+</tr>
+<tr>
+<td><img src="site/assets/shots/github.png" alt="The roniburd/macExplorer GitHub repository open as a folder, with its README in the preview pane."><br><b>GitHub repos as folders.</b> Read-only, nothing cloned; files download when you open them.</td>
+<td><img src="site/assets/shots/github-sources.png" alt="Sources/Core of the repository, with the branch picker next to the repository name."><br><b>Pick a branch or tag</b> from the chip next to the repo name.</td>
 </tr>
 </table>
 

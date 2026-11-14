@@ -73,6 +73,15 @@ def into(path):
 
 SIZES = [{"menu": ["View", "Calculate Folder Sizes"]}, {"sleepMs": 1500}]
 
+GH_REPO = "roniburd/macExplorer"
+
+def into_github(path=""):
+    """Steps that open this public repository (live, anonymous GitHub API) through the address bar."""
+    shown = GH_REPO + "@main" + ("/" + path if path else "")
+    return [{"key": "cmd+l"}, {"waitFor": {"editingAddress": True}},
+            {"type": "gh:" + GH_REPO + "@main" + ("/" + path if path else "")}, {"key": "return"},
+            {"waitFor": {"remoteFolder": shown, "editingAddress": False, "state": "complete"}, "timeoutMs": 20000}]
+
 # name -> (steps, which window: "main" | "properties")
 SHOTS = {
     "tree": (into("Documents/Projects/Website") + [{"click": "index.html"}] + KEY, "main"),
@@ -95,6 +104,9 @@ SHOTS = {
     "preview": (into("Documents") + [{"menu": ["View", "Show Preview Pane"]}, {"waitFor": {"previewState": "nothing"}},
                  {"click": "Meeting notes.md"}, {"waitFor": {"previewState": "text"}}, {"sleepMs": 600}] + KEY, "main"),
     "settings": (into("Documents") + KEY + [{"key": "cmd+,"}, {"sleepMs": 1500}], "settings"),
+    "github": (into_github() + [{"menu": ["View", "Show Preview Pane"]}, {"click": "README.md"},
+                {"waitFor": {"previewState": "markdown"}, "timeoutMs": 20000}, {"sleepMs": 3000}] + KEY, "main"),
+    "github-sources": (into_github("Sources/Core") + [{"click": "Remote"}, {"sleepMs": 3000}] + KEY, "main"),
     "tabs": (into("Documents") + [{"key": "cmd+t"}, {"sleepMs": 600}] + into("Downloads")
              + [{"key": "cmd+t"}, {"sleepMs": 600}] + into("Pictures") + [{"selectTab": 0}, {"sleepMs": 600}], "main"),
 }

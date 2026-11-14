@@ -18,7 +18,8 @@ New here? Start with the [README](README.md).
 11. [Settings](#settings)
 12. [Updates](#updates)
 13. [Feedback and crashes](#feedback-and-crashes)
-14. [What MacExplorer can't do](#what-macexplorer-cant-do)
+14. [GitHub repositories](#github-repositories)
+15. [What MacExplorer can't do](#what-macexplorer-cant-do)
 
 ---
 
@@ -432,6 +433,26 @@ If MacExplorer crashes, it offers to send a report the next time it opens.
 Turn this off in Settings › Advanced.
 
 ---
+
+## GitHub repositories
+
+Open a public GitHub repository as a read-only folder, without cloning it.
+
+- **Open one.** In the address bar (⌘L), type `gh:owner/repo`, for example `gh:roniburd/macExplorer`. You can add a
+  branch or a folder: `gh:owner/repo@dev/Sources`. Pasting a github.com link works too, including `…/tree/<branch>/<folder>`
+  and `…/blob/<branch>/<file>` links (a file link opens its folder with the file selected).
+- **Switch branch or tag.** Click the chip next to the repository name in the address bar, then pick a branch or tag,
+  or type a commit. You stay in the same folder if it exists there.
+- **Preview and open.** Selecting a file downloads it for the preview pane and Quick Look; files over 10 MB wait for
+  you to click **Download to preview**. Opening a file opens a read-only copy in its app.
+- **Copy files out.** Drag files or folders to Finder or a local folder, or ⌘C here and ⌘V in a local folder.
+  **Copy Path** copies the github.com link.
+- **Keep it handy.** Repositories you opened appear under **Repositories** in the sidebar; add one to Favorites
+  like any folder.
+
+Everything is read-only: rename, move to Trash, new folder and paste are off. Only public repositories work for now,
+and GitHub allows 60 requests an hour without signing in (a few per repository and branch, not per folder). When the
+limit is reached, the folder says when it resets.
 
 ## What MacExplorer can't do
 
