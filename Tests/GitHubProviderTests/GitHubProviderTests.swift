@@ -61,12 +61,25 @@ final class GitHubProviderTests: XCTestCase {
         stub.set(api + "/git/trees/\(commit)", fixture: "tree-root")
         stub.set(api + "/git/trees/t1", fixture: "tree-src")
         let p = provider(stub)
+        // The truncated chunk names `docs` but was cut off before `src`: nothing in it is trusted.
         let root = try await list(p, loc("main"))
-        XCTAssertEqual(root.map(\.name).sorted(), ["README.md", "src"])
+        XCTAssertEqual(root.map(\.name).sorted(), ["README.md", "src"], "the root comes from the non-recursive listing")
         let src = try await list(p, loc("main", ["src"]))
         XCTAssertEqual(src.map(\.name), ["main.swift"])
         _ = try await list(p, loc("main", ["src"]))
+        _ = try await list(p, loc("main"))
         XCTAssertEqual(stub.count(api + "/git/trees/t1"), 1, "a folder listed once is cached")
+        XCTAssertEqual(stub.count(api + "/git/trees/\(commit)"), 1, "the root is listed non-recursively once")
+        do { _ = try await list(p, loc("main", ["docs"])); XCTFail("docs is not in the real root") }
+        catch { XCTAssertEqual(error as? RemoteError, .notFound) }
+        XCTAssertEqual(stub.count(api + "/git/trees/t2"), 0, "a SHA from the truncated chunk is never used")
+    }
+
+    func testUnknownRefIsNotFound() async {
+        let stub = StubTransport.demo()
+        stub.set(api + "/commits/typo", .init(status: 422, body: Data(#"{"message":"No commit found for SHA: typo"}"#.utf8)))
+        do { _ = try await list(provider(stub), loc("typo")); XCTFail("a 422 ref is not found") }
+        catch { XCTAssertEqual(error as? RemoteError, .notFound) }
     }
 
     func testRefsAreBranchesThenTags() async throws {

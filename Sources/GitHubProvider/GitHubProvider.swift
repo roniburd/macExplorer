@@ -122,7 +122,7 @@ public final class GitHubProvider: RemoteProvider, Sendable {
             cache.setTree(TreeCache.build(response.tree, complete: response.truncated != true), repo, commit)
         }
         guard let tree = cache.tree(repo, commit) else { throw .notFound }
-        if let items = tree.folders[path], tree.complete || path != "" || !tree.treeSHAs.isEmpty { return items }
+        if let items = tree.folders[path] { return items }
         if tree.complete { throw .notFound }
         return try await walk(to: path, repo: repo, commit: commit)
     }
@@ -145,7 +145,7 @@ public final class GitHubProvider: RemoteProvider, Sendable {
     }
 
     private func load(_ path: String, sha: String, repo: String, commit: String) async throws(RemoteError) {
-        if let tree = cache.tree(repo, commit), tree.folders[path] != nil, path != "" || !tree.treeSHAs.isEmpty { return }
+        if cache.tree(repo, commit)?.folders[path] != nil { return }
         let response = try await client.tree(repo, sha: sha, recursive: false)
         let items = response.tree.map { TreeCache.item(for: $0, name: $0.path) }
         var childSHAs: [String: String] = [:]

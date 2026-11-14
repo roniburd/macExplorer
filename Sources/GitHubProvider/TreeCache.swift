@@ -6,7 +6,8 @@ import Synchronization
 /// `invalidate` takes effect before the refresh that follows it re-lists.
 final class TreeCache: Sendable {
     struct Tree: Sendable {
-        /// Folder path ("" = root) → its items. Complete for a recursive tree; filled folder by folder when truncated.
+        /// Folder path ("" = root) → its items. Complete for a recursive tree; for a truncated one it starts empty and
+        /// holds only folders the fallback listed itself, so a present key always means a full listing.
         var folders: [String: [RemoteItem]] = [:]
         /// Folder path → its tree SHA (the truncated fallback lists a folder by it).
         var treeSHAs: [String: String] = [:]
@@ -79,8 +80,9 @@ final class TreeCache: Sendable {
                 tree.treeSHAs[entry.path] = entry.sha
             }
         }
-        if !complete {   // a truncated listing is only trusted for the root's direct children it names
-            tree.folders = ["": tree.folders[""] ?? []]
+        if !complete {   // a truncated listing is cut off partway, so no folder in it (not even the root) is trusted
+            tree.folders = [:]
+            tree.treeSHAs = [:]
         }
         return tree
     }

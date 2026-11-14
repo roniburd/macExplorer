@@ -33,7 +33,11 @@ struct GitHubClient: Sendable {
     /// The commit a branch, tag or SHA names. The whole ref is one escaped path piece ("feature%2Fx").
     func commit(_ repo: String, ref: String) async throws(RemoteError) -> String {
         let url = Self.api + Self.repoPath(repo) + "/commits/" + GitHubWeb.escapedComponent(ref)
-        let text = String(decoding: try await data(url, accept: "application/vnd.github.sha"), as: UTF8.self)
+        let body: Data
+        do { body = try await data(url, accept: "application/vnd.github.sha") } catch .network("HTTP 422") {
+            throw .notFound   // GitHub answers an unknown ref with 422 "No commit found for SHA"
+        }
+        let text = String(decoding: body, as: UTF8.self)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard text.count == 40, text.allSatisfy(\.isHexDigit) else { throw .network("unexpected response") }
         return text
