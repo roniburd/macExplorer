@@ -1,5 +1,6 @@
 import Foundation
 import MacxFS
+import MacxPluginKit
 import Observation
 
 /// App preferences (spec §4.3, §7). Each property is JSON-encoded under its own storage key and written on change;
@@ -9,6 +10,7 @@ public final class Settings {
     public static let schemaVersion: Int = 3
     public static let schemaVersionKey = "schemaVersion"
     public static let recentLocationsLimit = 20
+    public static let recentRepositoriesLimit = 10
     public static let lastReportedCrashesLimit = 20
     public static let paletteRecentLimit = 20
     /// Column defaults (display order): every ColumnID at its `defaultWidth`; Phase 1's Name, Date Modified, Size
@@ -126,6 +128,12 @@ public final class Settings {
         set { recents = Array(newValue.prefix(Self.recentLocationsLimit)) }
     }
     private var recents: [String] { didSet { save(recents, Key.recentLocations) } }
+    /// Remote repositories opened (repo-root remote URL strings, no ref), ≤ 10, most recent first (spec §4.6).
+    public var recentRepositories: [String] {
+        get { recentRepos }
+        set { recentRepos = Array(newValue.prefix(Self.recentRepositoriesLimit)) }
+    }
+    private var recentRepos: [String] { didSet { save(recentRepos, Key.recentRepositories) } }
     /// The command palette's most recently run rows (P4-03): `PaletteTarget.encoded` strings, ≤ 20, most recent first.
     public var paletteRecent: [String] {
         get { paletteRecents }
@@ -187,6 +195,8 @@ public final class Settings {
         toolbarNewTabItemOffered = Self.load(Bool.self, Key.toolbarNewTabItemOffered, from: storage) ?? false
         lastLocation = Self.load(URL.self, Key.lastLocation, from: storage)
         recents = Array((Self.load([String].self, Key.recentLocations, from: storage) ?? []).prefix(Self.recentLocationsLimit))
+        recentRepos = Array((Self.load([String].self, Key.recentRepositories, from: storage) ?? [])
+            .prefix(Self.recentRepositoriesLimit))
         paletteRecents = Array((Self.load([String].self, Key.paletteRecent, from: storage) ?? []).prefix(Self.paletteRecentLimit))
         iconPackBookmark = Self.load(Data.self, Key.iconPackBookmark, from: storage)
         let records = Self.load([TCCRecord].self, Key.tccOutcomes, from: storage) ?? []
@@ -231,6 +241,13 @@ public final class Settings {
         var list = recentLocations.filter { $0 != path }
         list.insert(path, at: 0)
         recentLocations = list
+    }
+
+    /// Moves `url`'s repository (root, ref dropped) to the front of `recentRepositories`; non-remote URLs are ignored.
+    public func addRecentRepository(_ url: URL) {
+        guard let location = RemoteLocation(url: url) else { return }
+        let root = RemoteLocation(provider: location.provider, repo: location.repo, ref: nil, path: []).url.absoluteString
+        recentRepositories = [root] + recentRepositories.filter { $0 != root }
     }
 
     /// Moves `target` to the front of `paletteRecent` (P4-03).
@@ -289,6 +306,7 @@ public final class Settings {
         static let toolbarFeedbackItemOffered = "toolbarFeedbackItemOffered"
         static let toolbarNewTabItemOffered = "toolbarNewTabItemOffered"
         static let recentLocations = "recentLocations", tccOutcomes = "tccOutcomes"
+        static let recentRepositories = "recentRepositories"
         static let showCloudStorageInSidebar = "showCloudStorageInSidebar", showAllExtensions = "showAllExtensions"
         static let updateChannel = "updateChannel", checkForUpdatesAutomatically = "checkForUpdatesAutomatically"
         static let offerToReportCrashes = "offerToReportCrashes", lastReportedCrashes = "lastReportedCrashes"

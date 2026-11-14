@@ -1,6 +1,7 @@
 import AppKit
 import Core
 import MacxFS
+import MacxPluginKit
 
 /// The address bar (§5.2): breadcrumb mode by default; edit mode (⌘L, ⌥D, F4, or a click on empty space) shows the
 /// POSIX path all selected. Return resolves the text off main (AddressResolver on the target's volume lane): a folder
@@ -80,7 +81,7 @@ final class AddressBarView: NSView {
             setError(nil)
             editField.resetSuggestions()
             editField.resetUndo()
-            editField.stringValue = BreadcrumbPath.posixPath(url)
+            editField.stringValue = addressText(for: url)
             breadcrumb.isHidden = true
             searchSegment.isHidden = true
             editField.isHidden = false
@@ -108,10 +109,11 @@ final class AddressBarView: NSView {
         guard isEditing, let current = currentURL else { return }
         let token = editToken
         let result = await AddressResolver.resolve(text, current: current, home: environment.settings.home,
-                                                   lanes: environment.lanes, mounts: environment.volumes.mountTable)
+                                                   lanes: environment.lanes, mounts: environment.volumes.mountTable,
+                                                   remote: environment.remote)
         guard isEditing, token == editToken else { return }
         switch result {
-        case .folder(let url):
+        case .folder(let url), .remote(let url):
             complete(url, selecting: nil, recent: url)
         case .file(_, let name) where name.hasPrefix(".") && !environment.settings.showHidden:
             // It would be listed but not shown, so nothing could be selected: say why instead (QA round 1).
@@ -135,10 +137,18 @@ final class AddressBarView: NSView {
     // MARK: private
 
     private func complete(_ url: URL, selecting name: String?, recent: URL) {
-        environment.settings.addRecentLocation(BreadcrumbPath.posixPath(recent))
+        environment.settings.addRecentLocation(addressText(for: recent))
+        environment.settings.addRecentRepository(recent)     // no-op for local folders
         finishEditing()
         onEndEditing?()
         onNavigate?(url, name)
+    }
+
+    /// What edit mode shows and recents keep: the POSIX path; for a remote folder its provider web address (typing it
+    /// back resolves to the same place), else the remote URL itself (also accepted by the resolver).
+    func addressText(for url: URL) -> String {
+        guard let location = RemoteLocation(url: url) else { return BreadcrumbPath.posixPath(url) }
+        return environment.remote.provider(id: location.provider)?.webURL(location)?.absoluteString ?? url.absoluteString
     }
 
     private func finishEditing() {
@@ -179,9 +189,15 @@ final class AddressBarView: NSView {
         editField.suggestionProvider = { [weak self] text in
             guard let self, let current = self.currentURL else { return [] }
             let settings = environment.settings
-            let subfolders = await PathCompletion.complete(text, current: current, home: settings.home,
-                                                           lanes: environment.lanes, mounts: environment.volumes.mountTable)
-            let recents = RecentLocations.matching(text, in: settings.recentLocations)
+            let remote = await RemoteCompletion.complete(text, current: current, registry: environment.remote)
+            let recents = remote.suggestions + RecentLocations.matching(text, in: settings.recentLocations)
+            // File completion only for file text: a remote `current` must never reach the POSIX path math.
+            let isFileText = text.hasPrefix("/") || text.hasPrefix("~") || (current.isFileURL && remote.subfolders.isEmpty
+                && AddressResolver.remoteTarget(text, current: current, registry: environment.remote) == nil)
+            let subfolders = isFileText
+                ? await PathCompletion.complete(text, current: current, home: settings.home,
+                                                lanes: environment.lanes, mounts: environment.volumes.mountTable)
+                : remote.subfolders
             return AddressSuggestions.make(for: text, subfolders: subfolders, recents: recents)
         }
         editField.onSubmit = { [weak self] text in

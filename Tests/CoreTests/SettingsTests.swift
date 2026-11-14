@@ -1,6 +1,7 @@
 import Foundation
 import MacxFixtures
 import MacxFS
+import MacxPluginKit
 import XCTest
 @testable import Core
 
@@ -362,5 +363,23 @@ final class SettingsTests: XCTestCase {
         withObservationTracking { _ = s.density } onChange: { fired.fulfill() }
         s.density = .compact
         await fulfillment(of: [fired], timeout: 1)
+    }
+
+    func testRecentRepositoriesKeepTenRepoRootsMostRecentFirst() {
+        let storage = InMemorySettingsStorage()
+        let settings = Settings(storage: storage, home: URL(filePath: "/Users/me", directoryHint: .isDirectory))
+        func url(_ repo: String, _ path: [String] = []) -> URL {
+            RemoteLocation(provider: "test.fake", repo: repo, ref: "main", path: path).url
+        }
+        for i in 0..<12 { settings.addRecentRepository(url("r\(i)")) }
+        settings.addRecentRepository(url("r5", ["src"]))          // same repo, deeper, other ref: one row, moved up
+        let root5 = RemoteLocation(provider: "test.fake", repo: "r5", ref: nil, path: []).url.absoluteString
+        XCTAssertEqual(settings.recentRepositories.count, Settings.recentRepositoriesLimit)
+        XCTAssertEqual(settings.recentRepositories.first, root5)
+        XCTAssertEqual(settings.recentRepositories.filter { $0 == root5 }.count, 1)
+        settings.addRecentRepository(URL(filePath: "/tmp"))      // not remote: ignored
+        XCTAssertEqual(settings.recentRepositories.first, root5)
+        let reloaded = Settings(storage: storage, home: URL(filePath: "/Users/me", directoryHint: .isDirectory))
+        XCTAssertEqual(reloaded.recentRepositories, settings.recentRepositories)
     }
 }
