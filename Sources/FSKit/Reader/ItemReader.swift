@@ -13,9 +13,12 @@ public enum ItemReader {
     /// A directory that no longer exists (ENOENT/ENOTDIR) reports every name missing; any other open
     /// failure (EACCES, EMFILE, EIO, ...) throws, so the caller can fall back to a full re-read.
     /// `context` (lane work) gets a heartbeat per stat, so a long name list on a slow volume is not taken for a stall.
+    /// Remote URLs throw ENOTSUP: their decoded path is not a local directory, and an ENOENT there would
+    /// otherwise report every name missing.
     public static func read(names: [String], in directory: URL, generation: Generation,
                             types: TypeRegistry, context: LaneContext? = nil) throws(ReadFailure) -> ItemReadResult {
         assertOffMain()
+        if RemoteScheme.isRemote(directory) { throw ReadFailure(code: ENOTSUP, stage: .open) }
         var result = ItemReadResult(batch: Batch(generation: generation), missing: [], errors: [:])
         let fd: Int32
         do {

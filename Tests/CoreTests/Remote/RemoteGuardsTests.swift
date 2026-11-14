@@ -44,6 +44,16 @@ final class RemoteGuardsTests: XCTestCase {
         XCTAssertEqual(f.code, ENOTSUP)
     }
 
+    func testDirectoryReadersRefuseRemoteItemReads() async throws {
+        let world = try await FolderTestWorld.make(self)
+        do {
+            let result = try await world.readers.reader(for: remote).readItems(["x"], in: remote, generation: .initial)
+            XCTFail("expected ENOTSUP, got missing \(result.missing)")
+        } catch let failure as ReadFailure {
+            XCTAssertEqual(failure.code, ENOTSUP)
+        }
+    }
+
     func testRemoteIsNeverAProtectedLocation() {
         let home = URL(filePath: "/Users/someone", directoryHint: .isDirectory)
         XCTAssertNil(ProtectedLocations.classify(remote, home: home, volume: VolumeInfo.remote(url: remote)))

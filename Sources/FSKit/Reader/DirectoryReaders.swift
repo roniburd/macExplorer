@@ -22,7 +22,8 @@ public final class DirectoryReaders: Sendable {
         }
     }
 
-    /// By MountTable volume, else VolumeID.unknown. Remote URLs: a reader that fails every read with ENOTSUP.
+    /// By MountTable volume, else VolumeID.unknown. Remote URLs: a reader whose read and readItems
+    /// both fail with ENOTSUP (readItems via ItemReader's remote guard).
     public func reader(for directory: URL) -> DirectoryReader {
         if RemoteScheme.isRemote(directory) { return remoteRefusal }
         return reader(for: mountTable.current().volume(containing: directory.path(percentEncoded: false))?.id ?? .unknown)
