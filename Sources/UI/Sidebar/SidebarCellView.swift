@@ -1,5 +1,6 @@
 import AppKit
 import Core
+import MacxPluginKit
 
 /// Source-list row: icon, name, and (ejectable volumes) a ⏏ button. Stale favorites are dimmed.
 @MainActor
@@ -71,6 +72,20 @@ final class SidebarCellView: NSTableCellView {
         self.toolTip = toolTip
         setAccessibilityLabel(dimmed ? String(format: L10n.string("%@ (not available)"), title) : title)
     }
+
+    /// A REPOSITORIES row: the provider's icon and root label (`displayRoot`), the provider's name in the tooltip.
+    /// A provider that isn't registered (the rows skip those; a stale reload may not) falls back to a generic icon
+    /// and the repository name.
+    func configureRepository(_ url: URL, registry: ProviderRegistry) {
+        let location = RemoteLocation(url: url)
+        let provider = location.flatMap { registry.provider(id: $0.provider) }
+        let title = location.map { l in provider?.displayRoot(l) ?? l.repo } ?? url.absoluteString
+        let tip = provider.map { "\($0.displayName): \(title)" }
+        configure(title: title, symbol: provider?.iconSymbol ?? Self.repositoryFallbackSymbol, dimmed: false, ejectable: false,
+                  toolTip: tip)
+    }
+
+    static let repositoryFallbackSymbol = "shippingbox"
 
     @objc private func ejectClicked(_ sender: Any?) { onEject?() }
 }

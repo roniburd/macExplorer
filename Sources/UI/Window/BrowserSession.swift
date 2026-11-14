@@ -479,6 +479,7 @@ final class BrowserSession {
     // MARK: private
 
     private func open(_ url: URL, selecting name: String?, folderID: UInt64? = nil) {
+        if RemoteScheme.isRemote(url) { environment.settings.addRecentRepository(url) }   // REPOSITORIES (spec §4.6)
         columnsShownWithoutRecord = false
         folderToken = nil
         stopFolderSizes()

@@ -5450,6 +5450,17 @@
         }
       }
     },
+    "Repositories" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repositories"
+          }
+        }
+      }
+    },
     "Request a Feature…" : {
       "extractionState" : "manual",
       "localizations" : {

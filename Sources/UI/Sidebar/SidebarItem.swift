@@ -14,15 +14,17 @@ struct SidebarFavorite: Hashable {
     var isStale: Bool { resolved.isStale }
 }
 
-/// The sidebar outline's node model (§5.4): section headers, favorites, saved searches (P3-11), locations and
+/// The sidebar outline's node model (§5.4): section headers, favorites, saved searches (P3-11), repositories, locations and
 /// Folders-tree nodes.
 /// The outline view gets one stable box object per item (`SidebarViewController.box(_:)`); `item(atRow:) as? SidebarItem`
 /// unboxes it.
 enum SidebarItem: Hashable {
-    case favoritesHeader, searchesHeader, locationsHeader, foldersHeader
+    case favoritesHeader, searchesHeader, repositoriesHeader, locationsHeader, foldersHeader
     case favorite(SidebarFavorite)
     /// A SEARCHES row (P3-11): a query, never a file.
     case savedSearch(SavedSearch)
+    /// A REPOSITORIES row: a repository root (remote URL).
+    case repository(URL)
     case location(VolumeInfo)
     case iCloudDrive(URL)
     /// A File Provider folder in `~/Library/CloudStorage` (OneDrive, Google Drive…), after iCloud Drive.
@@ -35,6 +37,7 @@ enum SidebarItem: Hashable {
         switch section {
         case .favorites: .favoritesHeader
         case .searches: .searchesHeader
+        case .repositories: .repositoriesHeader
         case .locations: .locationsHeader
         case .folders: .foldersHeader
         }
@@ -44,6 +47,7 @@ enum SidebarItem: Hashable {
         switch self {
         case .favoritesHeader, .favorite: .favorites
         case .searchesHeader, .savedSearch: .searches
+        case .repositoriesHeader, .repository: .repositories
         case .locationsHeader, .location, .iCloudDrive, .cloudStorage, .trash: .locations
         case .foldersHeader, .folder: .folders
         }
@@ -51,16 +55,17 @@ enum SidebarItem: Hashable {
 
     var isHeader: Bool {
         switch self {
-        case .favoritesHeader, .searchesHeader, .locationsHeader, .foldersHeader: true
-        case .favorite, .savedSearch, .location, .iCloudDrive, .cloudStorage, .trash, .folder: false
+        case .favoritesHeader, .searchesHeader, .repositoriesHeader, .locationsHeader, .foldersHeader: true
+        case .favorite, .savedSearch, .repository, .location, .iCloudDrive, .cloudStorage, .trash, .folder: false
         }
     }
 
     /// The folder this row navigates to (nil for headers, stale favorites and saved searches).
     @MainActor var url: URL? {
         switch self {
-        case .favoritesHeader, .searchesHeader, .locationsHeader, .foldersHeader, .savedSearch: nil
+        case .favoritesHeader, .searchesHeader, .repositoriesHeader, .locationsHeader, .foldersHeader, .savedSearch: nil
         case .favorite(let f): f.url
+        case .repository(let url): url
         case .location(let v): v.mountPoint
         case .iCloudDrive(let url), .trash(let url): url
         case .cloudStorage(let folder): folder.url
@@ -73,10 +78,12 @@ enum SidebarItem: Hashable {
         switch self {
         case .favoritesHeader: "header.favorites"
         case .searchesHeader: "header.searches"
+        case .repositoriesHeader: "header.repositories"
         case .locationsHeader: "header.locations"
         case .foldersHeader: "header.folders"
         case .favorite(let f): "favorite.\(f.id.uuidString)"
         case .savedSearch(let s): "search.\(s.id.uuidString)"
+        case .repository(let url): "repository.\(url.absoluteString)"
         case .location(let v): "location.\(v.id.raw)"
         case .iCloudDrive: "location.iCloudDrive"
         case .cloudStorage(let folder): "location.cloudStorage.\(folder.url.lastPathComponent)"
@@ -90,7 +97,8 @@ enum SidebarItem: Hashable {
         switch self {
         case .favoritesHeader, .favorite: .sidebarFavorites
         case .searchesHeader, .savedSearch: .sidebarSavedSearch
-        case .locationsHeader, .location, .iCloudDrive, .cloudStorage, .trash: .sidebarLocations
+        case .repositoriesHeader, .repository, .locationsHeader, .location, .iCloudDrive, .cloudStorage, .trash:
+            .sidebarLocations
         case .foldersHeader: .sidebarFolders
         case .folder(let node): node.isVolumeRoot ? .sidebarVolumeRoot : .sidebarFolders
         }
@@ -99,9 +107,10 @@ enum SidebarItem: Hashable {
     /// What commands act on with this row focused.
     @MainActor var commandTarget: CommandTarget? {
         switch self {
-        case .favoritesHeader, .searchesHeader, .locationsHeader, .foldersHeader: nil
+        case .favoritesHeader, .searchesHeader, .repositoriesHeader, .locationsHeader, .foldersHeader: nil
         case .favorite(let f): .favorite(f.resolved)
         case .savedSearch(let s): .savedSearch(s)
+        case .repository(let url): .location(url)
         case .location(let v): .volume(v)
         case .iCloudDrive(let url), .trash(let url): .location(url)
         case .cloudStorage(let folder): .location(folder.url)
@@ -111,8 +120,10 @@ enum SidebarItem: Hashable {
 
     static func == (a: SidebarItem, b: SidebarItem) -> Bool {
         switch (a, b) {
-        case (.favoritesHeader, .favoritesHeader), (.searchesHeader, .searchesHeader), (.locationsHeader, .locationsHeader),
+        case (.favoritesHeader, .favoritesHeader), (.searchesHeader, .searchesHeader),
+             (.repositoriesHeader, .repositoriesHeader), (.locationsHeader, .locationsHeader),
              (.foldersHeader, .foldersHeader): true
+        case (.repository(let x), .repository(let y)): x == y
         case (.favorite(let x), .favorite(let y)): x == y
         // The whole value, like favorites: a rename gets a new box (the cell shows the new name); `identity` (the
         // id) keeps the row's selection across the reload.

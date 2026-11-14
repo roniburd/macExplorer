@@ -2,6 +2,7 @@ import Darwin
 import Foundation
 import Core
 import MacxFS
+import MacxPluginKit
 
 /// The FAVORITES section (§5.4): the visible defaults (Home, Desktop, Documents, Downloads, Applications; only those
 /// that exist) followed by the user's bookmarks, resolved on lanes (`FavoritesResolver`). Edits go to `Settings`:
@@ -71,7 +72,8 @@ final class SidebarFavoritesModel {
             }
             let resolved = await FavoritesResolver.resolve(favorites, lanes: lanes, mountTable: mountTable)
             guard current == self.generation else { return }
-            rows += resolved.filter { confinement.allows(Self.location(of: $0)) }.map { SidebarFavorite(resolved: $0, defaultKind: nil) }
+            // Remote favorites aren't on the file system, so sandbox confinement doesn't apply to them.
+            rows += resolved.filter { $0.favorite.remoteURL != nil || confinement.allows(Self.location(of: $0)) }.map { SidebarFavorite(resolved: $0, defaultKind: nil) }
             self.persistRefreshedBookmarks(resolved)
             if rows != self.rows {
                 self.rows = rows
@@ -150,6 +152,25 @@ final class SidebarFavoritesModel {
                   let favorite = try? await FavoritesResolver.makeFavorite(for: url, lanes: lanes) else { continue }
             seen.insert(key)
             made.append(favorite)
+        }
+        guard !made.isEmpty else { return 0 }
+        var favorites = settings.favorites
+        favorites.insert(contentsOf: made, at: max(0, min(index, favorites.count)))
+        settings.favorites = favorites
+        return made.count
+    }
+
+    /// Remote folders dropped between favorites (spec §4.6): folders only, asked through the provider; no duplicates.
+    /// Returns how many were added.
+    @discardableResult
+    func addRemote(_ urls: [URL], atUserIndex index: Int) async -> Int {
+        var made: [Favorite] = []
+        var known = Set(settings.favorites.compactMap(\.remoteURL))
+        for url in urls where RemoteScheme.isRemote(url) && !known.contains(url.absoluteString) {
+            guard let location = RemoteLocation(url: url),
+                  let item = try? await environment.remote.item(at: location), item.kind == .directory else { continue }
+            known.insert(url.absoluteString)
+            made.append(FavoritesResolver.makeRemoteFavorite(url: url, displayName: location.name ?? location.repo))
         }
         guard !made.isEmpty else { return 0 }
         var favorites = settings.favorites

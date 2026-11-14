@@ -3,7 +3,7 @@ import Core
 import MacxFS
 
 /// The sidebar (§5.4): one source-list NSOutlineView with FAVORITES, SEARCHES (P3-11, only while there are saved
-/// searches), LOCATIONS and FOLDERS sections. Rows navigate the
+/// searches), REPOSITORIES (only while there are recent or favorited repositories), LOCATIONS and FOLDERS sections. Rows navigate the
 /// window's session; commands act on the focused row (`focusContext` / `commandTarget`), never on the content
 /// selection. Section collapse state persists in `Settings.collapsedSections`.
 @MainActor
@@ -36,6 +36,8 @@ final class SidebarViewController: CommandHandlingViewController {
     private(set) var locationItems: [SidebarItem] = []
     /// The SEARCHES rows (`Settings.savedSearches`); the section is absent while empty.
     private(set) var savedSearchItems: [SidebarItem] = []
+    /// The REPOSITORIES rows (`RepositoryRows`); the section is absent while empty.
+    private(set) var repositoryItems: [SidebarItem] = []
     private var iCloudDrive: URL?
     private var cloudStorage: [CloudStorageFolder] = []
     private var trash: URL?
@@ -139,7 +141,8 @@ final class SidebarViewController: CommandHandlingViewController {
         outlineView.allowsEmptySelection = true
         outlineView.allowsMultipleSelection = false
         outlineView.setAccessibilityLabel(L10n.string("Sidebar"))
-        outlineView.registerForDraggedTypes([Self.favoritePasteboardType, Self.savedSearchPasteboardType] + DropTarget.acceptedTypes)
+        outlineView.registerForDraggedTypes([Self.favoritePasteboardType, Self.savedSearchPasteboardType, RemoteItemsPasteboard.type]
+                                            + DropTarget.acceptedTypes)
         // Favorites reorder (.move); tree folders drag like files (copy/move/alias, the right-drag menu).
         outlineView.setDraggingSourceOperationMask([.copy, .move, .link, .generic], forLocal: true)
         outlineView.setDraggingSourceOperationMask([.copy, .move, .link, .generic], forLocal: false)
@@ -181,6 +184,7 @@ final class SidebarViewController: CommandHandlingViewController {
         })
         rebuildLocations()
         savedSearchItems = settings.savedSearches.map(SidebarItem.savedSearch)
+        repositoryItems = makeRepositoryItems()
         updateTreeRoots()
         favorites.refresh()
         refreshICloudDrive()
@@ -207,9 +211,13 @@ final class SidebarViewController: CommandHandlingViewController {
 
     // MARK: rows
 
-    /// The headers in the outline, in order: FAVORITES, SEARCHES (only with saved searches), LOCATIONS, FOLDERS.
+    /// The headers in the outline, in order: FAVORITES, SEARCHES (only with saved searches), REPOSITORIES (only with
+    /// repository rows), LOCATIONS, FOLDERS.
     var sectionHeaders: [SidebarSection] {
-        SidebarSection.allCases.filter { SidebarItem.header($0) != nil && ($0 != .searches || !savedSearchItems.isEmpty) }
+        SidebarSection.allCases.filter {
+            SidebarItem.header($0) != nil && ($0 != .searches || !savedSearchItems.isEmpty)
+                && ($0 != .repositories || !repositoryItems.isEmpty)
+        }
     }
 
     var selectedItem: SidebarItem? { item(atRow: outlineView.selectedRow) }
@@ -233,10 +241,11 @@ final class SidebarViewController: CommandHandlingViewController {
         switch item {
         case .favoritesHeader: return favorites.rows.map(SidebarItem.favorite)
         case .searchesHeader: return savedSearchItems
+        case .repositoriesHeader: return repositoryItems
         case .locationsHeader: return locationItems
         case .foldersHeader: return tree.roots.map(SidebarItem.folder)
         case .folder(let node): return tree.children(of: node).map(SidebarItem.folder)
-        case .favorite, .savedSearch, .location, .iCloudDrive, .cloudStorage, .trash: return []
+        case .favorite, .savedSearch, .repository, .location, .iCloudDrive, .cloudStorage, .trash: return []
         }
     }
 
@@ -406,6 +415,7 @@ final class SidebarViewController: CommandHandlingViewController {
         lastSettings = now
         if before.favorites != now.favorites || before.hiddenDefaults != now.hiddenDefaults { favorites.refresh() }
         if before.savedSearches != now.savedSearches { rebuildSearches(now.savedSearches) }
+        if before.recentRepositories != now.recentRepositories || before.favorites != now.favorites { rebuildRepositories() }
         if before.showICloud != now.showICloud || before.showCloudStorage != now.showCloudStorage
             || before.showExternal != now.showExternal {
             rebuildLocations()
@@ -436,6 +446,35 @@ final class SidebarViewController: CommandHandlingViewController {
             reloadPreservingSelection { outlineView.removeItems(at: [index], inParent: nil, withAnimation: []) }
         case (true, true):
             reloadSection(.searchesHeader)
+        case (false, false):
+            break
+        }
+    }
+
+    private func makeRepositoryItems() -> [SidebarItem] {
+        RepositoryRows.rows(recent: settings.recentRepositories, favorites: settings.favorites, registry: environment.remote)
+            .map(SidebarItem.repository)
+    }
+
+    /// REPOSITORIES follows recents and remote favorites, inserted and removed like SEARCHES. Plugin loading calls it
+    /// too: a provider registering later changes which rows are shown.
+    func rebuildRepositories() {
+        let items = makeRepositoryItems()
+        guard items != repositoryItems else { return }
+        let oldIndex = sectionHeaders.firstIndex(of: .repositories)
+        let wasShown = !repositoryItems.isEmpty
+        repositoryItems = items
+        guard isViewLoaded else { return }
+        switch (wasShown, !items.isEmpty) {
+        case (false, true):
+            guard let index = sectionHeaders.firstIndex(of: .repositories) else { return }
+            reloadPreservingSelection { outlineView.insertItems(at: [index], inParent: nil, withAnimation: []) }
+            syncHeaderExpansion()
+        case (true, false):
+            guard let index = oldIndex else { return }
+            reloadPreservingSelection { outlineView.removeItems(at: [index], inParent: nil, withAnimation: []) }
+        case (true, true):
+            reloadSection(.repositoriesHeader)
         case (false, false):
             break
         }
@@ -616,6 +655,7 @@ final class SidebarViewController: CommandHandlingViewController {
 struct SettingsSnapshot: Equatable {
     var favorites: [Favorite]
     var savedSearches: [SavedSearch]
+    var recentRepositories: [String]
     var hiddenDefaults: Set<DefaultFavorite>
     var showICloud: Bool
     var showCloudStorage: Bool
@@ -627,6 +667,7 @@ struct SettingsSnapshot: Equatable {
     @MainActor init(_ settings: Settings) {
         favorites = settings.favorites
         savedSearches = settings.savedSearches
+        recentRepositories = settings.recentRepositories
         hiddenDefaults = settings.hiddenDefaultFavorites
         showICloud = settings.showICloudInSidebar
         showCloudStorage = settings.showCloudStorageInSidebar

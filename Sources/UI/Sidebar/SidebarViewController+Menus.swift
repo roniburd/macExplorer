@@ -60,7 +60,8 @@ extension SidebarViewController {
             addVolumeItems(volume, item: item, to: menu)
         case .folder(let node) where node.isVolumeRoot:
             addVolumeItems(node.volume, item: item, to: menu)
-        case .iCloudDrive, .cloudStorage, .trash, .folder, .favoritesHeader, .searchesHeader, .locationsHeader, .foldersHeader:
+        case .repository, .iCloudDrive, .cloudStorage, .trash, .folder, .favoritesHeader, .searchesHeader, .repositoriesHeader,
+             .locationsHeader, .foldersHeader:
             break
         }
         return menu.items.isEmpty ? nil : menu

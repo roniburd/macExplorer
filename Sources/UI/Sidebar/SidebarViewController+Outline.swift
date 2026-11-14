@@ -15,7 +15,7 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
 
     func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
         switch item as? SidebarItem {
-        case .favoritesHeader?, .searchesHeader?, .locationsHeader?, .foldersHeader?: true
+        case .favoritesHeader?, .searchesHeader?, .repositoriesHeader?, .locationsHeader?, .foldersHeader?: true
         case .folder(let node)?: tree.isExpandable(node)
         default: false
         }
@@ -45,6 +45,10 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
             cell.configure(title: L10n.string("Favorites"), symbol: nil, dimmed: false, ejectable: false, toolTip: nil)
         case .searchesHeader:
             cell.configure(title: L10n.string("Searches"), symbol: nil, dimmed: false, ejectable: false, toolTip: nil)
+        case .repositoriesHeader:
+            cell.configure(title: L10n.string("Repositories"), symbol: nil, dimmed: false, ejectable: false, toolTip: nil)
+        case .repository(let url):
+            cell.configureRepository(url, registry: environment.remote)
         case .savedSearch(let saved):
             cell.configure(title: saved.name, symbol: "magnifyingglass", dimmed: false, ejectable: false,
                            toolTip: SearchStrings.savedSearchTooltip(saved.spec))
@@ -107,10 +111,10 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
                 outlineView.collapseItem(box(.folder(child)), collapseChildren: true)
             }
             isSyncing = wasSyncing
-        case .favoritesHeader, .searchesHeader, .locationsHeader, .foldersHeader:
+        case .favoritesHeader, .searchesHeader, .repositoriesHeader, .locationsHeader, .foldersHeader:
             guard !isSyncing, !settings.collapsedSections.contains(item.section) else { return }
             settings.collapsedSections.insert(item.section)
-        case .favorite, .savedSearch, .location, .iCloudDrive, .cloudStorage, .trash:
+        case .favorite, .savedSearch, .repository, .location, .iCloudDrive, .cloudStorage, .trash:
             break
         }
     }
@@ -182,6 +186,9 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
         let pasteboard = info.draggingPasteboard
         if let id = Self.draggedFavoriteID(pasteboard) {
             moveFavorite(id: id, toChildIndex: index)
+        } else if case let remote = RemoteItemsPasteboard.read(pasteboard), !remote.isEmpty {
+            let defaults = favorites.rows.filter { $0.defaultKind != nil }.count
+            Task { await self.favorites.addRemote(remote, atUserIndex: max(0, index - defaults)) }
         } else {
             let urls = Self.fileURLs(pasteboard)
             Task { await self.addFavorites(urls, atChildIndex: index) }
@@ -195,9 +202,11 @@ extension SidebarViewController: NSOutlineViewDataSource, NSOutlineViewDelegate 
         (item as? SidebarItem)?.url
     }
 
-    /// Between favorites: a dragged favorite moves (reorder), dragged folders link (add). Anything else is refused.
+    /// Between favorites: a dragged favorite moves (reorder), dragged folders link (add), and so do dragged remote
+    /// items (spec §4.6; `addRemote` keeps the folders). Anything else is refused.
     func favoritesDropOperation(_ pasteboard: NSPasteboard, childIndex: Int) -> NSDragOperation {
         if Self.draggedFavoriteID(pasteboard) != nil { return .move }
+        if !RemoteItemsPasteboard.read(pasteboard).isEmpty { return .link }
         return Self.fileURLs(pasteboard).isEmpty ? [] : .link
     }
 

@@ -6,11 +6,14 @@ public struct Favorite: Sendable, Codable, Hashable, Identifiable {
     public var bookmark: Data
     public var displayName: String
     public var lastKnownPath: String
-    public init(id: UUID = UUID(), bookmark: Data, displayName: String, lastKnownPath: String) {
+    /// A repository folder (spec §4.6): the remote URL; `bookmark` is empty and `lastKnownPath` repeats the URL.
+    public var remoteURL: String?
+    public init(id: UUID = UUID(), bookmark: Data, displayName: String, lastKnownPath: String, remoteURL: String? = nil) {
         self.id = id
         self.bookmark = bookmark
         self.displayName = displayName
         self.lastKnownPath = lastKnownPath
+        self.remoteURL = remoteURL
     }
 }
 
@@ -42,11 +45,19 @@ public enum FavoritesResolver {
         }
     }
 
+    public static func makeRemoteFavorite(url: URL, displayName: String) -> Favorite {
+        Favorite(bookmark: Data(), displayName: displayName, lastKnownPath: url.absoluteString, remoteURL: url.absoluteString)
+    }
+
     public static func resolve(_ favorites: [Favorite], lanes: LanePool, mountTable: MountTable = .empty) async -> [ResolvedFavorite] {
         await withTaskGroup(of: (Int, ResolvedFavorite).self) { group in
             for (index, favorite) in favorites.enumerated() {
                 let volume = lane(for: favorite, in: mountTable)
                 group.addTask {
+                    if let remote = favorite.remoteURL {   // no bookmark, no lane: the provider answers on navigation
+                        let url = URL(string: remote)
+                        return (index, ResolvedFavorite(favorite: favorite, url: url, isStale: url == nil))
+                    }
                     do {
                         let resolved: ResolvedFavorite
                         if volume == .unknown {

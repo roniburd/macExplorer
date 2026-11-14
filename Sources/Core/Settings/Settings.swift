@@ -96,6 +96,8 @@ public final class Settings {
     // Phase 3 (schema v3): saved searches, preview pane, search defaults, results columns.
     /// SEARCHES section rows, in display order.
     public var savedSearches: [SavedSearch] { didSet { save(savedSearches, Key.savedSearches) } }
+    /// Settings › Connections: skip loading plugin bundles at the next launch (spec §5.3).
+    public var pluginsDisabled: Bool { didSet { save(pluginsDisabled, Key.pluginsDisabled) } }
     public var previewPaneVisible: Bool { didSet { save(previewPaneVisible, Key.previewPaneVisible) } }
     public var previewPaneWidth: Double { didSet { save(previewPaneWidth, Key.previewPaneWidth) } }
     /// The user has dragged the pane to a width (otherwise it opens at a share of the window).
@@ -181,6 +183,7 @@ public final class Settings {
         showFullPathInTitle = Self.load(Bool.self, Key.showFullPathInTitle, from: storage) ?? false
         onboardingCompleted = Self.load(Bool.self, Key.onboardingCompleted, from: storage) ?? false
         savedSearches = Self.load([SavedSearch].self, Key.savedSearches, from: storage) ?? []
+        pluginsDisabled = Self.load(Bool.self, Key.pluginsDisabled, from: storage) ?? false
         previewPaneVisible = Self.load(Bool.self, Key.previewPaneVisible, from: storage) ?? false
         previewPaneWidth = Self.load(Double.self, Key.previewPaneWidth, from: storage) ?? 320
         previewZoom = Self.load(Double.self, Key.previewZoom, from: storage) ?? 1
@@ -247,6 +250,7 @@ public final class Settings {
     public func addRecentRepository(_ url: URL) {
         guard let location = RemoteLocation(url: url) else { return }
         let root = RemoteLocation(provider: location.provider, repo: location.repo, ref: nil, path: []).url.absoluteString
+        guard recentRepositories.first != root else { return }   // browsing inside the newest repository: no write
         recentRepositories = [root] + recentRepositories.filter { $0 != root }
     }
 
@@ -306,7 +310,7 @@ public final class Settings {
         static let toolbarFeedbackItemOffered = "toolbarFeedbackItemOffered"
         static let toolbarNewTabItemOffered = "toolbarNewTabItemOffered"
         static let recentLocations = "recentLocations", tccOutcomes = "tccOutcomes"
-        static let recentRepositories = "recentRepositories"
+        static let recentRepositories = "recentRepositories", pluginsDisabled = "pluginsDisabled"
         static let showCloudStorageInSidebar = "showCloudStorageInSidebar", showAllExtensions = "showAllExtensions"
         static let updateChannel = "updateChannel", checkForUpdatesAutomatically = "checkForUpdatesAutomatically"
         static let offerToReportCrashes = "offerToReportCrashes", lastReportedCrashes = "lastReportedCrashes"

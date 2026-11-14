@@ -5,6 +5,7 @@ import Synchronization
 @testable import Core
 import MacxFS
 import MacxFixtures
+import MacxPluginKit
 
 /// Volumes that live inside the sandbox: "Macintosh HD" at `<sandbox>/boot` (boot, internal) and "USB" at
 /// `<sandbox>/usb` (external, ejectable). The sidebar's Locations and Folders roots come only from here, so no test
@@ -182,6 +183,7 @@ final class SidebarHarness {
         switch item {
         case .favorite(let f): f.name
         case .savedSearch(let s): s.name
+        case .repository(let url): RemoteLocation(url: url)?.repo ?? url.absoluteString
         case .location(let v): v.name
         case .iCloudDrive: "iCloud Drive"
         case .cloudStorage(let folder): folder.name
@@ -189,6 +191,7 @@ final class SidebarHarness {
         case .folder(let node): node.name
         case .favoritesHeader: "FAVORITES"
         case .searchesHeader: "SEARCHES"
+        case .repositoriesHeader: "REPOSITORIES"
         case .locationsHeader: "LOCATIONS"
         case .foldersHeader: "FOLDERS"
         }
