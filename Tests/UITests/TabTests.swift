@@ -167,7 +167,7 @@ final class TabTests: XCTestCase {
         let h = try await harness()
         let host = try await h.openWindow()
         let a = h.context.windows.openTab(at: h.url("A"), in: host, select: false)
-        let router = InteractionRouter(windows: h.context.windows)
+        let router = InteractionRouter(windows: h.context.windows, presenter: TabRecordingPresenter())
         XCTAssertEqual(router.route(a.origin), .window(a.origin), "a background tab still hosts its own dialogs")
         XCTAssertTrue(host.window?.tabGroup?.selectedWindow === host.window, "routing alone does not switch tabs")
         XCTAssertTrue(router.hostWindow(for: a.origin) === a.window)
@@ -216,7 +216,7 @@ final class TabTests: XCTestCase {
         let a = h.context.windows.openTab(at: h.url("A"), in: host, select: true)
         let origin = a.origin
         a.window?.close()
-        let router = InteractionRouter(windows: h.context.windows)
+        let router = InteractionRouter(windows: h.context.windows, presenter: TabRecordingPresenter())
         XCTAssertNil(router.hostWindow(for: origin))
         XCTAssertEqual(router.route(origin), .operationsPanel)
         XCTAssertTrue(router.hostWindow(for: host.origin) === host.window)

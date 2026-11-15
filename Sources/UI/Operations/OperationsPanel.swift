@@ -53,8 +53,8 @@ final class OperationsUI {
 
     init(context: UIContext) {
         self.context = context
-        router = InteractionRouter(windows: context.windows)
-        router.presenter = AppKitDialogPresenter(icons: context.icons, opener: ExternalOpeners.opener(for: context.options))
+        router = InteractionRouter(windows: context.windows,
+                                   presenter: AppKitDialogPresenter(icons: context.icons, opener: ExternalOpeners.opener(for: context.options)))
         router.panelWindow = { [unowned self] in self.panel.windowForDialogs() }
     }
 

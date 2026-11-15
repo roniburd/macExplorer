@@ -67,7 +67,7 @@ final class SerialGate {
 @MainActor
 final class InteractionRouter: FileOpInteraction {
     private let windows: WindowManager
-    var presenter: any DialogPresenting
+    let presenter: any DialogPresenting
     /// The Operations panel's window, shown on demand (OperationsUI sets it).
     var panelWindow: (@MainActor () -> NSWindow?)?
     /// Origins whose job errors are answered .skip without a dialog; the window shows them inline (§5.8).
@@ -81,12 +81,7 @@ final class InteractionRouter: FileOpInteraction {
     /// Set by stopAnswering(): every question from then on gets its fallback without a dialog.
     private(set) var isStopping = false
 
-    /// §3.14. Presents with a URL opener that only records; OperationsUI swaps in the real presenter.
-    convenience init(windows: WindowManager) {
-        self.init(windows: windows, presenter: AppKitDialogPresenter(icons: nil, opener: RecordingURLOpener.shared))
-    }
-
-    /// Tests inject a presenter and, optionally, fake host rules.
+    /// §3.14. OperationsUI passes the AppKit presenter; tests inject a recording one and, optionally, fake host rules.
     init(windows: WindowManager, presenter: any DialogPresenting, resolveHost: (@MainActor (OriginID?) -> DialogHost)? = nil) {
         self.windows = windows
         self.presenter = presenter
