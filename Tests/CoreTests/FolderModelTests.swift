@@ -757,13 +757,6 @@ final class FolderModelTests: XCTestCase {
         XCTAssertEqual(m.selectedNames, ["b"], "a user selection is not overridden later")
     }
 
-    /// CPU time consumed by the calling thread (immune to time spent waiting for a core).
-    private static func threadCPUTime() -> Duration {
-        var ts = timespec()
-        clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts)
-        return .seconds(Int64(ts.tv_sec)) + .nanoseconds(Int64(ts.tv_nsec))
-    }
-
     /// QA round 1: pasting ~10k items posts 10k selections; resolving them after a patch must not be O(names × rows).
     func testTenThousandPendingSelectionsResolveQuickly() async throws {
         let w = try await FolderTestWorld.make(self)
@@ -780,14 +773,14 @@ final class FolderModelTests: XCTestCase {
         // run (load average 40) wall time measured scheduling waits (9.6 s), not the work. O(names × rows) would
         // still cost seconds of CPU, so the bound keeps pinning the one-pass contract.
         m.pendingSelect = names.reversed()
-        let start = Self.threadCPUTime()
+        let start = CPUTime.thread()
         m.satisfyPending()
-        let elapsed = Self.threadCPUTime() - start
+        let elapsed = CPUTime.thread() - start
         XCTAssertEqual(m.selection.count, 10_000)
         XCTAssertLessThan(elapsed, .milliseconds(250), "one pass over the store (debug build bound, CPU time)")
-        let again = Self.threadCPUTime()
+        let again = CPUTime.thread()
         m.select(.names(names))
-        XCTAssertLessThan(Self.threadCPUTime() - again, .milliseconds(250), "select(.names) resolves in one pass too")
+        XCTAssertLessThan(CPUTime.thread() - again, .milliseconds(250), "select(.names) resolves in one pass too")
         XCTAssertEqual(m.selection.count, 10_000)
     }
 

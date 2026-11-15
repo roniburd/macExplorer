@@ -1,5 +1,6 @@
 import XCTest
 @testable import Core
+import MacxFixtures
 
 final class BatchRenameRulesTests: XCTestCase {
     private func rules(_ edit: (inout BatchRenameRules) -> Void) -> BatchRenameRules { var r = BatchRenameRules(); edit(&r); return r }
@@ -126,10 +127,12 @@ final class BatchRenameRulesTests: XCTestCase {
         let names = urls.map(\.lastPathComponent)
         var n = BatchRenameRules.Numbering(); n.position = .replaceName; n.baseName = "Trip"
         let r = rules { $0.find = "IMG"; $0.replace = "P"; $0.numbering = n }
-        let elapsed = ContinuousClock().measure { _ = BatchRenamePlanner.preview(urls, rules: r, caseSensitive: false, existingNames: names) }
-        XCTAssertLessThan(elapsed, .milliseconds(400))      // 100 ms budget × 4 in debug
+        // CPU time, not wall time (a thread waiting for a core under --parallel accrues no CPU time). The 100 ms
+        // budget is macx-bench's `batchRename.preview` on a release build; this debug bound only catches a blow-up.
+        let elapsed = CPUTime.measure { _ = BatchRenamePlanner.preview(urls, rules: r, caseSensitive: false, existingNames: names) }
+        XCTAssertLessThan(elapsed, .milliseconds(400))
         let regex = rules { $0.find = #"IMG_(\d+)"#; $0.replace = "P$1"; $0.useRegex = true }
-        let regexElapsed = ContinuousClock().measure { _ = BatchRenamePlanner.preview(urls, rules: regex, caseSensitive: false, existingNames: names) }
+        let regexElapsed = CPUTime.measure { _ = BatchRenamePlanner.preview(urls, rules: regex, caseSensitive: false, existingNames: names) }
         XCTAssertLessThan(regexElapsed, .milliseconds(400))
     }
 }

@@ -3,6 +3,7 @@ import AppKit
 @testable import UI
 @testable import Core
 import MacxFS
+import MacxFixtures
 
 /// P4-12: the batch rename sheet (model, live preview, F2 on a multi-selection, Rename N Items…). Sandbox files only.
 @MainActor final class BatchRenameSheetTests: XCTestCase {
@@ -117,7 +118,9 @@ import MacxFS
             BatchRenameRow(url: URL(filePath: "/tmp/macx-x/\($0)"), original: "\($0)", proposed: "n\($0)", status: .ok, extensionChanged: false)
         }
         let table = BatchRenamePreviewTable.makeTableForTesting()
-        let elapsed = ContinuousClock().measure { table.setRows(rows); table.tableView.layoutSubtreeIfNeeded() }
+        // CPU time on the main thread (wall time under --parallel includes waiting for a core): a view-based table
+        // makes only the visible rows, so this stays far below the bound whatever the row count.
+        let elapsed = CPUTime.measure { table.setRows(rows); table.tableView.layoutSubtreeIfNeeded() }
         XCTAssertEqual(table.tableView.numberOfRows, 10_000)
         XCTAssertLessThan(elapsed, .milliseconds(200))
     }
