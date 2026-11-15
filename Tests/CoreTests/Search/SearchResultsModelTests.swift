@@ -94,6 +94,23 @@ final class SearchResultsModelTests: XCTestCase {
         await waitUntil("descending") { m.name(atRow: 0) == "a.txt" }
     }
 
+    /// Kind-of-file order: folders first, then the ASCII-folded extension (none first), then the name; a later batch
+    /// merges into that order, and descending reverses it within the folder/file groups.
+    func testExtensionSortFoldsCaseAndMergesLaterBatches() async {
+        let script = ScriptedSearchEvents()
+        let m = makeModel(script)
+        m.start()
+        let gen = m.generation
+        script.continuations[gen]!.yield(batch("/a", ["b.TXT", "a.md", "c", "Folder", "d.txt", "e.Md"], dirs: ["Folder"], gen: gen))
+        await waitUntil("rows") { m.rowCount == 6 }
+        m.setSortDescriptor(SortDescriptor(field: .fileExtension, ascending: true))
+        await waitUntil("extension order") { names(m) == ["Folder", "c", "a.md", "e.Md", "b.TXT", "d.txt"] }
+        script.continuations[gen]!.yield(batch("/b", ["f.aaa", "g.TXt", "0.md"], gen: gen))
+        await waitUntil("merged") { names(m) == ["Folder", "c", "f.aaa", "0.md", "a.md", "e.Md", "b.TXT", "d.txt", "g.TXt"] }
+        m.setSortDescriptor(SortDescriptor(field: .fileExtension, ascending: false))
+        await waitUntil("descending") { names(m) == ["Folder", "g.TXt", "d.txt", "b.TXT", "e.Md", "a.md", "0.md", "f.aaa", "c"] }
+    }
+
     // Review Focus 5
     func testRestartDropsStaleGenerationBatches() async {
         let script = ScriptedSearchEvents()

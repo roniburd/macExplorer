@@ -47,13 +47,7 @@ enum ResultSorter {
                 return asc ? c < 0 : c > 0
             }
         }
-        func ext(_ i: UInt32) -> [UInt8] {
-            guard store.entry(i).kind != .directory else { return [] }
-            return store.withNameBytes(i) { bytes in
-                guard let dot = bytes.lastIndex(of: UInt8(ascii: ".")), dot > 0, dot < bytes.count - 1 else { return [] }
-                return bytes[(dot + 1)...].map { $0 >= 65 && $0 <= 90 ? $0 + 32 : $0 }
-            }
-        }
+        let extensions = sort.field == .fileExtension ? extensionKeys(store) : SortKeyColumn()
         return { a, b in
             let ea = store.entry(a), eb = store.entry(b)
             let fa = ea.isFolderForSorting, fb = eb.isFolderForSorting
@@ -67,9 +61,7 @@ enum ResultSorter {
                 let ra = kindRanks.indices.contains(Int(ea.typeIndex)) ? kindRanks[Int(ea.typeIndex)] : .max
                 let rb = kindRanks.indices.contains(Int(eb.typeIndex)) ? kindRanks[Int(eb.typeIndex)] : .max
                 c = ra == rb ? 0 : (ra < rb ? -1 : 1)
-            case .fileExtension:
-                let xa = ext(a), xb = ext(b)
-                c = xa == xb ? 0 : (xa.lexicographicallyPrecedes(xb) ? -1 : 1)
+            case .fileExtension: c = cmpKeys(extensions, Int(a), Int(b))
             default: c = 0
             }
             if c == 0 { c = cmpKeys(keys, Int(a), Int(b)) }
@@ -77,6 +69,25 @@ enum ResultSorter {
             if c == 0 { c = index(a, b) }
             return asc ? c < 0 : c > 0
         }
+    }
+
+    /// Per storage index, the extension after the last "." with ASCII letters lowercased; empty for folders and for
+    /// names without one (a leading or trailing dot does not count). Built once per sort or merge rather than twice
+    /// per comparison.
+    static func extensionKeys(_ store: EntryStore) -> SortKeyColumn {
+        var keys = SortKeyColumn()
+        var key: [UInt8] = []
+        for i in 0..<UInt32(store.count) {
+            key.removeAll(keepingCapacity: true)
+            if store.entry(i).kind != .directory {
+                store.withNameBytes(i) { bytes in
+                    guard let dot = bytes.lastIndex(of: UInt8(ascii: ".")), dot > 0, dot < bytes.count - 1 else { return }
+                    for byte in bytes[(dot + 1)...] { key.append(byte >= 65 && byte <= 90 ? byte + 32 : byte) }
+                }
+            }
+            key.withUnsafeBytes { keys.append($0) }
+        }
+        return keys
     }
 
     static func permutation(_ r: SearchResultStore, sort: MacxFS.SortDescriptor, kindRanks: [UInt16], parentKeys: SortKeyColumn) -> [UInt32] {
