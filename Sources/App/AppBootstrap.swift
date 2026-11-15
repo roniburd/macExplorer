@@ -61,19 +61,13 @@ enum AppBootstrap {
     /// Environment → UIContext → launch recovery and Core start → initial windows → AppLifecycle (onboarding sheet,
     /// recovery notice when the RecoveryReport is not empty, Dock badge) → the updater (nil in debug, sandbox and
     /// scenario runs, or when Info.plist has no real feed/key) → plugins, in a separate task that launch does not await
-    /// (spec §5.3, skipped while ⌥ is held). First of all,
-    /// the previous session's dirty-exit marker is read and this session's is written; after a dirty exit the
-    /// crash-report flow runs (never in scenarios, which kill the app on purpose and must not hang on a prompt at their
-    /// next launch).
-    static func launch(options: LaunchOptions, statePaths: StatePaths)
-        async -> (context: UIContext, lifecycle: AppLifecycle, updates: UpdateController?, marker: DirtyExitMarker) {
+    /// (spec §5.3, skipped while ⌥ is held). Before it (`beginSession`, synchronously, so a quit during the async
+    /// launch still ends it) the previous session's dirty-exit marker is read and this session's is written; after a
+    /// dirty exit the crash-report flow runs (never in scenarios, which kill the app on purpose and must not hang on a
+    /// prompt at their next launch).
+    static func launch(options: LaunchOptions, statePaths: StatePaths, marker: DirtyExitMarker, previous: PreviousSession)
+        async -> (context: UIContext, lifecycle: AppLifecycle, updates: UpdateController?) {
         let optionKeyHeld = NSEvent.modifierFlags.contains(.option)   // ⌥ at launch skips plugins (spec §5.3)
-        let marker = DirtyExitMarker(fileURL: statePaths.sessionMarker)
-        let previous = marker.previous()
-        let info = Bundle.main.infoDictionary ?? [:]
-        try? marker.begin(SessionMarker(pid: ProcessInfo.processInfo.processIdentifier,
-                                        version: info["CFBundleShortVersionString"] as? String ?? "unknown",
-                                        build: info["CFBundleVersion"] as? String ?? "unknown", launchedAt: Date()))
         let storage = makeSettingsStorage(options: options, statePaths: statePaths)
         let environment = makeEnvironment(options: options, statePaths: statePaths, settingsStorage: storage)
         if let keymapFile = options.keymapFile, await !applyKeymap(keymapFile, to: environment) {
@@ -97,7 +91,19 @@ enum AppBootstrap {
             await context.plugins.load(options: options, optionKeyHeld: optionKeyHeld)
             context.windows.pluginsDidLoad(providerIDs: context.plugins.loaded.flatMap(\.providerIDs))   // their repositories appear now
         }
-        return (context, lifecycle, updates, marker)
+        return (context, lifecycle, updates)
+    }
+
+    /// Reads the previous session's dirty-exit marker and writes this session's. AppDelegate holds the marker from
+    /// here on, so `applicationWillTerminate` removes it even when the quit comes before `launch` returns.
+    static func beginSession(statePaths: StatePaths) -> (marker: DirtyExitMarker, previous: PreviousSession) {
+        let marker = DirtyExitMarker(fileURL: statePaths.sessionMarker)
+        let previous = marker.previous()
+        let info = Bundle.main.infoDictionary ?? [:]
+        try? marker.begin(SessionMarker(pid: ProcessInfo.processInfo.processIdentifier,
+                                        version: info["CFBundleShortVersionString"] as? String ?? "unknown",
+                                        build: info["CFBundleVersion"] as? String ?? "unknown", launchedAt: Date()))
+        return (marker, previous)
     }
 
     /// `--keymap <file>` (P4-02; sandbox runs only, `LaunchOptions` requires `--state-dir`): reads the file on a lane

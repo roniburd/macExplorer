@@ -12,8 +12,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var lifecycle: AppLifecycle?
     /// Keeps the Sparkle updater alive for the app's lifetime (nil when updates are off).
     private var updateController: UpdateController?
-    /// This session's dirty-exit marker; removed on clean termination (spec §4.2).
+    /// This session's dirty-exit marker; removed on clean termination (spec §4.2). Set before the async launch.
     private var sessionMarker: DirtyExitMarker?
+    /// `applicationWillTerminate` ran (possibly while the launch task is still awaiting).
+    private var terminating = false
 
     init(options: LaunchOptions) {
         self.options = options
@@ -29,12 +31,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             FileHandle.standardError.write(Data("macExplorer: cannot create state dir: \(error)\n".utf8))
             if options.isSandboxed { exit(73) }   // EX_CANTCREAT
         }
+        // The marker is written (and held) before the async launch: a quit before launch returns still removes it,
+        // so the next launch doesn't take a clean quit for a crash.
+        let session = AppBootstrap.beginSession(statePaths: statePaths)
+        sessionMarker = session.marker
         Task { @MainActor [options, statePaths] in
-            let launched = await AppBootstrap.launch(options: options, statePaths: statePaths)
+            let launched = await AppBootstrap.launch(options: options, statePaths: statePaths, marker: session.marker,
+                                                     previous: session.previous)
+            guard !self.terminating else { return }   // quit while launching: nothing more to show
             self.context = launched.context
             self.lifecycle = launched.lifecycle
             self.updateController = launched.updates
-            self.sessionMarker = launched.marker
             ScenarioLaunch.runIfRequested(context: launched.context)
             if options.scenario == nil { NSApp.activate() }   // UI scenarios run inactive (P1-41)
             if let delay = options.smokeExitAfter { scheduleSmokeExit(after: delay) }
@@ -46,7 +53,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         lifecycle?.shouldTerminate() ?? .terminateNow
     }
 
+    /// Safe at any point of the launch: before `AppBootstrap.launch` returns, lifecycle and updater are still nil
+    /// and only the marker (written first) is ended.
     func applicationWillTerminate(_ notification: Notification) {
+        terminating = true
         updateController?.applicationWillTerminate()   // an armed rollback records itself before settings flush
         lifecycle?.willTerminate()
         sessionMarker?.end()
