@@ -118,6 +118,91 @@ final class DragDropTests: XCTestCase {
             windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)))
     }
 
+    func testALateEndFromAnOlderSessionDoesNotEndTheCurrentDrag() async throws {
+        let h = try await ContentTestHarness.make(self)
+        let drag = DragSourceController(icons: h.context.icons)
+        let current = NSDraggingSession()
+        drag.startSession = { _, _, _, _ in current }
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 100, height: 100))
+        drag.begin(event: try dragEvent(), urls: [try h.file("a")], typeIndices: [TypeRegistry.dataIndex], view: view,
+                   frame: { _ in .zero }, secondary: false)
+        XCTAssertTrue(drag.isDragging)
+        drag.draggingSession(NSDraggingSession(), endedAt: .zero, operation: [])
+        XCTAssertTrue(drag.isDragging, "an older session's endedAt isn't this drag's end")
+        drag.draggingSession(current, endedAt: .zero, operation: [])
+        XCTAssertFalse(drag.isDragging)
+    }
+
+    /// Starts a drag that never reports back on `drag`, so a later press must clear it.
+    private func beginStaleDrag(_ drag: DragSourceController, _ h: ContentTestHarness, view: NSView) throws {
+        drag.startSession = { _, _, _, _ in NSObject() }
+        drag.begin(event: try dragEvent(), urls: [h.url("a")], typeIndices: [TypeRegistry.dataIndex], view: view,
+                   frame: { _ in .zero }, secondary: false)
+        XCTAssertTrue(drag.isDragging)
+    }
+
+    private func press(_ type: NSEvent.EventType, in window: NSWindow?, at point: NSPoint = NSPoint(x: 5, y: 5)) throws -> NSEvent {
+        try XCTUnwrap(NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: 0,
+                                         windowNumber: window?.windowNumber ?? 0, context: nil, eventNumber: 0, clickCount: 1,
+                                         pressure: 1))
+    }
+
+    func testIconsPressesClearAStaleDrag() async throws {
+        let h = try await ContentTestHarness.make(self)
+        try h.file("a")
+        let folder = try await h.openFolder()
+        let icons = IconsViewController(context: h.context)
+        let window = try h.host(icons)
+        icons.bind(folder)
+        icons.view.layoutSubtreeIfNeeded()
+        // On the item: a press on empty space would start a rubber band, which tracks events until a real release.
+        let frame = icons.layout.frame(forItem: 0)
+        let item = icons.collectionView.convert(NSPoint(x: frame.midX, y: frame.midY), to: nil)
+        try beginStaleDrag(icons.dragSource, h, view: icons.collectionView)
+        icons.collectionView.mouseDown(with: try press(.leftMouseDown, in: window, at: item))
+        XCTAssertFalse(icons.dragSource.isDragging, "a left press")
+        icons.collectionView.mouseUp(with: try press(.leftMouseUp, in: window, at: item))
+        try beginStaleDrag(icons.dragSource, h, view: icons.collectionView)
+        icons.collectionView.rightMouseDown(with: try press(.rightMouseDown, in: window, at: item))
+        XCTAssertFalse(icons.dragSource.isDragging, "a right press")
+    }
+
+    func testColumnsPressesClearAStaleDrag() async throws {
+        try requireGUISession()
+        let h = try await ContentTestHarness.make(self)
+        try h.file("a")
+        let controller = ColumnsViewController(context: h.context)
+        let window = try h.host(controller)
+        let env = h.environment
+        let chain = ColumnChain(root: h.url("")) { url in env.makeFolderModel(url) }
+        addTeardownBlock { @MainActor in chain.close() }
+        controller.bindChain(chain)
+        try await h.waitUntil("root listed") { chain.models[0].state == .complete }
+        let column = try XCTUnwrap(controller.columnControllers.first)
+        let rect = column.tableView.rect(ofRow: 0)
+        let row = column.tableView.convert(NSPoint(x: rect.midX, y: rect.midY), to: nil)
+        try beginStaleDrag(column.dragSource, h, view: column.tableView)
+        column.tableView.mouseDown(with: try press(.leftMouseDown, in: window, at: row))
+        XCTAssertFalse(column.dragSource.isDragging, "a left press")
+        column.tableView.mouseUp(with: try press(.leftMouseUp, in: window, at: row))
+        try beginStaleDrag(column.dragSource, h, view: column.tableView)
+        column.tableView.rightMouseDown(with: try press(.rightMouseDown, in: window, at: row))
+        XCTAssertFalse(column.dragSource.isDragging, "a right press")
+    }
+
+    func testSidebarRightPressClearsAStaleDrag() async throws {
+        let h = try await SidebarHarness.make(self) { try $0.dir("a") }
+        let drag = h.sidebar.dragSource
+        drag.startSession = { _, _, _, _ in NSObject() }
+        drag.begin(event: try dragEvent(), urls: [h.url("a")], typeIndices: [TypeRegistry.folderIndex], view: h.outline,
+                   frame: { _ in .zero }, secondary: true)
+        XCTAssertTrue(drag.isDragging)
+        h.outline.rightMouseDown(with: try press(.rightMouseDown, in: h.outline.window))
+        XCTAssertFalse(drag.isDragging)
+        h.outline.presentMenu = { _, _, _ in }
+        h.outline.rightMouseUp(with: try press(.rightMouseUp, in: h.outline.window))
+    }
+
     func testRightDragTrackerThreshold() {
         var tracker = RightDragTracker()
         tracker.rightMouseDown(at: NSPoint(x: 10, y: 10))
