@@ -31,7 +31,12 @@ public final class Settings {
     public var iconSize: IconSize { didSet { save(iconSize, Key.iconSize) } }
     public var density: Density { didSet { save(density, Key.density) } }
     /// Array order = display order.
-    public var columns: [ColumnSetting] { didSet { save(columns, Key.columns) } }
+    public var columns: [ColumnSetting] {
+        didSet {
+            if let fixed = Self.finiteWidths(columns) { columns = fixed }
+            save(columns, Key.columns)
+        }
+    }
     public var sort: MacxFS.SortDescriptor { didSet { save(sort, Key.sort) } }
     public var showHidden: Bool { didSet { save(showHidden, Key.showHidden) } }
     /// Group by for folders without their own view state (Details view only).
@@ -45,7 +50,12 @@ public final class Settings {
     /// so the applied view really reaches every folder. false = the rule applies.
     public var builtInFolderViewsOff: Bool { didSet { save(builtInFolderViewsOff, Key.builtInFolderViewsOff) } }
     /// Columns view column width (the last width the user set).
-    public var columnWidth: Double { didSet { save(columnWidth, Key.columnWidth) } }
+    public var columnWidth: Double {
+        didSet {
+            if !columnWidth.isFinite { columnWidth = oldValue }
+            save(columnWidth, Key.columnWidth)
+        }
+    }
     /// Show every filename extension, including ones Finder hides and ".app" (design 2026-11-05 §1).
     public var showAllExtensions: Bool { didSet { save(showAllExtensions, Key.showAllExtensions) } }
     public var commandBarVisible: Bool { didSet { save(commandBarVisible, Key.commandBarVisible) } }
@@ -99,11 +109,21 @@ public final class Settings {
     /// Settings › Connections: skip loading plugin bundles at the next launch (spec §5.3).
     public var pluginsDisabled: Bool { didSet { save(pluginsDisabled, Key.pluginsDisabled) } }
     public var previewPaneVisible: Bool { didSet { save(previewPaneVisible, Key.previewPaneVisible) } }
-    public var previewPaneWidth: Double { didSet { save(previewPaneWidth, Key.previewPaneWidth) } }
+    public var previewPaneWidth: Double {
+        didSet {
+            if !previewPaneWidth.isFinite { previewPaneWidth = oldValue }
+            save(previewPaneWidth, Key.previewPaneWidth)
+        }
+    }
     /// The user has dragged the pane to a width (otherwise it opens at a share of the window).
     public var hasStoredPreviewPaneWidth: Bool { storage.data(forKey: Key.previewPaneWidth) != nil }
     /// Text, Markdown and reflowed-document zoom in the preview pane (1 = 100%).
-    public var previewZoom: Double { didSet { save(previewZoom, Key.previewZoom) } }
+    public var previewZoom: Double {
+        didSet {
+            if !previewZoom.isFinite { previewZoom = oldValue }
+            save(previewZoom, Key.previewZoom)
+        }
+    }
     /// The preview pane's Rendered | Source switch for Markdown files: true shows them formatted. On by default.
     public var previewRendersMarkdown: Bool { didSet { save(previewRendersMarkdown, Key.previewRendersMarkdown) } }
     /// The preview pane's Reflowed | Original switch for Word documents: true reflows their text to the pane's
@@ -115,7 +135,12 @@ public final class Settings {
     /// Subfolders (crawler) search descends into packages (.app, .bundle…). Off by default.
     public var searchIncludesPackages: Bool { didSet { save(searchIncludesPackages, Key.searchIncludesPackages) } }
     /// Details columns for search results (display order); separate from folder columns.
-    public var resultsColumns: [ColumnSetting] { didSet { save(resultsColumns, Key.resultsColumns) } }
+    public var resultsColumns: [ColumnSetting] {
+        didSet {
+            if let fixed = Self.finiteWidths(resultsColumns) { resultsColumns = fixed }
+            save(resultsColumns, Key.resultsColumns)
+        }
+    }
     public var onboardingCompleted: Bool { didSet { save(onboardingCompleted, Key.onboardingCompleted) } }
     /// Set once the toolbar has been given the Send Feedback item (or already had it). A restored toolbar
     /// configuration never gains new default items; this one-time flag lets the first window of this build add it
@@ -336,12 +361,28 @@ public final class Settings {
         return try? JSONDecoder().decode(T.self, from: data)
     }
 
-    /// Optionals are removed from storage when nil.
+    /// Optionals are removed from storage when nil. A value that can't be encoded (e.g. a NaN somewhere) is not
+    /// written: the previously stored value stays, never deleted.
     private func save<T: Encodable>(_ value: T?, _ key: String) {
         guard let value else { storage.set(nil, forKey: key); return }
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys
-        storage.set(try? encoder.encode(value), forKey: key)
+        guard let data = try? encoder.encode(value) else {
+            NSLog("MacExplorer: \"%@\" could not be encoded; the stored value is kept", key)
+            return
+        }
+        storage.set(data, forKey: key)
+    }
+
+    /// `columns` with every non-finite width (NaN, ±inf from a layout glitch) set to its column's default width;
+    /// nil when every width is already finite.
+    static func finiteWidths(_ columns: [ColumnSetting]) -> [ColumnSetting]? {
+        guard columns.contains(where: { !$0.width.isFinite }) else { return nil }
+        return columns.map { c in
+            var c = c
+            if !c.width.isFinite { c.width = c.id.defaultWidth }
+            return c
+        }
     }
 }
 

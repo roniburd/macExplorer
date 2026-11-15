@@ -383,3 +383,43 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(reloaded.recentRepositories, settings.recentRepositories)
     }
 }
+
+/// Review B1-9: a value JSONEncoder rejects never deletes the stored key, and non-finite widths are never kept.
+@MainActor
+final class SettingsEncodeFailureTests: XCTestCase {
+    private let home = URL(filePath: "/tmp/macx-tests-home", directoryHint: .isDirectory)
+
+    func testUnencodableValueKeepsThePreviouslyStoredValue() throws {
+        let storage = InMemorySettingsStorage()
+        let s = Settings(storage: storage, home: home)
+        s.finderViewsIgnoredBefore = Date(timeIntervalSinceReferenceDate: 1000)
+        let before = try XCTUnwrap(storage.data(forKey: "finderViewsIgnoredBefore"))
+        s.finderViewsIgnoredBefore = Date(timeIntervalSinceReferenceDate: .nan)     // JSONEncoder throws on NaN
+        XCTAssertEqual(storage.data(forKey: "finderViewsIgnoredBefore"), before, "the old value stays stored")
+        let reloaded = Settings(storage: storage, home: home)
+        XCTAssertEqual(reloaded.finderViewsIgnoredBefore, Date(timeIntervalSinceReferenceDate: 1000))
+    }
+
+    func testNonFiniteWidthsAreNeverKept() throws {
+        let storage = InMemorySettingsStorage()
+        let s = Settings(storage: storage, home: home)
+        s.columnWidth = 300
+        s.columnWidth = .nan
+        XCTAssertEqual(s.columnWidth, 300)
+        s.previewPaneWidth = 410
+        s.previewPaneWidth = .infinity
+        XCTAssertEqual(s.previewPaneWidth, 410)
+        s.previewZoom = 1.5
+        s.previewZoom = -.infinity
+        XCTAssertEqual(s.previewZoom, 1.5)
+        s.columns = [ColumnSetting(id: .name, width: .nan, visible: true), ColumnSetting(id: .size, width: 99, visible: true)]
+        XCTAssertEqual(s.columns.map(\.width), [ColumnID.name.defaultWidth, 99])
+        s.resultsColumns = [ColumnSetting(id: .path, width: .infinity, visible: true)]
+        XCTAssertEqual(s.resultsColumns.map(\.width), [ColumnID.path.defaultWidth])
+        let reloaded = Settings(storage: storage, home: home)
+        XCTAssertEqual(reloaded.columnWidth, 300)
+        XCTAssertEqual(reloaded.previewPaneWidth, 410)
+        XCTAssertEqual(reloaded.previewZoom, 1.5)
+        XCTAssertEqual(reloaded.columns.prefix(2).map(\.width), [ColumnID.name.defaultWidth, 99])
+    }
+}
