@@ -8,9 +8,6 @@ public final class DirectoryReaders: Sendable {
     private let mountTable: MountTableStore
     private let types: TypeRegistry
     private let readers = Mutex<[VolumeID: DirectoryReader]>([:])
-    /// `reader(resolving:)` results per directory path, valid for one mount table (dropped when it changes).
-    private let resolved = Mutex<(table: MountTable, volumes: [String: VolumeID])>((.empty, [:]))
-    private static let resolvedCacheLimit = 1_024
 
     /// Remote URLs are never read here (RemoteListingSource lists them); a stray caller gets ENOTSUP, not a POSIX
     /// read of "/owner%2Frepo@main/…".
@@ -35,22 +32,18 @@ public final class DirectoryReaders: Sendable {
     /// As `reader(for:)`, but by the volume the directory really is on once symlinks in its path are followed, so a
     /// path through a link into another volume (~/nas → /Volumes/NAS) reads on that volume's lanes, and a hung share
     /// never stalls or poisons the lanes of the volume the link lives on. Resolution runs on a read lane of the path's
-    /// textual volume and stops at the first mount point it would enter (`resolveSymlinks`); results are cached until
-    /// the mount table changes. If the lane call fails, the textual volume is used.
+    /// textual volume and stops at the first mount point it would enter (`resolveSymlinks`). Resolved on every call, never
+    /// cached: a link can be retargeted while the same volumes stay mounted. If the lane call fails (the caller was
+    /// cancelled, the textual volume is unresponsive), this call uses the textual volume.
     public func reader(resolving directory: URL) async -> DirectoryReader {
         if RemoteScheme.isRemote(directory) { return remoteRefusal }
         let table = mountTable.current()
         let path = directory.path(percentEncoded: false)
         let textual = table.volume(containing: path)?.id ?? .unknown
-        guard !table.volumes.isEmpty else { return reader(for: textual) }
-        if let cached = resolved.withLock({ $0.table == table ? $0.volumes[path] : nil }) { return reader(for: cached) }
-        let real = (try? await lanes.perform(on: textual, .read) { _ in DirectoryReaders.resolveSymlinks(path, in: table) }) ?? path
-        let volume = table.volume(containing: real)?.id ?? .unknown
-        resolved.withLock { cache in
-            if cache.table != table || cache.volumes.count >= Self.resolvedCacheLimit { cache = (table, [:]) }
-            cache.volumes[path] = volume
-        }
-        return reader(for: volume)
+        guard !table.volumes.isEmpty,
+              let real = try? await lanes.perform(on: textual, .read, { _ in DirectoryReaders.resolveSymlinks(path, in: table) })
+        else { return reader(for: textual) }
+        return reader(for: table.volume(containing: real)?.id ?? .unknown)
     }
 
     /// `path` with symlinks followed (".." applied to the resolved prefix, as the kernel does), but only on the volume

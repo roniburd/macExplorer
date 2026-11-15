@@ -149,13 +149,44 @@ final class SymlinkVolumeLookupTests: XCTestCase {
         XCTAssertEqual(readers.reader(for: link).volume.raw, "boot", "by path text the link is on the boot volume")
         let first = await readers.reader(resolving: link)
         XCTAssertEqual(first.volume.raw, "img")
-        let cached = await readers.reader(resolving: link)
-        XCTAssertTrue(cached === first)
+        let again = await readers.reader(resolving: link)
+        XCTAssertTrue(again === first, "one reader per volume")
         let plain = await readers.reader(resolving: URL(filePath: root + "/home", directoryHint: .isDirectory))
         XCTAssertEqual(plain.volume.raw, "boot")
         let remote = URL(string: "\(RemoteScheme.name):/owner%2Frepo@main/")!
         let refused = await readers.reader(resolving: remote)
         XCTAssertEqual(refused.volume.raw, "remote:refused")
+    }
+
+    func testReaderResolvingFollowsARetargetedLinkAndANewMountTable() async throws {
+        let store = MountTableStore(table)
+        let readers = DirectoryReaders(lanes: LanePool(), mountTable: store)
+        let link = URL(filePath: root + "/home/abs", directoryHint: .isDirectory)
+        let onImage = await readers.reader(resolving: link)
+        XCTAssertEqual(onImage.volume.raw, "img")
+        try sandbox.remove("home/abs")                               // ln -sfn ~/local ~/link, same volumes mounted
+        try sandbox.createDirectory("home/local")
+        try sandbox.createSymlink("home/abs", target: root + "/home/local")
+        let retargeted = await readers.reader(resolving: link)
+        XCTAssertEqual(retargeted.volume.raw, "boot", "never a stale answer for a retargeted link")
+        try sandbox.remove("home/abs")
+        try sandbox.createSymlink("home/abs", target: root + "/mnt/sub")
+        store.update(MountTable([volume("boot", "/", boot: true)]))     // the image unmounted
+        let unmounted = await readers.reader(resolving: link)
+        XCTAssertEqual(unmounted.volume.raw, "boot")
+    }
+
+    func testReaderResolvingInACancelledTaskUsesTheTextualVolumeForThatCallOnly() async throws {
+        let readers = DirectoryReaders(lanes: LanePool(), mountTable: MountTableStore(table))
+        let link = URL(filePath: root + "/home/abs", directoryHint: .isDirectory)
+        let cancelled = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return await readers.reader(resolving: link).volume.raw
+        }
+        let duringCancel = await cancelled.value
+        XCTAssertEqual(duringCancel, "boot", "the lane call failed: the textual volume, for this call")
+        let next = await readers.reader(resolving: link)
+        XCTAssertEqual(next.volume.raw, "img", "the next call resolves again")
     }
 }
 

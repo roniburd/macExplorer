@@ -534,6 +534,30 @@ final class FolderModelTests: XCTestCase {
         reads.last.continuation.yield(.batch(TestBatch.files(reads.last.generation, ["a", "b"])))
         reads.last.continuation.yield(.completed(ReadSummary(entryCount: 2, degradedCount: 0, usedFallback: true, elapsed: .zero)))
         try await w.waitUntil("diff applied") { m.rowNames == ["a", "b"] }
+
+        m.refresh()                                // the fallback re-read truncates too: an error, no third try
+        try await w.waitUntil("fallback refresh") { reads.reads.count == 4 }
+        XCTAssertTrue(reads.last.options.forceFallback)
+        reads.last.continuation.yield(.failed(ReadFailure(code: EIO, stage: .truncatedRecords)))
+        try await w.waitUntil("error") { m.state == .error(.other(EIO)) }
+        XCTAssertEqual(m.rowCount, 0)
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(reads.reads.count, 4, "no further read")
+    }
+
+    func testProductionReadsOfAFolderThroughASymlinkRunOnTheTargetVolumesLanes() async throws {
+        let w = try await FolderTestWorld.make(self)
+        try w.dir("img/sub")
+        try w.file("img/sub/inside.txt")
+        try w.dir("home")
+        try w.sandbox.createSymlink("home/link", target: w.url("img/sub").path(percentEncoded: false))
+        let image = VolumeID(raw: "test-img")
+        w.scanner.addVolume(image.raw, at: w.url("img"))
+        await w.volumes.refresh()
+        let m = try await w.open("home/link")        // real readSource / itemSource wiring
+        XCTAssertEqual(m.rowNames, ["inside.txt"])
+        let imageLanes = await w.lanes.liveLaneCount(of: image, .read)
+        XCTAssertGreaterThan(imageLanes, 0, "the listing was read on the link target's volume, not the link's")
     }
 
     func testPermissionPendingWaitsAndRecordsOutcome() async throws {
