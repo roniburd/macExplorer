@@ -141,13 +141,7 @@ public final class Volumes {
         handlers[key] = handler
         // The removed handler is released after the dictionary access ends: releasing it can run deinits that
         // cancel other release handlers (a closing window's last references), which would overlap the access.
-        return ObserverToken { [weak self] in
-            if Thread.isMainThread {
-                MainActor.assumeIsolated { let removed = self?.handlers.removeValue(forKey: key); _ = removed }
-            } else {
-                Task { @MainActor in let removed = self?.handlers.removeValue(forKey: key); _ = removed }
-            }
-        }
+        return ObserverToken(onMain: { [weak self] in let removed = self?.handlers.removeValue(forKey: key); _ = removed })
     }
 
     public func observe(_ handler: @escaping @MainActor ([VolumeInfo]) -> Void) -> ObserverToken {

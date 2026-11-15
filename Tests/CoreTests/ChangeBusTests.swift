@@ -54,4 +54,26 @@ final class ChangeBusTests: XCTestCase {
         XCTAssertEqual(log, ["a", "b", "b"])
         _ = b
     }
+
+    /// Tokens unsubscribe at once when cancelled on the main thread, and via a main-actor hop from any other thread;
+    /// observeAll tokens the same way.
+    func testTokensCancelOnMainAtOnceAndFromOtherThreadsLater() async {
+        let bus = ChangeBus()
+        var log: [String] = []
+        let a = bus.observe(directory: dir) { _ in log.append("a") }
+        let all = bus.observeAll { _ in log.append("all") }
+        let b = bus.observe(directory: dir) { _ in log.append("b") }
+        let allB = bus.observeAll { _ in log.append("allB") }
+        a.cancel(); all.cancel()
+        bus.post([LocalChange(directory: dir)])
+        XCTAssertEqual(log, ["b", "allB"])
+        await Task.detached { b.cancel(); allB.cancel() }.value
+        for _ in 0..<100 {   // the removals are main-actor tasks: let them run
+            log = []
+            bus.post([LocalChange(directory: dir)])
+            if log.isEmpty { break }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(log, [], "off-main cancels land on the main actor")
+    }
 }

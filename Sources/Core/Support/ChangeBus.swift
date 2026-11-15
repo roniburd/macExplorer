@@ -5,7 +5,7 @@ import MacxFS
 @MainActor
 public final class ChangeBus {
     private var observers: [String: [(id: UInt64, handler: @MainActor (LocalChange) -> Void)]] = [:]
-    private var allObservers: [(id: UInt64, handler: @MainActor (LocalChange) -> Void)] = []
+    private let allObservers = Observers<LocalChange>()
     private var nextID: UInt64 = 0
 
     public init() {}
@@ -14,23 +14,14 @@ public final class ChangeBus {
     public func post(_ changes: [LocalChange]) {
         for change in changes {
             for entry in observers[Self.key(for: change.directory)] ?? [] { entry.handler(change) }
-            for entry in allObservers { entry.handler(change) }
+            allObservers.send(change)
         }
     }
 
     /// Every posted change, whatever its directory, after that change's per-directory observers (P2-13: folder
     /// sizes invalidate cached ancestors).
     public func observeAll(_ handler: @escaping @MainActor (LocalChange) -> Void) -> ObserverToken {
-        nextID += 1
-        let id = nextID
-        allObservers.append((id, handler))
-        return ObserverToken { [weak self] in
-            if Thread.isMainThread {
-                MainActor.assumeIsolated { self?.allObservers.removeAll { $0.id == id } }
-            } else {
-                Task { @MainActor in self?.allObservers.removeAll { $0.id == id } }
-            }
-        }
+        allObservers.add(handler)
     }
 
     /// Keys are the standardized path WITHOUT a trailing slash, and /private/var ≡ /var: LocalChange.directory carries
@@ -40,13 +31,7 @@ public final class ChangeBus {
         nextID += 1
         let id = nextID, key = Self.key(for: directory)
         observers[key, default: []].append((id, handler))
-        return ObserverToken { [weak self] in
-            if Thread.isMainThread {
-                MainActor.assumeIsolated { self?.remove(id, key) }
-            } else {
-                Task { @MainActor in self?.remove(id, key) }
-            }
-        }
+        return ObserverToken(onMain: { [weak self] in self?.remove(id, key) })
     }
 
     /// Lexical standardization (no file-system access): "." and ".." resolved, no trailing slash, and a leading

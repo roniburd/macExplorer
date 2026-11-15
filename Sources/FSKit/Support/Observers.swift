@@ -17,6 +17,18 @@ public final class ObserverToken: Sendable {
         run?()
     }
 
+    /// A token whose cancel runs `remove` on the main actor: right away when cancelled on the main thread (a dropped
+    /// token unsubscribes before the next event), else in a main-actor task.
+    public convenience init(onMain remove: @escaping @MainActor @Sendable () -> Void) {
+        self.init {
+            if Thread.isMainThread {
+                MainActor.assumeIsolated { remove() }
+            } else {
+                Task { @MainActor in remove() }
+            }
+        }
+    }
+
     deinit { cancel() }
 }
 
@@ -32,13 +44,7 @@ public final class Observers<Event> {
         nextID += 1
         let id = nextID
         handlers.append((id, handler))
-        return ObserverToken { [weak self] in
-            if Thread.isMainThread {
-                MainActor.assumeIsolated { self?.remove(id) }
-            } else {
-                Task { @MainActor in self?.remove(id) }
-            }
-        }
+        return ObserverToken(onMain: { [weak self] in self?.remove(id) })
     }
 
     /// Delivers to a snapshot, so handlers may add or cancel registrations while being called.
