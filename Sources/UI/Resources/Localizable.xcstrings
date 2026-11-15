@@ -3326,13 +3326,24 @@
         }
       }
     },
-    "Hidden Items" : {
+    "Hide Command Bar" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hidden Items"
+            "value" : "Hide Command Bar"
+          }
+        }
+      }
+    },
+    "Hide Hidden Items" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide Hidden Items"
           }
         }
       }

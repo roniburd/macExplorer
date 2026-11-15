@@ -150,6 +150,38 @@ final class ContextMenuTests: XCTestCase {
         XCTAssertEqual(item(sortBy, .sortByName)?.state, .on)
     }
 
+    /// Hidden Items and Command Bar read Show … / Hide … for what they will do, in the View menu, the empty-space
+    /// View ▸ submenu and the command bar's View ▾, with no checkmark.
+    func testHiddenItemsAndCommandBarTitlesSayShowOrHide() async throws {
+        let h = try await ContentTestHarness.make(self)
+        try h.file("a.txt")
+        h.environment.settings.showHidden = false
+        h.environment.settings.commandBarVisible = true
+        let content = try h.content(of: try await h.openBrowserWindow())
+        func viewSubmenu() -> NSMenu? {
+            content.contextMenu(forRow: nil)?.items.first { $0.identifier?.rawValue == "macx.menu.view" }?.submenu
+        }
+        let hiddenMain = MainMenuBuilder.item(.toggleHidden), barMain = MainMenuBuilder.item(.toggleCommandBar)
+        _ = content.validateMenuItem(hiddenMain)
+        _ = content.validateMenuItem(barMain)
+        XCTAssertEqual(hiddenMain.title, "Show Hidden Items")
+        XCTAssertEqual(barMain.title, "Hide Command Bar")
+        XCTAssertEqual(item(viewSubmenu(), .toggleHidden)?.title, "Show Hidden Items")
+        XCTAssertEqual(item(viewSubmenu(), .toggleHidden)?.state, .off)
+        XCTAssertEqual(item(viewSubmenu(), .toggleCommandBar)?.title, "Hide Command Bar")
+        XCTAssertEqual(item(viewSubmenu(), .toggleCommandBar)?.state, .off)
+
+        _ = content.perform(Selector(Command.toggleHidden.selectorName), with: nil)
+        _ = content.perform(Selector(Command.toggleCommandBar.selectorName), with: nil)
+        _ = content.validateMenuItem(hiddenMain)
+        _ = content.validateMenuItem(barMain)
+        XCTAssertEqual(hiddenMain.title, "Hide Hidden Items")
+        XCTAssertEqual(barMain.title, "Show Command Bar")
+        XCTAssertEqual(item(viewSubmenu(), .toggleHidden)?.title, "Hide Hidden Items")
+        XCTAssertEqual(item(viewSubmenu(), .toggleHidden)?.state, .off)
+        XCTAssertEqual(item(viewSubmenu(), .toggleCommandBar)?.title, "Show Command Bar")
+    }
+
     func testMenuItemsValidateThroughHandler() async throws {
         let h = try await ContentTestHarness.make(self)
         try h.file("a.txt")

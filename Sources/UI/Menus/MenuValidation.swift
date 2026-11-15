@@ -31,6 +31,12 @@ import MacxFS
         switch command {
         case .closeWindow: title = closeTitle(for: window)
         case .togglePreviewPane: title = previewPaneTitle(visible: previewPaneVisible(in: window))
+        case .toggleHidden:
+            guard let browser = window?.windowController as? BrowserWindowController else { return }
+            title = hiddenItemsTitle(showing: browser.session.folder.query.showHidden)
+        case .toggleCommandBar:
+            guard let browser = window?.windowController as? BrowserWindowController else { return }
+            title = commandBarTitle(visible: browser.context.environment.settings.commandBarVisible)
         default: return
         }
         if item.title != title { item.title = title }
@@ -70,6 +76,16 @@ import MacxFS
     /// View › Show / Hide Preview Pane, from the window's own pane (`previewPaneVisible(in:)`).
     static func previewPaneTitle(visible: Bool) -> String {
         visible ? L10n.string("Hide Preview Pane") : MainMenuTitles.title(.togglePreviewPane)
+    }
+
+    /// View › Show / Hide Hidden Items, from what the folder shows now.
+    static func hiddenItemsTitle(showing: Bool) -> String {
+        showing ? L10n.string("Hide Hidden Items") : MainMenuTitles.title(.toggleHidden)
+    }
+
+    /// View › Show / Hide Command Bar.
+    static func commandBarTitle(visible: Bool) -> String {
+        visible ? L10n.string("Hide Command Bar") : MainMenuTitles.title(.toggleCommandBar)
     }
 
     static func groupBy(for command: Command) -> GroupBy? {

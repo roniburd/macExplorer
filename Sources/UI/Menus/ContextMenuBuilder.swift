@@ -70,8 +70,8 @@ enum ContextMenuTitles {
         case .densityCompact: L10n.string("Compact")
         case .densityRegular: L10n.string("Regular")
         case .densityComfortable: L10n.string("Comfortable")
-        case .toggleHidden: L10n.string("Hidden Items")
-        case .toggleCommandBar: L10n.string("Command Bar")
+        case .toggleHidden: MainMenuTitles.title(.toggleHidden)
+        case .toggleCommandBar: MainMenuTitles.title(.toggleCommandBar)
         case .sortByName: L10n.string("Name")
         case .sortByDateModified: L10n.string("Date Modified")
         case .sortBySize: L10n.string("Size")
@@ -242,9 +242,14 @@ final class ContextMenuBuilder {
             case .iconSizeSmall: view.iconSize == .small
             case .iconSizeMedium: view.iconSize == .medium
             case .iconSizeLarge: view.iconSize == .large
-            default: context.environment.settings.showHidden
+            default: false
             }
-            add(command, target, handler, to: viewMenu).state = on ? .on : .off
+            let item = add(command, target, handler, to: viewMenu)
+            if command == .toggleHidden {
+                item.title = MenuValidation.hiddenItemsTitle(showing: context.environment.settings.showHidden)
+            } else {
+                item.state = on ? .on : .off
+            }
         }
         viewItem.submenu = viewMenu
         menu.addItem(viewItem)
@@ -309,13 +314,19 @@ final class ContextMenuBuilder {
         item.identifier = NSUserInterfaceItemIdentifier("macx.menu.\(id)")
         let submenu = NSMenu(title: title)
         let view = view ?? context.environment.settings.defaultFolderViewState()
-        for command in commands { add(command, target, handler, to: submenu).state = state(command, folder: folder, view: view) }
+        for command in commands {
+            let menuItem = add(command, target, handler, to: submenu)
+            switch command {
+            case .toggleHidden: menuItem.title = MenuValidation.hiddenItemsTitle(showing: folder.query.showHidden)
+            case .toggleCommandBar: menuItem.title = MenuValidation.commandBarTitle(visible: context.environment.settings.commandBarVisible)
+            default: menuItem.state = state(command, folder: folder, view: view)
+            }
+        }
         item.submenu = submenu
         return item
     }
 
     private func state(_ command: Command, folder: FolderModel, view: FolderViewState) -> NSControl.StateValue {
-        let settings = context.environment.settings
         let sort = folder.query.sort
         let on: Bool = switch command {
         case .viewAsDetails: view.mode == .details
@@ -326,8 +337,6 @@ final class ContextMenuBuilder {
         case .densityCompact: view.density == .compact
         case .densityRegular: view.density == .regular
         case .densityComfortable: view.density == .comfortable
-        case .toggleHidden: folder.query.showHidden
-        case .toggleCommandBar: settings.commandBarVisible
         case .sortByName: sort.field == .name
         case .sortByDateModified: sort.field == .dateModified
         case .sortBySize: sort.field == .size

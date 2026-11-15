@@ -11,7 +11,8 @@ import Core
         }
     }
 
-    /// Pull-down item title (New ▾ items read "Folder", View ▾ items read "Details", "Small Icons", "Hidden Items").
+    /// Pull-down item title (New ▾ items read "Folder", View ▾ items read "Details", "Small Icons"; Hidden Items and Command
+    /// Bar keep the main menu's Show / Hide titles, retitled on validation).
     static func menuTitle(_ command: Command) -> String {
         switch command {
         case .newFolder: L10n.string("Folder")
@@ -22,8 +23,6 @@ import Core
         case .iconSizeSmall: L10n.string("Small Icons")
         case .iconSizeMedium: L10n.string("Medium Icons")
         case .iconSizeLarge: L10n.string("Large Icons")
-        case .toggleHidden: L10n.string("Hidden Items")
-        case .toggleCommandBar: L10n.string("Command Bar")
         default: MainMenuTitles.title(command)
         }
     }
