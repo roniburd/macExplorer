@@ -1,6 +1,7 @@
 import AppKit
 import Core
 import MacxFS
+import MacxPluginKit
 
 /// The browser window's NSToolbar delegate (§5.2): ◀ ▶ ↑ group, address bar (flexible), filter field, Details/Icons
 /// switcher, the New Tab button (P2-06), the Send Feedback menu, and the update badge (hidden unless an update needs attention). Keeps them in sync with the session
@@ -30,6 +31,7 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
     private let session: BrowserSession
     private var sessionToken: ObserverToken?
     private var volumesToken: ObserverToken?
+    private var folderToken: ObserverToken?
 
     init(context: UIContext, session: BrowserSession, searchController: SearchController) {
         self.context = context
@@ -71,6 +73,7 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
         sessionToken = session.observe { [weak self] event in self?.handle(event) }
         volumesToken = context.environment.volumes.observe { [weak self] _ in self?.showFolder() }
         showFolder()
+        observeFolderState()
         syncViewMode()
     }
 
@@ -179,6 +182,7 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
         switch event {
         case .folderChanged:
             showFolder()
+            observeFolderState()
             search.folderChanged()
             navigation.update()
         case .resultsChanged:
@@ -197,6 +201,22 @@ final class ToolbarController: NSObject, NSToolbarDelegate {
         case .banner, .viewStateChanged, .columnsChanged:
             break
         }
+    }
+
+    /// Tells the address bar while a remote folder is listing (its "Loading…" and the end of a ref switch).
+    private func observeFolderState() {
+        let folder = session.folder
+        folderToken = folder.observe { [weak self, weak folder] event in
+            guard case .state = event, let self, let folder, folder === self.session.folder else { return }
+            self.syncFolderLoading()
+        }
+        syncFolderLoading()
+    }
+
+    private func syncFolderLoading() {
+        let folder = session.folder
+        let listing = folder.state == .loading || folder.state == .partial
+        addressBar.setFolderLoading(listing && RemoteLocation(url: folder.directory) != nil)
     }
 
     /// The folder's breadcrumb, or while results show "Search Results in “root”" (P3-10).

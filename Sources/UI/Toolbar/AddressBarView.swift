@@ -7,6 +7,9 @@ import MacxPluginKit
 /// POSIX path all selected. Return resolves the text off main (AddressResolver on the target's volume lane): a folder
 /// navigates, a file navigates to its parent and selects it, anything else shows inline red text and stays in edit
 /// mode. Esc reverts. Successful entries go to Settings.recentLocations (the dropdown's recents).
+/// Remote work shows a spinner and a status at the bar's trailing edge: "Connecting to X…" while a typed remote
+/// address resolves, "Switching to dev…" from a ref choice until that ref's folder has loaded, and "Loading…" while
+/// a remote folder is still listing (after a short delay, so a fast listing doesn't flash it).
 @MainActor
 final class AddressBarView: NSView {
     var onNavigate: ((URL, String?) -> Void)?
@@ -18,6 +21,9 @@ final class AddressBarView: NSView {
     let breadcrumb = BreadcrumbView(frame: .zero)
     let editField = AddressEditField()
     let errorLabel = NSTextField(labelWithString: "")
+    let activitySpinner = NSProgressIndicator()
+    let activityLabel = NSTextField(labelWithString: "")
+    private let activityView = NSStackView()
     /// Search results (P3-10): one non-navigating segment instead of the breadcrumb ("Search Results in “X”").
     let searchSegment = NSButton(title: "", target: nil, action: nil)
     /// The ref chip after a remote folder's root segment (spec §4.2).
@@ -27,6 +33,11 @@ final class AddressBarView: NSView {
     private(set) var isEditing = false
     private(set) var errorText: String?
     private(set) var currentURL: URL?
+    /// The status beside the spinner; nil when nothing remote is in flight.
+    private(set) var activityText: String?
+
+    /// How long a remote folder must be listing before "Loading…" shows.
+    static let loadingDelay: Duration = .milliseconds(300)
 
     /// The root segment's symbol for a remote folder whose provider isn't registered.
     static let missingProviderSymbol = "questionmark.folder"
@@ -38,6 +49,18 @@ final class AddressBarView: NSView {
     private var refSwitchToken = 0
     private var fieldBeforeError: NSLayoutConstraint?
     private var fieldTrailing: NSLayoutConstraint?
+    private var fieldBeforeActivity: NSLayoutConstraint?
+    private var breadcrumbTrailing: NSLayoutConstraint?
+    private var breadcrumbBeforeActivity: NSLayoutConstraint?
+    /// A typed remote address resolving: its text, and the edit (`editToken`) that started it.
+    private var connecting: (text: String, token: Int)?
+    /// A ref choice in flight: its text, the choice (`refSwitchToken`), and once resolved the folder it opens; it
+    /// ends when that folder stops loading, the bar moves elsewhere, or a newer choice replaces it.
+    private var switching: (text: String, token: Int, target: URL?)?
+    /// The current remote folder is listing (`setFolderLoading`); `showsLoading` turns on after `loadingDelay`.
+    private var folderLoading = false
+    private var showsLoading = false
+    private var loadingDelayTask: Task<Void, Never>?
 
     init(context: UIContext) {
         environment = context.environment
@@ -56,7 +79,10 @@ final class AddressBarView: NSView {
     /// Shows `url` (breadcrumb from `volume`; a remote folder's from its provider, with the ref chip). While editing,
     /// the typed text is kept.
     func show(_ url: URL, volume: VolumeInfo?) {
-        if url != currentURL { refSwitchToken += 1 }
+        if url != currentURL {
+            refSwitchToken += 1
+            if let switching, switching.target != url { self.switching = nil }
+        }
         currentURL = url
         searchTitle = nil
         if let location = RemoteLocation(url: url) {
@@ -135,9 +161,17 @@ final class AddressBarView: NSView {
     func submit(_ text: String) async {
         guard isEditing, let current = currentURL else { return }
         let token = editToken
+        if let target = AddressResolver.remoteTarget(text, current: current, registry: environment.remote) {
+            connecting = (connectingText(for: target, current: current), token)
+            updateActivity()
+        }
         let result = await AddressResolver.resolve(text, current: current, home: environment.settings.home,
                                                    lanes: environment.lanes, mounts: environment.volumes.mountTable,
                                                    remote: environment.remote)
+        if connecting?.token == token {
+            connecting = nil
+            updateActivity()
+        }
         guard isEditing, token == editToken else { return }
         switch result {
         case .folder(let url), .remote(let url):
@@ -161,7 +195,60 @@ final class AddressBarView: NSView {
         await submit(text)
     }
 
+    /// The window's current folder is remote and still listing (false for local folders and once listed).
+    func setFolderLoading(_ loading: Bool) {
+        if !loading, let switching, switching.target != nil, switching.target == currentURL { self.switching = nil }
+        guard loading != folderLoading else { return updateActivity() }
+        folderLoading = loading
+        loadingDelayTask?.cancel()
+        loadingDelayTask = nil
+        showsLoading = false
+        if loading {
+            loadingDelayTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: Self.loadingDelay)
+                guard let self, !Task.isCancelled, self.folderLoading else { return }
+                self.showsLoading = true
+                self.updateActivity()
+            }
+        }
+        updateActivity()
+    }
+
     // MARK: private
+
+    /// "Connecting to X…" for another repository (or ref) than the current folder's; "Loading…" inside it.
+    private func connectingText(for target: RemoteLocation, current: URL) -> String {
+        if let here = RemoteLocation(url: current), here.provider == target.provider, here.repo == target.repo,
+           target.ref == nil || target.ref == here.ref {
+            return L10n.string("Loading…")
+        }
+        let root = environment.remote.provider(id: target.provider)?.displayRoot(target) ?? target.repo
+        return String(format: L10n.string("Connecting to %@…"), root)
+    }
+
+    private func updateActivity() {
+        let text = connecting?.text ?? switching?.text ?? (showsLoading ? L10n.string("Loading…") : nil)
+        guard text != activityText else { return }
+        activityText = text
+        activityLabel.stringValue = text ?? ""
+        activityView.isHidden = text == nil
+        activityView.setAccessibilityLabel(text)
+        if text == nil { activitySpinner.stopAnimation(nil) } else { activitySpinner.startAnimation(nil) }
+        updateTrailingLayout()
+    }
+
+    /// The field and the breadcrumb end before whichever of the error and the activity shows, else at the edge.
+    private func updateTrailingLayout() {
+        let busy = activityText != nil
+        let failed = errorText != nil && !busy
+        errorLabel.isHidden = !failed
+        fieldTrailing?.isActive = false
+        fieldBeforeError?.isActive = false
+        fieldBeforeActivity?.isActive = false
+        breadcrumbTrailing?.isActive = !busy
+        breadcrumbBeforeActivity?.isActive = busy
+        (busy ? fieldBeforeActivity : failed ? fieldBeforeError : fieldTrailing)?.isActive = true
+    }
 
     private func complete(_ url: URL, selecting name: String?, recent: URL) {
         environment.settings.addRecentLocation(addressText(for: recent))
@@ -183,6 +270,10 @@ final class AddressBarView: NSView {
         editToken += 1
         editField.resetSuggestions()
         setError(nil)
+        if connecting != nil {
+            connecting = nil
+            updateActivity()
+        }
         if let window, let editor = editField.currentEditor(), window.firstResponder === editor {
             window.makeFirstResponder(nil)
         }
@@ -193,15 +284,8 @@ final class AddressBarView: NSView {
     private func setError(_ text: String?) {
         errorText = text
         errorLabel.stringValue = text ?? ""
-        errorLabel.isHidden = text == nil
         // Swap the field's trailing edge so the label gets its full width (it was squeezed to 4 pt: QA round 2).
-        if text == nil {
-            fieldBeforeError?.isActive = false
-            fieldTrailing?.isActive = true
-        } else {
-            fieldTrailing?.isActive = false
-            fieldBeforeError?.isActive = true
-        }
+        updateTrailingLayout()
     }
 
     private func wire() {
@@ -218,10 +302,21 @@ final class AddressBarView: NSView {
             guard let self, let location = self.refChip.location else { return }
             self.refSwitchToken += 1
             let token = self.refSwitchToken
+            self.switching = (String(format: L10n.string("Switching to %@…"), RefChipController.shortRef(ref)), token, nil)
+            self.updateActivity()
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 let target = await RefSwitch.target(from: location, to: ref, registry: self.environment.remote)
-                guard token == self.refSwitchToken, self.currentURL == location.url else { return }
+                guard token == self.refSwitchToken, self.currentURL == location.url else {
+                    if self.switching?.token == token {
+                        self.switching = nil
+                        self.updateActivity()
+                    }
+                    return
+                }
+                // Same folder (the current ref again): nothing will load, so nothing ends the switch but this.
+                self.switching = target.url == location.url ? nil : (self.switching?.text ?? "", token, target.url)
+                self.updateActivity()
                 self.onNavigate?(target.url, nil)
             }
         }
@@ -274,7 +369,22 @@ final class AddressBarView: NSView {
         errorLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
         editField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         editField.isHidden = true
-        for view in [breadcrumb, searchSegment, editField, errorLabel] as [NSView] {
+        activitySpinner.style = .spinning
+        activitySpinner.controlSize = .small
+        activitySpinner.isDisplayedWhenStopped = false
+        activityLabel.textColor = .secondaryLabelColor
+        activityLabel.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        activityLabel.lineBreakMode = .byTruncatingTail
+        activityLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+        activityView.orientation = .horizontal
+        activityView.spacing = 4
+        activityView.addArrangedSubview(activitySpinner)
+        activityView.addArrangedSubview(activityLabel)
+        activityView.isHidden = true
+        activityView.setAccessibilityElement(true)
+        activityView.setAccessibilityRole(.progressIndicator)
+        activityView.setAccessibilityIdentifier(AXID.addressActivity)
+        for view in [breadcrumb, searchSegment, editField, errorLabel, activityView] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
@@ -282,9 +392,13 @@ final class AddressBarView: NSView {
         self.fieldTrailing = fieldTrailing
         let fieldBeforeError = editField.trailingAnchor.constraint(equalTo: errorLabel.leadingAnchor, constant: -6)
         self.fieldBeforeError = fieldBeforeError
+        fieldBeforeActivity = editField.trailingAnchor.constraint(equalTo: activityView.leadingAnchor, constant: -6)
+        let breadcrumbTrailing = breadcrumb.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -2)
+        self.breadcrumbTrailing = breadcrumbTrailing
+        breadcrumbBeforeActivity = breadcrumb.trailingAnchor.constraint(equalTo: activityView.leadingAnchor, constant: -6)
         NSLayoutConstraint.activate([
             breadcrumb.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2),
-            breadcrumb.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -2),
+            breadcrumbTrailing,
             breadcrumb.topAnchor.constraint(equalTo: topAnchor),
             breadcrumb.bottomAnchor.constraint(equalTo: bottomAnchor),
             searchSegment.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2),
@@ -296,6 +410,9 @@ final class AddressBarView: NSView {
             errorLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             errorLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
             errorLabel.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, multiplier: 0.5),
+            activityView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            activityView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            activityView.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, multiplier: 0.5),
             heightAnchor.constraint(equalToConstant: 28),
             widthAnchor.constraint(greaterThanOrEqualToConstant: 240),
             widthAnchor.constraint(lessThanOrEqualToConstant: 2_000),

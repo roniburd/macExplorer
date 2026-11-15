@@ -1797,6 +1797,17 @@
         }
       }
     },
+    "Connecting to %@…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connecting to %@…"
+          }
+        }
+      }
+    },
     "Connections" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6557,6 +6568,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Suffix:"
+          }
+        }
+      }
+    },
+    "Switching to %@…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switching to %@…"
           }
         }
       }

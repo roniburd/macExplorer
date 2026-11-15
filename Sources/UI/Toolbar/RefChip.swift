@@ -32,8 +32,9 @@ enum RefFilter {
     }
 }
 
-/// The `main ▾` chip after a remote folder's root segment. A click opens a searchable list of branches and tags
-/// (listed when it opens); choosing one calls `onChoose` with the ref's name.
+/// The `main ▾` chip after a remote folder's root segment. A click opens a searchable list of branches and tags;
+/// choosing one calls `onChoose` with the ref's name. The list is fetched as soon as a repository shows (so the picker
+/// opens already filled) and fetched again on each open (the cached list shows meanwhile).
 @MainActor
 final class RefChipController: NSObject {
     let button = NSButton(title: "", target: nil, action: nil)
@@ -42,6 +43,12 @@ final class RefChipController: NSObject {
     private var provider: (any RemoteProvider)?
     private var popover: NSPopover?
     let picker = RefPickerViewController()
+    /// The repository the refs below belong to ("provider\nrepo").
+    private var refsKey: String?
+    /// The last list fetched for `refsKey`; nil until one succeeds.
+    private(set) var cachedRefs: [RemoteRef]?
+    /// The fetch in flight for `refsKey`, shared by the prefetch and an open picker.
+    private var refsFetch: Task<[RemoteRef]?, Never>?
 
     override init() {
         super.init()
@@ -63,6 +70,29 @@ final class RefChipController: NSObject {
         self.location = location
         self.provider = provider
         button.title = (location.ref.map(Self.shortRef) ?? L10n.string("Default Branch")) + " ▾"
+        let key = location.provider + "\n" + location.repo
+        if key != refsKey {
+            refsKey = key
+            cachedRefs = nil
+            refsFetch = nil
+            _ = fetchRefs()
+        }
+    }
+
+    /// The fetch in flight, else a new one; its result also lands in `cachedRefs` (nil on failure, keeping the cache).
+    private func fetchRefs() -> Task<[RemoteRef]?, Never> {
+        if let refsFetch { return refsFetch }
+        let task = Task { @MainActor [weak self, location, provider, refsKey] () -> [RemoteRef]? in
+            guard let location, let provider else { return nil }
+            let refs = try? await provider.listRefs(repo: location.repo)
+            if let self, self.refsKey == refsKey {
+                self.refsFetch = nil
+                if let refs { self.cachedRefs = refs }
+            }
+            return refs
+        }
+        refsFetch = task
+        return task
     }
 
     /// A 40-hex commit shows its first 7 characters.
@@ -73,19 +103,24 @@ final class RefChipController: NSObject {
     @objc private func clicked(_ sender: NSButton) { openPicker() }
 
     func openPicker() {
-        guard let location, let provider else { return }
+        guard let location, provider != nil else { return }
         picker.reset(current: location.ref)
+        let cached = cachedRefs
+        if let cached { picker.show(refs: cached) }
         let popover = NSPopover()
         popover.behavior = .transient
         popover.contentViewController = picker
         self.popover = popover
         if button.window != nil { popover.show(relativeTo: button.bounds, of: button, preferredEdge: .maxY) }
-        Task { @MainActor [weak picker] in
-            do {
-                let refs = try await provider.listRefs(repo: location.repo)
-                picker?.show(refs: refs)
-            } catch {
-                picker?.showError(L10n.string("Couldn't load branches and tags"))
+        let key = refsKey
+        let fetch = fetchRefs()
+        Task { @MainActor [weak self, weak picker] in
+            let refs = await fetch.value
+            guard let self, let picker, self.refsKey == key, self.popover === popover else { return }
+            if let refs {
+                if refs != cached { picker.show(refs: refs) }
+            } else if cached == nil {
+                picker.showError(L10n.string("Couldn't load branches and tags"))
             }
         }
     }
