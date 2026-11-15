@@ -172,6 +172,25 @@ final class VolumesTests: XCTestCase {
         XCTAssertEqual(volumes.mountTableStore.current(), volumes.mountTable)
     }
 
+    func testVolumeThatLeavesHasItsLanesDropped() async throws {
+        let scanner = FakeScanner([volume("boot", "/", boot: true), volume("usb", "/Volumes/USB")])
+        let lanes = LanePool()
+        let volumes = Volumes(lanes: lanes, scanner: scanner, events: nil)
+        await volumes.start()
+        let usb = VolumeID(raw: "usb")
+        _ = try await lanes.perform(on: usb) { _ in 1 }
+        _ = try await lanes.perform(on: VolumeID(raw: "boot")) { _ in 1 }
+        let before = await lanes.liveLaneCount(of: usb, .read)
+        XCTAssertEqual(before, 1)
+        scanner.set([volume("boot", "/", boot: true)])
+        await volumes.refresh()
+        XCTAssertEqual(volumes.list.map(\.id.raw), ["boot"])
+        let after = await lanes.liveLaneCount(of: usb, .read)
+        let boot = await lanes.liveLaneCount(of: VolumeID(raw: "boot"), .read)
+        XCTAssertEqual(after, 0, "an unmounted volume keeps no lane threads")
+        XCTAssertEqual(boot, 1)
+    }
+
     func testEventsRescanAndWillUnmountReleasesFirst() async {
         let scanner = FakeScanner([volume("boot", "/", boot: true), volume("usb", "/Volumes/USB")])
         let events = FakeEvents()

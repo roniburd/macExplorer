@@ -40,6 +40,25 @@ final class LaneTests: XCTestCase {
         XCTAssertEqual(scan, 1); XCTAssertEqual(read, 0)
     }
 
+    func testDroppedLanesExitAndLaterWorkGetsFreshLanes() async throws {
+        let pool = LanePool(config: calm)
+        nonisolated(unsafe) var thread: Thread?
+        let first = try await pool.perform(on: volume) { ctx in thread = Thread.current; return ctx.laneID.raw }
+        _ = try await pool.perform(on: volume, .fileOp) { _ in 1 }
+        _ = try await pool.perform(on: .unknown) { _ in 1 }
+        await pool.dropLanes(of: volume)
+        let read = await pool.liveLaneCount(of: volume, .read)
+        let fileOp = await pool.liveLaneCount(of: volume, .fileOp)
+        let other = await pool.liveLaneCount(of: .unknown, .read)
+        XCTAssertEqual(read, 0); XCTAssertEqual(fileOp, 0)
+        XCTAssertEqual(other, 1, "other volumes keep their lanes")
+        let deadline = ContinuousClock.now + .seconds(10)
+        while thread?.isFinished != true, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(thread?.isFinished, true, "the dropped lane's thread exits")
+        let again = try await pool.perform(on: volume) { ctx in ctx.laneID.raw }
+        XCTAssertNotEqual(again, first, "a fresh lane")
+    }
+
     func testErrorsPropagate() async {
         struct Boom: Error {}
         let pool = LanePool(config: calm)

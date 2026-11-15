@@ -97,6 +97,9 @@ public final class Volumes {
         mountTable = MountTable(sorted)
         mountTableStore.update(mountTable)
         listObservers.send(sorted)
+        // Last, after this scan is applied (no await above may let an older scan land): otherwise every volume ever
+        // mounted keeps its lane threads for the rest of the session.
+        for id in gone { await lanes.dropLanes(of: id) }
     }
 
     /// Rescan; willUnmount → release first (the volume is still mounted then).

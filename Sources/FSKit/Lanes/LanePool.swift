@@ -131,6 +131,14 @@ public actor LanePool {
         if unresponsive.remove(volume) != nil { hub.send((volume, .healthy)) }
     }
 
+    /// The volume left the mount table: its idle lane threads exit and are forgotten (a lane finishes the work it
+    /// already holds first). Work for the volume later — a remount under the same ID — gets fresh lanes.
+    public func dropLanes(of volume: VolumeID) {
+        for key in lanes.keys where key.volume == volume {
+            for lane in lanes.removeValue(forKey: key) ?? [] { lane.stop() }
+        }
+    }
+
     /// Test seam (@testable): marks `volume` unresponsive as reaching the poison cap does, so tests of what callers
     /// do with an unresponsive volume need neither a hung lane call nor a short watchdog for their healthy work.
     func markUnresponsive(_ volume: VolumeID) {
