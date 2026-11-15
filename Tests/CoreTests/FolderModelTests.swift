@@ -484,6 +484,58 @@ final class FolderModelTests: XCTestCase {
         XCTAssertEqual(log.states, [.error(.notFound), .loading, .complete])
     }
 
+    func testTruncatedBulkReadStartsOverWithTheFallbackReader() async throws {
+        let w = try await FolderTestWorld.make(self)
+        let reads = ScriptedReads()
+        let m = w.model(w.url("odd-volume"))
+        m.readSource = reads.source()
+        m.start()
+        try await w.waitUntil("read started") { reads.reads.count == 1 }
+        XCTAssertFalse(reads.last.options.forceFallback)
+        let first = reads.last
+        first.continuation.yield(.batch(TestBatch.files(first.generation, ["a", "b"])))
+        first.continuation.yield(.failed(ReadFailure(code: EIO, stage: .truncatedRecords)))
+        try await w.waitUntil("re-read with readdir + stat") { reads.reads.count == 2 }
+        XCTAssertTrue(reads.last.options.forceFallback)
+        XCTAssertGreaterThan(reads.last.generation, first.generation)
+        XCTAssertEqual(m.state, .loading, "never an error, never the incomplete rows")
+        XCTAssertEqual(m.rowCount, 0)
+        let second = reads.last
+        second.continuation.yield(.batch(TestBatch.files(second.generation, ["a", "b", "c"])))
+        second.continuation.yield(.completed(ReadSummary(entryCount: 3, degradedCount: 0, usedFallback: true, elapsed: .zero)))
+        try await w.waitUntil("complete") { m.state == .complete }
+        XCTAssertEqual(m.rowNames, ["a", "b", "c"])
+
+        m.refresh()                                // later re-reads keep using the fallback
+        try await w.waitUntil("refresh read") { reads.reads.count == 3 }
+        XCTAssertTrue(reads.last.options.forceFallback)
+        reads.last.continuation.yield(.failed(ReadFailure(code: EIO, stage: .truncatedRecords)))
+        try await w.waitUntil("a second truncation is an error") { m.state == .error(.other(EIO)) }
+        XCTAssertEqual(reads.reads.count, 3, "retried once only")
+    }
+
+    func testTruncatedReReadRetriesWithTheFallbackAndKeepsRows() async throws {
+        let w = try await FolderTestWorld.make(self)
+        let reads = ScriptedReads()
+        let m = w.model(w.url("odd-volume"))
+        m.readSource = reads.source()
+        m.start()
+        try await w.waitUntil("read started") { reads.reads.count == 1 }
+        reads.last.continuation.yield(.batch(TestBatch.files(reads.last.generation, ["a"])))
+        reads.last.continuation.yield(.completed(ReadSummary(entryCount: 1, degradedCount: 0, usedFallback: false, elapsed: .zero)))
+        try await w.waitUntil("complete") { m.state == .complete }
+        m.refresh()
+        try await w.waitUntil("re-read") { reads.reads.count == 2 }
+        reads.last.continuation.yield(.failed(ReadFailure(code: EIO, stage: .truncatedRecords)))
+        try await w.waitUntil("fallback re-read") { reads.reads.count == 3 }
+        XCTAssertTrue(reads.last.options.forceFallback)
+        XCTAssertEqual(m.state, .complete)
+        XCTAssertEqual(m.rowNames, ["a"], "the rows on screen stay")
+        reads.last.continuation.yield(.batch(TestBatch.files(reads.last.generation, ["a", "b"])))
+        reads.last.continuation.yield(.completed(ReadSummary(entryCount: 2, degradedCount: 0, usedFallback: true, elapsed: .zero)))
+        try await w.waitUntil("diff applied") { m.rowNames == ["a", "b"] }
+    }
+
     func testPermissionPendingWaitsAndRecordsOutcome() async throws {
         let w = try await FolderTestWorld.make(self)
         w.pending = ["Desktop", "Documents"]

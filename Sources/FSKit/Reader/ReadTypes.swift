@@ -34,7 +34,9 @@ public struct ReadSummary: Sendable, Equatable {
 }
 
 public struct ReadFailure: Error, Sendable, Equatable {
-    public enum Stage: Sendable, Equatable { case open, read, unresponsiveVolume }
+    /// `.truncatedRecords`: getattrlistbulk returned a malformed record after batches were already delivered, so the
+    /// listing is incomplete (code EIO). Re-read the directory with `ReadOptions.forceFallback`.
+    public enum Stage: Sendable, Equatable { case open, read, unresponsiveVolume, truncatedRecords }
     public var code: Int32        // errno (ENOENT, ENOTDIR, EACCES, EPERM, ENXIO, ...)
     public var stage: Stage
     /// Remote rate limits (EAGAIN): when the provider accepts requests again, if it said.

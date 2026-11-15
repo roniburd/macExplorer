@@ -123,6 +123,9 @@ public final class FolderModel {
 
     // The read in progress
     private var readTask: Task<Void, Never>?
+    /// Set once a bulk read failed with `.truncatedRecords` (a malformed getattrlistbulk buffer): this folder is read
+    /// with readdir + stat (`ReadOptions.forceFallback`) from then on.
+    private(set) var readsWithFallback = false
     private var pacerTask: Task<Void, Never>?
     /// Fresh loads hand batches to the worker through this feed, consumed off main in order, so the main actor
     /// never waits for a batch sort before taking the next batch (QA round 1: busy display cycles between those
@@ -537,6 +540,7 @@ public final class FolderModel {
         var options = ReadOptions()
         permissionAsked = context.permissionPending(directory)
         options.permissionPending = permissionAsked
+        options.forceFallback = readsWithFallback
         let source = readSource
         PerfSignposts.signposter.emitEvent(PerfSignposts.navigate)
         stopLoadFeed()
@@ -661,6 +665,15 @@ public final class FolderModel {
             stopLoadFeed()
             await worker.cancel()
             guard !closed, generation == gen else { return }
+            if failure.stage == .truncatedRecords && !readsWithFallback {
+                // Rows already streamed are an incomplete listing: start over with readdir + stat.
+                readsWithFallback = true
+                clearRows()
+                watchBuffer = WatchBuffer()
+                setState(.loading)
+                beginLoad()
+                return
+            }
             if failure.code == EPERM && failure.stage != .unresponsiveVolume { context.recordPermissionOutcome(directory, false) }
             if store.count > 0 || rowsPresented { clearRows() }
             watchBuffer = WatchBuffer()
@@ -715,6 +728,7 @@ public final class FolderModel {
         let identityMode = store.identityMode
         var options = ReadOptions()
         options.permissionPending = context.permissionPending(directory)
+        options.forceFallback = readsWithFallback
         let source = readSource
         readTask = Task { @MainActor [weak self] in
             await worker.begin(gen, identityMode: identityMode, query: query)
@@ -752,6 +766,11 @@ public final class FolderModel {
             await worker.cancel()
             guard !closed, generation == gen else { return }
             rereadInFlight = false
+            if failure.stage == .truncatedRecords && !readsWithFallback {
+                readsWithFallback = true       // the rows on screen stay; the same re-read again, with readdir + stat
+                beginReread()
+                return
+            }
             rereadPending = false
             rereadStalled = false
             clearRows()
