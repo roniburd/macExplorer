@@ -185,7 +185,7 @@ public final class Settings {
         viewMode = Self.load(ViewMode.self, Key.viewMode, from: storage) ?? .details
         iconSize = Self.load(IconSize.self, Key.iconSize, from: storage) ?? .medium
         density = Self.load(Density.self, Key.density, from: storage) ?? .regular
-        let storedColumns = Self.load([ColumnSetting].self, Key.columns, from: storage) ?? []
+        let storedColumns = Self.loadColumns(Key.columns, from: storage) ?? []
         columns = storedColumns.isEmpty ? Self.defaultColumns : Self.migrateColumns(storedColumns)
         sort = Self.load(MacxFS.SortDescriptor.self, Key.sort, from: storage) ?? .default
         showHidden = Self.load(Bool.self, Key.showHidden, from: storage) ?? false
@@ -217,7 +217,7 @@ public final class Settings {
         searchScope = Self.load(SearchScope.self, Key.searchScope, from: storage) ?? .thisFolder
         searchMode = Self.load(SearchMode.self, Key.searchMode, from: storage) ?? .name
         searchIncludesPackages = Self.load(Bool.self, Key.searchIncludesPackages, from: storage) ?? false
-        let storedResultsColumns = Self.load([ColumnSetting].self, Key.resultsColumns, from: storage) ?? []
+        let storedResultsColumns = Self.loadColumns(Key.resultsColumns, from: storage) ?? []
         resultsColumns = storedResultsColumns.isEmpty ? Self.defaultResultsColumns : Self.migrateColumns(storedResultsColumns)
         toolbarFeedbackItemOffered = Self.load(Bool.self, Key.toolbarFeedbackItemOffered, from: storage) ?? false
         toolbarNewTabItemOffered = Self.load(Bool.self, Key.toolbarNewTabItemOffered, from: storage) ?? false
@@ -359,6 +359,20 @@ public final class Settings {
     private static func load<T: Decodable>(_ type: T.Type, _ key: String, from storage: any SettingsStorage) -> T? {
         guard let data = storage.data(forKey: key) else { return nil }
         return try? JSONDecoder().decode(T.self, from: data)
+    }
+
+    /// A stored column list read column by column: a column this version doesn't know (written by a newer version,
+    /// before "Install Previous Version") is dropped and the rest keep their order, instead of the whole list falling
+    /// back to the defaults.
+    private static func loadColumns(_ key: String, from storage: any SettingsStorage) -> [ColumnSetting]? {
+        guard let data = storage.data(forKey: key) else { return nil }
+        return (try? JSONDecoder().decode([Skippable<ColumnSetting>].self, from: data))?.compactMap(\.value)
+    }
+
+    /// An array element that decodes to nil instead of failing the whole array.
+    private struct Skippable<T: Decodable>: Decodable {
+        var value: T?
+        init(from decoder: any Decoder) throws { value = try? T(from: decoder) }
     }
 
     /// Optionals are removed from storage when nil. A value that can't be encoded (e.g. a NaN somewhere) is not

@@ -284,6 +284,24 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(Settings(storage: storage, home: home).columns, Settings.defaultColumns)
     }
 
+    /// A newer version's column (after "Install Previous Version") is dropped; the known columns keep their order,
+    /// widths and visibility instead of the whole list reverting to the defaults.
+    func testUnknownStoredColumnIsDroppedAndTheRestKept() throws {
+        let storage = InMemorySettingsStorage()
+        let json = """
+            [{"id":"size","width":91,"visible":true},{"id":"futureColumn","width":50,"visible":true},
+             {"id":"name","width":301,"visible":false},{"id":42}]
+            """
+        storage.set(Data(json.utf8), forKey: "columns")
+        storage.set(Data(json.utf8), forKey: "resultsColumns")
+        let s = Settings(storage: storage, home: home)
+        let known = [ColumnSetting(id: .size, width: 91, visible: true), ColumnSetting(id: .name, width: 301, visible: false)]
+        XCTAssertEqual(Array(s.columns.prefix(2)), known)
+        XCTAssertEqual(s.columns, Settings.migrateColumns(known))
+        XCTAssertEqual(s.resultsColumns, Settings.migrateColumns(known))
+        XCTAssertEqual(storage.data(forKey: "columns"), Data(json.utf8), "nothing is rewritten until the user changes it")
+    }
+
     func testRecentLocationsMostRecentFirstDedupedAndCapped() {
         let s = Settings(storage: InMemorySettingsStorage(), home: home)
         s.addRecentLocation("/a")
