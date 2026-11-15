@@ -21,6 +21,20 @@ final class RenameTests: FileOpsTestCase {
         XCTAssertTrue(kept.hasSuffix(" 2.txt"))
     }
 
+    /// Review B1-7: only a plausible earlier counter (2…99, no leading zero) is bumped; other numbers are name.
+    func testKeepBothKeepsNumbersThatAreNotACounter() {
+        let none: (String) -> Bool = { _ in false }
+        XCTAssertEqual(NameGenerator.keepBoth("IMG 0001.jpg", isDirectory: false, taken: none), "IMG 0001 2.jpg")
+        XCTAssertEqual(NameGenerator.keepBoth("Report 2024.pdf", isDirectory: false, taken: none), "Report 2024 2.pdf")
+        XCTAssertEqual(NameGenerator.keepBoth("Chapter 1.pdf", isDirectory: false, taken: none), "Chapter 1 2.pdf")
+        XCTAssertEqual(NameGenerator.keepBoth("Take 05.wav", isDirectory: false, taken: none), "Take 05 2.wav")
+        XCTAssertEqual(NameGenerator.keepBoth("Scan 100.png", isDirectory: false, taken: none), "Scan 100 2.png")
+        XCTAssertEqual(NameGenerator.keepBoth("Folder 9", isDirectory: true, taken: none), "Folder 10")
+        XCTAssertEqual(NameGenerator.keepBoth("x 99.txt", isDirectory: false, taken: none), "x 100.txt")
+        let taken: Set<String> = ["IMG 0001 2.jpg"]
+        XCTAssertEqual(NameGenerator.keepBoth("IMG 0001.jpg", isDirectory: false) { taken.contains($0) }, "IMG 0001 3.jpg")
+    }
+
     func testCopyNames() {
         var taken: Set<String> = []
         XCTAssertEqual(NameGenerator.copyName("a.txt", isDirectory: false) { taken.contains($0) }, "a copy.txt")
