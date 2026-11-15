@@ -17,6 +17,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.." || exit 2
 REPO="$(pwd -P)"
 . scripts/lib/sandbox.sh
+. scripts/lib/retry.sh
 
 usage() { echo "usage: $0 [debug|release] [--filter <substring>] [--timeout <seconds>] [--require-gui] [--keep-sandbox]" >&2; exit 64; }
 CONFIG=debug; FILTER=""; TIMEOUT=120; REQUIRE_GUI=0; KEEP=0
@@ -35,12 +36,8 @@ done
 APP="$REPO/.build/macExplorer-scenarios.app"
 BIN="$APP/Contents/MacOS/macExplorer"
 SCEN_DIR="$REPO/Tests/Scenarios"
-macx_lock "$MACX_SCENARIO_LOCK" || { echo "ui-scenarios: another scenario run holds the lock; wait for it" >&2; exit 2; }
+macx_take_scenario_app ui-scenarios || exit 2
 trap macx_unlock EXIT
-# The lock covers the runner scripts; a scenario app started some other way (site/tools/shots.py, by hand) still counts.
-if LC_ALL=C pgrep -f 'macExplorer-scenarios.app/Contents/MacOS/macExplorer' >/dev/null; then
-  echo "ui-scenarios: another scenario app is running; quit it first" >&2; exit 2
-fi
 
 TMPBASE="${TMPDIR:-/tmp}"; TMPBASE="${TMPBASE%/}"
 RUN="$TMPBASE/macx-scenario-ui-$(uuidgen)"
@@ -184,7 +181,7 @@ done
 # breakage and is not retried.
 MAX_RETRIES="${MAX_RETRIES:-2}"
 retry=1
-if [ ${#failed_names[@]} -gt "$MAX_RETRIES" ]; then
+if [ ${#failed_names[@]} -gt 0 ] && ! macx_retry_allowed ${#failed_names[@]}; then
   retry=0; echo "ui-scenarios: ${#failed_names[@]} scenarios failed (more than $MAX_RETRIES); not retrying"
 fi
 i=0
@@ -207,6 +204,6 @@ done
 mkdir -p "$REPO/.build"
 printf '{"results":[%s],"passed":%d,"flaky":%d,"failed":%d}\n' "$entries" "$passed" "$flaky" "$failed" > "$REPO/.build/ui-scenario-report.json"
 echo "ui-scenarios: $passed passed, $flaky flaky (passed on retry), $failed failed"
-[ "$flaky" -eq 0 ] || echo "FLAKY: $flaky UI scenario(s) passed only on retry: ${flaky_names[*]}"
+macx_flaky_line "UI scenario(s)" ${flaky_names[@]+"${flaky_names[@]}"}
 [ ${#failed_names[@]} -eq 0 ] || echo "logs of failed runs: $LOGS"
 [ "$failed" -eq 0 ]

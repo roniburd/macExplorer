@@ -8,14 +8,18 @@
 # - Each failed case is re-run alone with `--skip-build --filter '^<Module>\.<Class>/<test>$'`; every retry must
 #   pass AND appear in its own xUnit report (a filter that matches nothing does not count as a pass).
 # - A case that failed then passed is reported as a `::warning title=Flaky test::` annotation (and in
-#   $GITHUB_STEP_SUMMARY when set), and the last line is `FLAKY: <n> test case(s) passed only on retry: <cases>`.
-#   Exit 0 when the first run or every retry passed, 1 otherwise.
-# The xUnit reports are kept in .build/test-results/ (first.xml, retry-<n>.xml) for the CI artifact.
+#   $GITHUB_STEP_SUMMARY when set), and a `FLAKY: <n> test case(s) passed only on retry: <cases>` line is printed
+#   whenever any case passed on retry, also when another failed again. Exit 0 when the first run or every retry
+#   passed, 1 otherwise.
+# The xUnit reports are kept in .build/test-results/ (first.xml, retry-<n>.xml) for the CI artifact
+# (MACX_TEST_RESULTS overrides the folder; the self-test uses a temporary one).
 set -euo pipefail
+self="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 cd "$(dirname "$0")/.."
+. scripts/lib/retry.sh
 
 MAX_RETRIES="${MAX_RETRIES:-2}"
-OUT=.build/test-results
+OUT="${MACX_TEST_RESULTS:-.build/test-results}"
 
 # failed_cases <xunit file>: prints "<classname>/<name>" for every testcase with a <failure> or <error> child.
 failed_cases() {
@@ -40,7 +44,8 @@ sys.exit(0 if found and all(c.find("failure") is None and c.find("error") is Non
 # case_filter <classname/name>: the --filter regular expression (over <Module>.<Class>/<test>) for exactly that case.
 case_filter() { local cls="${1%%/*}" name="${1#*/}"; printf '^%s/%s$' "${cls//./\\.}" "$name"; }
 
-# Self-check of the two parsers on a hand-written report (no tests run): scripts/test-with-retry.sh --self-test
+# Self-check (no real tests run): scripts/test-with-retry.sh --self-test. Checks the two parsers on a hand-written
+# report, the retry rule and FLAKY line of scripts/lib/retry.sh, and whole runs of this script against a fake `swift`.
 if [ "${1:-}" = "--self-test" ]; then
   OUT="$(mktemp -d "${TMPDIR:-/tmp}/macx-test-retry-XXXXXX")"
   trap 'rm -rf "$OUT"' EXIT
@@ -68,6 +73,57 @@ XML
   ! passed_case "$OUT/sample.xml" CoreTests.Missing/testNothing || { echo "self-test: a missing case counted as passed" >&2; exit 1; }
   [ "$(case_filter CoreTests.FolderModelTests/testOther)" = '^CoreTests\.FolderModelTests/testOther$' ] \
     || { echo "self-test: case_filter printed '$(case_filter CoreTests.FolderModelTests/testOther)'" >&2; exit 1; }
+
+  st_fail() { echo "self-test: $*" >&2; exit 1; }
+  # The retry rule: MAX_RETRIES defaults to 2.
+  ( unset MAX_RETRIES; macx_retry_allowed 2 && ! macx_retry_allowed 3 && ! macx_retry_allowed 0 ) \
+    || st_fail "macx_retry_allowed should allow 1-2 failures by default"
+  ( MAX_RETRIES=3; macx_retry_allowed 3 ) || st_fail "macx_retry_allowed ignores MAX_RETRIES"
+  [ "$(macx_flaky_line "test case(s)" A/a B/b)" = "FLAKY: 2 test case(s) passed only on retry: A/a B/b" ] \
+    || st_fail "macx_flaky_line printed '$(macx_flaky_line "test case(s)" A/a B/b)'"
+  [ -z "$(macx_flaky_line "test case(s)")" ] || st_fail "macx_flaky_line printed a line without names"
+
+  # Whole runs against a fake swift: FAKE_FIRST lists the cases failing in the first run, FAKE_STILL those that also
+  # fail when retried alone; every call is appended to calls.txt.
+  mkdir -p "$OUT/bin"
+  cat > "$OUT/bin/swift" <<'SWIFT'
+#!/bin/bash
+out=""; filter=""
+while [ $# -gt 0 ]; do
+  case "$1" in --xunit-output) out="$2"; shift ;; --filter) filter="$2"; shift ;; esac; shift
+done
+echo "swift $filter" >> "$FAKE_DIR/calls.txt"
+if [ -z "$filter" ]; then cases="$FAKE_FIRST"; fails="$FAKE_FIRST"
+else c="${filter#^}"; c="${c%$}"; cases="${c//\\/}"; fails="$FAKE_STILL"; fi
+code=0
+{ echo '<testsuites><testsuite name="TestResults">'
+  for c in $cases; do
+    printf '<testcase classname="%s" name="%s">' "${c%%/*}" "${c#*/}"
+    case " $fails " in *" $c "*) printf '<failure message="failed"></failure>'; code=1 ;; esac
+    echo '</testcase>'
+  done
+  echo '</testsuite></testsuites>'; } > "$out"
+exit "$code"
+SWIFT
+  chmod +x "$OUT/bin/swift"
+  # run_fake <first> <still>: runs this script; sets rc, log (its output) and calls (how many swift runs).
+  run_fake() {
+    rm -rf "$OUT/run" "$OUT/calls.txt"; : > "$OUT/calls.txt"
+    rc=0
+    log="$(env -u MAX_RETRIES -u GITHUB_STEP_SUMMARY PATH="$OUT/bin:$PATH" FAKE_DIR="$OUT" FAKE_FIRST="$1" \
+           FAKE_STILL="$2" MACX_TEST_RESULTS="$OUT/run" "$self" 2>&1)" || rc=$?
+    calls="$(wc -l < "$OUT/calls.txt" | tr -d ' ')"
+  }
+  run_fake "M.A/a M.B/b M.C/c" ""
+  [ "$rc" = 1 ] && [ "$calls" = 1 ] || st_fail "3 failures (over the default MAX_RETRIES 2): rc $rc, $calls swift runs: $log"
+  run_fake "M.A/a M.B/b" "M.B/b"
+  [ "$rc" = 1 ] && [ "$calls" = 3 ] || st_fail "one flaky and one real failure: rc $rc, $calls swift runs: $log"
+  case "$log" in *"FLAKY: 1 test case(s) passed only on retry: M.A/a"*) ;; *) st_fail "a red run lacks the FLAKY line: $log" ;; esac
+  case "$log" in *"M.B/b failed again on retry"*) ;; *) st_fail "a red run does not name the real failure: $log" ;; esac
+  run_fake "M.A/a" ""
+  [ "$rc" = 0 ] && [ "$calls" = 2 ] || st_fail "one flaky failure: rc $rc, $calls swift runs: $log"
+  [ "$(printf '%s\n' "$log" | tail -1)" = "FLAKY: 1 test case(s) passed only on retry: M.A/a" ] \
+    || st_fail "a green retry run does not end with the FLAKY line: $log"
   echo "test-with-retry self-test: ok"; exit 0
 fi
 
@@ -91,7 +147,7 @@ if [ ${#failed[@]} -eq 0 ]; then
   echo "::error title=Tests::swift test failed with no failed test case in the xUnit report (build error or crash); not retrying"
   exit 1
 fi
-if [ ${#failed[@]} -gt "$MAX_RETRIES" ]; then
+if ! macx_retry_allowed ${#failed[@]}; then
   echo "::error title=Tests::${#failed[@]} test cases failed (more than $MAX_RETRIES); not retrying"
   printf '  %s\n' "${failed[@]}"
   exit 1
@@ -112,13 +168,16 @@ for c in "${failed[@]}"; do
   fi
 done
 
+if [ ${#flaky[@]} -gt 0 ]; then
+  for c in "${flaky[@]}"; do echo "::warning title=Flaky test::$c failed then passed on retry"; done
+  if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+    { echo '### Flaky tests (failed, then passed on retry)'; printf -- '- `%s`\n' "${flaky[@]}"; } >> "$GITHUB_STEP_SUMMARY"
+  fi
+fi
 if [ ${#still[@]} -gt 0 ]; then
   for c in "${still[@]}"; do echo "::error title=Test failed::$c failed again on retry"; done
+  macx_flaky_line "test case(s)" ${flaky[@]+"${flaky[@]}"}
   exit 1
 fi
-for c in "${flaky[@]}"; do echo "::warning title=Flaky test::$c failed then passed on retry"; done
-if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-  { echo '### Flaky tests (failed, then passed on retry)'; printf -- '- `%s`\n' "${flaky[@]}"; } >> "$GITHUB_STEP_SUMMARY"
-fi
-echo "FLAKY: ${#flaky[@]} test case(s) passed only on retry: ${flaky[*]}"
+macx_flaky_line "test case(s)" "${flaky[@]}"
 exit 0

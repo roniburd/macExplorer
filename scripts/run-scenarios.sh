@@ -14,6 +14,7 @@
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 2
 . scripts/lib/sandbox.sh
+. scripts/lib/retry.sh
 
 CONFIG=debug
 if [ "${1:-}" = "debug" ] || [ "${1:-}" = "release" ]; then CONFIG="$1"; shift; fi
@@ -81,7 +82,7 @@ MAX_RETRIES="${MAX_RETRIES:-2}"
 failed_names=()
 while IFS= read -r n; do [ -n "$n" ] && failed_names+=("$n"); done < <(names_with_status "$RUN/report.json" failed)
 [ ${#failed_names[@]} -gt 0 ] || exit "$status"
-if [ ${#failed_names[@]} -gt "$MAX_RETRIES" ]; then
+if ! macx_retry_allowed ${#failed_names[@]}; then
   echo "run-scenarios: ${#failed_names[@]} scenarios failed (more than $MAX_RETRIES); not retrying"; exit "$status"
 fi
 still=0; k=0; flaky=()
@@ -98,5 +99,5 @@ for n in "${failed_names[@]}"; do
   cp "$RUN/retry-$k.json" ".build/scenario-retry-$k.json" 2>/dev/null
 done
 [ "$still" = 0 ] && echo "run-scenarios: every failed scenario passed on retry (flaky)"
-[ ${#flaky[@]} -eq 0 ] || echo "FLAKY: ${#flaky[@]} core scenario(s) passed only on retry: ${flaky[*]}"
+macx_flaky_line "core scenario(s)" ${flaky[@]+"${flaky[@]}"}
 exit "$still"
