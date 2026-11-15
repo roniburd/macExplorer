@@ -88,6 +88,9 @@ final class RollbackService: RollbackServicing {
         var processID: Int32 = ProcessInfo.processInfo.processIdentifier
         /// Command the helper runs to relaunch (tests pass /usr/bin/true).
         var opener: String = "/usr/bin/open"
+        /// Parent of the staging folders; nil stages in the system's replacement-items folder on the app's volume
+        /// (tests pass a folder in their sandbox).
+        var stagingParent: URL? = nil
     }
 
     typealias SignatureCheck = @Sendable (_ file: URL, _ signature: String, _ publicKey: String) -> Bool
@@ -178,7 +181,12 @@ final class RollbackService: RollbackServicing {
         let fm = FileManager.default
         let directory: URL
         do {
-            directory = try fm.url(for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: config.appURL, create: true)
+            if let parent = config.stagingParent {
+                directory = parent.appending(path: UUID().uuidString, directoryHint: .isDirectory)
+                try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+            } else {
+                directory = try fm.url(for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: config.appURL, create: true)
+            }
         } catch { throw .notReplaceable(config.appURL.path(percentEncoded: false)) }
         preparing = directory
         defer { if preparing == directory { preparing = nil } }

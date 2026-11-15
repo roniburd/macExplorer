@@ -214,7 +214,7 @@ final class RollbackServiceTests: XCTestCase {
             publicKey: key.publicKey.rawRepresentation.base64EncodedString(),
             appURL: root.appending(path: "Applications/MacExplorer.app", directoryHint: .isDirectory),
             bundleID: "com.macexplorer.app", installedVersion: "0.2.0-beta.15", installedBuild: 214, processID: 1,
-            opener: "/usr/bin/true")
+            opener: "/usr/bin/true", stagingParent: root.appending(path: "staging", directoryHint: .isDirectory))
         let verify = verifySignature ?? { RollbackSignature.isValid(file: $0, signature: $1, publicKey: $2) }
         let service = RollbackService(config: config, settings: s, updateInFlight: inFlight, transport: t,
                                       unpacker: unpacker, codeCheck: codeCheck ?? FakeCodeCheck(ok: codeOK), launcher: launcher,
@@ -240,6 +240,9 @@ final class RollbackServiceTests: XCTestCase {
         var fractions: [Double?] = []
         let staged = try await service.prepare(target) { fractions.append($0) }
         XCTAssertEqual(fractions.compactMap { $0 }, [0.5, 1])
+        XCTAssertEqual(staged.directory.deletingLastPathComponent().standardizedFileURL.path(percentEncoded: false),
+                       root.appending(path: "staging/").standardizedFileURL.path(percentEncoded: false),
+                       "staged inside the test's sandbox, which its teardown removes")
         XCTAssertTrue(FileManager.default.fileExists(atPath: staged.stagedApp.appending(path: "Contents/Info.plist").path(percentEncoded: false)))
         XCTAssertFalse(FileManager.default.fileExists(atPath: staged.directory.appending(path: "rollback.zip").path(percentEncoded: false)))
         service.arm(staged)
@@ -249,7 +252,6 @@ final class RollbackServiceTests: XCTestCase {
         XCTAssertEqual(launcher.launches.count, 1)
         XCTAssertEqual(launcher.launches.first?.arguments.first, "1")
         XCTAssertEqual(launcher.launches.first?.arguments.last, "/usr/bin/true")
-        try? FileManager.default.removeItem(at: staged.directory)
     }
 
     func testDisarmedServiceDoesNothingAtQuit() async throws {
@@ -330,10 +332,9 @@ final class RollbackServiceTests: XCTestCase {
             return RollbackSignature.isValid(file: file, signature: sig, publicKey: key)
         })
         transport.archive = Data("zip".utf8)
-        let staged = try await service.prepare(item(signing: transport.archive)) { _ in }
+        _ = try await service.prepare(item(signing: transport.archive)) { _ in }
         XCTAssertEqual(signature.onMain, [false], "EdDSA maps and hashes the whole archive: not on the main thread")
         XCTAssertEqual(code.onMain, [false], "the designated-requirement check reads the whole bundle: not on the main thread")
-        try? FileManager.default.removeItem(at: staged.directory)
     }
 
     func testQuitDuringPrepareRemovesTheStagingFolder() async throws {
@@ -354,7 +355,6 @@ final class RollbackServiceTests: XCTestCase {
         XCTAssertNil(settings.pendingRollback)
         transport.release()
         _ = try? await task.value
-        try? FileManager.default.removeItem(at: directory)
     }
 
     func testBadSignatureIsRejected() async {
