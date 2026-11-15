@@ -172,8 +172,6 @@ final class EmptyStateView: NSView {
         if content.showsSpinner { spinner.startAnimation(nil) } else { spinner.stopAnimation(nil) }
     }
 
-    func performAction() { buttonPressed(nil) }
-
     @objc private func buttonPressed(_ sender: Any?) {
         if let action = content?.action { onAction?(action) }
     }

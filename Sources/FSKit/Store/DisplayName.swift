@@ -23,9 +23,4 @@ public enum DisplayName {
             && (flags.contains(.extensionHidden) || (kind == .package && extText.lowercased() == "app"))
         return hide ? stem : stem + "." + extText
     }
-
-    /// Whether the extension would be hidden (no localized stem involved).
-    public static func hidesExtension(name: String, kind: Kind, flags: EntryFlags, showAllExtensions: Bool) -> Bool {
-        make(name: name, kind: kind, flags: flags, localizedStem: nil, showAllExtensions: showAllExtensions) != name
-    }
 }

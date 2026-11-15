@@ -128,8 +128,6 @@ public final class FolderSizeSession {
 
     public var pendingCount: Int { queued.count }
     public var inFlightCount: Int { inFlight.count }
-    /// Rows whose rescan waits for the rate limit.
-    public var deferredCount: Int { deferred.count }
 
     func begin() {
         guard let model else { return }

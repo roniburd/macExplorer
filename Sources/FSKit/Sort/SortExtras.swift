@@ -112,12 +112,6 @@ public struct ExtraColumnValues: Sendable {
         }
     }
 
-    /// Every loaded identity (O(count)).
-    public func forEachIdentity(_ body: (RowID) throws -> Void) rethrows {
-        for object in objects.keys { try body(.object(object)) }
-        for name in names.keys { try body(.name(name)) }
-    }
-
     /// One value per storage index of `store` (identities not in it are left out): one hash lookup per loaded
     /// identity, never an identity built per storage index (on name-identity volumes that normalizes every name).
     func sortValues(in store: EntryStore) -> ExtraSortValues {

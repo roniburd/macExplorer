@@ -27,7 +27,6 @@ public final class FileOpUndoStack {
 
     public var canUndo: Bool { undoManager.canUndo }
     public var canRedo: Bool { undoManager.canRedo }
-    var liveChainCount: Int { chains.count }
 
     public func register(_ outcome: JobOutcome, actionName: String) {
         guard outcome.record.isUndoable else { return }

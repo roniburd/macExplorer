@@ -139,12 +139,6 @@ final class QuickLookController {
         selectionChanged()
     }
 
-    /// Reloads the visible panel (tab switches: the panel's new controller supplies its own items).
-    func reloadIfVisible() {
-        let p = panel()
-        if p.isVisible { p.reloadData() }
-    }
-
     private func buildItems() -> [URL] {
         itemBuilds += 1
         return folder?.selectedURLs ?? []

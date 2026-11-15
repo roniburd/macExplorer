@@ -41,8 +41,6 @@ final class HealthHub: Sendable {
 
 /// Per-volume I/O lanes with a stall watchdog (§4.2). See the contract in the overview §3.2.
 public actor LanePool {
-    public static let shared = LanePool()
-
     private struct Key: Hashable { var volume: VolumeID; var laneClass: LaneClass }
     private struct Active { var job: LaneJob; var lane: IOLane }
 

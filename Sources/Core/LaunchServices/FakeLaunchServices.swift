@@ -34,7 +34,6 @@ public final class FakeLaunchServices: LaunchServicesProviding {
     // MARK: scripting
 
     public func setApplications(_ apps: [AppInfo]) { state.withLock { $0.apps = apps } }
-    public func setDefaultApp(_ app: AppInfo?) { state.withLock { $0.defaultApp = app } }
     /// Every later `open` call is recorded and then throws `error` (nil: succeed again).
     public func setOpenError(_ error: (any Error & Sendable)?) { state.withLock { $0.openError = error } }
 

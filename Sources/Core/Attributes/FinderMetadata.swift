@@ -36,10 +36,6 @@ public enum FinderMetadata {
         (try? PropertyListSerialization.data(fromPropertyList: tags, format: .binary, options: 0)) ?? Data()
     }
 
-    public static func encodeComment(_ comment: String) -> Data {
-        (try? PropertyListSerialization.data(fromPropertyList: comment, format: .binary, options: 0)) ?? Data()
-    }
-
     public static func encodeLastUsed(_ date: Date) -> Data {
         let sec = Int64(date.timeIntervalSince1970.rounded(.down))
         let nsec = Int64(((date.timeIntervalSince1970 - Double(sec)) * 1e9).rounded())
