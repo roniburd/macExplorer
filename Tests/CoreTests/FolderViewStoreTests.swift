@@ -234,10 +234,15 @@ final class FolderViewStoreTests: XCTestCase {
         }
         let data = try XCTUnwrap(FolderViewStore.encode(records))
         XCTAssertEqual(FolderViewStore.decode(data), records)
-        XCTAssertNil(FolderViewStore.decode(Data("macx-folder-views\t3\nR\tbad\n".utf8)))
+        XCTAssertEqual(FolderViewStore.decode(Data("macx-folder-views\t3\nR\tbad\n".utf8)), [], "an unreadable record is skipped")
         XCTAssertEqual(FolderViewStore.decode(Data("macx-folder-views\t3\n".utf8)), [])
-        XCTAssertNil(FolderViewStore.decode(Data("macx-folder-views\t3\nR\t\t\t\tname\t\t\t\t\t\t\t\t0\t/p\n".utf8)),
-                     "a sort field without its direction")
+        XCTAssertNil(FolderViewStore.decode(Data("macx-folder-views\t2\n".utf8)), "another format")
+        XCTAssertEqual(FolderViewStore.decode(Data("macx-folder-views\t3\nR\t\t\t\tname\t\t\t\t\t\t\t\t0\t/p\n".utf8)),
+                       [], "a sort field without its direction: no sort, and a record with nothing set is dropped")
+        XCTAssertEqual(FolderViewStore.decode(Data("macx-folder-views\t3\nR\t\t\t\tname\t\t\t\t\t1\t\t0\t/p\n".utf8)),
+                       [.init(key: .path("/p"), pathKey: .path("/p"), settings: FolderViewSettings(calculateFolderSizes: true),
+                              lastUsed: Date(timeIntervalSinceReferenceDate: 0))],
+                       "a sort field without its direction: no sort, the rest of the record is kept")
     }
 
     func testCorruptStorageIsEmptyStore() {
@@ -481,18 +486,60 @@ final class FolderViewStoreTests: XCTestCase {
         XCTAssertEqual(store.count, 0)
     }
 
-    /// Phase 2 development builds wrote full records in format 2 under "folderViews.v2": imported, then removed.
-    func testImportsVersion2Store() throws {
+    /// "Install Previous Version": values a newer version wrote that this one doesn't know read as not set, their
+    /// records stay, an unreadable record or column list is skipped alone, and the next write keeps the rest.
+    func testUnknownValuesFromANewerVersionKeepTheirRecords() throws {
         let storage = InMemorySettingsStorage()
-        let v2 = "macx-folder-views\t2\nC\tname:280.0:1\nR\tABC\t42\ticons\tsize\t0\tlarge\tkind\t1\t0\t1000.0\t/u/photos\n"
-        storage.set(Data(v2.utf8), forKey: "folderViews.v2")
+        let text = [
+            "macx-folder-views\t3",
+            "C\tname:280.0:1,hologram:90.0:1,size:81.5:0",                // an unknown column
+            "C\tname:x:1",                                                // unreadable list: index 1 still taken
+            "C\tkind:150.0:1",
+            "X\ta line kind this version doesn't know",
+            "R\tABC\t42\tgallery\tsize\t0\thuge\tcompact\tkind\t1\t0\t1000.0\t/u/photos",
+            "R\t\t\tnot a record",
+            "",
+            "R\t\t\ticons\tvibes\t1\tlarge\tcosy\tmood\t2\t1\t999.0\t/u/docs",
+            "R\t\t\t\t\t\t\t\t\t\t2\t998.0\t/u/kinds\tfield added later\tand another",
+            "R\t\t\t\t\t\t\t\t\t\t7\t997.0\t/u/dangling",
+        ].joined(separator: "\n") + "\n"
+        storage.set(Data(text.utf8), forKey: FolderViewStore.storageKey)
         let store = makeStore(storage)
+        XCTAssertFalse(store.readOnly)
+        XCTAssertEqual(store.count, 3, "/u/dangling: its list index doesn't resolve, so nothing is set and it is dropped")
         let v = volume(id: "uuid:ABC", idStable: true)
-        XCTAssertEqual(store.settings(for: loc("/u/elsewhere", v, 42)),
-                       FolderViewSettings(viewMode: .icons, iconSize: .large, sort: MacxFS.SortDescriptor(field: .size, ascending: false),
-                                          columns: [ColumnSetting(id: .name, width: 280, visible: true)], groupBy: .kind,
-                                          calculateFolderSizes: true))
-        XCTAssertNil(storage.data(forKey: "folderViews.v2"))
+        XCTAssertEqual(store.settings(for: loc("/u/photos", v, 42)),
+                       FolderViewSettings(density: .compact, sort: MacxFS.SortDescriptor(field: .size, ascending: false),
+                                          columns: [ColumnSetting(id: .name, width: 280, visible: true),
+                                                    ColumnSetting(id: .size, width: 81.5, visible: false)],
+                                          groupBy: .kind, calculateFolderSizes: true))
+        XCTAssertEqual(store.settings(for: loc("/u/docs", nil, nil)), FolderViewSettings(viewMode: .icons, iconSize: .large))
+        XCTAssertEqual(store.settings(for: loc("/u/kinds", nil, nil)),
+                       FolderViewSettings(columns: [ColumnSetting(id: .kind, width: 150, visible: true)]))
+        store.save(icons, for: loc("/u/new", nil, nil))
+        store.flush()
+        let reloaded = makeStore(storage)
+        for path in ["/u/new", "/u/docs", "/u/kinds"] { XCTAssertTrue(reloaded.hasOverride(for: loc(path, nil, nil)), path) }
+        XCTAssertTrue(reloaded.hasOverride(for: loc("/u/photos", v, 42)))
+    }
+
+    /// A store in a newer version's format is left as it is: no views this session, nothing written, even on flush.
+    func testNewerFormatIsNeverOverwritten() async throws {
+        let storage = InMemorySettingsStorage()
+        let newer = Data("macx-folder-views\t4\nZ\tsomething this version can't read\n".utf8)
+        storage.set(newer, forKey: FolderViewStore.storageKey)
+        let store = makeStore(storage, delay: .milliseconds(1), legacyJSON: { XCTFail("no legacy import"); return nil })
+        XCTAssertTrue(store.readOnly)
+        XCTAssertEqual(store.count, 0)
+        store.save(icons, for: loc("/u/a", nil, nil))
+        XCTAssertEqual(state(store, loc("/u/a", nil, nil)), icons, "this session still shows the change")
+        try await Task.sleep(for: .milliseconds(50))
+        store.removeAll()
+        store.flush()
+        XCTAssertEqual(storage.data(forKey: FolderViewStore.storageKey), newer)
+        XCTAssertTrue(FolderViewStore.isNewerFormat(newer))
+        XCTAssertFalse(FolderViewStore.isNewerFormat(Data("macx-folder-views\t3\n".utf8)))
+        XCTAssertFalse(FolderViewStore.isNewerFormat(Data("not a store".utf8)))
     }
 
     // MARK: resolution chain

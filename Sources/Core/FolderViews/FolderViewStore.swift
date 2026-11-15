@@ -19,15 +19,16 @@ import MacxFS
 /// index: a full store is under 1.4 MB even with a distinct column list per record, and loads at launch in about
 /// 15 ms in release. Budgets: `macx-bench --metrics folderViews`.
 ///
+/// Compatibility with other versions ("Install Previous Version" rolls back to an older build): a value this version
+/// doesn't know (a newer column, view mode, sort field…) reads as not set and its record is kept; a record or column
+/// list that can't be read at all is skipped alone. A store whose header names a newer format is left untouched: this
+/// session starts with no stored views and never writes (`readOnly`), so going forward again finds them all.
+///
 /// Finder's `.DS_Store` views are cached here too (`finderView`/`setFinderView`): in memory, read once per launch
 /// per folder, never persisted.
 @MainActor
 public final class FolderViewStore {
     public static let storageKey = "folderViews.v3"
-    /// Earlier formats, read once and removed: v2 (full records, Phase 2 development builds) is imported; v1 (the
-    /// verbose P2-07 format) was never released and is dropped.
-    static let v2StorageKey = "folderViews.v2"
-    static let legacyStorageKey = "folderViews.v1"
     public static let capacity = 5_000
 
     struct Record: Sendable, Equatable {
@@ -41,6 +42,8 @@ public final class FolderViewStore {
     private let now: @MainActor () -> Date
     private let flushDelay: Duration
     private let limit: Int
+    /// The stored data is a newer version's format: kept as it is, nothing is written this session.
+    let readOnly: Bool
     private var records: [FolderViewKey: Record] = [:]
     /// Path key → the key of the record last seen at that path.
     private var byPath: [FolderViewKey: FolderViewKey] = [:]
@@ -70,18 +73,13 @@ public final class FolderViewStore {
         self.now = now
         self.flushDelay = flushDelay
         self.limit = capacity
-        if storage.data(forKey: Self.legacyStorageKey) != nil { storage.set(nil, forKey: Self.legacyStorageKey) }
-        var imported = false
-        if let data = storage.data(forKey: Self.storageKey) {
-            load(Self.decode(data) ?? [])
-        } else if let data = storage.data(forKey: Self.v2StorageKey) {
-            load(Self.decode(data) ?? [])
-            storage.set(nil, forKey: Self.v2StorageKey)
-            imported = true
+        let stored = storage.data(forKey: Self.storageKey)
+        readOnly = stored.map(Self.isNewerFormat) ?? false
+        if let stored {
+            if !readOnly { load(Self.decode(stored) ?? []) }
         } else if let legacyJSON {
             startLegacyImport(legacyJSON)
         }
-        if imported { scheduleFlush() }
     }
 
     deinit {
@@ -188,7 +186,7 @@ public final class FolderViewStore {
     public func clearFinderViews() { finderViews.removeAll() }
 
     /// Writes now, synchronously (`applicationWillTerminate`, `removeAll`). Supersedes any encode in flight. A legacy
-    /// import still running is done here first, synchronously, so its views are not lost.
+    /// import still running is done here first, synchronously, so its views are not lost. No-op when `readOnly`.
     public func flush() {
         if let pending = legacyImport {
             pending.task.cancel()
@@ -198,6 +196,7 @@ public final class FolderViewStore {
         flushTask?.cancel()
         flushTask = nil
         writeGeneration += 1
+        guard !readOnly else { return }
         storage.set(Self.encode(Array(records.values)), forKey: Self.storageKey)
     }
 
@@ -212,10 +211,20 @@ public final class FolderViewStore {
     ///
     /// A field the folder doesn't set is empty (sort: field and direction both empty). uuid and fileID are empty for
     /// a path record (its key is its path key). In the path, `\`, tab, newline and carriage return are escaped as
-    /// `\\`, `\t`, `\n`, `\r`. Version 2 (Phase 2 development builds) has no density field and every other field set.
-    /// Pure; debounced writes run it off main.
-    nonisolated static let formatHeader = "macx-folder-views\t3"
-    nonisolated static let v2FormatHeader = "macx-folder-views\t2"
+    /// `\\`, `\t`, `\n`, `\r`. Fields after the path, and lines with another tag, are ignored (room for a later version
+    /// to add some without a new header). Bump the header only for a change older versions can't read: they then leave
+    /// the store alone (`isNewerFormat`). New enum values don't need it. Pure; debounced writes run it off main.
+    nonisolated static let formatPrefix = "macx-folder-views\t"
+    nonisolated static let formatVersion = 3
+    nonisolated static let formatHeader = formatPrefix + String(formatVersion)
+
+    /// The bytes start with a header for a format version later than `formatVersion`.
+    nonisolated static func isNewerFormat(_ data: Data) -> Bool {
+        let header = data.prefix { $0 != 0x0A }
+        guard let text = String(data: header, encoding: .utf8), text.hasPrefix(formatPrefix),
+              let version = Int(text.dropFirst(formatPrefix.count)) else { return false }
+        return version > formatVersion
+    }
 
     nonisolated static func encode(_ records: [Record]) -> Data? {
         var columnIndex: [[ColumnSetting]: Int] = [:]
@@ -249,69 +258,79 @@ public final class FolderViewStore {
         (encode(records), Thread.isMainThread)
     }
 
-    /// nil when the bytes are not a valid store (treated as empty). Parses the bytes in place (no per-line or
-    /// per-field arrays): a full store with a distinct column list per record decodes in a few ms (release).
+    /// nil when the bytes are not a store in this format (treated as empty). Tolerant within it: an unknown or
+    /// invalid field value reads as not set (a sort with either part unreadable: no sort; a column list index that
+    /// doesn't resolve: no columns), an unknown column is left out of its list, and a record or column list that
+    /// can't be read is skipped alone (a skipped list still takes its index), as is a record left with nothing set. Parses the bytes in place (no per-line
+    /// or per-field arrays): a full store with a distinct column list per record decodes in a few ms (release).
     nonisolated static func decode(_ data: Data) -> [Record]? {
         data.withUnsafeBytes { raw -> [Record]? in
             var p = Parser(bytes: raw.bindMemory(to: UInt8.self))
-            let header = p.text(until: .newline)
-            guard header == formatHeader || header == v2FormatHeader, p.end(.newline) else { return nil }
-            let v2 = header == v2FormatHeader
-            var columns: [[ColumnSetting]] = []
+            guard p.text(until: .newline) == formatHeader, p.end(.newline) else { return nil }
+            var columns: [[ColumnSetting]?] = []
             var out: [Record] = []
-            /// An optional field: nil = invalid, .some(nil) = not set.
+            /// An optional field: nil = no field here (the line is unreadable), .some(nil) = not set or unknown.
             func field<T>(_ make: (String) -> T?) -> T?? {
                 guard let text = p.text(until: .tab), p.end(.tab) else { return nil }
-                if text.isEmpty { return v2 ? nil : .some(nil) }
-                guard let value = make(text) else { return nil }
-                return .some(value)
+                return .some(text.isEmpty ? nil : make(text))
+            }
+            func columnList() -> [ColumnSetting]? {
+                var list: [ColumnSetting] = []
+                list.reserveCapacity(ColumnID.allCases.count)
+                if p.end(.newline) { return list }        // an empty list is "C<TAB>"
+                repeat {
+                    let id = p.text(until: .colon)
+                    guard p.end(.colon), let width = p.text(until: .colon).flatMap(Double.init), p.end(.colon),
+                          let visible = p.flag() else { return nil }
+                    if let id = id.flatMap(ColumnID.init(rawValue:)) {
+                        list.append(ColumnSetting(id: id, width: width, visible: visible))
+                    }
+                } while p.end(.comma)
+                return p.end(.newline) ? list : nil
+            }
+            func record() -> Record? {
+                guard let uuid = p.text(until: .tab), p.end(.tab),
+                      let fileID = p.text(until: .tab), p.end(.tab),
+                      let mode = field(ViewMode.init(rawValue:)),
+                      let sortField = field(SortField.init(rawValue:)),
+                      let ascending = field(flag),
+                      let icon = field(IconSize.init(rawValue:)),
+                      let density = field(Density.init(rawValue:)),
+                      let group = field(GroupBy.init(rawValue:)),
+                      let sizes = field(flag),
+                      let c = field({ Int($0) }),
+                      let t = p.text(until: .tab).flatMap(Double.init), p.end(.tab),
+                      let path = p.text(until: .tab).flatMap(unescape) else { return nil }
+                p.skipLine()                                 // fields a later version added
+                let key: FolderViewKey
+                switch (uuid.isEmpty, fileID.isEmpty) {
+                case (true, true): key = .path(path)
+                case (false, false):
+                    guard let id = UInt64(fileID) else { return nil }
+                    key = .object(volumeUUID: uuid, fileID: id)
+                default: return nil
+                }
+                let sort = sortField.flatMap { f in ascending.map { MacxFS.SortDescriptor(field: f, ascending: $0) } }
+                let list = c.flatMap { columns.indices.contains($0) ? columns[$0] : nil }
+                let settings = FolderViewSettings(viewMode: mode, iconSize: icon, density: density, sort: sort,
+                                                  columns: list, groupBy: group, calculateFolderSizes: sizes)
+                guard !settings.isEmpty else { return nil }
+                return Record(key: key, pathKey: .path(path), settings: settings,
+                              lastUsed: Date(timeIntervalSinceReferenceDate: t))
             }
             while !p.atEnd {
-                guard let tag = p.byte(), p.end(.tab) else { return nil }
+                let start = p.i
+                guard let tag = p.byte(), p.end(.tab) else { p.i = start; p.skipLine(); continue }
                 switch tag {
                 case UInt8(ascii: "C"):
-                    var list: [ColumnSetting] = []
-                    list.reserveCapacity(ColumnID.allCases.count)
-                    if !p.end(.newline) {           // an empty list is "C<TAB>"
-                        repeat {
-                            guard let id = p.text(until: .colon).flatMap(ColumnID.init(rawValue:)), p.end(.colon),
-                                  let width = p.text(until: .colon).flatMap(Double.init), p.end(.colon),
-                                  let visible = p.flag() else { return nil }
-                            list.append(ColumnSetting(id: id, width: width, visible: visible))
-                        } while p.end(.comma)
-                        guard p.end(.newline) else { return nil }
-                    }
+                    let list = columnList()
+                    if list == nil { p.i = start; p.skipLine() }
                     columns.append(list)
                 case UInt8(ascii: "R"):
-                    guard let uuid = p.text(until: .tab), p.end(.tab),
-                          let fileID = p.text(until: .tab), p.end(.tab),
-                          let mode = field(ViewMode.init(rawValue:)),
-                          let sortField = field(SortField.init(rawValue:)),
-                          let ascending = field(flag),
-                          let icon = field(IconSize.init(rawValue:)),
-                          let density = v2 ? .some(nil) : field(Density.init(rawValue:)),
-                          let group = field(GroupBy.init(rawValue:)),
-                          let sizes = field(flag),
-                          let c = field({ Int($0) }), c.map(columns.indices.contains) ?? true,
-                          (sortField == nil) == (ascending == nil),
-                          let t = p.text(until: .tab).flatMap(Double.init), p.end(.tab),
-                          let path = p.text(until: .newline).flatMap(unescape), p.end(.newline) else { return nil }
-                    let key: FolderViewKey
-                    switch (uuid.isEmpty, fileID.isEmpty) {
-                    case (true, true): key = .path(path)
-                    case (false, false):
-                        guard let id = UInt64(fileID) else { return nil }
-                        key = .object(volumeUUID: uuid, fileID: id)
-                    default: return nil
-                    }
-                    let sort = sortField.flatMap { f in ascending.map { MacxFS.SortDescriptor(field: f, ascending: $0) } }
-                    let settings = FolderViewSettings(viewMode: mode, iconSize: icon, density: density, sort: sort,
-                                                      columns: c.map { columns[$0] }, groupBy: group,
-                                                      calculateFolderSizes: sizes)
-                    out.append(Record(key: key, pathKey: .path(path), settings: settings,
-                                      lastUsed: Date(timeIntervalSinceReferenceDate: t)))
+                    let lineStart = p.i
+                    if let r = record() { out.append(r) } else { p.i = lineStart; p.skipLine() }
                 default:
-                    return nil
+                    p.skipLine()
                 }
             }
             return out
@@ -369,6 +388,12 @@ public final class FolderViewStore {
             let start = i
             while i < bytes.count, bytes[i] != d.rawValue, bytes[i] != Delimiter.newline.rawValue { i += 1 }
             return String(validating: UnsafeBufferPointer(rebasing: bytes[start..<i]), as: UTF8.self)
+        }
+
+        /// Moves past the next newline (or to the end).
+        mutating func skipLine() {
+            while i < bytes.count, bytes[i] != Delimiter.newline.rawValue { i += 1 }
+            if i < bytes.count { i += 1 }
         }
 
         mutating func flag() -> Bool? {
@@ -516,6 +541,7 @@ public final class FolderViewStore {
     /// Debounced write: snapshot on main, sort + encode off main, `storage.set` on main unless superseded.
     private func scheduleFlush() {
         flushTask?.cancel()
+        guard !readOnly else { return }
         let delay = flushDelay
         flushTask = Task { [weak self] in
             try? await Task.sleep(for: delay)
