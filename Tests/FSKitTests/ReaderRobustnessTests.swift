@@ -1,6 +1,7 @@
 import CFSKit
 import Darwin
 import Foundation
+import Synchronization
 import MacxFixtures
 @testable import MacxFS
 import XCTest
@@ -75,10 +76,25 @@ final class ReaderRobustnessTests: XCTestCase {
                        "a listing missing the rest of the buffer is never reported complete")
     }
 
+    /// Cancelled during the read, from the heartbeat clock after `cancelAfter` heartbeats (one per readdir entry).
+    private final class CancelAfterBeats: Sendable {
+        let job = Mutex<LaneJob?>(nil)
+        let beats = Atomic<Int>(0)
+        let cancelAfter: Int
+        init(_ n: Int) { cancelAfter = n }
+        func clock() -> UInt64 {
+            if beats.add(1, ordering: .relaxed).newValue == cancelAfter {
+                job.withLock { $0 }?.cancelled.store(true, ordering: .relaxed)
+            }
+            return LaneJob.now()
+        }
+    }
+
     func testFallbackChecksCancellationPerEntry() async throws {
         let dir = try FixtureTree.flat(in: sandbox, at: "flat", count: 50)
-        let job = LaneJob(id: 1, volume: vol, laneClass: .read, policy: .poison, onStall: nil)
-        job.cancelled.store(true, ordering: .relaxed)
+        let cancel = CancelAfterBeats(11)        // 10 readdir entries, then cancelled before the 11th
+        let job = LaneJob(id: 1, volume: vol, laneClass: .read, policy: .poison, onStall: nil, clock: { cancel.clock() })
+        cancel.job.withLock { $0 = job }
         var options = ReadOptions()
         options.batchSize = 10_000              // never flushes on its own: only the per-entry check stops it
         options.batchInterval = .seconds(3_600)
@@ -88,8 +104,8 @@ final class ReaderRobustnessTests: XCTestCase {
                                                   context: LaneContext(job: job)) { _ in emitted += 1; return true }
             return (summary, emitted)
         }.value
-        XCTAssertEqual(summary.entryCount, 0)
-        XCTAssertEqual(emitted, 0)
+        XCTAssertTrue((8...10).contains(summary.entryCount), "stopped mid-read (10 entries less \".\"/\"..\"), got \(summary.entryCount)")
+        XCTAssertEqual(emitted, 0, "a cancelled read emits nothing")
     }
 
     func testItemReaderReportsNonEntryNamesMissingWithoutStattingThem() async throws {
