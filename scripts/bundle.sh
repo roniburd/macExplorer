@@ -3,8 +3,9 @@
 # from the SwiftPM build products.
 # Usage: scripts/bundle.sh [debug|release] [--bundle-id ID] [--output PATH] [--version X.Y.Z[-beta.N]] [--build N]
 #                          [--sign IDENTITY] [--feed-url URL] [--ed-public-key KEY] [--universal]
-#   default: debug, com.macexplorer.app, .build/MacExplorer.app, version/build/feed/key from Resources/Info.plist,
-#   --sign - (ad-hoc). Only a "Developer ID Application: ..." identity (passed by name) gets a secure timestamp and
+#   default: debug, com.macexplorer.app, .build/MacExplorer.app, build/feed/key from Resources/Info.plist, version
+#   Info.plist's plus "-dev" (e.g. 0.5.0-dev: only release.yml passes --version, so a local build never looks like a
+#   release), --sign - (ad-hoc). Only a "Developer ID Application: ..." identity (passed by name) gets a secure timestamp and
 #   keeps library validation; ad-hoc and self-signed identities (no Team ID) get neither.
 #   --universal builds arm64 + x86_64.
 # Scenario and smoke runs use a separate copy so AppKit's preference writes never touch a real install's domain:
@@ -110,7 +111,8 @@ fi
 otool -L "$exe" | grep -qF '@rpath/libMacxPluginKit.dylib' || { echo "bundle.sh: macExplorer does not link @rpath/libMacxPluginKit.dylib" >&2; exit 1; }
 cp "$bin/libMacxPluginKit.dylib" "$app/Contents/Frameworks/libMacxPluginKit.dylib"
 
-[ -z "$version" ] || /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $version" "$plist"
+[ -n "$version" ] || version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist")-dev"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $version" "$plist"
 [ -z "$build" ] || /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $build" "$plist"
 [ -z "$feed_url" ] || /usr/libexec/PlistBuddy -c "Set :SUFeedURL $feed_url" "$plist"
 [ -z "$ed_key" ] || /usr/libexec/PlistBuddy -c "Set :SUPublicEDKey $ed_key" "$plist"

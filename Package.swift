@@ -8,11 +8,6 @@ let package = Package(
     name: "macExplorer",
     defaultLocalization: "en",
     platforms: [.macOS(.v26)],
-    products: [
-        .executable(name: "macExplorer", targets: ["macExplorer"]),
-        .executable(name: "macx-bench", targets: ["macx-bench"]),
-        .executable(name: "macx-scenarios", targets: ["macx-scenarios"]),
-    ],
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.1"),
         .package(url: "https://github.com/swiftlang/swift-markdown", exact: "0.9.0"),
@@ -21,7 +16,7 @@ let package = Package(
     targets: [
         .target(
             name: "CFSKit",
-            cSettings: [.unsafeFlags(["-Wall", "-Wextra", "-Werror"])]
+            cSettings: [.enableWarning("all"), .enableWarning("extra"), .treatAllWarnings(as: .error)]
         ),
         .target(name: "MacxFS", dependencies: ["CFSKit"], path: "Sources/FSKit", swiftSettings: strict),
         .target(name: "Core", dependencies: ["MacxFS", pluginKit], swiftSettings: strict),

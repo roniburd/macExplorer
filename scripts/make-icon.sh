@@ -1,8 +1,8 @@
 #!/bin/bash
 # scripts/make-icon.sh: rebuilds Resources/AppIcon.icns from the checked-in PNGs in Resources/AppIcon.iconset.
-# The PNGs are exported from the design source docs/design/icon-concepts/folder.html (variant F3, "Glass folder —
-# 72% + halo"): open it in a browser and call `await exportPNG('F3', px, px <= 64)` for each size. 16–64 px use the
-# simplified small artwork; 128 px and up use the full artwork.
+# The PNGs are the source artwork (the "Glass folder, 72% + halo" design): 16–64 px use a simplified small drawing,
+# 128 px and up the full one. To change the icon, replace every PNG at the exact pixel size checked below (sips -g
+# pixelWidth <file> shows it), then run this script and commit the PNGs together with Resources/AppIcon.icns.
 # Usage: scripts/make-icon.sh
 set -euo pipefail
 
