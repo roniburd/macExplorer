@@ -368,6 +368,11 @@ enum JobRunner {
         case .undo(let record), .redo(let record):
             await UndoPlanner.run(ctx, record)
         }
+        return await finish(ctx)
+    }
+
+    /// The job's body is done: its journal entries go, except the ones the next launch must still act on.
+    static func finish(_ ctx: JobContext) async -> JobOutcome {
         try? await ctx.journal.finish(job: ctx.id, keeping: ctx.keptForRecovery())
         return ctx.outcome()
     }

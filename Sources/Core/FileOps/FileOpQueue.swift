@@ -135,7 +135,7 @@ public actor FileOpQueue {
             if let body {
                 ctx.setState(.running)
                 await body(ctx)
-                outcome = ctx.outcome()
+                outcome = await JobRunner.finish(ctx)
             } else {
                 outcome = await JobRunner.run(ctx)
             }

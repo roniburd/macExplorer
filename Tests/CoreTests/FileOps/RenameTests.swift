@@ -1,4 +1,5 @@
 import XCTest
+import Synchronization
 import Darwin
 @testable import Core
 import MacxFS
@@ -223,6 +224,70 @@ final class RenameTests: FileOpsTestCase {
         XCTAssertEqual(text(a), "A")
         let left = await Journal(fileURL: journalURL).entries()
         XCTAssertEqual(left, [])
+    }
+
+    /// Review B1 follow-up: the same failure in a queued job: the job's finish (JobRunner.finish, shared by every job)
+    /// keeps the entry, not test code, and nothing else of the job is left in the journal. (APFS renames a case-only
+    /// change in place, so the two-step path is driven through the body override.)
+    func testTwoStepRenameInAQueuedJobKeepsItsJournalEntryWhenTheRollbackFails() async throws {
+        let a = try file("d/a.txt", "A"); let b = try file("d/b.txt", "B")          // the target is taken: step two fails
+        let aPath = a.path
+        var tuning = FileOpTuning(faultHook: { point, _ in
+            if point == .betweenRenameSteps { _ = FileManager.default.createFile(atPath: aPath, contents: Data("blocker".utf8)) }
+        })
+        tuning.bodyOverride = { ctx in
+            _ = await CreateOps.twoStepRename(ctx, from: a, to: b)
+        }
+        let scripted = ScriptedInteraction(errors: [.skip])
+        let (queue, journal) = makeQueue(interaction: scripted, tuning: tuning)
+        _ = try await run(.rename(a, to: "b.txt"), on: queue)
+        XCTAssertEqual(scripted.askedErrors().count, 1)
+        XCTAssertEqual(names(url("d")).filter { $0.contains("macx-rename") }.count, 1)
+        let kept = await journal.entries()
+        guard kept.count == 1, case .twoStepRename(_, _, let original, _) = kept[0] else { return XCTFail("\(kept)") }
+        XCTAssertEqual(original, a)
+    }
+
+    /// Removes `blocker` when asked about the error, then answers Retry.
+    private final class BlockerRemovingInteraction: FileOpInteraction, @unchecked Sendable {
+        let blocker: String
+        init(blocker: String) { self.blocker = blocker }
+        func resolveConflict(_ conflict: ConflictInfo, job: JobSnapshot) async -> ConflictResolution { .one(.skip) }
+        let asked = Mutex(0)
+        func resolveError(_ error: FileOpError, job: JobSnapshot) async -> ErrorResolution {
+            asked.withLock { $0 += 1 }
+            _ = unlink(blocker)
+            return .retry
+        }
+        func confirmInsufficientSpace(_ shortfall: SpaceShortfall, job: JobSnapshot) async -> Bool { false }
+        func confirmPermanentDeleteWithoutTrash(_ urls: [URL], job: JobSnapshot) async -> Bool { false }
+    }
+
+    /// Review B1 follow-up: Retry after a failed rename back resumes from the temporary name and lands at the target;
+    /// no temporary file and no journal entry are left.
+    func testTwoStepRenameRetryResumesFromTheTemporaryName() async throws {
+        let a = try file("d/a.txt", "A")
+        let aPath = a.path, target = url("d/A.txt")
+        var tuning = FileOpTuning(faultHook: { point, _ in
+            // Holds both "a.txt" and (case-insensitively) "A.txt": step two and the rename back both fail.
+            if point == .betweenRenameSteps { _ = FileManager.default.createFile(atPath: aPath, contents: Data("blocker".utf8)) }
+        })
+        let result = Mutex<StepResult?>(nil)
+        tuning.bodyOverride = { ctx in
+            let r = await CreateOps.twoStepRename(ctx, from: a, to: target)
+            result.withLock { $0 = r }
+        }
+        let interaction = BlockerRemovingInteraction(blocker: aPath)
+        let journal = Journal(fileURL: journalURL)
+        let queue = FileOpQueue(lanes: LanePool(), trash: SandboxTrash(directory: trashDir), journal: journal,
+                                interaction: interaction, tuning: tuning)
+        _ = try await run(.rename(a, to: "A.txt"), on: queue)
+        XCTAssertEqual(result.withLock { $0 }, .done)
+        XCTAssertEqual(interaction.asked.withLock { $0 }, 1, "the stranded item was surfaced once, then retried")
+        XCTAssertEqual(names(url("d")), ["A.txt"], "landed at the target, no temporary name left")
+        XCTAssertEqual(text(target), "A")
+        let entries = await journal.entries()
+        XCTAssertEqual(entries, [])
     }
 
     /// Answers the first error by making the journal writable again, then gives `answer`.
