@@ -20,23 +20,35 @@ final class UpdateBadgeTests: XCTestCase {
         XCTAssertEqual(UpdateBadgeText.detail(.downloading(version: "0.4.0", fraction: 0.5, userInitiated: true)), "50%")
     }
 
-    func testItemHiddenUntilVisibleStateAndFollowsModel() {
+    func testItemHiddenUntilVisibleStateAndFollowsModel() async throws {
         let model = UpdateModel()
         let item = UpdateBadgeItem(model: model)
         XCTAssertTrue(item.isHidden)
         model.send(.readyToInstall(version: "0.4.0", notesURL: nil))
-        XCTAssertFalse(item.isHidden)
+        try await pollUntil("badge shown") { !item.isHidden }
         XCTAssertEqual(item.view?.accessibilityIdentifier(), AXID.updateBadge)
+
+        let other = UpdateModel()
+        let otherItem = UpdateBadgeItem(model: other)
+        other.send(.checkStarted(userInitiated: false))
+        other.send(.noUpdateFound(currentVersion: "0.3.0"))
+        other.send(.checkStarted(userInitiated: true))
+        other.send(.noUpdateFound(currentVersion: "0.3.0"))
+        try await pollUntil("up to date shown") { !otherItem.isHidden }
+        other.acknowledge()
+        try await pollUntil("hidden once acknowledged") { otherItem.isHidden }
     }
 
-    func testBadgeStaysAfterCancelledRestart() {
+    func testBadgeStaysAfterCancelledRestart() async throws {
         let model = UpdateModel()
         var restarts = 0
         model.restartHandler = { restarts += 1 }   // the real handler runs the quit path; Cancel leaves state alone
         let item = UpdateBadgeItem(model: model)
         model.send(.readyToInstall(version: "0.4.0", notesURL: nil))
+        try await pollUntil("badge shown") { !item.isHidden }
         model.restartNow()
         XCTAssertEqual(restarts, 1)
+        try await Task.sleep(for: .milliseconds(50))   // any observation turn has run
         XCTAssertFalse(item.isHidden)
     }
 

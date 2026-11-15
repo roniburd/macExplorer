@@ -155,14 +155,17 @@ final class UpdateControllerTests: XCTestCase {
         XCTAssertEqual(model.state, .idle)
     }
 
-    func testObserversSeeEveryChange() {
+    /// The badge and Settings watch `state` through Observation: each change is seen.
+    func testObserversSeeEveryChange() async throws {
         let model = UpdateModel()
         var seen: [UpdateState] = []
-        let token = model.addObserver { seen.append($0) }
+        let loop = ObservationLoop({ _ = model.state }, onChange: { seen.append(model.state) })
+        defer { loop.cancel() }
         model.send(.checkStarted(userInitiated: true))
+        try await pollUntil("checking seen") { seen.count == 1 }
         model.send(.noUpdateFound(currentVersion: "1"))
+        try await pollUntil("up to date seen") { seen.count == 2 }
         XCTAssertEqual(seen, [.checking(userInitiated: true), .upToDate(version: "1")])
-        _ = token
     }
 
     // MARK: branch review — the error shapes Sparkle 2.10.1 really delivers
@@ -386,7 +389,7 @@ final class UpdateControllerTests: XCTestCase {
         c.willInstallOnQuit(version: "0.4.0", notesURL: nil) {
             if lifecycle.shouldTerminate() == .terminateNow { quitNow += 1 }
         }
-        XCTAssertFalse(badge.isHidden)
+        try await pollUntil("badge shown") { !badge.isHidden }
 
         model.restartNow()
         await lifecycle.quitTask?.value

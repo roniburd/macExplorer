@@ -3,13 +3,6 @@ import Observation
 import os
 import Core
 
-/// Removes its observer when released.
-@MainActor public final class UpdateObservation {
-    private let cancel: @MainActor () -> Void
-    init(_ cancel: @escaping @MainActor () -> Void) { self.cancel = cancel }
-    isolated deinit { cancel() }
-}
-
 /// The app-level Check for Updates… action (AppDelegate implements it: it opens a browser window when none is
 /// open, so a badge is there to show the result). The menu item and Settings › Check Now both send it.
 public enum UpdateCommands {
@@ -32,7 +25,6 @@ public final class UpdateModel {
     @ObservationIgnored var restartHandler: (@MainActor () -> Void)?
     @ObservationIgnored var automaticChecksHandler: (@MainActor (Bool) -> Void)?
     @ObservationIgnored var rollbackHandler: (@MainActor () -> RollbackService?)?
-    @ObservationIgnored private var observers: [UUID: @MainActor (UpdateState) -> Void] = [:]
 
     public init() {}
 
@@ -49,7 +41,6 @@ public final class UpdateModel {
         }
         guard next != state else { return }
         state = next
-        for observer in observers.values { observer(next) }
     }
 
     public func checkNow(userInitiated: Bool = true) {
@@ -62,10 +53,4 @@ public final class UpdateModel {
     public func restartNow() { restartHandler?() }
     public func acknowledge() { send(.acknowledged) }
     public func setAutomaticChecks(_ on: Bool) { automaticChecksHandler?(on) }
-
-    public func addObserver(_ handler: @escaping @MainActor (UpdateState) -> Void) -> UpdateObservation {
-        let id = UUID()
-        observers[id] = handler
-        return UpdateObservation { [weak self] in self?.observers[id] = nil }
-    }
 }

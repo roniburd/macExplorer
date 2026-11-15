@@ -110,7 +110,7 @@ final class UpdateBadgeHostingView: NSHostingView<UpdateBadgeView> {
 @MainActor final class UpdateBadgeItem: NSToolbarItem {
     private let model: UpdateModel
     private let presenter = UpdateBadgePresenter()
-    private var observation: UpdateObservation?
+    private var stateLoop: ObservationLoop?
     private var requestLoop: ObservationLoop?
     /// The last `model.popoverRequest` this badge has dealt with (presented, or left to another window's badge).
     private var handledRequest: Int
@@ -128,13 +128,19 @@ final class UpdateBadgeHostingView: NSHostingView<UpdateBadgeView> {
         paletteLabel = label
         visibilityPriority = .high
         isHidden = !model.state.isBadgeVisible
-        observation = model.addObserver { [weak self] state in self?.isHidden = !state.isBadgeVisible }
+        stateLoop = ObservationLoop({ [weak model] in _ = model?.state }, onChange: { [weak self] in self?.stateChanged() })
         // A user-initiated check bumps `popoverRequest` and un-hides the badge in the same turn, before its view is
         // in the window, so an `.onChange` inside the view never sees it (review of Task 8). The item watches the
         // counter itself and re-checks once the view joins a window.
         requestLoop = ObservationLoop({ [weak model] in _ = model?.popoverRequest },
                                       onChange: { [weak self] in self?.schedulePopoverRequest() })
         host.onWindowChange = { [weak self] in self?.schedulePopoverRequest() }
+    }
+
+    /// Shows or hides the badge; a badge that just appeared deals with a check request it could not show yet.
+    private func stateChanged() {
+        isHidden = !model.state.isBadgeVisible
+        schedulePopoverRequest()
     }
 
     /// Defers to the next main-actor turn so the toolbar has laid the un-hidden item out first.
