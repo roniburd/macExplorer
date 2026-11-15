@@ -132,7 +132,8 @@ final class DirectoryReaderTests: XCTestCase {
             return ReadSummary(entryCount: 0, degradedCount: 0, usedFallback: false, elapsed: .zero)
         }
         let first = Task { await collect(await reader.read(URL(filePath: "/a"), generation: .initial)) }
-        _ = await eventually { await lanes.health(of: vol) == .unresponsive }
+        let unresponsive = await eventually { await lanes.health(of: vol) == .unresponsive }
+        XCTAssertTrue(unresponsive, "the stalled read marks the volume unresponsive")
         let (_, others) = await collect(await reader.read(URL(filePath: "/b"), generation: .initial.next()))
         XCTAssertEqual(others, ["failed:\(ETIMEDOUT):unresponsiveVolume"])
         gate.open()

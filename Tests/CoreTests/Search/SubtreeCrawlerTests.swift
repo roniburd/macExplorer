@@ -213,7 +213,8 @@ final class SubtreeCrawlerTests: XCTestCase {
                                               lanes: LanePool(), mountTable: MountTableStore(), types: types, read: read)
             for await e in stream {
                 guard case .batch = e else { continue }
-                await pollUntil { gate.counts.value.parked == 1 }      // leave the loop with a read in flight
+                let parked = await pollUntil { gate.counts.value.parked == 1 }   // leave the loop with a read in flight
+                XCTAssertTrue(parked, "a read parked before the consumer left")
                 break
             }
         }

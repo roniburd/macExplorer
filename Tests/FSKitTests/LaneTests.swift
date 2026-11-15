@@ -346,7 +346,8 @@ final class LaneTests: XCTestCase {
                 return true
             }
         }
-        _ = await eventually { started.values == [true] }
+        let didStart = await eventually { started.values == [true] }
+        XCTAssertTrue(didStart, "the lane body started")
         task.cancel()
         let sawCancel = try await task.value
         XCTAssertTrue(sawCancel)

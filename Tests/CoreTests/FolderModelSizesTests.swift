@@ -5,10 +5,12 @@ import MacxFixtures
 
 @MainActor
 final class FolderModelSizesTests: XCTestCase {
-    func waitUntil(_ timeout: Duration = .seconds(10), _ condition: () -> Bool) async {
+    /// Fails the test at the caller when `condition` does not hold within `timeout`.
+    func waitUntil(_ timeout: Duration = .seconds(10), file: StaticString = #filePath, line: UInt = #line,
+                   _ condition: () -> Bool) async {
         let deadline = ContinuousClock.now + timeout
         while !condition() {
-            guard ContinuousClock.now < deadline else { return }
+            guard ContinuousClock.now < deadline else { return XCTFail("timed out after \(timeout)", file: file, line: line) }
             try? await Task.sleep(for: .milliseconds(20))
         }
     }
