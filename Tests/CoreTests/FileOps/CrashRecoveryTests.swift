@@ -83,9 +83,13 @@ final class CrashRecoveryTests: FileOpsTestCase {
     func testCrashChildOutlivingItsTimeoutIsTerminatedAndFails() async throws {
         try bigFile("src/T/big", bytes: 8 << 20)
         let d = try dir("d")
-        let options = XCTExpectedFailure.Options()
-        options.issueMatcher = { $0.compactDescription.contains("still running after") }
-        XCTExpectFailure("the watchdog reports the timeout", options: options)
+        // On the main thread: XCTExpectFailure called from any other thread only matches issues recorded on that
+        // same thread, and runCrashingChild's XCTFail runs wherever its continuation resumes.
+        await MainActor.run {
+            let options = XCTExpectedFailure.Options()
+            options.issueMatcher = { $0.compactDescription.contains("still running after") }
+            XCTExpectFailure("the watchdog reports the timeout", options: options)
+        }
         let start = ContinuousClock.now
         let killed = try await runCrashingChild(spec([url("src/T")], d, fault: .beforeSourceDelete, force: true),
                                                 timeout: .milliseconds(50))
