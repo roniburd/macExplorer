@@ -177,11 +177,14 @@ final class UndoTests: FileOpsTestCase {
         for (rel, m) in modes { XCTAssertEqual(chmod(url(rel).path, m), 0) }
         let (queue, _) = makeQueue()
         let changed = try await run(.chmodRecursive(url("T"), ModeChange(mode: 0o700)), on: queue)
-        XCTAssertEqual(changed.record.actions.count, 4)
+        XCTAssertEqual(changed.record.actions.map(\.itemCount), [4])
         let undone = try await run(.undo(changed.record), on: queue)
         for (rel, m) in modes { XCTAssertEqual(lst(url(rel)).st_mode & 0o7777, m, rel) }
-        XCTAssertEqual(undone.record.actions.count, 4)
+        XCTAssertEqual(undone.record.actions.map(\.itemCount), [4], "the undo's record stays compact too")
         XCTAssertEqual(undone.skipped, [])
+        let redone = try await run(.redo(undone.record), on: queue)
+        for (rel, _) in modes { XCTAssertEqual(lst(url(rel)).st_mode & 0o7777, 0o700, rel) }
+        XCTAssertEqual(redone.record.actions.map(\.itemCount), [4])
     }
 
     func testUndoChmodSkipsItemsWhoseModeChangedSince() async throws {

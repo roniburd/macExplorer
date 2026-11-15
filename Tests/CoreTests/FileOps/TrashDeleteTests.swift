@@ -164,11 +164,15 @@ final class TrashDeleteTests: FileOpsTestCase {
         let (queue, _) = makeQueue()
         let o = try await run(.chmodRecursive(url("T"), ModeChange(mode: 0o700)), on: queue)
         for rel in ["T", "T/sub", "T/sub/f", "T/g"] { XCTAssertEqual(lst(url(rel)).st_mode & 0o777, 0o700, rel) }
-        XCTAssertEqual(o.record.actions.count, 4)
-        guard case .modeChanged(let first, _, _)? = o.record.actions.first,
-              case .modeChanged(let last, let old, let new)? = o.record.actions.last else { return XCTFail() }
-        XCTAssertNotEqual(first, url("T"), "children first")
-        XCTAssertEqual(last, url("T")); XCTAssertEqual(old, 0o755); XCTAssertEqual(new, 0o700)
+        // Review B1-8: one compact action for the tree, never one per item.
+        guard o.record.actions.count == 1, case .modesChanged(let root, let records)? = o.record.actions.first else {
+            return XCTFail("\(o.record.actions)")
+        }
+        XCTAssertEqual(root, url("T"))
+        XCTAssertEqual(records.count, 4)
+        XCTAssertNotEqual(records.first?.relativePath, "", "children first")
+        XCTAssertEqual(records.last, ModeChangeRecord(relativePath: "", old: 0o755, new: 0o700))
+        XCTAssertEqual(o.localChanges.flatMap(\.modified), ["T"])
     }
 
     func testCancelledChmodRecursiveRecordsOnlyAppliedChanges() async throws {
@@ -191,7 +195,8 @@ final class TrashDeleteTests: FileOpsTestCase {
         holder.queue.withLock { $0 = queue }
         let o = try await run(.chmodRecursive(url("T"), ModeChange(mode: 0o700)), on: queue)
         XCTAssertTrue(o.wasCancelled)
-        XCTAssertEqual(o.record.actions.count, 256, "only the changes tried before the cancel")
+        guard case .modesChanged(_, let records)? = o.record.actions.first else { return XCTFail("\(o.record.actions)") }
+        XCTAssertEqual(records.count, 256, "only the changes tried before the cancel")
         let changed = (0..<600).filter { lst(url("T/f\($0)")).st_mode & 0o777 == 0o700 }.count
         XCTAssertEqual(changed, 256)
         let undone = try await run(.undo(o.record), on: queue)

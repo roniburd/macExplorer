@@ -130,7 +130,8 @@ extension JobKind {
             return JobDescription(verb: verb, itemCount: pairs.count, firstItemName: pairs.first?.url.lastPathComponent,
                                   sourceFolderName: folderName(pairs.first?.url), destinationFolderName: nil)
         case .undo(let r), .redo(let r):
-            return JobDescription(verb: verb, itemCount: r.actions.count, firstItemName: r.actions.first?.urls.first?.lastPathComponent,
+            return JobDescription(verb: verb, itemCount: r.actions.reduce(0) { $0 + $1.itemCount },
+                                  firstItemName: r.actions.first?.urls.first?.lastPathComponent,
                                   sourceFolderName: nil, destinationFolderName: nil)
         }
     }

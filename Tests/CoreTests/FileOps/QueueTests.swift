@@ -235,6 +235,26 @@ final class QueueTests: FileOpsTestCase {
         XCTAssertFalse(r1); XCTAssertTrue(r2)
     }
 
+    /// Review B1-8: finished jobs' outcomes and undo flags are pruned to the most recent ones.
+    func testFinishedJobBookkeepingIsBounded() async throws {
+        var tuning = FileOpTuning()
+        tuning.bodyOverride = { _ in }
+        let (queue, _) = makeQueue(tuning: tuning)
+        let a = try file("a")
+        var ids: [JobID] = []
+        for i in 0..<(FileOpQueue.finishedOutcomeLimit + 8) {
+            let id = await queue.enqueue(request(.trash([a]), registersUndo: i % 2 == 0))
+            _ = await queue.outcome(of: id)
+            ids.append(id)
+        }
+        let counts = await queue.retainedFinishedCounts
+        XCTAssertEqual(counts.outcomes, FileOpQueue.finishedOutcomeLimit)
+        XCTAssertEqual(counts.undoFlags, ids.count, "undo flags are tiny: a far longer window")
+        let last = await queue.registersUndo(ids[ids.count - 1]), first = await queue.registersUndo(ids[0])
+        XCTAssertEqual(last, (ids.count - 1) % 2 == 0)
+        XCTAssertTrue(first)
+    }
+
     /// Review Focus 1 at job level: the plan phase asks per refused item and continues with the rest.
     func testPlanPhaseReportsIntoItselfPerItemAndContinues() async throws {
         let scripted = ScriptedInteraction(errors: [.skip])

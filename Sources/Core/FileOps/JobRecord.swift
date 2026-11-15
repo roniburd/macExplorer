@@ -30,6 +30,14 @@ public struct AttributeSnapshot: Sendable, Codable, Equatable {
     }
 }
 
+/// One item of a recursive permissions change (`ItemAction.modesChanged`), by path relative to the tree's root.
+public struct ModeChangeRecord: Sendable, Codable, Equatable {
+    public var relativePath: String          // "" = the root itself
+    public var old: UInt16
+    public var new: UInt16
+    public init(relativePath: String, old: UInt16, new: UInt16) { self.relativePath = relativePath; self.old = old; self.new = new }
+}
+
 public enum ItemAction: Sendable, Codable, Equatable {
     case created(URL, FileIdentity)
     case createdDirectory(URL, FileIdentity)
@@ -38,6 +46,8 @@ public enum ItemAction: Sendable, Codable, Equatable {
     case trashed(original: URL, trashURL: URL, FileIdentity)
     case replaced(original: URL, trashURL: URL, FileIdentity)
     case modeChanged(URL, old: UInt16, new: UInt16)
+    /// A recursive permissions change: one action for the whole tree (in the order applied), never one per item.
+    case modesChanged(root: URL, [ModeChangeRecord])
     case attributesChanged(URL, old: AttributeSnapshot, new: AttributeSnapshot)
     /// nil = no custom icon. In-memory only (undo stack), like every JobRecord; the journal never holds it.
     case customIconChanged(URL, previous: IconImageData?, new: IconImageData?)
@@ -49,8 +59,12 @@ public enum ItemAction: Sendable, Codable, Equatable {
              .customIconChanged(let u, _, _), .deleted(let u): [u]
         case .moved(let a, let b, _), .renamed(let a, let b, _): [a, b]
         case .trashed(let a, let b, _), .replaced(let a, let b, _): [a, b]
+        case .modesChanged(let root, _): [root]
         }
     }
+
+    /// Items the action stands for (job descriptions and progress).
+    var itemCount: Int { if case .modesChanged(_, let records) = self { records.count } else { 1 } }
 }
 
 public struct JobRecord: Sendable, Codable, Equatable {

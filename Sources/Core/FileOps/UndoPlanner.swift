@@ -10,15 +10,28 @@ enum UndoStep: Sendable, Equatable {
     case moveBack(current: URL, original: URL, FileIdentity)
     case renameBack(current: URL, original: URL, FileIdentity)
     case restoreMode(URL, expected: UInt16, restore: UInt16)
+    /// A recursive permissions change put back (records in the order to apply: the reverse of the change's).
+    case restoreModeTree(root: URL, [ModeChangeRecord])
     case restoreAttributes(URL, expected: AttributeSnapshot, restore: AttributeSnapshot)
     case restoreIcon(URL, expected: IconImageData?, restore: IconImageData?)
     /// Two or more consecutive renames in one folder (a batch rename, or its undo): reversed together by the
     /// cycle-safe batch executor, so swaps and cycles come back too (P4-11).
     case batchRenameBack([BatchRenameBackItem])
 
-    var isRestoreMode: Bool { if case .restoreMode = self { true } else { false } }
+    var isRestoreMode: Bool {
+        switch self {
+        case .restoreMode, .restoreModeTree: true
+        default: false
+        }
+    }
     /// Items the step counts for in the job's progress.
-    var itemCount: Int { if case .batchRenameBack(let items) = self { items.count } else { 1 } }
+    var itemCount: Int {
+        switch self {
+        case .batchRenameBack(let items): items.count
+        case .restoreModeTree(_, let records): records.count
+        default: 1
+        }
+    }
 }
 
 /// One item of `UndoStep.batchRenameBack`: the item at `current` (still `identity`) gets `original`'s name back.
@@ -46,6 +59,7 @@ enum UndoPlanner {
             case .trashed(let original, let t, let id), .replaced(let original, let t, let id):
                 .moveBack(current: t, original: original, id)
             case .modeChanged(let u, let old, let new): .restoreMode(u, expected: new, restore: old)
+            case .modesChanged(let root, let records): .restoreModeTree(root: root, records.reversed())
             case .attributesChanged(let u, let old, let new): .restoreAttributes(u, expected: new, restore: old)
             case .customIconChanged(let u, let previous, let new): .restoreIcon(u, expected: new, restore: previous)
             case .deleted: nil
@@ -116,7 +130,7 @@ enum UndoPlanner {
         case .removeDirectoryIfEmpty(let u, let id): return await removeDirectoryIfEmpty(ctx, u, id)
         case .moveBack(let c, let o, let id): return await moveBack(ctx, current: c, original: o, id)
         case .renameBack(let c, let o, let id): return await renameBack(ctx, current: c, original: o, id)
-        case .restoreMode: return await restoreModes(ctx, [step]) ? .done : .cancelled
+        case .restoreMode, .restoreModeTree: return await restoreModes(ctx, [step]) ? .done : .cancelled
         case .restoreAttributes(let u, let e, let r): return await restoreAttributes(ctx, u, expected: e, restore: r)
         case .restoreIcon(let u, let e, let r): return await IconJobs.restoreIcon(ctx, u, expected: e, restore: r)
         case .batchRenameBack(let items):
@@ -311,49 +325,83 @@ enum UndoPlanner {
     /// Consecutive mode restores run in one lane call (chmodRecursive of a large tree); failures are asked per item.
     /// false = the job was cancelled.
     static func restoreModes(_ ctx: JobContext, _ steps: [UndoStep]) async -> Bool {
-        struct ModeItem: Sendable { var url: URL; var expected: UInt16; var restore: UInt16 }
-        enum ModeResult: Sendable { case done, gone, changed, failed(Int32) }
-        let items: [ModeItem] = steps.compactMap {
-            if case .restoreMode(let u, let e, let r) = $0 { ModeItem(url: u, expected: e, restore: r) } else { nil }
+        /// `tree`: index of the `.restoreModeTree` step the item belongs to (its record is kept compact), nil = single.
+        struct ModeItem: Sendable {
+            var path: String; var relativePath: String; var expected: UInt16; var restore: UInt16; var tree: Int?; var single: URL?
         }
+        enum ModeResult: Sendable { case done, gone, changed, failed(Int32) }
+        var items: [ModeItem] = []
+        var trees: [(root: URL, records: [ModeChangeRecord])] = []
+        for step in steps {
+            switch step {
+            case .restoreMode(let u, let e, let r):
+                items.append(ModeItem(path: u.path, relativePath: "", expected: e, restore: r, tree: nil, single: u))
+            case .restoreModeTree(let root, let records):
+                let rootPath = root.path
+                items.reserveCapacity(items.count + records.count)
+                for rec in records {
+                    items.append(ModeItem(path: CopyEngine.join(rootPath, rec.relativePath), relativePath: rec.relativePath,
+                                          expected: rec.new, restore: rec.old, tree: trees.count, single: nil))
+                }
+                trees.append((root, []))
+            default: break
+            }
+        }
+        func itemURL(_ m: ModeItem) -> URL {
+            if let u = m.single { return u }
+            let root = trees[m.tree ?? 0].root
+            return m.relativePath.isEmpty ? root : root.appending(path: m.relativePath)
+        }
+        let planned = items
         let control = ctx.control
         let results: [ModeResult] = (try? await ctx.onLane { lane -> [ModeResult] in
             var out: [ModeResult] = []
-            out.reserveCapacity(items.count)
-            for (i, m) in items.enumerated() {
+            out.reserveCapacity(planned.count)
+            for (i, m) in planned.enumerated() {
                 if i % 256 == 0 { lane.heartbeat(); if !control.laneCheckpoint(lane) { break } }
-                guard let info = PosixFS.info(m.url.path) else { out.append(.gone); continue }
+                guard let info = PosixFS.info(m.path) else { out.append(.gone); continue }
                 guard info.mode == m.expected else { out.append(.changed); continue }
-                let rc = PosixFS.setMode(m.url.path, m.restore)
+                let rc = PosixFS.setMode(m.path, m.restore)
                 out.append(rc == 0 ? .done : .failed(rc))
             }
             return out
         }) ?? items.map { _ in .failed(EIO) }
-        let paths = Set(items.map { $0.url.standardizedFileURL.path })
+        let paths = Set(items.map { ($0.path as NSString).standardizingPath })
+        /// The tree records gathered so far go into the job's record (also when it stops at a cancel).
+        func flushTrees() {
+            for t in trees where !t.records.isEmpty { ctx.record(.modesChanged(root: t.root, t.records)) }
+        }
         for (i, m) in items.enumerated() {
-            guard i < results.count else { return false }               // the lane stopped at a cancel
+            guard i < results.count else { flushTrees(); return false }  // the lane stopped at a cancel
             var outcome = results[i]
             retry: while case .failed(let code) = outcome {
-                switch await ctx.resolveFailure(code, url: m.url) {
+                switch await ctx.resolveFailure(code, url: itemURL(m)) {
                 case .retry:
+                    let path = m.path, restore = m.restore
                     outcome = (try? await ctx.onLane { _ in
-                        let rc = PosixFS.setMode(m.url.path, m.restore)
+                        let rc = PosixFS.setMode(path, restore)
                         return rc == 0 ? ModeResult.done : .failed(rc)
                     }) ?? .failed(EIO)
                 case .skipped: break retry
-                case .cancelled: return false
+                case .cancelled: flushTrees(); return false
                 }
             }
             switch outcome {
             case .done:
-                ctx.record(.modeChanged(m.url, old: m.expected, new: m.restore))
+                if let t = m.tree {
+                    trees[t].records.append(ModeChangeRecord(relativePath: m.relativePath, old: m.expected, new: m.restore))
+                } else {
+                    ctx.record(.modeChanged(itemURL(m), old: m.expected, new: m.restore))
+                }
                 // One post per changed subtree: items whose parent is also in the batch are covered by it.
-                if !paths.contains(m.url.deletingLastPathComponent().standardizedFileURL.path) { ctx.noteModified(m.url) }
-            case .gone: ctx.skip(m.url, reason: .sourceGone)
-            case .changed: ctx.skip(m.url, reason: .changedDuringMove)
+                let parent = ((m.path as NSString).standardizingPath as NSString).deletingLastPathComponent
+                if !paths.contains(parent) { ctx.noteModified(itemURL(m)) }
+            case .gone: ctx.skip(itemURL(m), reason: .sourceGone)
+            case .changed: ctx.skip(itemURL(m), reason: .changedDuringMove)
             case .failed: break                                          // skipped by resolveFailure
             }
         }
+        flushTrees()
         return !control.isCancelled
     }
 

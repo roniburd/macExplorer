@@ -134,15 +134,17 @@ enum AttributeJobs {
     static func chmodRecursive(_ ctx: JobContext, _ url: URL, _ change: ModeChange) async {
         guard let plan = await ctx.plan(sources: [url], destination: nil, mode: .enumerate(noMaterialization: true)),
               let item = plan.items.first else { return }
-        struct Change: Sendable { var url: URL; var old: UInt16; var new: UInt16 }
+        struct Change: Sendable { var relativePath: String; var old: UInt16; var new: UInt16 }
+        let rootPath = url.path
         let changes: [Change] = item.entries.reversed().compactMap { e in
             guard e.type != .symlink, e.type != .other else { return nil }
             if e.type == .directory && !change.applyToDirectories { return nil }
             if e.type == .file && !change.applyToFiles { return nil }
             let new = change.applied(to: e.mode, isDirectory: e.type == .directory)
             guard new != e.mode else { return nil }
-            return Change(url: e.relativePath.isEmpty ? url : url.appending(path: e.relativePath), old: e.mode, new: new)
+            return Change(relativePath: e.relativePath, old: e.mode, new: new)
         }
+        func itemURL(_ c: Change) -> URL { c.relativePath.isEmpty ? url : url.appending(path: c.relativePath) }
         let control = ctx.control
         let hook = ctx.tuning.faultHook, jobID = ctx.id
         // One lane call for the whole batch; failures come back for per-item questions. A cancel stops the
@@ -155,19 +157,23 @@ enum AttributeJobs {
                     lane.heartbeat()
                     if !control.laneCheckpoint(lane) { return (i, failed) }
                 }
-                if case let rc = PosixFS.setMode(c.url.path, c.new), rc != 0 { failed[i] = rc }
+                if case let rc = PosixFS.setMode(CopyEngine.join(rootPath, c.relativePath), c.new), rc != 0 { failed[i] = rc }
             }
             return (changes.count, failed)
         }) ?? (0, [:])
         var asking = true
+        // One undo record for the tree (relative paths), never one action per item.
+        var records: [ModeChangeRecord] = []
+        records.reserveCapacity(applied - failures.count)
         for (i, c) in changes[..<applied].enumerated() {
             if var code = failures[i] {
                 if control.isCancelled { asking = false }
                 guard asking else { continue }
+                let u = itemURL(c)
                 retry: while true {
-                    switch await ctx.resolveFailure(code, url: c.url) {
+                    switch await ctx.resolveFailure(code, url: u) {
                     case .retry:
-                        code = (try? await ctx.onLane { _ in PosixFS.setMode(c.url.path, c.new) }) ?? EIO
+                        code = (try? await ctx.onLane { _ in PosixFS.setMode(u.path, c.new) }) ?? EIO
                         if code == 0 { break retry }
                     case .skipped: break retry
                     case .cancelled: asking = false; break retry
@@ -175,9 +181,10 @@ enum AttributeJobs {
                 }
                 if code != 0 { continue }
             }
-            ctx.record(.modeChanged(c.url, old: c.old, new: c.new))
-            ctx.addProgress(items: 1)
+            records.append(ModeChangeRecord(relativePath: c.relativePath, old: c.old, new: c.new))
         }
+        if !records.isEmpty { ctx.record(.modesChanged(root: url, records)) }
+        ctx.addProgress(items: records.count)
         ctx.noteModified(url)
     }
 }

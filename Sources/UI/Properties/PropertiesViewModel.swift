@@ -227,7 +227,7 @@ final class PropertiesViewModel {
                     mapped[index] = to.standardizedFileURL
                     touched = true
                 }
-            case .attributesChanged(let url, _, _), .modeChanged(let url, _, _):
+            case .attributesChanged(let url, _, _), .modeChanged(let url, _, _), .modesChanged(let url, _):
                 if mapped.contains(url.standardizedFileURL) { touched = true }
             case .customIconChanged(let url, _, _):
                 if mapped.contains(url.standardizedFileURL) { touched = true; iconTouched = true }

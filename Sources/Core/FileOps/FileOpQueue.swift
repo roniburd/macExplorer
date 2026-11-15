@@ -43,8 +43,14 @@ public actor FileOpQueue {
     private var order: [JobID] = []
     private var held = false
     private var entries: [JobID: Entry] = [:]
+    /// Finished jobs' outcomes (`outcome(of:)` after the job ended) and undo flags (`registersUndo`, read by
+    /// OperationsCenter as each job finishes). Only the most recent finished jobs are kept (`finishedOutcomeLimit`,
+    /// `finishedUndoFlagLimit`): a record can be large and is only asked for right after its job ends.
     private var outcomes: [JobID: JobOutcome] = [:]
     private var undoFlags: [JobID: Bool] = [:]
+    private var finishedOrder: [JobID] = []
+    static let finishedOutcomeLimit = 32
+    static let finishedUndoFlagLimit = 1024
     private var outcomeWaiters: [JobID: [CheckedContinuation<JobOutcome, Never>]] = [:]
     private var idleWaiters: [CheckedContinuation<Void, Never>] = []
     private nonisolated let eventStream: AsyncStream<JobEvent>
@@ -155,6 +161,8 @@ public actor FileOpQueue {
         entries[id] = nil
         order.removeAll { $0 == id }
         outcomes[id] = outcome
+        finishedOrder.append(id)
+        pruneFinished()
         continuation.yield(.finished(e.ctx.snapshot(), outcome))
         for w in outcomeWaiters.removeValue(forKey: id) ?? [] { w.resume(returning: outcome) }
         schedule()
@@ -164,6 +172,18 @@ public actor FileOpQueue {
             for w in waiters { w.resume() }
         }
     }
+
+    private func pruneFinished() {
+        let n = finishedOrder.count
+        if n > Self.finishedOutcomeLimit { outcomes[finishedOrder[n - Self.finishedOutcomeLimit - 1]] = nil }
+        guard n > Self.finishedUndoFlagLimit else { return }
+        let old = finishedOrder.removeFirst()
+        undoFlags[old] = nil
+        outcomes[old] = nil
+    }
+
+    /// Finished jobs whose bookkeeping is still held (tests).
+    var retainedFinishedCounts: (outcomes: Int, undoFlags: Int) { (outcomes.count, undoFlags.count) }
 
     public func pause(_ id: JobID) {
         guard let e = entries[id] else { return }
