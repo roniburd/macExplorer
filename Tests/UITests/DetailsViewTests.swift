@@ -20,6 +20,17 @@ private final class RecordingSink: RowUpdateSink {
 final class DetailsViewTests: XCTestCase {
     // MARK: pure
 
+    /// The table finds the delegate and action methods that live in the controller's extension files (Columns,
+    /// Grouping) through the Objective-C runtime.
+    func testDelegateMethodsInExtensionFilesAreVisibleToAppKit() {
+        for selector in [#selector(NSTableViewDelegate.tableView(_:didClick:)),
+                         #selector(NSTableViewDelegate.tableView(_:sizeToFitWidthOfColumn:)),
+                         #selector(DetailsViewController.toggleColumn(_:)),
+                         NSSelectorFromString("columnsChanged:")] {
+            XCTAssertTrue(DetailsViewController.instancesRespond(to: selector), "\(selector)")
+        }
+    }
+
     func testChangeApplierReloadsForResetAndLargeSets() {
         let sink = RecordingSink()
         ChangeApplier.apply(.reset, to: sink)

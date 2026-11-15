@@ -144,7 +144,7 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     /// What the table draws (P3-09): a folder or search results. Folder-only features use `folder`.
     private(set) var source: (any RowSource)?
     private var settingsLoop: ObservationLoop?
-    private var isRebuildingColumns = false
+    var isRebuildingColumns = false
     private var isSyncingSelection = false
     private var isRestoringScroll = false
     private var didPaintFirstRows = false
@@ -182,8 +182,8 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     private var middleClick = MiddleClickTracker()
     /// Group by (P2-10): the folder's groups while it is grouped, and which of them are collapsed. Collapse state is
     /// per window and folder (it resets on navigation, not on a view switch); keys gone after a regroup are dropped.
-    private var groupedRows: GroupedRows?
-    private var collapsed: Set<GroupKey> = []
+    var groupedRows: GroupedRows?
+    var collapsed: Set<GroupKey> = []
     private weak var collapsedFolder: FolderModel?
     /// Table row ⇄ model row. Every conversion between the two in Details goes through this.
     var mapping: RowMapping { groupedRows.map(RowMapping.grouped) ?? .identity(count: source?.rowCount ?? 0) }
@@ -197,7 +197,7 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
 
     var focusView: NSView { tableView }
     var iconPoints: Double { density == .comfortable ? 20 : 16 }
-    private var settings: Settings { context.environment.settings }
+    var settings: Settings { context.environment.settings }
     /// The folder's row density (per folder, design 2026-11-05 §2), set by `apply(columns:sort:density:)`.
     private(set) var density: Density
 
@@ -547,186 +547,7 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
         }
     }
 
-    // MARK: groups (P2-10)
-
-    /// `.groups(runs)` from the folder: the `.changes(.reset)` that follows reloads the table.
-    func applyGroups(_ runs: [GroupRun]) {
-        setGroups(runs)
-    }
-
-    private func setGroups(_ runs: [GroupRun]) {
-        guard !runs.isEmpty else { groupedRows = nil; return }
-        let present = Set(runs.map(\.key))
-        collapsed = collapsed.intersection(present)
-        groupedRows = GroupedRows(runs: runs, collapsed: collapsed)
-    }
-
-    var groupRuns: [GroupRun] { groupedRows?.runs ?? [] }
-
-    func isCollapsed(group index: Int) -> Bool {
-        guard let groupedRows, groupRuns.indices.contains(index) else { return false }
-        return groupedRows.collapsed.contains(groupedRows.runs[index].key)
-    }
-
-    /// Collapses or expands group `index` (a header click, its disclosure button, ←/→).
-    func toggleGroup(_ index: Int) {
-        guard groupRuns.indices.contains(index) else { return }
-        let key = groupRuns[index].key
-        if collapsed.contains(key) { collapsed.remove(key) } else { collapsed.insert(key) }
-        regroupTable()
-    }
-
-    func collapseAllGroups() {
-        collapsed = Set(groupRuns.map(\.key))
-        regroupTable()
-    }
-
-    func expandAllGroups() {
-        collapsed = []
-        regroupTable()
-    }
-
-    /// Before a rename, a scroll to a row or a new item's rename: its group must be visible.
-    func expandGroup(containingModelRow row: Int) {
-        guard let groupedRows, groupedRows.tableRow(forModelRow: row) == nil,
-              let group = groupedRows.group(containingModelRow: row) else { return }
-        collapsed.remove(groupedRows.runs[group].key)
-        regroupTable()
-    }
-
-    private func regroupTable() {
-        guard let runs = groupedRows?.runs else { return }
-        groupedRows = GroupedRows(runs: runs, collapsed: collapsed)
-        tableView.reloadData()
-        deselectHiddenRows()
-        renameController?.relayout()
-        reloadSelectionDrawing()
-    }
-
-    /// QA round 2: an item hidden by a collapse never stays selected, so no command acts on items the user cannot
-    /// see. A collapse (header click, ←, Collapse All) drops them from the selection; the cursor stays put, so a
-    /// cursor inside the collapsed group navigates from its header and → expands it again.
-    private func deselectHiddenRows() {
-        guard let folder else { return }
-        let hidden = mapping.hiddenModelRows, rows = folder.selection.rows
-        guard !rows.isDisjoint(with: hidden) else { return }
-        folder.select(.set(rows.subtracting(hidden), cursor: folder.selection.cursor.flatMap { folder.row(of: $0) }))
-    }
-
-    /// An item selected while its group is collapsed (renamed or moved into it, a pasted or new item, a select by
-    /// name) expands that group instead. True when it regrouped the table, which redraws the selection.
-    private func revealSelectedHiddenRows(_ folder: FolderModel) -> Bool {
-        guard let groupedRows else { return false }
-        let selectedHidden = folder.selection.rows.intersection(mapping.hiddenModelRows)
-        guard !selectedHidden.isEmpty else { return false }
-        for row in selectedHidden {
-            if let group = groupedRows.group(containingModelRow: row) { collapsed.remove(groupedRows.runs[group].key) }
-        }
-        regroupTable()
-        return true
-    }
-
-    private func headerView(_ group: Int) -> NSView {
-        let view = tableView.makeView(withIdentifier: GroupHeaderView.reuseID, owner: nil) as? GroupHeaderView ?? GroupHeaderView()
-        let run = groupRuns[group]
-        view.configure(title: GroupTitles.title(for: run.key), count: run.rows.count, collapsed: isCollapsed(group: group),
-                       groupIndex: group)
-        view.onToggle = { [weak self] in self?.toggleGroup($0) }
-        return view
-    }
-
-    /// ← collapses the group of the cursor row, → expands it (grouped, no ⌘/⌥/⌃).
-    private func handleGroupKey(_ event: NSEvent, folder: FolderModel) -> Bool {
-        guard let groupedRows, let key = NavKey(event.specialKey), key == .left || key == .right,
-              event.modifierFlags.intersection([.command, .option, .control]).isEmpty,
-              let cursor = folder.selection.cursor.flatMap({ folder.row(of: $0) }),
-              let group = groupedRows.group(containingModelRow: cursor) else { return false }
-        typeSelect.reset()
-        if isCollapsed(group: group) == (key == .right) { toggleGroup(group) }
-        return true
-    }
-
-    /// A plain, ⌘- or ⇧-click on table row `row` (what mouse-down and mouse-up do together): a header toggles its
-    /// group, an item row goes to the selection as its model row.
-    func clickTableRow(_ row: Int, modifiers: ClickModifiers) {
-        guard let source else { return }
-        let mapping = self.mapping
-        if let group = mapping.groupIndex(forTableRow: row) { toggleGroup(group); return }
-        switch SelectionController.click(row: mapping.modelRow(forTableRow: row), clickCount: 1, modifiers: modifiers,
-                                         selectedRows: source.selection.rows, hidden: mapping.hiddenModelRows) {
-        case .select(let command), .selectOnMouseUp(let command): source.select(command)
-        case .open, .nothing: break
-        }
-        reloadSelectionDrawing()
-    }
-
-    /// Right-click rule through the mapping. A header gets Collapse All / Expand All, then the empty-space menu.
-    func contextMenu(forTableRow row: Int) -> NSMenu? {
-        guard mapping.groupIndex(forTableRow: row) != nil else {
-            return contextMenuProvider?(row >= 0 ? mapping.modelRow(forTableRow: row) : nil)
-        }
-        let menu = contextMenuProvider?(nil) ?? NSMenu()
-        menu.insertItem(.separator(), at: 0)
-        let expand = ClosureMenuItem(title: L10n.string("Expand All Groups")) { [weak self] in self?.expandAllGroups() }
-        expand.identifier = NSUserInterfaceItemIdentifier("macx.menu.expandAllGroups")
-        menu.insertItem(expand, at: 0)
-        let collapse = ClosureMenuItem(title: L10n.string("Collapse All Groups")) { [weak self] in self?.collapseAllGroups() }
-        collapse.identifier = NSUserInterfaceItemIdentifier("macx.menu.collapseAllGroups")
-        menu.insertItem(collapse, at: 0)
-        return menu
-    }
-
-    /// Scenario hook `groupHeaderTitles`: "<title> (<count>)" per group.
-    func groupHeaderTitles() -> [String] {
-        groupRuns.map { "\(GroupTitles.title(for: $0.key)) (\($0.rows.count))" }
-    }
-
-    /// Scenario hook `visibleRowNames`: the names of the table's item rows, in order.
-    func visibleRowNames() -> [String] {
-        guard let source else { return [] }
-        let mapping = self.mapping
-        return (0..<mapping.tableRowCount).compactMap { mapping.modelRow(forTableRow: $0) }.filter { $0 < source.rowCount }
-            .map { source.name(atRow: $0) }
-    }
-
-    /// Scenario click target "group:<title>": toggles the group with that title.
-    @discardableResult
-    func toggleGroup(titled title: String) -> Bool {
-        guard let index = groupRuns.firstIndex(where: { GroupTitles.title(for: $0.key) == title }) else { return false }
-        toggleGroup(index)
-        return true
-    }
-
-    // MARK: columns
-
-    func rebuildColumns() {
-        isRebuildingColumns = true
-        defer { isRebuildingColumns = false }
-        for column in tableView.tableColumns { tableView.removeTableColumn(column) }
-        let available = Set(DetailsColumns.availableColumns(isMultiFolder: isMultiFolder))
-        for setting in columns where available.contains(setting.id) {
-            let definition = ExtendedColumns.definition(setting.id)
-            let column = NSTableColumn(identifier: DetailsColumns.identifier(setting.id))
-            column.title = definition.title
-            column.minWidth = DetailsColumns.minWidth(setting.id)
-            column.width = setting.width
-            column.isHidden = !setting.visible
-            column.resizingMask = .userResizingMask
-            column.headerCell.alignment = definition.alignment
-            tableView.addTableColumn(column)
-        }
-        tableView.headerView?.menu = headerMenu()
-        updateSortIndicator(source?.sortDescriptor ?? settings.sort)
-        requestVisibleAttributes()
-        fittedWidths = [:]              // the columns carry their stored widths again
-        isRebuildingColumns = false
-        fitColumnsToWidth()
-    }
-
-    /// The header's column chooser (right-click on the header).
-    func headerMenu() -> NSMenu {
-        DetailsColumns.headerMenu(columns: columns, isMultiFolder: isMultiFolder, target: self, action: #selector(toggleColumn(_:)))
-    }
+    // MARK: columns (more in DetailsViewController+Columns.swift; groups: DetailsViewController+Grouping.swift)
 
     /// The folder's view state (P2-08): its columns (rebuilt only when they differ from what the table shows, so a
     /// resize in progress is never interrupted), the sort indicator and the row density. While search results are
@@ -746,136 +567,25 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
         }
     }
 
-    @objc func toggleColumn(_ sender: NSMenuItem) {
-        guard let raw = sender.representedObject as? String, let id = ColumnID(rawValue: raw) else { return }
-        setColumns(DetailsColumns.toggling(merged(shownColumnSettings()), id))
-        rebuildColumns()
-    }
-
-    @objc private func columnsChanged(_ note: Notification) {
-        guard !isRebuildingColumns else { return }
-        let next = merged(shownColumnSettings())
-        if next != columns { setColumns(next) }
-        fitColumnsToWidth()
-    }
-
     // MARK: fitting the pane
 
     /// Stored widths of the columns the table shows narrower to fit the pane (`fitColumnsToWidth`).
-    private var fittedWidths: [ColumnID: CGFloat] = [:]
+    var fittedWidths: [ColumnID: CGFloat] = [:]
 
     override func viewDidLayout() {
         super.viewDidLayout()
         fitColumnsToWidth()
     }
 
-    /// The column the user is dragging the edge of, if any.
-    private var userResizedColumn: NSTableColumn? {
-        let index = tableView.headerView?.resizedColumn ?? -1
-        return index >= 0 && index < tableView.tableColumns.count ? tableView.tableColumns[index] : nil
-    }
-
-    /// Shrinks visible columns, the rightmost first and each down to its minimum, so they fit the visible width, and
-    /// gives them their stored widths back as room returns. Display only: the folder keeps its stored widths (a narrow
-    /// pane, e.g. with the preview pane open, no longer pushes Size and Kind off the edge behind a scroller). A column
-    /// the user is dragging keeps the width they give it.
-    func fitColumnsToWidth() {
-        guard !isRebuildingColumns else { return }
-        let available = scrollView.contentView.bounds.width
-        guard available > 0 else { return }
-        let visible = tableView.tableColumns.filter { !$0.isHidden }
-        let dragged = userResizedColumn
-        let ids = visible.map { DetailsColumns.columnID($0.identifier) }
-        let stored = zip(visible, ids).map { column, id in
-            column === dragged ? column.width : (id.flatMap { fittedWidths[$0] } ?? column.width)
-        }
-        var targets = stored
-        // What the table adds around its columns (gaps, the full-width style's padding), measured, not assumed.
-        tableView.tile()
-        // (the last column's right edge: the table's frame also stretches to fill a wider pane).
-        guard let lastIndex = tableView.tableColumns.lastIndex(where: { !$0.isHidden }) else { return }
-        let overhead = max(0, tableView.rect(ofColumn: lastIndex).maxX - visible.reduce(CGFloat(0)) { $0 + $1.width })
-        var overflow = stored.reduce(0, +) + overhead - available
-        for index in visible.indices.reversed() where overflow > 0.5 && visible[index] !== dragged {
-            let give = min(overflow, max(0, targets[index] - visible[index].minWidth))
-            targets[index] -= give
-            overflow -= give
-        }
-        var fitted: [ColumnID: CGFloat] = [:]
-        for (index, id) in ids.enumerated() {
-            targets[index] = max(visible[index].minWidth, targets[index].rounded(.down))
-            if let id, targets[index] < stored[index] { fitted[id] = stored[index] }
-        }
-        fittedWidths = fitted
-        isRebuildingColumns = true
-        defer { isRebuildingColumns = false }
-        for (column, target) in zip(visible, targets) where abs(column.width - target) >= 0.5 { column.width = target }
-    }
-
-    /// The table's columns as settings, with the columns `fitColumnsToWidth` shrank at their stored widths (except the
-    /// one the user is dragging: its new width is the one to store).
-    private func shownColumnSettings() -> [ColumnSetting] {
-        if let dragged = userResizedColumn, let id = DetailsColumns.columnID(dragged.identifier) { fittedWidths[id] = nil }
-        let shown = DetailsColumns.settings(fromTableColumns: tableView.tableColumns)
-        guard !fittedWidths.isEmpty else { return shown }
-        return shown.map { setting in
-            fittedWidths[setting.id].map { ColumnSetting(id: setting.id, width: Double($0), visible: setting.visible) } ?? setting
-        }
-    }
-
     /// Writes a column change back to the list the table shows: `Settings.resultsColumns` for search results, the
     /// folder's view state (through `onColumnsChanged`) otherwise.
-    private func setColumns(_ new: [ColumnSetting]) {
+    func setColumns(_ new: [ColumnSetting]) {
         if isMultiFolder {
             settings.resultsColumns = new
         } else {
             folderColumns = new
             onColumnsChanged?(new)
         }
-    }
-
-    /// The table only holds the available columns: the others (Path in a folder listing) keep their stored width
-    /// and visibility.
-    private func merged(_ shown: [ColumnSetting]) -> [ColumnSetting] {
-        let offered = Set(DetailsColumns.availableColumns(isMultiFolder: isMultiFolder))
-        let stored = Dictionary(columns.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        return DetailsColumns.normalized(shown.map { offered.contains($0.id) ? $0 : (stored[$0.id] ?? $0) })
-    }
-
-    private func updateSortIndicator(_ sort: MacxFS.SortDescriptor) {
-        tableView.highlightedTableColumn = nil
-        for column in tableView.tableColumns {
-            let sorted = DetailsColumns.columnID(column.identifier)?.sortField == sort.field
-            tableView.setIndicatorImage(sorted ? NSImage(named: sort.ascending ? "NSAscendingSortIndicator" : "NSDescendingSortIndicator") : nil,
-                                        in: column)
-            if sorted { tableView.highlightedTableColumn = column }
-        }
-    }
-
-    func tableView(_ tableView: NSTableView, didClick tableColumn: NSTableColumn) {
-        guard let id = DetailsColumns.columnID(tableColumn.identifier) else { return }
-        sort(by: id)
-    }
-
-    /// A header click on `column`: the sorted column reverses, another sorts ascending. A folder's sort is saved in
-    /// its view state (the session sets the query); search results sort themselves (`.path` included).
-    func sort(by column: ColumnID) {
-        guard let source else { return }
-        let next = DetailsColumns.nextSort(current: source.sortDescriptor, clicked: column)
-        if folder != nil, let onSortChanged {
-            onSortChanged(next)          // saved for this folder; the session sets the query
-        } else {
-            source.setSortDescriptor(next)
-        }
-        updateSortIndicator(next)
-    }
-
-    func tableView(_ tableView: NSTableView, sizeToFitWidthOfColumn column: Int) -> CGFloat {
-        let tableColumn = tableView.tableColumns[column]
-        guard let source, let id = DetailsColumns.columnID(tableColumn.identifier) else { return tableColumn.width }
-        let texts = visibleRows().filter { $0 < source.rowCount }.map { text(for: id, row: $0) } + [tableColumn.title]
-        let extra = id == .name ? iconPoints + 30 : 14
-        return CGFloat(max(DetailsColumns.minWidth(id), DetailsColumns.fitWidth(texts: texts, font: CellStyle.font, extra: extra)))
     }
 
     // MARK: data source / delegate
@@ -927,42 +637,10 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
 
     // MARK: helpers
 
-    func cellView(row: Int, column: ColumnID) -> NSTableCellView? {
-        let index = tableView.column(withIdentifier: DetailsColumns.identifier(column))
-        guard index >= 0, row < tableView.numberOfRows else { return nil }
-        return tableView.view(atColumn: index, row: row, makeIfNecessary: true) as? NSTableCellView
-    }
-
     /// Folders and packages: their Size cell shows the computed folder size (P2-14).
     static func isSizedFolder(_ entry: Entry) -> Bool { entry.kind == .directory || entry.kind == .package }
 
-    /// Scenario hook `visibleColumnIDs` (P2-16): the shown columns' ColumnID raw values, in table order.
-    func visibleColumnIDs() -> [String] {
-        tableView.tableColumns.filter { !$0.isHidden }.compactMap { DetailsColumns.columnID($0.identifier)?.rawValue }
-    }
-
-    /// Scenario click target "header:<id>" (P2-16): the same path as a click on that column's header.
-    @discardableResult
-    func clickHeader(_ raw: String) -> Bool {
-        guard let id = ColumnID(rawValue: raw), source != nil else { return false }
-        let index = tableView.column(withIdentifier: DetailsColumns.identifier(id))
-        guard index >= 0, !tableView.tableColumns[index].isHidden else { return false }
-        tableView(tableView, didClick: tableView.tableColumns[index])
-        return true
-    }
-
-    /// Scenario hook `cellText` (P2-14): the text the cell of `name`'s row shows in `column` (a ColumnID raw value),
-    /// computed with the same formatting the cell uses. nil for an unknown row or column.
-    func cellText(rowNamed name: String, column: String) -> String? {
-        guard let source, let id = ColumnID(rawValue: column),
-              let row = folder.map({ $0.row(named: name) }) ?? (0..<source.rowCount).first(where: { source.name(atRow: $0) == name }),
-              row < source.rowCount else {
-            return nil
-        }
-        return text(for: id, row: row)
-    }
-
-    private func text(for id: ColumnID, row: Int) -> String {
+    func text(for id: ColumnID, row: Int) -> String {
         guard let source else { return "" }
         let entry = source.entry(atRow: row)
         switch id {
