@@ -157,7 +157,9 @@ final class WatcherTests: XCTestCase {
         tree.unwatch(dir)
         XCTAssertEqual(tree.count, 0)
         changed.removeAll()
-        // A second watcher on the same folder reports child2: the unwatched one had its chance and stayed quiet.
+        // A second watcher on the same folder sees child2, so the change happened while the unwatched node would
+        // still hear it. The two kqueue sources are independent (no ordering between them), so the unwatched node
+        // then gets a bounded quiet window for any hop it queued.
         var witnessed: [URL] = []
         let witness = TreeWatcher { witnessed.append($0) }
         defer { witness.unwatch(dir) }
@@ -165,7 +167,8 @@ final class WatcherTests: XCTestCase {
         try await wait("witness open") { witness.liveCount == 1 }
         _ = try sandbox.createDirectory("tree/child2")
         try await wait("witness change") { witnessed.contains(dir) }
-        await Task.yield()                                    // a change hop of the unwatched node already queued on main
+        let quietUntil = ContinuousClock.now + .milliseconds(300)
+        while changed.isEmpty, ContinuousClock.now < quietUntil { try await Task.sleep(for: .milliseconds(20)) }
         XCTAssertTrue(changed.isEmpty, "an unwatched node reports nothing")
     }
 

@@ -218,9 +218,10 @@ final class IconWellTests: XCTestCase {
         let packURL = ui.url("pack")
         await ui.context.iconPack.select(.choose) { packURL }
         await ui.context.icons.setIconPack(nil)
-        let start = ContinuousClock.now
         await ui.context.restoreIconPack(waitingAtMost: .milliseconds(1))
-        XCTAssertLessThan(ContinuousClock.now - start, .milliseconds(500))
+        // Checked structurally, not by wall time (parallel runs stretch main-actor hops): it returned before the
+        // pack landed. currentPack and iconPackChanged change together on main, so the expectation can't miss it.
+        XCTAssertNil(ui.context.icons.currentPack, "returned at the limit, before the pack landed")
         let landed = expectation(forNotification: IconCache.iconPackChanged, object: ui.context.icons)
         await fulfillment(of: [landed], timeout: 30)
         XCTAssertEqual(ui.context.icons.currentPack?.byExtension.count, 400)

@@ -97,6 +97,9 @@ final class EmptyStateTests: XCTestCase {
         RecordingURLOpener.shared.open(URL(string: "https://example.invalid/left-over")!)
         _ = try await ShellHarness.make(self, start: false)
         XCTAssertEqual(RecordingURLOpener.shared.opened, [])
+        RecordingURLOpener.shared.open(URL(string: "https://example.invalid/left-over")!)
+        _ = try await SidebarHarness.make(self)
+        XCTAssertEqual(RecordingURLOpener.shared.opened, [])
     }
 
     func testRetryAndPrivacyActions() async throws {
