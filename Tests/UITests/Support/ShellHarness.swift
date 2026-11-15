@@ -5,8 +5,6 @@ import Core
 import MacxFS
 import MacxFixtures
 
-enum ShellHarnessError: Error { case timeout(String) }
-
 /// P1-26 window-shell tests build their world here. Every file lives under `sandbox.root` (a fresh
 /// `macx-tests-<UUID>` temp dir); fixture files go in `<sandbox>/files` so `state/` and `.trash/` never show up.
 @MainActor
@@ -66,14 +64,7 @@ final class ShellHarness {
     /// error alone was reported at this helper's line, or as an unrelated InvalidTransition while views unwound.
     func waitUntil(_ what: String, timeout: Duration = .seconds(30), file: StaticString = #filePath, line: UInt = #line,
                    _ condition: () -> Bool) async throws {
-        let deadline = ContinuousClock.now + timeout
-        while !condition() {
-            guard ContinuousClock.now < deadline else {
-                XCTFail("timed out after \(timeout) waiting for: \(what)", file: file, line: line)
-                throw ShellHarnessError.timeout(what)
-            }
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        try await pollUntil(what, timeout: timeout, file: file, line: line, condition)
     }
 
     static func names(_ folder: FolderModel) -> [String] { (0..<folder.rowCount).map { folder.name(atRow: $0) } }

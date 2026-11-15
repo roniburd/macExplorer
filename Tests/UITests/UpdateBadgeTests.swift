@@ -48,7 +48,10 @@ final class UpdateBadgeTests: XCTestCase {
         try await pollUntil("badge shown") { !item.isHidden }
         model.restartNow()
         XCTAssertEqual(restarts, 1)
-        try await Task.sleep(for: .milliseconds(50))   // any observation turn has run
+        XCTAssertEqual(model.state, .readyToRestart(version: "0.4.0", notesURL: nil), "Cancel leaves the state alone")
+        // A change made by restartNow would have queued the badge's observation task during the call; a main-actor
+        // task queued after it runs only once that one has, so awaiting it is the observation turn (no clock).
+        await Task { @MainActor in }.value
         XCTAssertFalse(item.isHidden)
     }
 

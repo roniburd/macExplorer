@@ -155,8 +155,10 @@ final class UpdateControllerTests: XCTestCase {
         XCTAssertEqual(model.state, .idle)
     }
 
-    /// The badge and Settings watch `state` through Observation: each change is seen.
-    func testObserversSeeEveryChange() async throws {
+    /// The badge and Settings watch `state` through ObservationLoop: each state that settles across a main-actor turn
+    /// is seen, while changes within one turn coalesce into one callback that reads the latest state (so the badge
+    /// must never depend on seeing an intermediate state).
+    func testObservationSeesEachSettledStateAndCoalescesOneTurn() async throws {
         let model = UpdateModel()
         var seen: [UpdateState] = []
         let loop = ObservationLoop({ _ = model.state }, onChange: { seen.append(model.state) })
@@ -166,6 +168,13 @@ final class UpdateControllerTests: XCTestCase {
         model.send(.noUpdateFound(currentVersion: "1"))
         try await pollUntil("up to date seen") { seen.count == 2 }
         XCTAssertEqual(seen, [.checking(userInitiated: true), .upToDate(version: "1")])
+        model.send(.checkStarted(userInitiated: true))
+        model.send(.noUpdateFound(currentVersion: "2"))      // same turn: one callback, the latest state
+        try await pollUntil("latest state seen") { seen.count == 3 }
+        model.send(.checkStarted(userInitiated: true))       // a later turn's change proves no second callback was queued
+        try await pollUntil("next change seen") { seen.count >= 4 }
+        XCTAssertEqual(seen, [.checking(userInitiated: true), .upToDate(version: "1"), .upToDate(version: "2"),
+                              .checking(userInitiated: true)])
     }
 
     // MARK: branch review — the error shapes Sparkle 2.10.1 really delivers

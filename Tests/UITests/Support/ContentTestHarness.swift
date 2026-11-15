@@ -6,7 +6,7 @@ import Core
 import MacxFS
 import MacxFixtures
 
-enum HarnessError: Error { case timeout(String), posix(String, Int32) }
+enum HarnessError: Error { case posix(String, Int32) }
 
 /// Global Constraints S5-C1: every S5 test builds its world here, and all writes stay under `sandbox.root`.
 @MainActor
@@ -160,14 +160,7 @@ final class ContentTestHarness {
     /// created (DetailsViewController) is released while the error unwinds, which hid what was being waited for.
     func waitUntil(_ what: String, timeout: Duration = .seconds(30), file: StaticString = #filePath, line: UInt = #line,
                    _ condition: () -> Bool) async throws {
-        let deadline = ContinuousClock.now + timeout
-        while !condition() {
-            guard ContinuousClock.now < deadline else {
-                XCTFail("timed out after \(timeout) waiting for: \(what)", file: file, line: line)
-                throw HarnessError.timeout(what)
-            }
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        try await pollUntil(what, timeout: timeout, file: file, line: line, condition)
     }
 
     /// Runs once (a test may call it before the teardown block does). Ends jobs the way quitting does: dialogs get
