@@ -19,6 +19,22 @@ final class ContextMenuTests: XCTestCase {
         item(menu, command)?.representedObject as? MenuActionBox
     }
 
+    /// Every command a context menu can show has a human title (no raw identifier), and the context menu reads like
+    /// the command bar's pull-downs: "Folder", "Details", "Icons", plus its own "Preview".
+    func testEveryCommandHasAHumanContextMenuTitle() {
+        for command in Command.allCases {
+            let title = ContextMenuTitles.title(command)
+            XCTAssertFalse(title.isEmpty, "\(command)")
+            XCTAssertNotEqual(title, command.rawValue, "\(command) shows its raw identifier")
+        }
+        XCTAssertEqual(ContextMenuTitles.title(.showInPreview), "Preview")
+        XCTAssertEqual(ContextMenuTitles.title(.newFolder), "Folder")
+        XCTAssertEqual(ContextMenuTitles.title(.viewAsDetails), "Details")
+        XCTAssertEqual(ContextMenuTitles.title(.viewAsIcons), "Icons")
+        XCTAssertEqual(CommandBarTitles.menuTitle(.viewAsIcons), "Icons", "View ▾ reads Details / Icons / Columns")
+        XCTAssertEqual(ContextMenuTitles.title(.open), MainMenuTitles.title(.open))
+    }
+
     func testContextRowsRule() {
         let outside = ContextMenuBuilder.contextRows(clickedRow: 4, selectedRows: IndexSet([1, 2]))
         XCTAssertEqual(outside.select, .set(IndexSet(integer: 4), cursor: 4))

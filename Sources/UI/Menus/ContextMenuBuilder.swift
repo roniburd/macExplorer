@@ -35,62 +35,14 @@ final class ClosureMenuItem: NSMenuItem {
     @objc private func fire() { handler?() }
 }
 
+/// Context-menu titles: the command bar's pull-down titles ("Folder", "Details", "Hidden Items"), which fall back to
+/// the main menu's, except where a context menu reads differently.
 @MainActor
 enum ContextMenuTitles {
     static func title(_ command: Command) -> String {
         switch command {
-        case .open: L10n.string("Open")
-        case .openInNewWindow: L10n.string("Open in New Window")
-        case .openInNewTab: L10n.string("Open in New Tab")
-        case .showPackageContents: L10n.string("Show Package Contents")
-        case .quickLook: L10n.string("Quick Look")
         case .showInPreview: L10n.string("Preview")
-        case .cut: L10n.string("Cut")
-        case .copy: L10n.string("Copy")
-        case .paste: L10n.string("Paste")
-        case .copyAsPath: L10n.string("Copy as Path")
-        case .duplicate: L10n.string("Duplicate")
-        case .makeAlias: L10n.string("Make Alias")
-        case .makeSymlink: L10n.string("Create Symbolic Link")
-        case .rename: L10n.string("Rename")
-        case .moveToTrash: L10n.string("Move to Trash")
-        case .deletePermanently: L10n.string("Delete Permanently…")
-        case .revealInFinder: L10n.string("Reveal in Finder")
-        case .openInTerminal: L10n.string("Open in Terminal")
-        case .properties: L10n.string("Properties")
-        case .refresh: L10n.string("Refresh")
-        case .newFolder: L10n.string("Folder")
-        case .newTextFile: L10n.string("Text File")
-        case .newEmptyFile: L10n.string("Empty File")
-        case .viewAsDetails: L10n.string("Details")
-        case .viewAsIcons: L10n.string("Icons")
-        case .iconSizeSmall: L10n.string("Small Icons")
-        case .iconSizeMedium: L10n.string("Medium Icons")
-        case .iconSizeLarge: L10n.string("Large Icons")
-        case .densityCompact: L10n.string("Compact")
-        case .densityRegular: L10n.string("Regular")
-        case .densityComfortable: L10n.string("Comfortable")
-        case .toggleHidden: MainMenuTitles.title(.toggleHidden)
-        case .toggleCommandBar: MainMenuTitles.title(.toggleCommandBar)
-        case .sortByName: L10n.string("Name")
-        case .sortByDateModified: L10n.string("Date Modified")
-        case .sortBySize: L10n.string("Size")
-        case .sortByKind: L10n.string("Kind")
-        case .sortByDateCreated: L10n.string("Date Created")
-        case .sortAscending: L10n.string("Ascending")
-        case .sortDescending: L10n.string("Descending")
-        case .groupByNone: L10n.string("None")
-        case .groupByKind: L10n.string("Kind")
-        case .groupByDateModified: L10n.string("Date Modified")
-        case .groupBySize: L10n.string("Size")
-        case .groupByName: L10n.string("Name")
-        case .useViewAsDefault: L10n.string("Use as Default for All Folders")
-        case .resetFolderView: L10n.string("Reset View for This Folder")
-        case .openContainingFolder: L10n.string("Open Containing Folder")
-        case .saveSearch: L10n.string("Save Search…")
-        case .stopSearch: L10n.string("Stop Search")
-        case .extractHere: L10n.string("Extract Here")
-        default: command.rawValue
+        default: CommandBarTitles.menuTitle(command)
         }
     }
 }
