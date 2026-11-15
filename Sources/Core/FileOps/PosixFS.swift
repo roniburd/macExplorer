@@ -34,6 +34,23 @@ enum PosixFS {
 
     static func exists(_ path: String) -> Bool { info(path) != nil }
 
+    /// Same folder by identity (stat, following links): a symlinked or differently-cased spelling of a folder is that
+    /// folder. Falls back to comparing standardized paths when either can't be stat'ed.
+    static func isSameDirectory(_ a: URL, _ b: URL) -> Bool {
+        assertOffMain()
+        var sa = stat(), sb = stat()
+        guard fstatat(AT_FDCWD, a.path, &sa, 0) == 0, fstatat(AT_FDCWD, b.path, &sb, 0) == 0 else {
+            return a.standardizedFileURL.path == b.standardizedFileURL.path
+        }
+        return sa.st_dev == sb.st_dev && sa.st_ino == sb.st_ino
+    }
+
+    /// Both paths name one item (lstat identity: a link is not its target).
+    static func isSameItem(_ a: URL, _ b: URL) -> Bool {
+        guard let x = info(a.path), let y = info(b.path) else { return false }
+        return x.identity == y.identity
+    }
+
     /// 0 or errno.
     static func rename(_ from: String, _ to: String) -> Int32 {
         assertOffMain()

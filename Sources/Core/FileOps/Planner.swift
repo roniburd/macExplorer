@@ -80,7 +80,7 @@ enum Planner {
             let (entries, unknown) = deep ? enumerate(src, info: info, noMaterialization: noMat, lane: lane)
                                           : ([rootEntry(info)], false)
             plan.items.append(PlanItem(source: src, info: info, entries: entries, sameVolume: sameVolume, contentsUnknown: unknown))
-            if let destination, src.deletingLastPathComponent().standardizedFileURL.path != destination.standardizedFileURL.path,
+            if let destination, !PosixFS.isSameDirectory(src.deletingLastPathComponent(), destination),
                PosixFS.exists(destination.appending(path: src.lastPathComponent).path) {
                 plan.topLevelConflicts.append(src)
             }

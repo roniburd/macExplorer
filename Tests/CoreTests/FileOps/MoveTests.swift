@@ -38,6 +38,62 @@ final class MoveTests: FileOpsTestCase {
         XCTAssertTrue(exists(a))
     }
 
+    /// Review B1-6: a symlinked or differently-cased spelling of the source's own folder is that folder: no conflict
+    /// (whose Replace would trash the source), nothing moved.
+    func testMoveOntoAnotherSpellingOfOwnFolderIsNoOp() async throws {
+        let a = try file("d/a.txt", "A")
+        let link = url("link")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: url("d"))
+        var spellings = [link]
+        let upper = url("D")
+        if exists(upper) { spellings.append(upper) }               // case-insensitive volume
+        for destination in spellings {
+            let scripted = ScriptedInteraction(conflicts: [.one(.replace)])
+            let (queue, _) = makeQueue(interaction: scripted)
+            let o = try await run(.move(sources: [a], destination: destination), on: queue)
+            XCTAssertEqual(o.record.actions, [], "\(destination.path)")
+            XCTAssertEqual(scripted.askedConflicts().count, 0, "\(destination.path)")
+            XCTAssertEqual(text(a), "A")
+            XCTAssertEqual(names(trashDir), [])
+        }
+    }
+
+    func testCopyOntoSymlinkedSpellingOfOwnFolderDuplicates() async throws {
+        let a = try file("d/a.txt", "A")
+        let link = url("link")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: url("d"))
+        let scripted = ScriptedInteraction(conflicts: [.one(.replace)])
+        let (queue, _) = makeQueue(interaction: scripted)
+        _ = try await run(.copy(sources: [a], destination: link), on: queue)
+        XCTAssertEqual(scripted.askedConflicts().count, 0)
+        XCTAssertEqual(names(url("d")), ["a copy.txt", "a.txt"])
+        XCTAssertEqual(names(trashDir), [])
+    }
+
+    /// Defense in depth: Replace or Merge onto the source item itself is a no-op, never a trash of the source.
+    func testReplaceOntoTheSourceItselfNeverTrashesIt() async throws {
+        let a = try file("d/a.txt", "A")
+        try file("d/F/x", "X")
+        let link = url("link")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: url("d"))
+        let lanes = LanePool()
+        let ctx = JobContext(id: JobID(), request: request(.move(sources: [a], destination: link)), lanes: lanes,
+                             trash: SandboxTrash(directory: trashDir), journal: Journal(fileURL: journalURL),
+                             interaction: ScriptedInteraction(conflicts: [.all(.replace)]), tuning: FileOpTuning())
+        let folder = url("d/F")
+        let items = try await lanes.perform(on: .unknown, .fileOp) { lane in
+            Planner.plan(sources: [a, folder], destination: link, mode: .move, forceCrossVolume: false, lane: lane).items
+        }
+        let r1 = await ConflictExecutor.execute(ctx, action: .replace, item: items[0], destinationDir: link, name: "a.txt",
+                                                operation: .move, renameExcl: true)
+        let r2 = await ConflictExecutor.execute(ctx, action: .merge, item: items[1], destinationDir: link, name: "F",
+                                                operation: .move, renameExcl: true)
+        XCTAssertEqual(r1, .done); XCTAssertEqual(r2, .done)
+        XCTAssertEqual(text(a), "A")
+        XCTAssertEqual(text(url("d/F/x")), "X")
+        XCTAssertEqual(names(trashDir), [])
+    }
+
     func testForcedCrossVolumeMoveCopiesVerifiesAndDeletesSource() async throws {
         try file("src/T/x", "X"); try bigFile("src/T/y/big", bytes: 2 << 20)
         var tuning = FileOpTuning(); tuning.forceCrossVolume = true

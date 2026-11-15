@@ -10,7 +10,9 @@ enum MoveJob {
         for item in plan.items {
             guard await ctx.checkpoint() else { break }
             let src = item.source
-            if src.deletingLastPathComponent().standardizedFileURL.path == destination.standardizedFileURL.path { continue }
+            // By identity: a symlinked or differently-cased spelling of the source's own folder is that folder.
+            let parent = src.deletingLastPathComponent()
+            if (try? await ctx.onLane({ _ in PosixFS.isSameDirectory(parent, destination) })) ?? false { continue }
             let isDir = item.info.isDirectory
             var name = src.lastPathComponent
             if (try? await ctx.onLane({ _ in PosixFS.exists(destination.appending(path: src.lastPathComponent).path) })) == true {

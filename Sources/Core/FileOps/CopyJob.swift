@@ -32,7 +32,9 @@ enum CopyJob {
             guard await ctx.checkpoint() else { break }
             let src = item.source
             let isDir = item.info.isDirectory
-            let sameParent = src.deletingLastPathComponent().standardizedFileURL.path == destination.standardizedFileURL.path
+            let parent = src.deletingLastPathComponent()
+            let sameParent = (try? await ctx.onLane { _ in PosixFS.isSameDirectory(parent, destination) })
+                ?? (parent.standardizedFileURL.path == destination.standardizedFileURL.path)
             var name = src.lastPathComponent
             if duplicate || sameParent {
                 name = (try? await ctx.onLane { _ in

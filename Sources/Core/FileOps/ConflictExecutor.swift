@@ -49,6 +49,12 @@ extension ConflictExecutor {
     static func execute(_ ctx: JobContext, action: ConflictAction, item: PlanItem, destinationDir: URL, name: String,
                         operation: Operation, renameExcl: Bool) async -> StepResult {
         let target = destinationDir.appending(path: name)
+        if action == .replace || action == .merge {
+            // The "existing" item is the source itself (reached through another spelling of its folder): it is
+            // already there. Replace would trash it, Merge would trash its children.
+            let src = item.source
+            if (try? await ctx.onLane({ _ in PosixFS.isSameItem(src, target) })) ?? false { return .done }
+        }
         switch action {
         case .skip:
             ctx.skip(item.source, reason: nil)
