@@ -68,8 +68,10 @@ final class CrashHelperEntry: XCTestCase {
 extension FileOpsTestCase {
     /// Runs `spec` in a child `xcrun xctest` process of this same test bundle. Returns true if the child was SIGKILLed.
     /// A child still running after `timeout` is terminated (SIGTERM, then SIGKILL 5 s later) and fails the test,
-    /// so a hung job never hangs the suite.
+    /// so a hung job never hangs the suite. `onTimeout` receives that failure's message instead of `XCTFail` (the
+    /// test of the watchdog itself asserts on it: no XCTExpectFailure, whose matching depends on the recording thread).
     func runCrashingChild(_ spec: CrashSpec, timeout: Duration = .seconds(60),
+                          onTimeout: (@Sendable (String) -> Void)? = nil,
                           file: StaticString = #filePath, line: UInt = #line) async throws -> Bool {
         let sandboxRoot = Sandbox.enclosingRoot(of: sandbox.root.path(percentEncoded: false))
         guard sandboxRoot != nil, Sandbox.commonRoot(of: spec.guardedPaths, prefixes: ["macx-tests"]) == sandboxRoot else {
@@ -103,7 +105,8 @@ extension FileOpsTestCase {
             watchdog.arm(pid: process.processIdentifier, after: timeout)
         }
         if watchdog.timedOut {
-            XCTFail("crash child (\(spec.mode), fault \(spec.fault)) still running after \(timeout): terminated", file: file, line: line)
+            let message = "crash child (\(spec.mode), fault \(spec.fault)) still running after \(timeout): terminated"
+            if let onTimeout { onTimeout(message) } else { XCTFail(message, file: file, line: line) }
             return false
         }
         return killed

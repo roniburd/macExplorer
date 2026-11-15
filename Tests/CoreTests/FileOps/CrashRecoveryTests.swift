@@ -2,6 +2,7 @@ import XCTest
 import Darwin
 @testable import Core
 import MacxFS
+import Synchronization
 
 final class CrashRecoveryTests: FileOpsTestCase {
     private func spec(_ sources: [URL], _ dest: URL, fault: FaultPoint, mode: String = "move",
@@ -83,17 +84,22 @@ final class CrashRecoveryTests: FileOpsTestCase {
     func testCrashChildOutlivingItsTimeoutIsTerminatedAndFails() async throws {
         try bigFile("src/T/big", bytes: 8 << 20)
         let d = try dir("d")
-        // On the main thread: XCTExpectFailure called from any other thread only matches issues recorded on that
-        // same thread, and runCrashingChild's XCTFail runs wherever its continuation resumes.
-        await MainActor.run {
-            let options = XCTExpectedFailure.Options()
-            options.issueMatcher = { $0.compactDescription.contains("still running after") }
-            XCTExpectFailure("the watchdog reports the timeout", options: options)
-        }
+        let reported = TimeoutReports()
         let start = ContinuousClock.now
         let killed = try await runCrashingChild(spec([url("src/T")], d, fault: .beforeSourceDelete, force: true),
-                                                timeout: .milliseconds(50))
+                                                timeout: .milliseconds(50),
+                                                onTimeout: { reported.add($0) })
         XCTAssertFalse(killed, "terminated by the watchdog, not by its own fault point")
         XCTAssertLessThan(ContinuousClock.now - start, .seconds(30), "SIGTERM (then SIGKILL) ends the child")
+        let messages = reported.messages
+        XCTAssertEqual(messages.count, 1, "the watchdog reports the timeout once: \(messages)")
+        XCTAssertTrue(messages.first?.contains("still running after") == true, "\(messages)")
     }
+}
+
+/// What `runCrashingChild`'s watchdog reported, from whichever thread it reports on.
+private final class TimeoutReports: Sendable {
+    private let list = Mutex<[String]>([])
+    var messages: [String] { list.withLock { $0 } }
+    func add(_ message: String) { list.withLock { $0.append(message) } }
 }
