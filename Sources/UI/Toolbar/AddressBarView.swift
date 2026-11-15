@@ -188,13 +188,6 @@ final class AddressBarView: NSView {
         }
     }
 
-    /// Phase 4's tests type into the bar this way: enters edit mode if needed, then submits.
-    func submitForTesting(_ text: String) async {
-        beginEditing()
-        editField.stringValue = text
-        await submit(text)
-    }
-
     /// The window's current folder is remote and still listing (false for local folders and once listed).
     func setFolderLoading(_ loading: Bool) {
         if !loading, let switching, switching.target != nil, switching.target == currentURL { self.switching = nil }
