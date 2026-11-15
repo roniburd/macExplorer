@@ -267,8 +267,19 @@ final class InteractionRouterTests: XCTestCase {
         XCTAssertEqual(info.pair.destination.url.lastPathComponent, "a.txt")
         XCTAssertFalse(info.isFolderMerge)
         presenter.answerOldest(.conflict(.one(.keepBoth)))
-        let outcome = await running.value
-        XCTAssertFalse(outcome.wasCancelled)
+        // Bounded: this wait once hung a whole CI run (about 1 in 15 runs locally). A hang now fails fast with the
+        // state needed to find it, and CI's retry-once applies.
+        var outcome: JobOutcome?
+        Task { outcome = await running.value }
+        do {
+            try await h.waitUntil("the copy finishes after Keep Both") { outcome != nil }
+        } catch {
+            let states = operations.jobs.map { "\($0.description.verb) \($0.state)" }
+            XCTFail("copy never finished: open dialogs \(presenter.openCount), shown \(presenter.shown.count), jobs \(states)")
+            running.cancel()
+            return
+        }
+        XCTAssertEqual(outcome?.wasCancelled, false)
         XCTAssertTrue(h.exists("dst/a 2.txt"))
         XCTAssertEqual(h.lstatInfo("dst/a.txt")?.st_size, 5, "Keep Both never touches the existing item")
     }
