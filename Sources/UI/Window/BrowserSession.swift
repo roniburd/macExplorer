@@ -416,6 +416,39 @@ final class BrowserSession {
         observers.send(.searchTextChanged(""))
     }
 
+    /// §4.2 release: the volume `isOnVolume` matches (a directory and, when known, its volume) is going away. Parked
+    /// results searching it are closed, shown results searching it are closed without parking, and Columns close
+    /// from the first column on it. True when what the window shows is still on it: the caller sends it home.
+    func releaseVolume(_ isOnVolume: (_ directory: URL, _ volume: VolumeID?) -> Bool) -> Bool {
+        guard !closed else { return false }
+        let volumes = environment.volumes
+        func searchesVolume(_ model: SearchResultsModel) -> Bool {
+            guard let root = model.spec?.root else { return false }
+            return isOnVolume(root, volumes.volume(for: root)?.id)
+        }
+        let released = parked.filter { searchesVolume($0.model) }
+        parked.removeAll { searchesVolume($0.model) }
+        for entry in released {
+            externalURLs[ObjectIdentifier(entry.model)] = nil
+            entry.model.close()
+        }
+        var goHome = false
+        if let current = results, searchesVolume(current) {
+            if case .searching = current.state { current.stop() }
+            externalURLs[ObjectIdentifier(current)] = nil
+            current.close()
+            results = nil
+            resultsURL = nil
+            observers.send(.resultsChanged(nil))
+            goHome = true
+        }
+        if let chain = columnChain,
+           let first = chain.models.firstIndex(where: { isOnVolume($0.directory, $0.volume?.id) }) {
+            if first == 0 { goHome = true } else { chain.closeColumns(from: first) }
+        }
+        return goHome || isOnVolume(folder.directory, folder.volume?.id)
+    }
+
     /// Moves the shown results to the parked list (stopping a running search) so Back/Forward can show them again.
     /// Returns whether results were shown.
     @discardableResult

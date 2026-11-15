@@ -121,6 +121,17 @@ final class ColumnChain {
         return keep
     }
 
+    /// The volume under columns `index…` is going away (§4.2 release): they close, and column index−1 drops its
+    /// selection so a later listing change doesn't reopen them before the volume unmounts. The root column has no
+    /// column to fall back to (the window goes elsewhere instead).
+    func closeColumns(from index: Int) {
+        guard index > 0, index < models.count else { return }
+        truncate(after: index - 1)
+        if let pending = pendingFirstRow, !models.contains(where: { $0 === pending }) { pendingFirstRow = nil }
+        models[index - 1].select(.none)     // nothing deeper is left to close
+        onChange?()
+    }
+
     /// Closes every column.
     func close() {
         pendingRootSelection = nil

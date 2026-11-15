@@ -102,22 +102,23 @@ public final class WindowManager {
         }
     }
 
-    /// Windows showing a folder on `volume` navigate home (the volume is going away).
+    /// Windows showing a folder on `volume` navigate home (the volume is going away). Columns on it close, and
+    /// search results searching it (shown or kept for Back) are dropped, so nothing keeps reading the volume.
     public func moveWindowsHome(onVolume volume: VolumeID) {
         let volumes = context.environment.volumes
         let mountPath = volumes.list.first { $0.id == volume }.map { Self.directoryPath($0.mountPoint) }
+        releaseVolume { directory, id in
+            if let id { return id == volume }
+            if let mountPath, mountPath != "/" { return Self.directoryPath(directory).hasPrefix(mountPath) }
+            return false
+        }
+    }
+
+    /// `moveWindowsHome` with the volume test given (tests match by path inside one sandbox volume).
+    func releaseVolume(_ isOnVolume: (_ directory: URL, _ volume: VolumeID?) -> Bool) {
         let home = context.environment.settings.home
-        for controller in controllers {
-            let folder = controller.session.folder
-            let onVolume: Bool
-            if let id = folder.volume?.id {
-                onVolume = id == volume
-            } else if let mountPath, mountPath != "/" {
-                onVolume = Self.directoryPath(folder.directory).hasPrefix(mountPath)
-            } else {
-                onVolume = false
-            }
-            if onVolume { controller.navigate(to: home) }
+        for controller in controllers where controller.session.releaseVolume(isOnVolume) {
+            controller.navigate(to: home)
         }
     }
 

@@ -61,6 +61,84 @@ final class WindowManagerTests: XCTestCase {
                        h.environment.settings.home.standardizedFileURL.path, "home is the sandbox root")
     }
 
+    /// The sandbox is one volume: "vol" stands in for a mounted volume, matched by path.
+    private func isUnder(_ base: URL) -> (URL, VolumeID?) -> Bool {
+        let prefix = base.standardizedFileURL.path(percentEncoded: false)
+        return { directory, _ in
+            let path = directory.standardizedFileURL.path(percentEncoded: false)
+            return path == prefix || path.hasPrefix(prefix.hasSuffix("/") ? prefix : prefix + "/")
+        }
+    }
+
+    func testReleaseClosesTheColumnsOnTheVolumeAndKeepsTheWindowWhereItIs() async throws {
+        let h = try await ShellHarness.make(self)
+        try h.file("vol/sub/x.txt"); try h.file("r.txt")
+        let controller = try await h.openWindow()
+        let session = controller.session
+        session.updateViewState { $0.mode = .columns }
+        let chain = try XCTUnwrap(session.columnChain)
+        try await h.waitUntil("root listed") { session.folder.state == .complete }
+        session.folder.select(.names(["vol"]))
+        try await h.waitUntil("vol listed") { chain.models.count == 2 && chain.models[1].state == .complete }
+        chain.models[1].select(.names(["sub"]))
+        XCTAssertEqual(chain.models.count, 3)
+        XCTAssertTrue(chain.moveRight())
+        XCTAssertEqual(chain.activeIndex, 1)
+        let history = session.history.backList.count
+        h.context.windows.releaseVolume(isUnder(h.url("vol")))
+        XCTAssertEqual(chain.models.count, 1, "every column on the volume closes")
+        XCTAssertEqual(chain.activeIndex, 0)
+        XCTAssertTrue(session.folder === chain.models[0], "the window shows the column left")
+        XCTAssertTrue(chain.models[0].selection.isEmpty, "nothing reopens the volume's column")
+        XCTAssertEqual(session.viewMode, .columns)
+        XCTAssertEqual(session.history.backList.count, history, "no navigation")
+    }
+
+    func testReleaseOfTheColumnRootGoesHome() async throws {
+        let h = try await ShellHarness.make(self)
+        try h.file("vol/sub/x.txt")
+        let controller = try await h.openWindow("vol")
+        controller.session.updateViewState { $0.mode = .columns }
+        h.context.windows.releaseVolume(isUnder(h.url("vol")))
+        XCTAssertEqual(controller.session.folder.directory.standardizedFileURL.path,
+                       h.environment.settings.home.standardizedFileURL.path)
+    }
+
+    func testReleaseDropsParkedResultsSearchingTheVolume() async throws {
+        let h = try await ShellHarness.make(self)
+        try h.file("vol/tax.txt"); try h.dir("other")
+        let controller = try await h.openWindow("vol")
+        let session = controller.session
+        await session.search(SearchSpec(text: "tax", scope: .subfolders, mode: .name, root: h.url("vol").standardizedFileURL))
+        let results = try XCTUnwrap(session.results)
+        controller.navigate(to: h.url("other"))
+        XCTAssertNil(session.results, "parked")
+        h.context.windows.releaseVolume(isUnder(h.url("vol")))
+        XCTAssertEqual(session.folder.directory.lastPathComponent, "other", "the window isn't on the volume")
+        var events = 0
+        let token = results.observe { _ in events += 1 }
+        defer { token.cancel() }
+        session.goBack()
+        XCTAssertFalse(session.results === results, "the parked results were dropped, not shown again")
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(events, 0, "the dropped model is closed")
+    }
+
+    func testReleaseClosesShownResultsSearchingTheVolumeAndGoesHome() async throws {
+        let h = try await ShellHarness.make(self)
+        try h.file("vol/tax.txt"); try h.dir("other")
+        let controller = try await h.openWindow("other")
+        let session = controller.session
+        await session.search(SearchSpec(text: "tax", scope: .subfolders, mode: .name, root: h.url("vol").standardizedFileURL))
+        let results = try XCTUnwrap(session.results)
+        h.context.windows.releaseVolume(isUnder(h.url("vol")))
+        XCTAssertNil(session.results)
+        XCTAssertEqual(session.folder.directory.standardizedFileURL.path,
+                       h.environment.settings.home.standardizedFileURL.path)
+        session.goBack()
+        XCTAssertFalse(session.results === results, "not parked for Back")
+    }
+
     func testRestoreOrOpenInitialOpensTheRootInSandboxMode() async throws {
         try ShellHarness.requireWindowServer()
         let h = try await ShellHarness.make(self)
