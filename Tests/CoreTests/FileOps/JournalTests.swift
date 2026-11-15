@@ -56,6 +56,86 @@ final class JournalTests: FileOpsTestCase {
         XCTAssertEqual(left, [])
     }
 
+    private func started(_ job: JobID) -> JournalEntry {
+        .jobStarted(job: job, description: JobDescription(verb: .moving, itemCount: 1, firstItemName: "x", sourceFolderName: nil,
+                                                          destinationFolderName: nil))
+    }
+
+    /// Review B1-4: an entry recovery can't act on (its volume is not mounted) is kept and reported, then acted on at a
+    /// later launch; resolved entries and the job's start go.
+    func testRecoveryKeepsEntriesItCouldNotActOnForTheNextLaunch() async throws {
+        let job = JobID()
+        let partial = url("vol/dst/\(PartialName.make(for: "big", job: job))")      // "vol" is not there yet
+        let gone = url("dst/\(PartialName.make(for: "small", job: job))")           // folder there, partial gone: resolved
+        try dir("dst")
+        let j = Journal(fileURL: journalURL)
+        try await j.record(started(job))
+        try await j.record(.partial(job: job, url: partial))
+        try await j.record(.partial(job: job, url: gone))
+        let first = await LaunchRecovery.run(journal: j, lanes: LanePool())
+        XCTAssertEqual(first.pendingRecoveries, [partial])
+        XCTAssertEqual(first.incompleteJobs.count, 1)
+        XCTAssertFalse(first.isEmpty)
+        let kept = await Journal(fileURL: journalURL).entries()
+        XCTAssertEqual(kept, [.partial(job: job, url: partial)])
+
+        try dir("vol/dst/\(partial.lastPathComponent)")                             // the volume is back
+        try file("vol/dst/\(partial.lastPathComponent)/f", "partial bytes")
+        let second = await LaunchRecovery.run(journal: Journal(fileURL: journalURL), lanes: LanePool())
+        XCTAssertEqual(second.removedPartials, [partial])
+        XCTAssertEqual(second.pendingRecoveries, [])
+        XCTAssertEqual(second.incompleteJobs, [], "reported once")
+        XCTAssertFalse(exists(partial))
+        let left = await Journal(fileURL: journalURL).entries()
+        XCTAssertEqual(left, [])
+    }
+
+    func testRecoveryKeepsATrashedDestinationWhoseRestoreFailed() async throws {
+        let job = JobID()
+        let trashed = try file(".trash/b1/a", "old")
+        try dir("d")
+        let original = url("d/a")
+        let j = Journal(fileURL: journalURL)
+        try await j.record(started(job))
+        try await j.record(.trashedDestination(job: job, original: original, trashURL: trashed))
+        XCTAssertEqual(chmod(url("d").path, 0o500), 0)                              // the rename back fails
+        let first = await LaunchRecovery.run(journal: j, lanes: LanePool())
+        XCTAssertEqual(first.restoredDestinations, [])
+        XCTAssertEqual(first.pendingRecoveries, [original])
+        XCTAssertEqual(chmod(url("d").path, 0o755), 0)
+        let second = await LaunchRecovery.run(journal: Journal(fileURL: journalURL), lanes: LanePool())
+        XCTAssertEqual(second.restoredDestinations, [original])
+        XCTAssertEqual(text(original), "old")
+        let left = await Journal(fileURL: journalURL).entries()
+        XCTAssertEqual(left, [])
+    }
+
+    /// Kept entries are dropped after `maxAttempts` launches (a volume that never comes back).
+    func testRecoveryDropsKeptEntriesAfterTheLastAttempt() async throws {
+        let job = JobID()
+        let partial = url("vol/\(PartialName.make(for: "big", job: job))")
+        try await Journal(fileURL: journalURL).record(.partial(job: job, url: partial))
+        for launch in 1...LaunchRecovery.maxAttempts {
+            let report = await LaunchRecovery.run(journal: Journal(fileURL: journalURL), lanes: LanePool())
+            XCTAssertEqual(report.pendingRecoveries, launch < LaunchRecovery.maxAttempts ? [partial] : [], "launch \(launch)")
+        }
+        let left = await Journal(fileURL: journalURL).entries()
+        XCTAssertEqual(left, [])
+    }
+
+    /// A destination set aside on a volume without a Trash, after the new item landed: the Replace completed.
+    func testRecoveryDeletesASetAsideDestinationOnceTheNewItemIsInPlace() async throws {
+        let job = JobID()
+        let aside = try file("d/\(PartialName.make(for: "a.replaced", job: job))", "old")
+        let original = try file("d/a", "new")
+        let j = Journal(fileURL: journalURL)
+        try await j.record(.trashedDestination(job: job, original: original, trashURL: aside))
+        let report = await LaunchRecovery.run(journal: j, lanes: LanePool())
+        XCTAssertEqual(report.removedPartials, [aside])
+        XCTAssertEqual(names(url("d")), ["a"])
+        XCTAssertEqual(text(original), "new")
+    }
+
     func testRecoveryRemovesLockedPartialTree() async throws {
         let job = JobID()
         let p = PartialName.make(for: "locked", job: job)

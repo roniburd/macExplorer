@@ -205,7 +205,7 @@ final class CompressTests: FileOpsTestCase {
             XCTAssertEqual(p.deletingLastPathComponent().standardizedFileURL.path, root.standardizedFileURL.path)
         }
         XCTAssertTrue(entries.contains { if case .jobStarted = $0 { true } else { false } })
-        let report = try await LanePool().perform(on: .unknown, .fileOp) { lane in LaunchRecovery.recover(entries, lane) }
+        let report = try await LanePool().perform(on: .unknown, .fileOp) { lane in LaunchRecovery.recover(entries, lane).report }
         XCTAssertFalse(report.removedPartials.isEmpty)
         XCTAssertEqual(leftovers(), [])
         await queue.cancel(id)

@@ -32,11 +32,17 @@ public struct BatchRenameStep: Sendable, Codable, Equatable {
 /// Its executor is a private serial DispatchQueue, so these small blocking writes never run on the
 /// cooperative pool or the main thread.
 public actor Journal {
-    private struct FileFormat: Codable { var version = 1; var entries: [JournalEntry] }
+    private struct FileFormat: Codable {
+        var version = 1
+        var entries: [JournalEntry]
+        /// Launches at which LaunchRecovery kept some of the job's entries for a later try (absent in older files).
+        var recoveryAttempts: [JobID: Int]? = nil
+    }
 
     private let fileURL: URL
     private let executorQueue: DispatchSerialQueue
     private var items: [JournalEntry] = []
+    private var attempts: [JobID: Int] = [:]
     private var loaded = false
 
     public nonisolated var unownedExecutor: UnownedSerialExecutor { executorQueue.asUnownedSerialExecutor() }
@@ -62,7 +68,20 @@ public actor Journal {
         loadIfNeeded()
         let before = items.count
         items.removeAll { $0.job == job }
-        if items.count != before { try persist() }
+        let hadAttempts = attempts.removeValue(forKey: job) != nil
+        if items.count != before || hadAttempts { try persist() }
+    }
+
+    /// LaunchRecovery: of `job`'s entries only `kept` (the ones it could not act on yet) stay, for the next launch.
+    /// Returns how many launches have kept entries of this job, this one included.
+    @discardableResult
+    public func retainForNextLaunch(job: JobID, keeping kept: [JournalEntry]) throws -> Int {
+        loadIfNeeded()
+        items.removeAll { $0.job == job && !kept.contains($0) }
+        let n = (attempts[job] ?? 0) + 1
+        attempts[job] = n
+        try persist()
+        return n
     }
 
     public func entries() -> [JournalEntry] {
@@ -76,6 +95,7 @@ public actor Journal {
         guard let data = try? Data(contentsOf: fileURL) else { return }
         if let decoded = try? JSONDecoder().decode(FileFormat.self, from: data) {
             items = decoded.entries
+            attempts = decoded.recoveryAttempts ?? [:]
         } else {
             // Our own file but unreadable: set it aside (never delete it) and start empty.
             let stamp = Int(Date().timeIntervalSince1970)
@@ -86,7 +106,7 @@ public actor Journal {
 
     private func persist() throws {
         try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let data = try JSONEncoder().encode(FileFormat(entries: items))
+        let data = try JSONEncoder().encode(FileFormat(entries: items, recoveryAttempts: attempts.isEmpty ? nil : attempts))
         try data.write(to: fileURL, options: .atomic)
     }
 }

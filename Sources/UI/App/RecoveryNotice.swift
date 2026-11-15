@@ -24,6 +24,9 @@ struct RecoveryNotice: Equatable {
                  many: L10n.string("Put back %ld items that were being replaced.")),
             line(report.restoredRenames.count, one: L10n.string("Restored the original name of 1 item."),
                  many: L10n.string("Restored the original names of %ld items.")),
+            line(report.pendingRecoveries.count,
+                 one: L10n.string("1 item couldn't be cleaned up yet (its disk may be disconnected). MacExplorer will try again next time it opens."),
+                 many: L10n.string("%ld items couldn't be cleaned up yet (their disk may be disconnected). MacExplorer will try again next time it opens.")),
         ].compactMap { $0 }.joined(separator: "\n")
     }
 }
