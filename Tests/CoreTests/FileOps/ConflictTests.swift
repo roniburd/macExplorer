@@ -76,6 +76,51 @@ final class ConflictTests: FileOpsTestCase {
         XCTAssertEqual(o.record.actions, [])
     }
 
+    /// Review B1-3: Replace on a volume without a Trash asks "delete permanently?" (once per job) like Move to Trash.
+    func testReplaceWithoutTrashDeletesPermanentlyOnceConfirmed() async throws {
+        let a = try file("src/a", "new a"); let b = try file("src/b", "new b")
+        try file("nt/a", "old a"); try file("nt/b", "old b")
+        let scripted = ScriptedInteraction(conflicts: [.all(.replace)], noTrash: [true])
+        let (queue, journal) = makeQueue(interaction: scripted,
+                                         trash: SandboxTrash(directory: trashDir, refusingPathsUnder: [url("nt")]))
+        let o = try await run(.copy(sources: [a, b], destination: url("nt")), on: queue)
+        XCTAssertEqual(scripted.askedNoTrash(), [[url("nt/a")]], "asked once for the job")
+        XCTAssertEqual(text(url("nt/a")), "new a")
+        XCTAssertEqual(text(url("nt/b")), "new b")
+        XCTAssertEqual(names(url("nt")), ["a", "b"], "nothing set aside is left behind")
+        XCTAssertEqual(names(trashDir), [])
+        XCTAssertTrue(o.record.actions.contains(.deleted(url("nt/a"))))
+        XCTAssertTrue(o.record.actions.contains(.deleted(url("nt/b"))))
+        XCTAssertFalse(o.record.isUndoable, "a permanent delete has no undo")
+        XCTAssertEqual(o.skipped, [])
+        let entries = await journal.entries()
+        XCTAssertEqual(entries, [])
+    }
+
+    func testReplaceWithoutTrashDeclinedKeepsTheDestination() async throws {
+        let a = try file("src/a", "new"); try file("nt/a", "old")
+        let scripted = ScriptedInteraction(conflicts: [.one(.replace)], noTrash: [false])
+        let (queue, _) = makeQueue(interaction: scripted,
+                                   trash: SandboxTrash(directory: trashDir, refusingPathsUnder: [url("nt")]))
+        let o = try await run(.move(sources: [a], destination: url("nt")), on: queue)
+        XCTAssertEqual(text(url("nt/a")), "old")
+        XCTAssertEqual(text(a), "new")
+        XCTAssertEqual(names(url("nt")), ["a"])
+        XCTAssertEqual(o.skipped.map(\.url), [a])
+        XCTAssertEqual(o.record.actions, [])
+    }
+
+    func testReplaceWithoutTrashSameVolumeMove() async throws {
+        let a = try file("src/a", "new"); try file("nt/a", "old")
+        let (queue, _) = makeQueue(interaction: ScriptedInteraction(conflicts: [.one(.replace)], noTrash: [true]),
+                                   trash: SandboxTrash(directory: trashDir, refusingPathsUnder: [url("nt")]))
+        let o = try await run(.move(sources: [a], destination: url("nt")), on: queue)
+        XCTAssertEqual(text(url("nt/a")), "new")
+        XCTAssertFalse(exists(a))
+        XCTAssertEqual(names(url("nt")), ["a"])
+        XCTAssertTrue(o.record.actions.contains(.deleted(url("nt/a"))))
+    }
+
     func testReplaceRestoresTrashedItemWhenFinalRenameFails() async throws {
         let a = try file("src/a", "new"); try file("d/a", "old")
         let dPath = url("d").path

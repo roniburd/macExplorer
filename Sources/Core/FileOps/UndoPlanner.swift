@@ -241,7 +241,7 @@ enum UndoPlanner {
         }
         let result = await MoveJob.moveItem(ctx, item, to: target, renameExcl: plan.capabilities.renameExcl)
         if let displaced {
-            if result == .done { await ctx.journalClear(displaced.entry) } else { await ConflictExecutor.restore(ctx, displaced) }
+            if result == .done { await ConflictExecutor.commit(ctx, displaced) } else { await ConflictExecutor.restore(ctx, displaced) }
         }
         return result
     }
@@ -256,7 +256,7 @@ enum UndoPlanner {
         case .at(let target, let displaced):
             let result = await CreateOps.performRename(ctx, current, to: target.lastPathComponent)
             if let displaced {
-                if result == .done { await ctx.journalClear(displaced.entry) } else { await ConflictExecutor.restore(ctx, displaced) }
+                if result == .done { await ConflictExecutor.commit(ctx, displaced) } else { await ConflictExecutor.restore(ctx, displaced) }
             }
             return result
         case .skipped: return .skipped

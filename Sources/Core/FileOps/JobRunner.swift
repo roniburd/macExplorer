@@ -64,6 +64,8 @@ final class JobContext: Sendable {
         var perItemConflicts: [URL: ConflictAction] = [:]
         var perItemAnswered: Set<URL> = []
         var icons = IconShare()
+        /// Replace on a volume without a Trash: the user agreed to delete the existing items permanently (asked once).
+        var permanentReplaceApproved = false
     }
     private let state: Mutex<State>
 
@@ -390,6 +392,15 @@ extension JobContext {
     /// "Delete permanently?" for items on volumes without a Trash.
     func askNoTrash(_ urls: [URL]) async -> Bool {
         await waitingForUser { await interaction.confirmPermanentDeleteWithoutTrash(urls, job: snapshot()) }
+    }
+
+    /// The same question for an item Replace would put in the Trash: asked once per job, a yes covers the job's other
+    /// replaced items too.
+    func approvePermanentReplace(_ url: URL) async -> Bool {
+        if state.withLock({ $0.permanentReplaceApproved }) { return true }
+        guard await askNoTrash([url]) else { return false }
+        state.withLock { $0.permanentReplaceApproved = true }
+        return true
     }
 }
 

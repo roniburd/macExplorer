@@ -44,7 +44,9 @@ enum ConflictExecutor {
 }
 
 extension ConflictExecutor {
-    struct Trashed: Sendable { var original: URL; var trashURL: URL; var entry: JournalEntry }
+    /// `permanent`: no Trash on that volume, so `trashURL` is a hidden name beside the original (set aside, deleted by
+    /// `commit` once the new item is in place).
+    struct Trashed: Sendable { var original: URL; var trashURL: URL; var entry: JournalEntry; var permanent = false }
 
     static func execute(_ ctx: JobContext, action: ConflictAction, item: PlanItem, destinationDir: URL, name: String,
                         operation: Operation, renameExcl: Bool) async -> StepResult {
@@ -86,7 +88,8 @@ extension ConflictExecutor {
         }
     }
 
-    /// Trash the existing destination (never delete it), journal its Trash URL, record `.replaced`.
+    /// Trash the existing destination, journal its Trash URL, record `.replaced`. On a volume without a Trash the user
+    /// is asked "delete permanently?" (as Move to Trash does); yes sets it aside (`setAside`), no skips.
     static func trashExisting(_ ctx: JobContext, _ target: URL) async -> Trashed? {
         let trash = ctx.trash
         while true {
@@ -108,6 +111,9 @@ extension ConflictExecutor {
                 }
                 if let id { ctx.record(.replaced(original: target, trashURL: trashURL, id)) }
                 return Trashed(original: target, trashURL: trashURL, entry: entry)
+            case .failure(let e) where e.kind == .noTrash:
+                guard await ctx.approvePermanentReplace(target) else { return nil }
+                return await setAside(ctx, target)
             case .failure(let e):
                 switch await ctx.askError(e) {
                 case .retry, .continueAnyway: continue
@@ -119,6 +125,37 @@ extension ConflictExecutor {
                 }
             }
         }
+    }
+
+    /// Renames the existing destination to a hidden PartialName beside it, journaled first as a trashed destination:
+    /// a failed landing (`restore`) or a crash (LaunchRecovery) puts it back; `commit` deletes it. Nothing is lost
+    /// before the new item is in place.
+    static func setAside(_ ctx: JobContext, _ target: URL) async -> Trashed? {
+        let aside = target.deletingLastPathComponent()
+            .appending(path: PartialName.make(for: target.lastPathComponent + ".replaced", job: ctx.id))
+        let entry = JournalEntry.trashedDestination(job: ctx.id, original: target, trashURL: aside)
+        guard await journalOrAsk(ctx, entry, about: target) else { return nil }
+        let moved = await ctx.attempt(target) { _ in
+            switch RenamePrimitive.rename(target.path, aside.path, renameExcl: false) {
+            case .renamed: 0
+            case .exists: EEXIST
+            case .crossDevice: EXDEV
+            case .failed(let e): e
+            }
+        }
+        guard moved == .done else { await ctx.journalClear(entry); return nil }
+        return Trashed(original: target, trashURL: aside, entry: entry, permanent: true)
+    }
+
+    /// The new item is in place. A trashed destination stays in the Trash (its journal entry goes); one set aside is
+    /// deleted now and recorded `.deleted` (permanent, so the job has no undo, like Delete).
+    static func commit(_ ctx: JobContext, _ trashed: Trashed) async {
+        if trashed.permanent {
+            let aside = trashed.trashURL
+            let r = await ctx.attempt(trashed.original) { _ in PosixFS.removeTree(aside.path, unlock: true) }
+            if r == .done { ctx.record(.deleted(trashed.original)) }
+        }
+        await ctx.journalClear(trashed.entry)
     }
 
     /// Journals `entry`; on a write failure asks Retry/Skip/Cancel (EIO). false = not journaled (skipped or cancelled;
@@ -155,7 +192,7 @@ extension ConflictExecutor {
             }
             ctx.fault(.afterTrashDestination)
             let r = await MoveJob.moveItem(ctx, item, to: target, renameExcl: renameExcl)
-            if r == .done { await ctx.journalClear(trashed.entry) } else { await restore(ctx, trashed) }
+            if r == .done { await commit(ctx, trashed) } else { await restore(ctx, trashed) }
             return r
         }
         // Copy or cross-volume move: partial → verify → trash existing → rename → (move) delete source.
@@ -209,7 +246,7 @@ extension ConflictExecutor {
             }
         }
         await ctx.journalClear(entry)
-        await ctx.journalClear(trashed.entry)
+        await commit(ctx, trashed)
         switch operation {
         case .copy:
             if let id = (try? await ctx.onLane({ _ in FileIdentity.of(path: target.path) })) ?? nil { ctx.record(.created(target, id)) }
