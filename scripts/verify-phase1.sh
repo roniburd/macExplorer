@@ -60,11 +60,15 @@ build_clean() {
 app_launch() {
   scripts/bundle.sh release || return 1
   [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' .build/MacExplorer.app/Contents/Info.plist)" = com.macexplorer.app ] || return 1
+  # Without --version the bundle reports <plist version>-dev, so a local build is never mistaken for a release.
+  case "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' .build/MacExplorer.app/Contents/Info.plist)" in
+    *-dev) ;; *) echo "a bundle built without --version does not report a -dev version"; return 1 ;;
+  esac
   codesign --verify --strict .build/MacExplorer.app || return 1
   TMPDIR="$RUN/" scripts/bundle.sh release --bundle-id com.macexplorer.app.scenarios --output .build/macExplorer-scenarios.app || return 1
   local d="$RUN/launch"
   mkdir -p "$d/macx-scenario-root" "$d/state" "$d/trash" || return 1
-  macx_lock "$MACX_SCENARIO_LOCK" || { echo "another scenario run holds the lock"; return 1; }
+  macx_take_scenario_app verify-phase1 || return 1
   macx_app_args "$d/macx-scenario-root" "$d/state" "$d/trash"
   .build/macExplorer-scenarios.app/Contents/MacOS/macExplorer "${MACX_APP_ARGS[@]}" --smoke-exit-after 2 &
   APP_PID=$!

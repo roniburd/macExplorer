@@ -63,6 +63,10 @@ jobs:
           test -d .build/MacExplorer.app/Contents/Frameworks/Sparkle.framework
           test -f .build/MacExplorer.app/Contents/Frameworks/libMacxPluginKit.dylib
           test -n "$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' .build/MacExplorer.app/Contents/Info.plist)"
+          # Without --version, bundle.sh stamps a version that is clearly a local build: <plist version>-dev.
+          case "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' .build/MacExplorer.app/Contents/Info.plist)" in
+            *-dev) ;; *) echo "::error title=Bundle::a bundle built without --version must report a -dev version"; exit 1 ;;
+          esac
           scripts/release/test-release-scripts.sh
 
   scenarios:

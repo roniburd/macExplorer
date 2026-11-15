@@ -147,7 +147,7 @@ Each runner deletes its folders when it finishes.
 | `scripts/ui-ax-smoke.sh` | Accessibility smoke test (needs Accessibility permission; exits 3 with `SKIP` without it) | minutes |
 | `swift run -c release macx-bench` | Benchmarks on 1k, 10k and 100k files | minutes |
 | `scripts/check-layering.sh` | Import rules and test-safety rules | seconds |
-| `scripts/test-sandbox-lib.sh` | Self-test of `scripts/lib/sandbox.sh` (sandbox removal, launch options, the scenario lock) | seconds |
+| `scripts/test-sandbox-lib.sh` | Self-test of `scripts/lib/sandbox.sh` (sandbox removal, launch options, the scenario lock, racing stale-lock takeovers) | seconds |
 | `scripts/verify-phase1.sh` | All of the above, the script self-tests (`test-with-retry.sh --self-test`, `resolve-packages.sh --self-test`, `release/test-release-scripts.sh`), then checks nothing was left behind | longest |
 | `scripts/verify-phase4.sh` | `verify-phase1.sh`, then checks every Phase 4 core family, `p4-*` UI scenario and Phase 4 budget passed | longest |
 
@@ -159,8 +159,10 @@ Serial `swift test` takes 6–7 minutes.
 UI scenarios need keyboard focus.
 Only one can run on the Mac at a time, across all worktrees.
 `ui-scenarios.sh`, `ui-ax-smoke.sh`, `test-plugin-load.sh` and the app-launch gate of `verify-phase1.sh` take the lock
-`${TMPDIR}/macx-scenario-app.lock` and exit 2 while another live run holds it. A lock whose process is gone is taken
-over. The sandbox cleanup and launch options these scripts share are in `scripts/lib/sandbox.sh`.
+`${TMPDIR}/macx-scenario-app.lock` and exit 2 while another live run holds it (or a scenario app started some other
+way is running). A lock whose process is gone is taken over by exactly one waiter: the takeover itself is guarded by
+`<lock>.takeover`, so two runs that both find a stale lock can't both end up holding it. The sandbox cleanup, launch
+options and this lock check (`macx_take_scenario_app`) are in `scripts/lib/sandbox.sh`.
 
 - Scenario files are in `Tests/Scenarios/`.
 - Their schema is in `Sources/UI/Scenario/ScenarioFile.swift`.
@@ -218,9 +220,12 @@ Shared runners are slow, so CI retries failures once.
 - `scripts/test-with-retry.sh` re-runs each failed test alone.
 - It doesn't retry when more than 2 tests failed (`MAX_RETRIES`), or the build failed.
 - The scenario runners re-run each failed scenario once, also only up to 2 failures.
-- A pass on retry shows as a **Flaky test** warning, not a failure, and the log ends with a
-  `FLAKY: <n> … passed only on retry: <names>` line.
+- A pass on retry shows as a **Flaky test** warning, not a failure. Whenever any case passed only on retry, the log
+  has a `FLAKY: <n> … passed only on retry: <names>` line, also in a run that is red because another case failed
+  again. The retry rule and that line are shared in `scripts/lib/retry.sh`.
 - `scripts/resolve-packages.sh` retries `swift package resolve` only on network and HTTP errors; anything else fails at once.
+  It classifies only the `error:`/`fatal:` lines, not progress output. `RESOLVE_RETRY_DELAY` (default 20) sets the
+  backoff step in seconds.
 
 ### Benchmark gate
 
