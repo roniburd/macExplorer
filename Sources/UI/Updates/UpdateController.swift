@@ -155,6 +155,10 @@ public final class UpdateController {
     /// `applicationWillTerminate` (before anything else): an armed Install Previous Version… swap starts now.
     public func applicationWillTerminate() { rollback?.willTerminate() }
 
+    /// An Install Previous Version… swap is armed for the next quit: Sparkle must not download or install anything,
+    /// or both would replace the app on the same quit.
+    var rollbackArmed: Bool { rollback?.armed != nil }
+
     /// An update is downloading or staged: Sparkle would install it on the same quit a rollback needs.
     var updateInFlight: Bool {
         switch model.state {
@@ -167,10 +171,14 @@ public final class UpdateController {
 
     func allowedChannels() -> Set<String> { settings.updateChannel.sparkleChannels }
 
-    /// `shouldProceedWithUpdate`: false for a version rejected earlier this session, or for a build skipped after a
-    /// rollback, so Sparkle neither shows nor downloads it (the bridge then throws `suppressedError`, which comes back
-    /// through `didAbort` and reads as "no update" on a background check).
+    /// `shouldProceedWithUpdate`: false for a version rejected earlier this session, for a build skipped after a
+    /// rollback, or for anything while a rollback is armed, so Sparkle neither shows nor downloads it (the bridge then
+    /// throws `suppressedError`, which comes back through `didAbort` and reads as "no update" on a background check).
     func shouldProceed(version: String, build: Int? = nil) -> Bool {
+        if rollbackArmed {
+            NSLog("MacExplorer update %@ not installed: Install Previous Version… replaces the app when it quits", version)
+            return false
+        }
         if RollbackSkip.shouldSkip(build: build, skipThrough: settings.updateSkipThroughBuild) {
             NSLog("MacExplorer update %@ skipped: rolled back from build %ld", version, settings.updateSkipThroughBuild ?? 0)
             return false
@@ -227,8 +235,9 @@ public final class UpdateController {
     func didAbort(_ failure: UpdateFailure) {
         guard !failure.isNoUpdate else { return }
         if failure.top.domain == Self.suppressedDomain {
-            // A manual check says again why nothing is installed; a background check stays silent.
-            if case .checking(userInitiated: true) = model.state {
+            // A manual check says again why nothing is installed; a background check stays silent. While a rollback
+            // is armed nothing failed verification: the check just finds nothing to install.
+            if case .checking(userInitiated: true) = model.state, !rollbackArmed {
                 model.send(.failed(.verificationFailed(version: foundVersion)))
             } else {
                 model.send(.noUpdateFound(currentVersion: installedVersion))
@@ -259,9 +268,10 @@ public final class UpdateController {
     func userDriverFoundUpdate(version: String, notesURL: URL?, informationOnly: Bool, stage: FoundUpdateStage,
                                reply: @escaping @MainActor (FoundUpdateReply) -> Void) {
         driverNotes = notesURL
-        if informationOnly || rejectedVersions.contains(version) {
+        if informationOnly || rejectedVersions.contains(version) || rollbackArmed {
             NSLog("MacExplorer update %@ is %@; nothing to install", version,
-                  informationOnly ? "informational only" : "rejected this session")
+                  informationOnly ? "informational only"
+                      : rollbackArmed ? "blocked by an armed Install Previous Version…" : "rejected this session")
             if case .checking = model.state { model.send(.noUpdateFound(currentVersion: installedVersion)) }
             reply(.dismiss)
             didFinishUpdateCycle()

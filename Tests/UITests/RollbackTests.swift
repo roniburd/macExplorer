@@ -119,10 +119,16 @@ private final class FakeTransport: RollbackTransport {
     var feed = Data()
     var archive = Data()
     var downloadError: (any Error)?
+    /// When set, `download` waits here until `release()` (a quit mid-download).
+    var hold = false
+    private var held: CheckedContinuation<Void, Never>?
+    var isHeld: Bool { held != nil }
     let scratch: URL
     init(scratch: URL) { self.scratch = scratch }
+    func release() { held?.resume(); held = nil }
     func data(from url: URL) async throws -> Data { feed }
     func download(_ url: URL, progress: @escaping @MainActor (Double?) -> Void) async throws -> URL {
+        if hold { await withCheckedContinuation { held = $0 } }
         if let downloadError { throw downloadError }
         progress(0.5)
         let file = scratch.appending(path: "dl-\(UUID().uuidString).zip")
@@ -147,6 +153,17 @@ private struct FakeUnpacker: RollbackUnpacker {
 
 private struct FakeCodeCheck: RollbackCodeCheck {
     var ok = true
+    func signedLikeRunningApp(_ app: URL) -> Bool { ok }
+}
+
+/// A code check whose answer the test changes after staging (e.g. the staged app was modified before quit).
+private final class SwitchableCodeCheck: RollbackCodeCheck, @unchecked Sendable {
+    private let lock = NSLock()
+    private var _ok = true
+    var ok: Bool {
+        get { lock.withLock { _ok } }
+        set { lock.withLock { _ok = newValue } }
+    }
     func signedLikeRunningApp(_ app: URL) -> Bool { ok }
 }
 
@@ -176,7 +193,9 @@ final class RollbackServiceTests: XCTestCase {
     }
 
     private func make(transport: FakeTransport? = nil, unpacker: FakeUnpacker = FakeUnpacker(), codeOK: Bool = true,
-                      inFlight: Bool = false, settings: Core.Settings? = nil, launcher: RecordingLauncher = RecordingLauncher(),
+                      codeCheck: (any RollbackCodeCheck)? = nil,
+                      inFlight: @escaping @MainActor () -> Bool = { false }, settings: Core.Settings? = nil,
+                      launcher: RecordingLauncher = RecordingLauncher(),
                       skip: SparkleSkippedVersion = .inert,
                       quits: (() -> Void)? = nil) -> (RollbackService, FakeTransport, Core.Settings) {
         let t = transport ?? FakeTransport(scratch: root.appending(path: "scratch"))
@@ -187,8 +206,8 @@ final class RollbackServiceTests: XCTestCase {
             appURL: root.appending(path: "Applications/MacExplorer.app", directoryHint: .isDirectory),
             bundleID: "com.macexplorer.app", installedVersion: "0.2.0-beta.15", installedBuild: 214, processID: 1,
             opener: "/usr/bin/true")
-        let service = RollbackService(config: config, settings: s, updateInFlight: { inFlight }, transport: t,
-                                      unpacker: unpacker, codeCheck: FakeCodeCheck(ok: codeOK), launcher: launcher,
+        let service = RollbackService(config: config, settings: s, updateInFlight: inFlight, transport: t,
+                                      unpacker: unpacker, codeCheck: codeCheck ?? FakeCodeCheck(ok: codeOK), launcher: launcher,
                                       sparkleSkip: skip, terminate: { quits?() })
         return (service, t, s)
     }
@@ -238,6 +257,83 @@ final class RollbackServiceTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: staged.directory.path(percentEncoded: false)))
     }
 
+    func testArmedRollbackKeepsSparkleFromInstalling() async throws {
+        let (service, transport, settings) = make()
+        transport.archive = Data("zip".utf8)
+        let staged = try await service.prepare(item(signing: transport.archive)) { _ in }
+        let model = UpdateModel()
+        let c = UpdateController(model: model, settings: settings, engine: InertEngine(), installedVersion: "0.2.0-beta.15",
+                                 installedBuild: 214, terminate: {})
+        c.rollback = service
+        XCTAssertTrue(c.shouldProceed(version: "0.2.0-beta.16", build: 215))
+        service.arm(staged)
+        XCTAssertFalse(c.shouldProceed(version: "0.2.0-beta.16", build: 215), "no download while a rollback is armed")
+        model.checkNow()
+        var replies: [FoundUpdateReply] = []
+        c.userDriverFoundUpdate(version: "0.2.0-beta.16", notesURL: nil, informationOnly: false, stage: .downloaded) {
+            replies.append($0)
+        }
+        XCTAssertEqual(replies, [.dismiss], "the user driver doesn't install while a rollback is armed")
+        XCTAssertFalse(c.updateInFlight)
+        model.checkNow()
+        c.didAbort(UpdateFailure(UpdateController.suppressedError(version: "0.2.0-beta.16")))
+        XCTAssertEqual(model.state, .upToDate(version: "0.2.0-beta.15"), "not reported as a failed verification")
+        service.disarm()
+        XCTAssertTrue(c.shouldProceed(version: "0.2.0-beta.16", build: 215))
+    }
+
+    func testUpdateStartedAfterArmingCancelsTheSwapAtQuit() async throws {
+        let launcher = RecordingLauncher()
+        let box = SkipBox()
+        let inFlight = SkipBox()
+        let (service, transport, settings) = make(inFlight: { inFlight.value != nil }, launcher: launcher, skip: box.skip)
+        transport.archive = Data("zip".utf8)
+        let staged = try await service.prepare(item(signing: transport.archive)) { _ in }
+        service.arm(staged)
+        inFlight.value = 1   // Sparkle started downloading after the rollback was armed
+        service.willTerminate()
+        XCTAssertTrue(launcher.launches.isEmpty)
+        XCTAssertNil(settings.pendingRollback)
+        XCTAssertNil(box.value)
+        XCTAssertNil(service.armed)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: staged.directory.path(percentEncoded: false)))
+    }
+
+    func testStagedAppFailingTheSignatureCheckAtQuitIsNotSwapped() async throws {
+        let launcher = RecordingLauncher()
+        let check = SwitchableCodeCheck()
+        let (service, transport, settings) = make(codeCheck: check, launcher: launcher)
+        transport.archive = Data("zip".utf8)
+        let staged = try await service.prepare(item(signing: transport.archive)) { _ in }
+        service.arm(staged)
+        check.ok = false
+        service.willTerminate()
+        XCTAssertTrue(launcher.launches.isEmpty)
+        XCTAssertNil(settings.pendingRollback)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: staged.directory.path(percentEncoded: false)))
+    }
+
+    func testQuitDuringPrepareRemovesTheStagingFolder() async throws {
+        let launcher = RecordingLauncher()
+        let (service, transport, settings) = make(launcher: launcher)
+        transport.archive = Data("zip".utf8)
+        transport.hold = true
+        let target = item(signing: transport.archive)
+        let task = Task { try await service.prepare(target) { _ in } }
+        let deadline = Date().addingTimeInterval(10)
+        while !transport.isHeld, Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
+        let directory = try XCTUnwrap(service.preparing)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: directory.path(percentEncoded: false)))
+        service.willTerminate()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path(percentEncoded: false)))
+        XCTAssertNil(service.preparing)
+        XCTAssertTrue(launcher.launches.isEmpty)
+        XCTAssertNil(settings.pendingRollback)
+        transport.release()
+        _ = try? await task.value
+        try? FileManager.default.removeItem(at: directory)
+    }
+
     func testBadSignatureIsRejected() async {
         let (service, transport, _) = make()
         transport.archive = Data("zip".utf8)
@@ -259,7 +355,7 @@ final class RollbackServiceTests: XCTestCase {
     }
 
     func testPendingUpdateBlocksRollback() async {
-        let (service, transport, _) = make(inFlight: true)
+        let (service, transport, _) = make(inFlight: { true })
         XCTAssertEqual(service.preflight(), .updatePending)
         transport.archive = Data("zip".utf8)
         let target = item(signing: transport.archive)

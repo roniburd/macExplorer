@@ -100,6 +100,9 @@ final class RollbackService: RollbackServicing {
     private let terminate: @MainActor () -> Void
     private let sparkleSkip: SparkleSkippedVersion
     private(set) var armed: StagedRollback?
+    /// The staging folder of a `prepare` still running: a quit mid-download never resumes it, so `willTerminate`
+    /// removes the folder instead.
+    private(set) var preparing: URL?
 
     init(config: Config, settings: Core.Settings, updateInFlight: @escaping @MainActor () -> Bool,
          transport: any RollbackTransport, unpacker: any RollbackUnpacker, codeCheck: any RollbackCodeCheck,
@@ -171,6 +174,8 @@ final class RollbackService: RollbackServicing {
         do {
             directory = try fm.url(for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: config.appURL, create: true)
         } catch { throw .notReplaceable(config.appURL.path(percentEncoded: false)) }
+        preparing = directory
+        defer { if preparing == directory { preparing = nil } }
         do {
             let staged = try await stage(item, in: directory, progress: progress)
             return staged
@@ -189,7 +194,8 @@ final class RollbackService: RollbackServicing {
             try fm.moveItem(at: downloaded, to: archive)
         } catch { throw .network(Self.describe(error)) }
         progress(nil)
-        guard RollbackSignature.isValid(file: archive, signature: item.edSignature, publicKey: config.publicKey) else {
+        // Mapping and hashing a release archive takes a while: off the main actor.
+        guard await Self.signatureIsValid(archive, signature: item.edSignature, publicKey: config.publicKey) else {
             throw .badSignature
         }
         let unpacked = directory.appending(path: "unpacked", directoryHint: .isDirectory)
@@ -206,7 +212,7 @@ final class RollbackService: RollbackServicing {
         } ?? [:]
         guard info["CFBundleIdentifier"] as? String == config.bundleID else { throw .wrongApp(L10n.string("bundle identifier")) }
         guard (info["CFBundleVersion"] as? String).flatMap({ Int($0) }) == item.build else { throw .wrongApp(L10n.string("build number")) }
-        guard codeCheck.signedLikeRunningApp(app) else { throw .wrongApp(L10n.string("code signature")) }
+        guard await Self.signedLikeRunningApp(app, codeCheck) else { throw .wrongApp(L10n.string("code signature")) }
         let backup = directory.appending(path: "Replaced-\(config.installedBuild).app", directoryHint: .isDirectory)
         return StagedRollback(item: item, stagedApp: app, backup: backup, directory: directory)
     }
@@ -224,11 +230,37 @@ final class RollbackService: RollbackServicing {
 
     func quit() { terminate() }
 
+    @concurrent private static func signatureIsValid(_ archive: URL, signature: String, publicKey: String) async -> Bool {
+        RollbackSignature.isValid(file: archive, signature: signature, publicKey: publicKey)
+    }
+
+    @concurrent private static func signedLikeRunningApp(_ app: URL, _ check: any RollbackCodeCheck) async -> Bool {
+        check.signedLikeRunningApp(app)
+    }
+
     /// `applicationWillTerminate`: the quit is certain, so record the rollback and start the swap helper. A cancelled
-    /// quit never gets here, so nothing is swapped behind the user's back.
+    /// quit never gets here, so nothing is swapped behind the user's back. Nothing is swapped either when Sparkle
+    /// started an update after the rollback was armed (both would replace the app on this quit), or when the staged
+    /// app no longer passes the code-signature check it passed when it was staged.
     func willTerminate() {
+        if let directory = preparing {
+            preparing = nil
+            try? FileManager.default.removeItem(at: directory)
+        }
         guard let staged = armed else { return }
         armed = nil
+        if updateInFlight() {
+            NSLog("MacExplorer didn't roll back to %@: an update is downloading or waiting to install on this quit",
+                  staged.item.version)
+            try? FileManager.default.removeItem(at: staged.directory)
+            return
+        }
+        guard codeCheck.signedLikeRunningApp(staged.stagedApp) else {
+            NSLog("MacExplorer didn't roll back to %@: the staged app at %@ no longer passes the code-signature check",
+                  staged.item.version, staged.stagedApp.path(percentEncoded: false))
+            try? FileManager.default.removeItem(at: staged.directory)
+            return
+        }
         let script = staged.directory.appending(path: "swap.sh")
         do {
             try Data(RollbackSwap.script.utf8).write(to: script)
