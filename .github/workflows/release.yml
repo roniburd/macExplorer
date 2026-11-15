@@ -41,21 +41,15 @@ env:
 jobs:
   release:
     runs-on: xcode-27   # GitHub image with Xcode 27.x (macos-26 tops out at Xcode 26.6)
-    timeout-minutes: 120  # up to 50 min waiting for CI, then possibly the tests, build, sign and publish
+    timeout-minutes: 120  # up to 50 min waiting for CI, then build, sign and publish
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
-      - name: Select Xcode
-        run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
-      - name: Cache SwiftPM downloads
-        uses: actions/cache@v4
+          persist-credentials: false
+      - uses: ./.github/actions/setup-swift
         with:
-          path: ~/Library/Caches/org.swift.swiftpm
-          key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.resolved') }}
-          restore-keys: swiftpm-${{ runner.os }}-${{ runner.arch }}-
-      - name: Resolve packages (retries network errors)
-        run: scripts/resolve-packages.sh
+          xcode-version: ${{ env.XCODE_VERSION }}
 
       - name: Version
         id: v
@@ -119,9 +113,11 @@ jobs:
               || { echo "::error::SPARKLE_ED_PRIVATE_KEY does not belong to SUPublicEDKey in Resources/Info.plist"; exit 1; }
           fi
 
-      # The tests already ran in CI (ci.yml) on this commit: wait for that result instead of running them again.
-      # CI failed -> no release. No CI run, or only cancelled ones (ci.yml cancels a ref's in-progress run when main
-      # moves on) -> run the tests here, with one retry of each failed case. Re-runnable: re-run CI, then this job.
+      # The gates (layering, warning-free builds, tests, scenario runners, plugin load, bench) run in CI (ci.yml) on
+      # this commit: wait for that result instead of running them again. CI failed -> no release. No CI run, or only
+      # cancelled ones (ci.yml cancels a ref's in-progress run when main moves on) -> no release either: running only
+      # part of ci.yml here would publish a commit that never passed the full gate set. Start CI on the tag
+      # (gh workflow run ci.yml --ref <tag>), then re-run this job.
       - name: Wait for CI on this commit
         env:
           GH_TOKEN: ${{ github.token }}
@@ -130,8 +126,8 @@ jobs:
           rc=0; scripts/release/wait-for-ci.sh "$sha" || rc=$?
           case "$rc" in
             0) echo "Tests: CI passed on $sha" >> "$GITHUB_STEP_SUMMARY" ;;
-            3) echo "::notice title=Tests::no completed CI run for $sha; running the tests in this job"
-               scripts/test-with-retry.sh ;;
+            3) echo "::error title=No CI run::no completed CI run for $sha. Run CI on it (gh workflow run ci.yml --ref $GITHUB_REF_NAME), then re-run this release"
+               exit 1 ;;
             *) exit 1 ;;
           esac
 
@@ -248,8 +244,16 @@ jobs:
           [ -n "$sig" ] || { echo "::error::sign_update printed no signature"; exit 1; }
           echo "signature=$sig" >> "$GITHUB_OUTPUT"
 
+      # Checkout keeps no credentials (persist-credentials: false). Steps that talk to GitHub over git set GIT_TOKEN,
+      # which this helper hands to git; the token never lands in .git/config, a remote URL or a command line.
+      - name: Git credential helper
+        run: |
+          git config --global credential.https://github.com.helper ''
+          git config --global --add credential.https://github.com.helper "$GITHUB_WORKSPACE/scripts/release/git-credential-env.sh"
+
       - name: Render appcast and cask
         env:
+          GIT_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.v.outputs.version }}
           BUILD: ${{ steps.v.outputs.build }}
           CHANNEL: ${{ steps.v.outputs.channel }}
@@ -278,7 +282,7 @@ jobs:
 
       - name: Upload dry-run artifacts
         if: steps.v.outputs.dry == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-dry-run
           path: |
@@ -291,6 +295,7 @@ jobs:
         if: steps.v.outputs.dry != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          GIT_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.v.outputs.version }}
           PRERELEASE: ${{ steps.v.outputs.prerelease }}
           ZIP: ${{ steps.pkg.outputs.zip }}
@@ -314,6 +319,7 @@ jobs:
       - name: Publish appcast
         if: steps.v.outputs.dry != 'true'
         env:
+          GIT_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.v.outputs.version }}
         run: |
           git config user.name "github-actions[bot]"
@@ -328,12 +334,12 @@ jobs:
       - name: Update Homebrew tap
         if: steps.v.outputs.dry != 'true'
         env:
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          GIT_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           VERSION: ${{ steps.v.outputs.version }}
           TOKEN: ${{ steps.v.outputs.token }}
         run: |
-          [ -n "$HOMEBREW_TAP_TOKEN" ] || { echo "::error::HOMEBREW_TAP_TOKEN not set; the cask was not updated"; exit 1; }
-          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/roniburd/homebrew-macexplorer.git" "$RUNNER_TEMP/tap"
+          [ -n "$GIT_TOKEN" ] || { echo "::error::HOMEBREW_TAP_TOKEN not set; the cask was not updated"; exit 1; }
+          git clone https://github.com/roniburd/homebrew-macexplorer.git "$RUNNER_TEMP/tap"
           mkdir -p "$RUNNER_TEMP/tap/Casks"
           cp "dist/$TOKEN.rb" "$RUNNER_TEMP/tap/Casks/"
           cd "$RUNNER_TEMP/tap"

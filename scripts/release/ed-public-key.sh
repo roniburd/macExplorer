@@ -7,6 +7,7 @@
 # openssl@3, else `openssl` on PATH. The key only ever lives in a mktemp directory that is deleted on exit.
 # Exit status: 0 printed, 1 bad key or no usable OpenSSL, 64 bad arguments.
 set -euo pipefail
+. "$(cd "$(dirname "$0")" && pwd)/../lib/openssl.sh"
 [ "$#" -eq 0 ] || { echo "usage: printf '%s\\n' \"\$KEY\" | $0" >&2; exit 64; }
 
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/macx-edkey-XXXXXX")"
@@ -21,12 +22,7 @@ case "$size" in
     tail -c 32 "$tmp/raw" | base64
     ;;
 32)
-    ossl="${OPENSSL:-}"
-    if [ -z "$ossl" ] && command -v brew >/dev/null 2>&1; then
-        prefix="$(brew --prefix openssl@3 2>/dev/null || true)"
-        [ -x "$prefix/bin/openssl" ] && ossl="$prefix/bin/openssl"
-    fi
-    ossl="${ossl:-openssl}"
+    ossl="$(macx_openssl)"
     # PKCS#8 DER wrapper for a raw Ed25519 private key (RFC 8410), then the seed.
     { printf '\x30\x2e\x02\x01\x00\x30\x05\x06\x03\x2b\x65\x70\x04\x22\x04\x20'; cat "$tmp/raw"; } > "$tmp/key.der"
     if ! "$ossl" pkey -inform DER -in "$tmp/key.der" -pubout -outform DER -out "$tmp/pub.der" 2>/dev/null; then

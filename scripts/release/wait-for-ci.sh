@@ -2,11 +2,13 @@
 # Release gate: waits for the CI workflow (ci.yml) on a commit instead of re-running the tests in release.yml.
 # Usage: scripts/release/wait-for-ci.sh <commit sha>   (needs GH_TOKEN with actions: read, and gh)
 # Read-only: it only lists workflow runs through the GitHub API. Exit codes:
-#   0  a CI run for the commit succeeded (any event: push to main, pull request, dispatch)
+#   0  a CI run for the commit succeeded
 #   1  CI failed for the commit (the ::error:: names the run), or no run finished within TIMEOUT_SECONDS
 #   3  no usable CI run: none exists for the commit, or every run was cancelled/skipped (ci.yml cancels the
-#      in-progress run of a ref when main moves on); the caller runs the tests itself
-# A success anywhere wins; a failure is reported only once no run for the commit is still queued or running.
+#      in-progress run of a ref when main moves on); the caller asks for a CI run on the tag
+# The push-to-main runs decide when the commit has any that weren't cancelled or skipped (that is the run the tag
+# was cut from); otherwise every run counts (pull request, dispatch). Among the deciding runs a success wins; a
+# failure is reported only once none of them is still queued or running.
 # Environment: GITHUB_REPOSITORY (default: gh's current repo), TIMEOUT_SECONDS (3000), POLL_SECONDS (30),
 # APPEAR_SECONDS (120: how long to wait for a run to show up when the tag was pushed right after the commit).
 set -euo pipefail
@@ -16,12 +18,15 @@ timeout="${TIMEOUT_SECONDS:-3000}"; poll="${POLL_SECONDS:-30}"; appear="${APPEAR
 start=$(date +%s); pending=""
 
 while :; do
-  # One line per run: <status> <conclusion or -> <html_url>. API errors are retried until the timeout.
+  # One line per run: <status> <conclusion or -> <event> <branch or -> <html_url>. API errors are retried until the
+  # timeout.
   if runs="$(gh api "repos/$repo/actions/workflows/ci.yml/runs?head_sha=$sha&per_page=100" \
-      --jq '.workflow_runs[] | "\(.status) \(.conclusion // "-") \(.html_url)"')"; then
-    success="$(printf '%s\n' "$runs" | awk '$1 == "completed" && $2 == "success" { print $3; exit }')"
-    pending="$(printf '%s\n' "$runs" | awk '$1 != "completed" && NF { print $3; exit }')"
-    failure="$(printf '%s\n' "$runs" | awk '$1 == "completed" && $2 != "success" && $2 != "cancelled" && $2 != "skipped" { print $3; exit }')"
+      --jq '.workflow_runs[] | "\(.status) \(.conclusion // "-") \(.event) \(.head_branch // "-") \(.html_url)"')"; then
+    main="$(printf '%s\n' "$runs" | awk '$3 == "push" && $4 == "main" && $2 != "cancelled" && $2 != "skipped"')"
+    deciding="${main:-$runs}"
+    success="$(printf '%s\n' "$deciding" | awk '$1 == "completed" && $2 == "success" { print $5; exit }')"
+    pending="$(printf '%s\n' "$deciding" | awk '$1 != "completed" && NF { print $5; exit }')"
+    failure="$(printf '%s\n' "$deciding" | awk '$1 == "completed" && $2 != "success" && $2 != "cancelled" && $2 != "skipped" { print $5; exit }')"
     if [ -n "$success" ]; then echo "CI passed for $sha: $success"; exit 0; fi
     if [ -z "$pending" ]; then
       if [ -n "$failure" ]; then

@@ -27,21 +27,16 @@ jobs:
     runs-on: xcode-27   # GitHub image with Xcode 27.x (macos-26 tops out at Xcode 26.6)
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - name: Select Xcode
-        run: |
-          sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
-          swift --version
-      - name: Cache SwiftPM downloads
-        uses: actions/cache@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          path: ~/Library/Caches/org.swift.swiftpm
-          key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.resolved') }}
-          restore-keys: swiftpm-${{ runner.os }}-${{ runner.arch }}-
-      - name: Resolve packages (retries network errors)
-        run: scripts/resolve-packages.sh
+          persist-credentials: false
+      - uses: ./.github/actions/setup-swift
+        with:
+          xcode-version: ${{ env.XCODE_VERSION }}
       - name: Layering checks
-        run: scripts/check-layering.sh && scripts/test-check-layering.sh && scripts/check-no-internal.sh && scripts/test-check-no-internal.sh
+        run: |
+          scripts/check-layering.sh && scripts/test-check-layering.sh && scripts/check-no-internal.sh && scripts/test-check-no-internal.sh
+          scripts/test-sandbox-lib.sh && scripts/resolve-packages.sh --self-test
       - name: Build (release, warnings fail)
         run: |
           swift build -c release 2>&1 | tee "$RUNNER_TEMP/build-release.log"
@@ -56,7 +51,7 @@ jobs:
         run: scripts/test-with-retry.sh --self-test && scripts/test-with-retry.sh
       - name: Upload test reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: test-results
           path: .build/test-results/
@@ -74,17 +69,12 @@ jobs:
     runs-on: xcode-27   # GitHub image with Xcode 27.x (macos-26 tops out at Xcode 26.6)
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - name: Select Xcode
-        run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
-      - name: Cache SwiftPM downloads
-        uses: actions/cache@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          path: ~/Library/Caches/org.swift.swiftpm
-          key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.resolved') }}
-          restore-keys: swiftpm-${{ runner.os }}-${{ runner.arch }}-
-      - name: Resolve packages (retries network errors)
-        run: scripts/resolve-packages.sh
+          persist-credentials: false
+      - uses: ./.github/actions/setup-swift
+        with:
+          xcode-version: ${{ env.XCODE_VERSION }}
       - name: Core scenarios (disk images, crash recovery)
         run: scripts/run-scenarios.sh release
       - name: UI scenarios (bundled app, sandboxed)
@@ -93,7 +83,7 @@ jobs:
         run: scripts/test-plugin-load.sh release
       - name: Upload scenario reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: scenario-reports
           path: |
@@ -106,19 +96,13 @@ jobs:
     runs-on: xcode-27   # GitHub image with Xcode 27.x (macos-26 tops out at Xcode 26.6)
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
-      - name: Select Xcode
-        run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
-      - name: Cache SwiftPM downloads
-        uses: actions/cache@v4
+          persist-credentials: false
+      - uses: ./.github/actions/setup-swift
         with:
-          path: ~/Library/Caches/org.swift.swiftpm
-          key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.resolved') }}
-          restore-keys: swiftpm-${{ runner.os }}-${{ runner.arch }}-
-      - name: Resolve packages (retries network errors)
-        run: scripts/resolve-packages.sh
+          xcode-version: ${{ env.XCODE_VERSION }}
       - name: Baseline cache key (runner image + architecture)
         id: key
         run: |
@@ -126,7 +110,7 @@ jobs:
           echo "prefix=bench-baseline-${image}-$(uname -m)-" >> "$GITHUB_OUTPUT"
       - name: Restore the main baseline for this image
         if: github.event_name == 'pull_request'
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: .build/bench-baseline.json
           key: ${{ steps.key.outputs.prefix }}${{ github.event.pull_request.base.sha }}
@@ -158,13 +142,13 @@ jobs:
         run: cp .build/bench.json .build/bench-baseline.json
       - name: Save the main baseline
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: .build/bench-baseline.json
           key: ${{ steps.key.outputs.prefix }}${{ github.sha }}
       - name: Upload bench report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: bench
           path: .build/bench*.json

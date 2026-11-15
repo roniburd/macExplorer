@@ -1,6 +1,8 @@
 #!/bin/bash
 # Prints a Homebrew cask for MacExplorer (distribution spec §5 step 6).
 # Usage: render-cask.sh --token macexplorer|macexplorer@beta --version V --sha256 SHA --url URL
+# zap: settings and plugins (Application Support), the remote-repository cache (Caches/macExplorer), Sparkle's
+# download cache (Caches/<bundle id>/org.sparkle-project.Sparkle) and URLSession storage, preferences, window state.
 set -euo pipefail
 usage() { echo "usage: $0 --token macexplorer|macexplorer@beta --version V --sha256 SHA --url URL" >&2; exit 64; }
 token="" version="" sha="" url=""
@@ -39,7 +41,11 @@ cask "$token" do
   zap trash: [
     "~/Library/Application Support/macExplorer",
     "~/Library/Caches/com.macexplorer.app",
+    "~/Library/Caches/macExplorer",
+    "~/Library/HTTPStorages/com.macexplorer.app",
+    "~/Library/HTTPStorages/com.macexplorer.app.binarycookies",
     "~/Library/Preferences/com.macexplorer.app.plist",
+    "~/Library/Saved Application State/com.macexplorer.app.savedState",
   ]
 
   caveats <<~EOS

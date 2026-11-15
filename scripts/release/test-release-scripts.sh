@@ -5,6 +5,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/macx-release-test-XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
 fail() { echo "FAIL: $*" >&2; exit 1; }
+. "$here/../lib/openssl.sh"
 
 ac="$tmp/appcast.xml"
 add() { python3 -I "$here/appcast.py" --appcast "$ac" --url "https://example.invalid/$1.zip" --length 123 \
@@ -40,6 +41,9 @@ grep -q 'sha256 "abc123"' <<<"$cask" || fail "cask sha"
 grep -q 'auto_updates true' <<<"$cask" || fail "auto_updates"
 grep -q 'conflicts_with cask: "macexplorer"' <<<"$cask" || fail "conflicts"
 grep -q 'app "MacExplorer.app"' <<<"$cask" || fail "app stanza"
+grep -qF '"~/Library/Saved Application State/com.macexplorer.app.savedState",' <<<"$cask" || fail "zap saved state"
+grep -qF '"~/Library/Caches/com.macexplorer.app",' <<<"$cask" || fail "zap Sparkle cache"
+grep -qF '"~/Library/HTTPStorages/com.macexplorer.app",' <<<"$cask" || fail "zap HTTP storage"
 expect_64 "$here/render-cask.sh" --token other --version 1 --sha256 a --url u
 expect_64 "$here/render-cask.sh" --token macexplorer --version 1 --sha256 a
 expect_64 "$here/render-cask.sh" --bogus
@@ -56,11 +60,7 @@ got="$(cat "$tmp/old" "$tmp/oldpub" | base64 | "$edkey")" || fail "ed-public-key
 printf 'not base64!!\n' | "$edkey" >/dev/null 2>&1 && fail "ed-public-key accepted garbage"
 head -c 31 /dev/urandom | base64 | "$edkey" >/dev/null 2>&1 && fail "ed-public-key accepted 31 bytes"
 # A 32-byte seed (what generate_keys -x exports today) needs OpenSSL 3.
-ossl="${OPENSSL:-}"
-if [ -z "$ossl" ] && command -v brew >/dev/null 2>&1; then
-    p="$(brew --prefix openssl@3 2>/dev/null || true)"; [ -x "$p/bin/openssl" ] && ossl="$p/bin/openssl"
-fi
-ossl="${ossl:-openssl}"
+ossl="$(macx_openssl)"
 if "$ossl" genpkey -algorithm ed25519 -outform DER -out "$tmp/k.der" 2>/dev/null; then
     tail -c 32 "$tmp/k.der" | base64 > "$tmp/seed"
     want="$("$ossl" pkey -inform DER -in "$tmp/k.der" -pubout -outform DER | tail -c 32 | base64)"
@@ -81,4 +81,37 @@ if "$ossl" genpkey -algorithm ed25519 -outform DER -out "$tmp/k.der" 2>/dev/null
 else
     echo "note: no OpenSSL with Ed25519 ($ossl); skipped the seed-form test" >&2
 fi
+# wait-for-ci.sh against a fake gh (prints the runs in $FAKE_RUNS, one per line, like the real --jq output).
+mkdir -p "$tmp/bin"
+cat > "$tmp/bin/gh" <<'SH'
+#!/bin/bash
+[ -s "$FAKE_RUNS" ] && cat "$FAKE_RUNS"; exit 0
+SH
+chmod +x "$tmp/bin/gh"
+wait_ci() {   # wait_ci <want exit> <run lines...>
+    local want="$1" rc=0; shift
+    printf '%s\n' "$@" > "$tmp/runs"
+    PATH="$tmp/bin:$PATH" FAKE_RUNS="$tmp/runs" GITHUB_REPOSITORY=o/r TIMEOUT_SECONDS=0 POLL_SECONDS=0 APPEAR_SECONDS=0 \
+        "$here/wait-for-ci.sh" abc123 > "$tmp/wait.out" 2>&1 || rc=$?
+    [ "$rc" -eq "$want" ] || { cat "$tmp/wait.out" >&2; fail "wait-for-ci ($*): exit $rc, want $want"; }
+}
+wait_ci 0 "completed success push main https://x/1"
+wait_ci 1 "completed failure push main https://x/1"
+# The push-to-main run decides over a pull-request run of the same commit, either way.
+wait_ci 1 "completed success pull_request feature https://x/2" "completed failure push main https://x/1"
+wait_ci 0 "completed failure pull_request feature https://x/2" "completed success push main https://x/1"
+# Still running on main: not decided by the pull request's success (times out here, TIMEOUT_SECONDS=0).
+wait_ci 1 "completed success pull_request feature https://x/2" "in_progress - push main https://x/1"
+grep -q 'https://x/1' "$tmp/wait.out" || fail "wait-for-ci should name the pending main run"
+# No main run, or only cancelled ones: any other run decides.
+wait_ci 0 "completed success pull_request feature https://x/2"
+wait_ci 0 "completed cancelled push main https://x/1" "completed success workflow_dispatch v1.0.0 https://x/3"
+wait_ci 3 "completed cancelled push main https://x/1"
+wait_ci 3
+# git-credential-env.sh: answers get from GIT_TOKEN only; never store/erase, nothing without a token.
+helper="$here/git-credential-env.sh"
+got="$(printf 'protocol=https\nhost=github.com\n\n' | GIT_TOKEN=tok "$helper" get)"
+[ "$got" = "$(printf 'username=x-access-token\npassword=tok')" ] || fail "git-credential-env get: $got"
+[ -z "$(printf 'protocol=https\nhost=github.com\n\n' | GIT_TOKEN= "$helper" get)" ] || fail "git-credential-env without a token"
+[ -z "$(printf 'protocol=https\nhost=github.com\npassword=x\n\n' | GIT_TOKEN=tok "$helper" store)" ] || fail "git-credential-env store"
 echo "release scripts: OK"
