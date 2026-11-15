@@ -10,6 +10,8 @@
 #                                    sets the MACX_APP_ARGS array to the options every sandboxed app launch uses
 #   macx_lock <lock dir>             takes an exclusive lock (mkdir is atomic); returns 1 when a live process holds it
 #   macx_unlock                      releases the lock this shell took (no-op otherwise)
+#   macx_take_scenario_app <name>    takes MACX_SCENARIO_LOCK, then checks no scenario app runs; returns 2 (with a
+#                                    message naming <name>) when either fails
 
 # macx_mount_points: every mount point, one per line.
 macx_mount_points() { mount | sed -n 's/^.* on \(.*\) (.*)$/\1/p'; }
@@ -49,23 +51,63 @@ MACX_SCENARIO_LOCK="${TMPDIR:-/tmp}"; MACX_SCENARIO_LOCK="${MACX_SCENARIO_LOCK%/
 MACX_LOCK=""
 
 # A lock records its owner's pid in <lock>/pid. It is stale when that pid no longer runs, or when it has no pid file
-# and is older than 30 s (a holder writes the file right after mkdir). A stale lock is taken over.
+# and is older than 30 s (a holder writes the file right after mkdir). A stale lock is taken over, but only by the one
+# process that wins <lock>.takeover (mkdir again): it checks the lock is still the same stale one before replacing it,
+# so two waiters that both saw it stale can't each delete the other's new lock and both think they hold it. A
+# takeover marker left by a process that died mid-takeover (older than 30 s) is removed and the call returns 1.
 macx_lock() {
-  local lock="$1" pid age
-  if ! mkdir "$lock" 2>/dev/null; then
-    pid="$(cat "$lock/pid" 2>/dev/null || true)"
-    if [ -n "$pid" ]; then
-      if kill -0 "$pid" 2>/dev/null; then echo "lock $lock is held by pid $pid" >&2; return 1; fi
-    else
-      age=$(( $(date +%s) - $(stat -f %m "$lock" 2>/dev/null || date +%s) ))
-      if [ "$age" -lt 30 ]; then echo "lock $lock is being taken by another process" >&2; return 1; fi
+  local lock="$1" pid
+  mkdir "$lock" 2>/dev/null || {
+    pid="$(macx_stale_lock_pid "$lock")" || return 1
+    if ! mkdir "$lock.takeover" 2>/dev/null; then
+      if [ "$(macx_age "$lock.takeover")" -ge 30 ]; then
+        rm -rf "$lock.takeover"; echo "removed the abandoned takeover marker $lock.takeover; try again" >&2
+      else
+        echo "lock $lock is being taken over by another process" >&2
+      fi
+      return 1
+    fi
+    # Holding the marker: nobody else replaces the lock now. Recheck it is the stale lock we saw.
+    if [ -e "$lock" ]; then
+      local now
+      if ! now="$(macx_stale_lock_pid "$lock")" || [ "$now" != "$pid" ]; then
+        rmdir "$lock.takeover"; echo "lock $lock was taken by another process" >&2; return 1
+      fi
     fi
     echo "taking over the stale lock $lock${pid:+ (pid $pid is gone)}" >&2
     rm -rf "$lock"
-    mkdir "$lock" 2>/dev/null || { echo "lock $lock was taken by another process" >&2; return 1; }
-  fi
+    if ! mkdir "$lock" 2>/dev/null; then
+      rmdir "$lock.takeover"; echo "lock $lock was taken by another process" >&2; return 1
+    fi
+    rmdir "$lock.takeover"
+  }
   echo "$$" > "$lock/pid"
   MACX_LOCK="$lock"
+}
+
+# macx_age <path>: seconds since <path> was last modified (0 when it is gone).
+macx_age() { echo $(( $(date +%s) - $(stat -f %m "$1" 2>/dev/null || date +%s) )); }
+
+# macx_stale_lock_pid <lock>: when <lock> is stale, prints its dead owner's pid (empty for an old lock without one)
+# and returns 0; returns 1 with a message when it is held (or still being taken).
+macx_stale_lock_pid() {
+  local pid
+  pid="$(cat "$1/pid" 2>/dev/null || true)"
+  if [ -n "$pid" ]; then
+    if kill -0 "$pid" 2>/dev/null; then echo "lock $1 is held by pid $pid" >&2; return 1; fi
+  elif [ "$(macx_age "$1")" -lt 30 ]; then
+    echo "lock $1 is being taken by another process" >&2; return 1
+  fi
+  printf '%s' "$pid"
+}
+
+# The lock covers the runner scripts; a scenario app started some other way (site/tools/shots.py, by hand) still counts,
+# so a pgrep check follows. Callers release the lock with macx_unlock (normally from their EXIT trap).
+macx_take_scenario_app() {
+  macx_lock "$MACX_SCENARIO_LOCK" || { echo "$1: another scenario run holds the lock; wait for it" >&2; return 2; }
+  if LC_ALL=C pgrep -f 'macExplorer-scenarios.app/Contents/MacOS/macExplorer' >/dev/null; then
+    macx_unlock; echo "$1: another scenario app is running; quit it first" >&2; return 2
+  fi
 }
 
 macx_unlock() {

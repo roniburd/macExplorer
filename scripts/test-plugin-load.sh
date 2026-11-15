@@ -21,10 +21,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-macx_lock "$MACX_SCENARIO_LOCK" || { echo "test-plugin-load: another scenario run holds the lock; wait for it" >&2; exit 2; }
-if LC_ALL=C pgrep -f 'macExplorer-scenarios.app/Contents/MacOS/macExplorer' >/dev/null; then
-  echo "test-plugin-load: another scenario app is running; quit it first" >&2; exit 2
-fi
+macx_take_scenario_app test-plugin-load || exit 2
 TMPDIR="$RUN/" scripts/bundle.sh "$CONFIG" --bundle-id com.macexplorer.app.scenarios --output .build/macExplorer-scenarios.app >"$RUN/bundle.log" 2>&1 \
   || { tail -20 "$RUN/bundle.log"; exit 1; }
 BIN="$(swift build -c "$CONFIG" --show-bin-path)"

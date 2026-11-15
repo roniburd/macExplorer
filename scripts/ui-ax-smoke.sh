@@ -22,11 +22,8 @@ if [ "$perm" != "true" ]; then
   echo "      Grant it in System Settings > Privacy & Security > Accessibility to run this smoke."
   exit 3
 fi
-macx_lock "$MACX_SCENARIO_LOCK" || { echo "ui-ax-smoke: another scenario run holds the lock; wait for it" >&2; exit 2; }
+macx_take_scenario_app ui-ax-smoke || exit 2
 trap macx_unlock EXIT
-if LC_ALL=C pgrep -f 'macExplorer-scenarios.app/Contents/MacOS/macExplorer' >/dev/null; then
-  echo "ui-ax-smoke: another scenario app is running; quit it first" >&2; exit 2
-fi
 
 TMPBASE="${TMPDIR:-/tmp}"; TMPBASE="${TMPBASE%/}"
 RUN="$TMPBASE/macx-scenario-ax-$(uuidgen)"
