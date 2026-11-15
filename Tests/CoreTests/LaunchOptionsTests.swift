@@ -1,6 +1,7 @@
 import XCTest
 @testable import Core
 import MacxFS
+import MacxFixtures
 
 final class LaunchOptionsTests: XCTestCase {
     private func dir(_ path: String) -> URL { URL(filePath: path, directoryHint: .isDirectory) }
@@ -165,11 +166,10 @@ final class LaunchOptionsTests: XCTestCase {
     }
 
     func testDirectoryOptionPointingAtAFileIsRejected() throws {
-        let tmp = FileManager.default.temporaryDirectory.appending(path: "macx-tests-\(UUID().uuidString)", directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: false)
-        addTeardownBlock { try? FileManager.default.removeItem(at: tmp) }
-        let file = tmp.appending(path: "plain.txt")
-        try Data("x".utf8).write(to: file)
+        let sandbox = try Sandbox()
+        addTeardownBlock { sandbox.destroy() }
+        let tmp = sandbox.root
+        let file = try sandbox.createFile("plain.txt")
         let path = file.path(percentEncoded: false)
 
         for option in ["--root", "--state-dir", "--sandbox-trash"] {
@@ -182,7 +182,8 @@ final class LaunchOptionsTests: XCTestCase {
         // Existing directories and not-yet-existing paths are fine (the app creates the state dir).
         let ok = try LaunchOptions.parse(["m", "--root", tmp.path(percentEncoded: false),
                                           "--state-dir", tmp.appending(path: "state-not-yet").path(percentEncoded: false)])
-        XCTAssertEqual(ok.root, URL(filePath: tmp.path(percentEncoded: false), directoryHint: .isDirectory))
+        XCTAssertEqual(ok.root, URL(filePath: tmp.path(percentEncoded: false), directoryHint: .isDirectory).standardizedFileURL,
+                       "standardized (the sandbox's /private/var spelling becomes /var)")
     }
 
     func testErrorsAreEquatableAndDistinct() {

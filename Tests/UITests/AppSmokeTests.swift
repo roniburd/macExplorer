@@ -1,6 +1,7 @@
 import AppKit
 import XCTest
 import UI
+import MacxFixtures
 
 /// Launches the built `macExplorer` executable (unbundled, from the build products directory) against a fresh
 /// sandbox under $TMPDIR. Never points the app at a real user folder.
@@ -8,9 +9,9 @@ final class AppSmokeTests: XCTestCase {
     private var sandbox: URL!
 
     override func setUpWithError() throws {
-        sandbox = FileManager.default.temporaryDirectory.appending(path: "macx-tests-\(UUID().uuidString)", directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: sandbox, withIntermediateDirectories: false)
-        addTeardownBlock { [sandbox] in if let sandbox { try? FileManager.default.removeItem(at: sandbox) } }
+        let owned = try Sandbox()
+        addTeardownBlock { owned.destroy() }
+        sandbox = owned.root
     }
 
     private func executable() throws -> URL {
@@ -82,7 +83,7 @@ final class AppSmokeTests: XCTestCase {
         XCTAssertEqual(r.status, 0, r.stderr)
         let report = try SmokeReport.read(from: state.appending(path: SmokeReport.fileName))
         XCTAssertEqual(report.windowTitles, ["Smoke Root"])
-        XCTAssertEqual(report.root, root.path(percentEncoded: false))
+        XCTAssertEqual(report.root, root.standardizedFileURL.path(percentEncoded: false), "the standardized root")
         XCTAssertGreaterThan(report.processID, 0)
         let leftovers = try FileManager.default.contentsOfDirectory(atPath: root.path(percentEncoded: false))
         XCTAssertEqual(leftovers, [], "the app writes nothing into the browsed folder")

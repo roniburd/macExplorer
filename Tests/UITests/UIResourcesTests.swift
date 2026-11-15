@@ -1,13 +1,14 @@
 import XCTest
 @testable import UI
+import MacxFixtures
 
 final class UIResourcesTests: XCTestCase {
     private var tmp: URL!
 
     override func setUpWithError() throws {
-        tmp = FileManager.default.temporaryDirectory.appending(path: "macx-tests-\(UUID().uuidString)", directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: false)
-        addTeardownBlock { [tmp] in if let tmp { try? FileManager.default.removeItem(at: tmp) } }
+        let sandbox = try Sandbox()
+        addTeardownBlock { sandbox.destroy() }
+        tmp = sandbox.root
     }
 
     func testBundleNameMatchesSwiftPMResourceBundle() {

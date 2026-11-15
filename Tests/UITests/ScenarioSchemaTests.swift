@@ -1,6 +1,7 @@
 import XCTest
 import Core
 import MacxFS
+import MacxFixtures
 @testable import UI
 
 /// Phase 2 scenario schema (plan §2.4, P2-03): decoding, one-action validation, tokens and the fs-step guard.
@@ -264,10 +265,9 @@ final class ScenarioSchemaTests: XCTestCase {
     }
 
     func testPhase3FixturesAreCreatedInsideTheRoot() throws {
-        let base = FileManager.default.temporaryDirectory.appending(path: "macx-tests-\(UUID().uuidString)", directoryHint: .isDirectory)
-        let root = base.appending(path: "macx-scenario-root", directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        addTeardownBlock { try? FileManager.default.removeItem(at: base) }
+        let sandbox = try Sandbox()
+        addTeardownBlock { sandbox.destroy() }
+        let root = try sandbox.createDirectory("macx-scenario-root")
         let json = #"""
         {"name":"x","fixture":{"files":["top.txt"],"dirs":[],"contents":{"n/a.txt":"héllo"},"binary":{"b.zzq":300},"bulk":{"many":12},
                                "spotlight":[{"path":"n/a.txt"},{"path":"X.app","kind":"app","size":5}]},"steps":[]}

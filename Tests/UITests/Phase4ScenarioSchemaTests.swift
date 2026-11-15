@@ -1,6 +1,7 @@
 import XCTest
 import Core
 import MacxFS
+import MacxFixtures
 @testable import UI
 
 /// P4-23: the Phase 4 scenario schema additions (launchArguments, archives fixture, answerError step, sheetTitle) and
@@ -41,10 +42,10 @@ final class Phase4ScenarioSchemaTests: XCTestCase {
     }
 
     func testEvilTarFixtureIsCreatedInsideTheRootOnly() throws {
-        let base = FileManager.default.temporaryDirectory.appending(path: "macx-tests-\(UUID().uuidString)", directoryHint: .isDirectory)
-        let root = base.appending(path: "macx-scenario-root", directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        addTeardownBlock { try? FileManager.default.removeItem(at: base) }
+        let sandbox = try Sandbox()
+        addTeardownBlock { sandbox.destroy() }
+        let base = sandbox.root
+        let root = try sandbox.createDirectory("macx-scenario-root")
         let file = try ScenarioFile.load(Data(#"{"name":"x","fixture":{"files":[],"dirs":["w"],"archives":{"w/e.tar":"evil-tar"}},"steps":[]}"#.utf8))
         let resolved = root.resolvingSymlinksInPath()
         try ScenarioFixtures.create(file.fixture, in: resolved)
@@ -63,10 +64,10 @@ final class Phase4ScenarioSchemaTests: XCTestCase {
                        .badFixture("symlink 'l' -> '/etc'"))
         XCTAssertEqual(load(#"{"name":"x","fixture":{"files":[],"dirs":[],"symlinks":{"../l":"a"}},"steps":[{"sleepMs":1}]}"#),
                        .unsafePath("../l"))
-        let base = FileManager.default.temporaryDirectory.appending(path: "macx-tests-\(UUID().uuidString)", directoryHint: .isDirectory)
-        let root = base.appending(path: "macx-scenario-root", directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        addTeardownBlock { try? FileManager.default.removeItem(at: base) }
+        let sandbox = try Sandbox()
+        addTeardownBlock { sandbox.destroy() }
+        let base = sandbox.root
+        let root = try sandbox.createDirectory("macx-scenario-root")
         let json = #"{"name":"x","fixture":{"files":["a.txt"],"dirs":["w"],"symlinks":{"d/l":"a.txt"},"archives":{"w/h.zip":"hidden-local-zip"}},"steps":[]}"#
         let file = try ScenarioFile.load(Data(json.utf8))
         let resolved = root.resolvingSymlinksInPath()

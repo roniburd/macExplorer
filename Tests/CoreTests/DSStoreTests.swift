@@ -1,6 +1,7 @@
 @testable import Core
 import Foundation
 import MacxFS
+import MacxFixtures
 import XCTest
 
 /// Test-only writer of the "Bud1" `.DS_Store` layout (design 2026-11-05 §4), so parser tests never depend on the
@@ -253,12 +254,9 @@ final class FinderFolderViewTests: XCTestCase {
     }
 
     func testReadsOwnRecordThenParentRecord() throws {
-        let root = FileManager.default.temporaryDirectory.appending(path: "macx-dsstore-\(UUID().uuidString)", directoryHint: .isDirectory)
-        let child = root.appending(path: "Child", directoryHint: .isDirectory)
-        let other = root.appending(path: "Other", directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: child, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
+        let sandbox = try Sandbox(); defer { sandbox.destroy() }
+        let root = sandbox.root
+        let child = try sandbox.createDirectory("Child"), other = try sandbox.createDirectory("Other")
         try DSStoreWriter.file([R(name: ".", code: "vstl", value: .type("icnv"))]).write(to: child.appending(path: ".DS_Store"))
         try DSStoreWriter.file([R(name: "Child", code: "vstl", value: .type("Nlsv")),
                                 R(name: "Other", code: "vstl", value: .type("Nlsv"))]).write(to: root.appending(path: ".DS_Store"))
@@ -272,10 +270,9 @@ final class FinderFolderViewTests: XCTestCase {
     /// "Apply to All Folders" (post-merge review): a `.DS_Store` last written before the cut-off is ignored, the
     /// folder's own one and the parent's alike; one written after it still counts.
     func testIgnoresDSStoreFilesWrittenBeforeTheCutoff() throws {
-        let root = FileManager.default.temporaryDirectory.appending(path: "macx-dsstore-\(UUID().uuidString)", directoryHint: .isDirectory)
-        let child = root.appending(path: "Child", directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: child, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
+        let sandbox = try Sandbox(); defer { sandbox.destroy() }
+        let root = sandbox.root
+        let child = try sandbox.createDirectory("Child")
         let own = child.appending(path: ".DS_Store"), parent = root.appending(path: ".DS_Store")
         try DSStoreWriter.file([R(name: ".", code: "vstl", value: .type("icnv"))]).write(to: own)
         try DSStoreWriter.file([R(name: "Child", code: "vstl", value: .type("clmv"))]).write(to: parent)
@@ -294,9 +291,8 @@ final class FinderFolderViewTests: XCTestCase {
 
     /// The session's read: on a read lane, off main (merge with Phase 2's lane rules).
     func testReadsOnALane() async throws {
-        let root = FileManager.default.temporaryDirectory.appending(path: "macx-dsstore-\(UUID().uuidString)", directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
+        let sandbox = try Sandbox(); defer { sandbox.destroy() }
+        let root = sandbox.root
         try DSStoreWriter.file([R(name: ".", code: "vstl", value: .type("clmv"))]).write(to: root.appending(path: ".DS_Store"))
         let lanes = LanePool()
         let view = await FinderFolderView.read(folder: root, globalColumns: globals, lanes: lanes, volume: .unknown)

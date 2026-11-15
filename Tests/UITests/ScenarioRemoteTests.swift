@@ -2,6 +2,7 @@ import XCTest
 @testable import UI
 @testable import Core
 import MacxPluginKit
+import MacxFixtures
 
 final class ScenarioRemoteTests: XCTestCase {
     func testRemoteScenarioFileValidates() throws {
@@ -22,9 +23,8 @@ final class ScenarioRemoteTests: XCTestCase {
         var names: [String] = []
         for try await chunk in p.list(root) { names += chunk.map(\.name) }
         XCTAssertEqual(names.sorted(), ["R.md", "src"])
-        let dir = FileManager.default.temporaryDirectory.appending(path: "macx-tests-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: dir) }
+        let sandbox = try Sandbox(); defer { sandbox.destroy() }
+        let dir = sandbox.root
         let dest = dir.appending(path: "a.txt")
         try await p.fetch(root.appending("src").appending("a.txt"), item: RemoteItem(name: "a.txt", kind: .file), to: dest)
         XCTAssertEqual(try String(contentsOf: dest, encoding: .utf8), "alpha")

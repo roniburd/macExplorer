@@ -1,11 +1,12 @@
 import XCTest
 @testable import UI
+import MacxFixtures
 
 final class SmokeReportTests: XCTestCase {
     func testRoundTripsThroughFile() throws {
-        let tmp = FileManager.default.temporaryDirectory.appending(path: "macx-tests-\(UUID().uuidString)", directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: false)
-        addTeardownBlock { try? FileManager.default.removeItem(at: tmp) }
+        let sandbox = try Sandbox()
+        addTeardownBlock { sandbox.destroy() }
+        let tmp = sandbox.root
 
         let report = SmokeReport(windowTitles: ["files"], root: "/tmp/macx-tests-x/files/", processID: 42)
         let file = tmp.appending(path: SmokeReport.fileName)

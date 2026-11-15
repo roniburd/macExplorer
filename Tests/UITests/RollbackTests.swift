@@ -2,6 +2,7 @@ import CryptoKit
 import XCTest
 @testable import UI
 @testable import Core
+import MacxFixtures
 
 // Install Previous Version…: UpdateController skip/reconcile, RollbackService staging, RollbackModel flow and the
 // swap script. Every file touched lives in a temporary directory these tests create (and remove).
@@ -187,13 +188,11 @@ final class RollbackServiceTests: XCTestCase {
     private let key = Curve25519.Signing.PrivateKey()
 
     override func setUp() async throws {
-        root = FileManager.default.temporaryDirectory.appending(path: "macx-rollback-tests-\(UUID().uuidString)", directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: root.appending(path: "Applications/MacExplorer.app"), withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: root.appending(path: "scratch"), withIntermediateDirectories: true)
-    }
-
-    override func tearDown() async throws {
-        if let root { try? FileManager.default.removeItem(at: root) }
+        let sandbox = try Sandbox()
+        addTeardownBlock { sandbox.destroy() }
+        root = sandbox.root
+        try sandbox.createDirectory("Applications/MacExplorer.app")
+        try sandbox.createDirectory("scratch")
     }
 
     private func item(signing data: Data, build: Int = 204) -> AppcastItem {
@@ -493,12 +492,9 @@ final class RollbackSwapTests: XCTestCase {
     private var root: URL!
 
     override func setUpWithError() throws {
-        root = FileManager.default.temporaryDirectory.appending(path: "macx-swap-tests-\(UUID().uuidString)", directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    }
-
-    override func tearDownWithError() throws {
-        if let root { try? FileManager.default.removeItem(at: root) }
+        let sandbox = try Sandbox()
+        addTeardownBlock { sandbox.destroy() }
+        root = sandbox.root
     }
 
     private func bundle(_ name: String, marker: String) throws -> URL {
