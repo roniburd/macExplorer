@@ -25,9 +25,17 @@ public enum LaunchRecovery {
     /// trashed destinations whose original path is free. A job whose entries were all resolved (or can never be) is
     /// finished; entries that could not be acted on yet are kept for the next launch (at most `maxAttempts` launches).
     public static func run(journal: Journal, lanes: LanePool) async -> RecoveryReport {
+        await run(journal: journal, lanes: lanes, mountParents: defaultMountParents)
+    }
+
+    /// Where volumes are mounted: an item whose nearest existing ancestor is one of these is on a volume that is not
+    /// mounted now.
+    static let defaultMountParents = ["/Volumes"]
+
+    static func run(journal: Journal, lanes: LanePool, mountParents: [String]) async -> RecoveryReport {
         let entries = await journal.entries()
         guard !entries.isEmpty else { return RecoveryReport() }
-        let result = (try? await lanes.perform(on: .unknown, .fileOp) { lane in recover(entries, lane) })
+        let result = (try? await lanes.perform(on: .unknown, .fileOp) { lane in recover(entries, lane, mountParents: mountParents) })
         var report = result?.report ?? RecoveryReport()
         let pending = result?.pending ?? entries.filter { if case .jobStarted = $0 { false } else { true } }
         report.incompleteJobs = entries.compactMap { if case .jobStarted(_, let d) = $0 { d } else { nil } }
@@ -44,12 +52,24 @@ public enum LaunchRecovery {
     }
 
     /// Lane only. `pending`: entries that could not be acted on (kept for the next launch).
-    static func recover(_ entries: [JournalEntry], _ lane: LaneContext) -> (report: RecoveryReport, pending: [JournalEntry]) {
+    static func recover(_ entries: [JournalEntry], _ lane: LaneContext,
+                        mountParents: [String] = defaultMountParents) -> (report: RecoveryReport, pending: [JournalEntry]) {
         assertOffMain()
         var report = RecoveryReport()
         var pending: [JournalEntry] = []
-        /// A missing parent folder: the volume is not mounted (or the folder is gone); nothing can be decided yet.
-        func reachable(_ u: URL) -> Bool { PosixFS.exists(u.deletingLastPathComponent().path) }
+        let parents = Set(mountParents.compactMap { PosixFS.info($0)?.identity })   // by identity: /private/var = /var
+        /// false: `u` is on a volume that is not mounted (its nearest existing ancestor is a mount parent such as
+        /// /Volumes), so nothing can be decided yet. A folder that is simply gone is reachable (nothing left to do).
+        func reachable(_ u: URL) -> Bool {
+            var dir = u.deletingLastPathComponent().path
+            while !PosixFS.exists(dir) {
+                let up = (dir as NSString).deletingLastPathComponent
+                guard up != dir, !up.isEmpty else { return true }
+                if let id = PosixFS.info(up)?.identity { return !parents.contains(id) }
+                dir = up
+            }
+            return true
+        }
         for case .batchRename(let job, let steps) in entries {
             lane.heartbeat()
             if steps.contains(where: { !reachable($0.original) }) { pending.append(.batchRename(job: job, steps: steps)); continue }

@@ -65,23 +65,27 @@ final class JournalTests: FileOpsTestCase {
     /// later launch; resolved entries and the job's start go.
     func testRecoveryKeepsEntriesItCouldNotActOnForTheNextLaunch() async throws {
         let job = JobID()
-        let partial = url("vol/dst/\(PartialName.make(for: "big", job: job))")      // "vol" is not there yet
+        try dir("Volumes")                                                          // stands for /Volumes
+        let mountParents = [url("Volumes").path]
+        let partial = url("Volumes/Disk/dst/\(PartialName.make(for: "big", job: job))")   // "Disk" is not mounted yet
         let gone = url("dst/\(PartialName.make(for: "small", job: job))")           // folder there, partial gone: resolved
+        let deleted = url("deleted/dst/\(PartialName.make(for: "x", job: job))")    // its folder deleted: nothing to do
         try dir("dst")
         let j = Journal(fileURL: journalURL)
         try await j.record(started(job))
         try await j.record(.partial(job: job, url: partial))
         try await j.record(.partial(job: job, url: gone))
-        let first = await LaunchRecovery.run(journal: j, lanes: LanePool())
+        try await j.record(.partial(job: job, url: deleted))
+        let first = await LaunchRecovery.run(journal: j, lanes: LanePool(), mountParents: mountParents)
         XCTAssertEqual(first.pendingRecoveries, [partial])
         XCTAssertEqual(first.incompleteJobs.count, 1)
         XCTAssertFalse(first.isEmpty)
         let kept = await Journal(fileURL: journalURL).entries()
         XCTAssertEqual(kept, [.partial(job: job, url: partial)])
 
-        try dir("vol/dst/\(partial.lastPathComponent)")                             // the volume is back
-        try file("vol/dst/\(partial.lastPathComponent)/f", "partial bytes")
-        let second = await LaunchRecovery.run(journal: Journal(fileURL: journalURL), lanes: LanePool())
+        try dir("Volumes/Disk/dst/\(partial.lastPathComponent)")                    // the volume is back
+        try file("Volumes/Disk/dst/\(partial.lastPathComponent)/f", "partial bytes")
+        let second = await LaunchRecovery.run(journal: Journal(fileURL: journalURL), lanes: LanePool(), mountParents: mountParents)
         XCTAssertEqual(second.removedPartials, [partial])
         XCTAssertEqual(second.pendingRecoveries, [])
         XCTAssertEqual(second.incompleteJobs, [], "reported once")
@@ -113,10 +117,12 @@ final class JournalTests: FileOpsTestCase {
     /// Kept entries are dropped after `maxAttempts` launches (a volume that never comes back).
     func testRecoveryDropsKeptEntriesAfterTheLastAttempt() async throws {
         let job = JobID()
-        let partial = url("vol/\(PartialName.make(for: "big", job: job))")
+        try dir("Volumes")
+        let partial = url("Volumes/Disk/\(PartialName.make(for: "big", job: job))")
         try await Journal(fileURL: journalURL).record(.partial(job: job, url: partial))
         for launch in 1...LaunchRecovery.maxAttempts {
-            let report = await LaunchRecovery.run(journal: Journal(fileURL: journalURL), lanes: LanePool())
+            let report = await LaunchRecovery.run(journal: Journal(fileURL: journalURL), lanes: LanePool(),
+                                                  mountParents: [url("Volumes").path])
             XCTAssertEqual(report.pendingRecoveries, launch < LaunchRecovery.maxAttempts ? [partial] : [], "launch \(launch)")
         }
         let left = await Journal(fileURL: journalURL).entries()
