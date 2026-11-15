@@ -24,7 +24,9 @@ public enum FallbackReader {
         var buffer = [UInt8](repeating: 0, count: 2048)
         var total = 0, degraded = 0, stopped = false
         while true {
-            context.heartbeat()       // per entry: directoriesOnly reads of file-only folders may never flush a batch
+            // Heartbeat and cancellation per entry: directoriesOnly reads of file-only folders may never flush a batch.
+            context.heartbeat()
+            if context.isCancelled { stopped = true; break }
             errno = 0
             guard let dent = readdir(dir) else {
                 if errno != 0 { throw ReadFailure(code: errno, stage: .read) }
@@ -37,12 +39,18 @@ public enum FallbackReader {
             let name = cName.map { UInt8(bitPattern: $0) }
             if name == [0x2E] || name == [0x2E, 0x2E] { continue }
             cName.append(0)
-            var record = cfsk_record()
-            let rc = cName.withUnsafeBufferPointer { nb -> Int32 in
-                buffer.withUnsafeMutableBytes { cfsk_stat_at(fd, nb.baseAddress, $0.baseAddress, $0.count, &record) }
+            // Stat and convert inside one closure: record.name points into `buffer`, valid only while it is borrowed.
+            let code = cName.withUnsafeBufferPointer { nb -> Int32 in
+                buffer.withUnsafeMutableBytes { raw -> Int32 in
+                    var record = cfsk_record()
+                    guard cfsk_stat_at(fd, nb.baseAddress, raw.baseAddress, raw.count, &record) == 0 else { return errno }
+                    let r = converter.append(record, to: &batch, directoriesOnly: options.directoriesOnly)
+                    if r.appended { total += 1 }
+                    if r.degraded { degraded += 1 }
+                    return 0
+                }
             }
-            if rc != 0 {
-                let code = errno
+            if code != 0 {
                 if code == ENOENT { continue }      // vanished between readdir and stat
                 // Degraded row: name + d_type only, errno in the side table (§4.2 rule 3).
                 var fake = cfsk_record()
@@ -57,11 +65,6 @@ public enum FallbackReader {
                     return converter.append(fake, to: &batch, directoriesOnly: options.directoriesOnly)
                 }
                 if r.appended { total += 1; degraded += 1 }
-            } else {
-                // record.name points into `buffer`; still valid here.
-                let r = buffer.withUnsafeBytes { _ in converter.append(record, to: &batch, directoriesOnly: options.directoriesOnly) }
-                if r.appended { total += 1 }
-                if r.degraded { degraded += 1 }
             }
             if accumulator.shouldFlush(count: batch.count) {
                 if context.isCancelled || !emit(batch) { stopped = true; break }
