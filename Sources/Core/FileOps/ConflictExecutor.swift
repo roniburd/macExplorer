@@ -174,16 +174,16 @@ extension ConflictExecutor {
             return copied == .cancelled ? .cancelled : .skipped
         }
         ctx.fault(.afterPartialCopy)
-        let verified = (try? await ctx.onLane { _ -> Bool in
-            let a = PosixFS.treeStats(src.path), b = PosixFS.treeStats(partial.path)
-            return a.items == b.items && a.bytes == b.bytes
-        }) ?? false
+        let entries = item.entries
+        let verified = (try? await ctx.onLane { _ in MoveVerification.verify(source: src, copy: partial, entries: entries) }) ?? false
         guard verified else {
+            // Nothing replaced yet: the source and the existing destination both stay; the unverified copy goes.
             await MoveJob.removePartial(ctx, partial, entry)
             switch await ctx.askError(FileOpError(kind: .changedDuringMove, url: src, destination: target)) {
             case .retry, .continueAnyway, .unlockAndContinue:
                 ctx.restoreProgress(mark)
-                return await replace(ctx, item: item, target: target, operation: operation, renameExcl: renameExcl)
+                let fresh = await MoveVerification.refreshed(ctx, item)
+                return await replace(ctx, item: fresh, target: target, operation: operation, renameExcl: renameExcl)
             case .skip, .skipAll: ctx.skip(src, reason: .changedDuringMove); return .skipped
             case .cancel: ctx.cancelJob(); return .cancelled
             }
@@ -216,7 +216,7 @@ extension ConflictExecutor {
             ctx.landed(target)
         case .move:
             ctx.fault(.beforeSourceDelete)
-            await MoveJob.finishMove(ctx, source: src, target: target)
+            await MoveJob.finishMove(ctx, item, target: target)
         }
         return .done
     }

@@ -53,6 +53,29 @@ final class ConflictTests: FileOpsTestCase {
         XCTAssertEqual(partials(url("d")), [])
     }
 
+    /// Review B1-1: the source rewritten at the same size during a cross-volume Replace: the source and the existing
+    /// destination both stay, nothing is trashed.
+    func testReplaceCrossVolumeMoveKeepsBothWhenTheSourceChangesAtTheSameSize() async throws {
+        let a = try file("src/a", "new!"); try file("d/a", "old")
+        let aPath = a.path
+        var tuning = FileOpTuning(faultHook: { point, _ in
+            guard point == .afterPartialCopy, let h = FileHandle(forWritingAtPath: aPath) else { return }
+            h.write(Data("NEW!".utf8)); h.closeFile()
+            var times = [timespec(tv_sec: 1_000_000, tv_nsec: 0), timespec(tv_sec: 1_000_000, tv_nsec: 0)]
+            _ = utimensat(AT_FDCWD, aPath, &times, 0)
+        })
+        tuning.forceCrossVolume = true
+        let scripted = ScriptedInteraction(conflicts: [.one(.replace)], errors: [.skip])
+        let (queue, _) = makeQueue(interaction: scripted, tuning: tuning)
+        let o = try await run(.move(sources: [a], destination: url("d")), on: queue)
+        XCTAssertEqual(scripted.askedErrors().map(\.kind), [.changedDuringMove])
+        XCTAssertEqual(text(a), "NEW!")
+        XCTAssertEqual(text(url("d/a")), "old")
+        XCTAssertEqual(trashed("a"), [])
+        XCTAssertEqual(partials(url("d")), [])
+        XCTAssertEqual(o.record.actions, [])
+    }
+
     func testReplaceRestoresTrashedItemWhenFinalRenameFails() async throws {
         let a = try file("src/a", "new"); try file("d/a", "old")
         let dPath = url("d").path

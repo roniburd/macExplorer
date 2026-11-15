@@ -76,7 +76,8 @@ enum MoveJob {
 
     /// §6.3: partial copy → verify → rename into place → delete source. The source is never deleted
     /// unless the verified copy is at its final name.
-    static func crossVolume(_ ctx: JobContext, _ item: PlanItem, to target: URL) async -> StepResult {
+    static func crossVolume(_ ctx: JobContext, _ planned: PlanItem, to target: URL) async -> StepResult {
+        var item = planned
         let src = item.source
         let partial = target.deletingLastPathComponent().appending(path: PartialName.make(for: target.lastPathComponent, job: ctx.id))
         let entry = JournalEntry.partial(job: ctx.id, url: partial)
@@ -97,14 +98,16 @@ enum MoveJob {
                 return copied == .cancelled ? .cancelled : .skipped
             }
             ctx.fault(.afterPartialCopy)
-            let verified = (try? await ctx.onLane { _ -> Bool in
-                let a = PosixFS.treeStats(src.path), b = PosixFS.treeStats(partial.path)
-                return a.items == b.items && a.bytes == b.bytes
-            }) ?? false
+            let entries = item.entries
+            let verified = (try? await ctx.onLane { _ in MoveVerification.verify(source: src, copy: partial, entries: entries) }) ?? false
             guard verified else {
+                // The source changed (or the copy is incomplete): the source is never deleted; the unverified copy goes.
                 await removePartial(ctx, partial, entry)
                 switch await ctx.askError(FileOpError(kind: .changedDuringMove, url: src, destination: target)) {
-                case .retry, .continueAnyway, .unlockAndContinue: ctx.restoreProgress(mark); continue
+                case .retry, .continueAnyway, .unlockAndContinue:
+                    ctx.restoreProgress(mark)
+                    item = await MoveVerification.refreshed(ctx, item)
+                    continue
                 case .skip, .skipAll: ctx.skip(src, reason: .changedDuringMove); return .skipped
                 case .cancel: ctx.cancelJob(); return .cancelled
                 }
@@ -122,14 +125,17 @@ enum MoveJob {
             }
             await ctx.journalClear(entry)
             ctx.fault(.beforeSourceDelete)
-            await finishMove(ctx, source: src, target: target)
+            await finishMove(ctx, item, target: target)
             return .done
         }
     }
 
     /// After the verified copy is at `target`: delete the source (asking on failure; Retry also clears
-    /// uchg), record moved (or created if the user skipped the deletion), post the changes.
-    static func finishMove(_ ctx: JobContext, source src: URL, target: URL) async {
+    /// uchg), record moved, post the changes. When the user skips (or cancels) the deletion, the copy is recorded as
+    /// created only while the source is still whole: removefile may have deleted part of it, and Undo trashes a
+    /// created item, which would then be the only complete copy. Otherwise the item has no undo.
+    static func finishMove(_ ctx: JobContext, _ item: PlanItem, target: URL) async {
+        let src = item.source
         let id = (try? await ctx.onLane({ _ in FileIdentity.of(path: target.path) })) ?? nil
         var removed = false
         var unlock = false
@@ -142,8 +148,14 @@ enum MoveJob {
             case .skipped, .cancelled: break deleting
             }
         }
-        if let id { ctx.record(removed ? .moved(from: src, to: target, id) : .created(target, id)) }
-        if removed { ctx.noteRemoved(src) }
+        if removed {
+            if let id { ctx.record(.moved(from: src, to: target, id)) }
+            ctx.noteRemoved(src)
+        } else {
+            let entries = item.entries
+            let whole = (try? await ctx.onLane { _ in MoveVerification.sourceUnchanged(src, entries) }) ?? false
+            if whole, let id { ctx.record(.created(target, id)) }
+        }
         ctx.landed(target)
     }
 
@@ -161,5 +173,64 @@ enum MoveJob {
     static func removePartial(_ ctx: JobContext, _ partial: URL, _ entry: JournalEntry) async {
         _ = try? await ctx.onLane { _ in PosixFS.removeTree(partial.path, unlock: true) }
         await ctx.journalClear(entry)
+    }
+}
+
+/// §6.3 cross-volume verification, before the source is deleted. The plan's entries are the "before" snapshot (relative
+/// path, type, size, mtime, pre-order); each check is one walk.
+enum MoveVerification {
+    /// Lane only. The source still matches the snapshot and the copy holds all of it.
+    static func verify(source: URL, copy: URL, entries: [PlanEntry]) -> Bool {
+        sourceUnchanged(source, entries) && copyComplete(copy, entries)
+    }
+
+    /// Lane only. Same paths in the same order with the same types; files and links also the same size and mtime (a
+    /// same-size rewrite during the copy is caught). Folder sizes and times are not compared: their contents are.
+    static func sourceUnchanged(_ root: URL, _ entries: [PlanEntry]) -> Bool {
+        assertOffMain()
+        let rootPath = root.path, rootBytes = rootPath.utf8.count
+        var i = 0
+        var ok = true
+        PosixFS.walk(rootPath) { path, ent in
+            guard ok else { return false }
+            let now = Planner.entry(path: path, ent, rootBytes: rootBytes)
+            guard i < entries.count, now.errorCode == 0 else { ok = false; return false }
+            let was = entries[i]
+            i += 1
+            guard was.relativePath == now.relativePath, was.type == now.type else { ok = false; return false }
+            if was.type == .file || was.type == .symlink, was.size != now.size || was.mtime != now.mtime { ok = false }
+            return ok
+        }
+        return ok && i == entries.count
+    }
+
+    /// Lane only. Every snapshot entry is in the copy with the same type (files: the same size). Extra items in the copy
+    /// (AppleDouble "._" files some volumes add) are ignored: they can't stand for anything of the source.
+    static func copyComplete(_ root: URL, _ entries: [PlanEntry]) -> Bool {
+        assertOffMain()
+        var expected = Dictionary(entries.map { ($0.relativePath, $0) }, uniquingKeysWith: { first, _ in first })
+        guard expected.count == entries.count else { return false }
+        let rootPath = root.path, rootBytes = rootPath.utf8.count
+        var ok = true
+        PosixFS.walk(rootPath) { path, ent in
+            guard ok else { return false }
+            let now = Planner.entry(path: path, ent, rootBytes: rootBytes)
+            guard let was = expected.removeValue(forKey: now.relativePath) else { return true }
+            if now.errorCode != 0 || was.type != now.type || (was.type == .file && was.size != now.size) { ok = false }
+            return ok
+        }
+        return ok && expected.isEmpty
+    }
+
+    /// The item re-enumerated (Retry after a change): the next copy and check use what is there now.
+    static func refreshed(_ ctx: JobContext, _ item: PlanItem) async -> PlanItem {
+        let fresh = try? await ctx.onLane { lane -> PlanItem? in
+            guard let info = PosixFS.info(item.source.path) else { return nil }
+            var p = item
+            p.info = info
+            p.entries = Planner.enumerate(item.source, info: info, noMaterialization: false, lane: lane).entries
+            return p
+        }
+        return (fresh ?? nil) ?? item
     }
 }

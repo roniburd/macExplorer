@@ -27,12 +27,16 @@ enum PosixFS {
         let type = st.st_mode & S_IFMT
         return Info(isDirectory: type == S_IFDIR, isSymlink: type == S_IFLNK, isRegular: type == S_IFREG,
                     size: Int64(st.st_size), allocSize: Int64(st.st_blocks) * 512, mode: UInt16(st.st_mode & 0o7777),
-                    flags: st.st_flags,
-                    mtime: Date(timeIntervalSince1970: TimeInterval(st.st_mtimespec.tv_sec) + TimeInterval(st.st_mtimespec.tv_nsec) / 1e9),
+                    flags: st.st_flags, mtime: date(st.st_mtimespec),
                     identity: FileIdentity(device: UInt64(UInt32(bitPattern: st.st_dev)), inode: st.st_ino))
     }
 
     static func exists(_ path: String) -> Bool { info(path) != nil }
+
+    /// One formula for every stat time, so two reads of an unchanged item compare equal.
+    static func date(_ t: timespec) -> Date {
+        Date(timeIntervalSince1970: TimeInterval(t.tv_sec) + TimeInterval(t.tv_nsec) / 1e9)
+    }
 
     /// Same folder by identity (stat, following links): a symlinked or differently-cased spelling of a folder is that
     /// folder. Falls back to comparing standardized paths when either can't be stat'ed.
@@ -136,15 +140,4 @@ enum PosixFS {
                       (UnsafeRawPointer(b) + off).assumingMemoryBound(to: CChar.self))
     }
 
-    /// Item count (every entry, links counted once) and total logical bytes of regular files. Used by move verification.
-    static func treeStats(_ root: String) -> (items: Int, bytes: Int64) {
-        var items = 0
-        var bytes: Int64 = 0
-        walk(root) { _, ent in
-            items += 1
-            if Int32(ent.pointee.fts_info) == FTS_F { bytes += Int64(ent.pointee.fts_statp.pointee.st_size) }
-            return true
-        }
-        return (items, bytes)
-    }
 }

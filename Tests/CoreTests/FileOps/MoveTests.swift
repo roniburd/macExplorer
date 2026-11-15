@@ -161,6 +161,88 @@ final class MoveTests: FileOpsTestCase {
         XCTAssertEqual(entries, [])
     }
 
+    /// Review B1-1: a same-size rewrite during the copy (count and bytes unchanged) is caught by the per-entry check.
+    func testCrossVolumeMoveKeepsSourceRewrittenAtTheSameSize() async throws {
+        try file("src/T/a", "AAAA"); try file("src/T/sub/b", "BBBB")
+        let d = try dir("d")
+        let bPath = url("src/T/sub/b").path
+        var tuning = FileOpTuning(faultHook: { point, _ in
+            guard point == .afterPartialCopy, let h = FileHandle(forWritingAtPath: bPath) else { return }
+            h.write(Data("ZZZZ".utf8)); h.closeFile()                          // in place, same size
+            var times = [timespec(tv_sec: 1_000_000, tv_nsec: 0), timespec(tv_sec: 1_000_000, tv_nsec: 0)]
+            _ = utimensat(AT_FDCWD, bPath, &times, 0)                          // and an mtime that surely differs
+        })
+        tuning.forceCrossVolume = true
+        let scripted = ScriptedInteraction(errors: [.skip])
+        let (queue, _) = makeQueue(interaction: scripted, tuning: tuning)
+        let o = try await run(.move(sources: [url("src/T")], destination: d), on: queue)
+        XCTAssertEqual(scripted.askedErrors().map(\.kind), [.changedDuringMove])
+        XCTAssertEqual(text(url("src/T/sub/b")), "ZZZZ", "source kept with its new content")
+        XCTAssertEqual(text(url("src/T/a")), "AAAA")
+        XCTAssertEqual(names(d), [], "the unverified copy is removed")
+        XCTAssertEqual(o.record.actions, [])
+    }
+
+    /// Review B1-1: a renamed file keeps the item count and byte total; the snapshots still differ.
+    func testMoveVerificationComparesEntriesNotTotals() async throws {
+        try file("src/T/a", "AAAA"); try file("src/T/sub/b", "BBBB")
+        try file("copy/T/a", "AAAA"); try file("copy/T/sub/c", "CCCC")        // same count and bytes, other path
+        try file("copy2/T/a", "AAAA"); try file("copy2/T/sub/b", "BBB")        // same paths, other size
+        try file("copy3/T/a", "AAAA"); try file("copy3/T/sub/b", "BBBB"); try file("copy3/T/._a", "AD")
+        let lanes = LanePool()
+        let t = url("src/T"), copy = url("copy/T"), copy2 = url("copy2/T"), copy3 = url("copy3/T")
+        let r = try await lanes.perform(on: .unknown, .fileOp) { lane -> [Bool] in
+            let item = Planner.plan(sources: [t], destination: nil, mode: .enumerate(noMaterialization: false),
+                                    forceCrossVolume: true, lane: lane).items[0]
+            let e = item.entries
+            let unchanged = MoveVerification.sourceUnchanged(t, e)
+            let other = MoveVerification.copyComplete(copy, e)
+            let short = MoveVerification.copyComplete(copy2, e)
+            let extra = MoveVerification.copyComplete(copy3, e)
+            _ = rename(t.appending(path: "sub/b").path, t.appending(path: "sub/c").path)
+            let renamed = MoveVerification.sourceUnchanged(t, e)
+            return [unchanged, other, short, extra, renamed]
+        }
+        XCTAssertEqual(r, [true, false, false, true, false])
+    }
+
+    /// Review B1-2: the source deletion failed partway and the user skipped it. The copy is the only complete one, so
+    /// nothing is recorded for Undo to trash.
+    func testSkippedPartialSourceDeleteRecordsNothingUndoCouldTrash() async throws {
+        try file("src/T/a", "A"); try file("src/T/sub/b", "B")
+        let d = try dir("d")
+        let aPath = url("src/T/a").path, subPath = url("src/T/sub").path
+        var tuning = FileOpTuning(faultHook: { point, _ in
+            guard point == .beforeSourceDelete else { return }
+            _ = unlink(aPath)                     // part of the source is already gone (as removefile would leave it)
+            _ = chmod(subPath, 0o500)             // and the rest can't be deleted
+        })
+        tuning.forceCrossVolume = true
+        let scripted = ScriptedInteraction(errors: [.skip])
+        let (queue, _) = makeQueue(interaction: scripted, tuning: tuning)
+        let o = try await run(.move(sources: [url("src/T")], destination: d), on: queue)
+        XCTAssertEqual(text(url("d/T/a")), "A")
+        XCTAssertEqual(text(url("d/T/sub/b")), "B")
+        XCTAssertEqual(o.record.actions, [], "no .created: Undo must not trash the only complete copy")
+        XCTAssertFalse(o.record.isUndoable)
+    }
+
+    /// Nothing of the source was deleted: the copy is recorded as created (Undo trashes it, the source is whole).
+    func testSkippedSourceDeleteOfWholeSourceRecordsCreated() async throws {
+        let a = try file("src/a", "A")
+        let d = try dir("d")
+        let srcDir = url("src").path
+        var tuning = FileOpTuning(faultHook: { point, _ in
+            if point == .beforeSourceDelete { _ = chmod(srcDir, 0o500) }       // unlink fails, nothing deleted
+        })
+        tuning.forceCrossVolume = true
+        let (queue, _) = makeQueue(interaction: ScriptedInteraction(errors: [.skip]), tuning: tuning)
+        let o = try await run(.move(sources: [a], destination: d), on: queue)
+        XCTAssertEqual(text(a), "A")
+        guard case .created(let u, _)? = o.record.actions.last else { return XCTFail("\(o.record.actions)") }
+        XCTAssertEqual(u, url("d/a"))
+    }
+
     func testChangedDuringMoveRetryMovesTheNewContent() async throws {
         let src = try bigFile("src/log.txt", bytes: 1 << 20)
         let d = try dir("d")

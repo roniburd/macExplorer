@@ -11,6 +11,8 @@ struct PlanEntry: Sendable, Equatable {
     var mode: UInt16
     var isLocked: Bool
     var errorCode: Int32              // fts_errno for unreadable entries, else 0
+    /// Modification time when planned: the cross-volume move's "before" snapshot (MoveVerification).
+    var mtime: Date = .distantPast
 }
 
 struct PlanItem: Sendable {
@@ -122,7 +124,27 @@ enum Planner {
 
     static func rootEntry(_ info: PosixFS.Info) -> PlanEntry {
         PlanEntry(relativePath: "", type: info.isDirectory ? .directory : info.isSymlink ? .symlink : info.isRegular ? .file : .other,
-                  size: info.size, allocSize: info.allocSize, mode: info.mode, isLocked: info.isLocked, errorCode: 0)
+                  size: info.size, allocSize: info.allocSize, mode: info.mode, isLocked: info.isLocked, errorCode: 0,
+                  mtime: info.mtime)
+    }
+
+    /// One fts entry of a walk rooted at a path of `rootBytes` UTF-8 bytes (shared by `enumerate` and MoveVerification).
+    static func entry(path: String, _ ent: UnsafeMutablePointer<FTSENT>, rootBytes: Int) -> PlanEntry {
+        let rel = path.utf8.count <= rootBytes ? "" : String(decoding: path.utf8.dropFirst(rootBytes + 1), as: UTF8.self)
+        let st = ent.pointee.fts_statp?.pointee
+        let ftsInfo = Int32(ent.pointee.fts_info)
+        let type: PlanEntry.EntryType = switch ftsInfo {
+        case FTS_D, FTS_DNR, FTS_DC: .directory
+        case FTS_F: .file
+        case FTS_SL, FTS_SLNONE: .symlink
+        default: .other
+        }
+        let flags = st?.st_flags ?? 0
+        return PlanEntry(relativePath: rel, type: type, size: Int64(st?.st_size ?? 0),
+                         allocSize: Int64(st?.st_blocks ?? 0) * 512, mode: UInt16((st?.st_mode ?? 0) & 0o7777),
+                         isLocked: flags & UInt32(UF_IMMUTABLE) != 0,
+                         errorCode: ftsInfo == FTS_DNR || ftsInfo == FTS_ERR || ftsInfo == FTS_NS ? ent.pointee.fts_errno : 0,
+                         mtime: st.map { PosixFS.date($0.st_mtimespec) } ?? .distantPast)
     }
 
     /// Pre-order fts (FTS_PHYSICAL): links are entries, never followed; loops cannot occur.
@@ -135,27 +157,17 @@ enum Planner {
             let rootBytes = url.path.utf8.count
             PosixFS.walk(url.path) { path, ent in
                 if out.count % 256 == 0 { lane.heartbeat() }
-                let rel = path.utf8.count <= rootBytes ? "" : String(decoding: path.utf8.dropFirst(rootBytes + 1), as: UTF8.self)
-                let st = ent.pointee.fts_statp?.pointee
-                let ftsInfo = Int32(ent.pointee.fts_info)
-                let type: PlanEntry.EntryType = switch ftsInfo {
-                case FTS_D, FTS_DNR, FTS_DC: .directory
-                case FTS_F: .file
-                case FTS_SL, FTS_SLNONE: .symlink
-                default: .other
-                }
+                let e = entry(path: path, ent, rootBytes: rootBytes)
                 // fts reports an unreadable folder twice: FTS_D (errno 0), then FTS_DNR in place of FTS_DP. Fold the
                 // error into the first so the copy fails on it before creating the folder (QA round 2).
-                if ftsInfo == FTS_DNR, let last = out.indices.last, out[last].relativePath == rel, out[last].type == .directory {
+                if Int32(ent.pointee.fts_info) == FTS_DNR, let last = out.indices.last, out[last].relativePath == e.relativePath,
+                   out[last].type == .directory {
                     out[last].errorCode = ent.pointee.fts_errno
                     return true
                 }
-                let flags = st?.st_flags ?? 0
-                out.append(PlanEntry(relativePath: rel, type: type, size: Int64(st?.st_size ?? 0),
-                                     allocSize: Int64(st?.st_blocks ?? 0) * 512, mode: UInt16((st?.st_mode ?? 0) & 0o7777),
-                                     isLocked: flags & UInt32(UF_IMMUTABLE) != 0,
-                                     errorCode: ftsInfo == FTS_DNR || ftsInfo == FTS_ERR || ftsInfo == FTS_NS ? ent.pointee.fts_errno : 0))
-                if noMaterialization, type == .directory, flags & UInt32(SF_DATALESS) != 0 { unknown = true; return false }
+                out.append(e)
+                let flags = ent.pointee.fts_statp?.pointee.st_flags ?? 0
+                if noMaterialization, e.type == .directory, flags & UInt32(SF_DATALESS) != 0 { unknown = true; return false }
                 return true
             }
             return (out, unknown)
