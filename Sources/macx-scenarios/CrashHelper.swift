@@ -57,15 +57,14 @@ struct CrashHelperOptions: Equatable, Sendable {
 /// (after writing the ready marker) so the parent can SIGKILL it mid-operation.
 @MainActor
 enum CrashHelper {
-    /// True only for absolute paths that, after standardization, have a `macx-scenario-*` ancestor.
-    nonisolated static func isInsideScenarioSandbox(_ path: String) -> Bool {
-        guard path.hasPrefix("/") else { return false }
-        let standardized = URL(filePath: path).standardized.path
-        return standardized.split(separator: "/").dropLast().contains { $0.hasPrefix("macx-scenario-") }
+    /// True only when every path resolves (symlinks and ".." followed, as the kernel would) strictly inside one and the
+    /// same `macx-scenario-*` sandbox directly in the temporary directory.
+    nonisolated static func areInsideOneScenarioSandbox(_ paths: [String]) -> Bool {
+        SandboxHandle.commonScenarioRoot(of: paths) != nil
     }
 
     static func run(_ args: [String]) async -> Int32 {
-        guard let o = try? CrashHelperOptions.parse(args), o.allPaths.allSatisfy(isInsideScenarioSandbox) else { return 64 }
+        guard let o = try? CrashHelperOptions.parse(args), areInsideOneScenarioSandbox(o.allPaths) else { return 64 }
         let point: FaultPoint = switch o.mode {
         case .copy: .afterPartialCopy
         case .replace: .afterTrashDestination

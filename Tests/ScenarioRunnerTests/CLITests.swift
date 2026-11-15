@@ -1,3 +1,4 @@
+import Darwin
 import XCTest
 @testable import macx_scenarios
 
@@ -20,12 +21,26 @@ final class CLITests: XCTestCase {
         XCTAssertThrowsError(try ScenarioCLIOptions.parse(["--filter"])) { XCTAssertEqual($0 as? ScenarioCLIError, .missingValue("--filter")) }
     }
 
-    func testCrashHelperRefusesPathsOutsideScenarioSandboxes() {
-        XCTAssertFalse(CrashHelper.isInsideScenarioSandbox("/Library/someone/file.txt"))
-        XCTAssertFalse(CrashHelper.isInsideScenarioSandbox("/tmp/other/file"))
-        XCTAssertFalse(CrashHelper.isInsideScenarioSandbox("/tmp/macx-scenario-1/../../etc/hosts"))
-        XCTAssertFalse(CrashHelper.isInsideScenarioSandbox("relative/macx-scenario-1/a"))
-        XCTAssertTrue(CrashHelper.isInsideScenarioSandbox("/private/var/folders/x/T/macx-scenario-1234/work/a.txt"))
+    func testCrashHelperRefusesPathsOutsideScenarioSandboxes() throws {
+        XCTAssertFalse(CrashHelper.areInsideOneScenarioSandbox(["/Library/someone/file.txt"]))
+        XCTAssertFalse(CrashHelper.areInsideOneScenarioSandbox(["/tmp/other/file"]))
+        XCTAssertFalse(CrashHelper.areInsideOneScenarioSandbox(["/tmp/macx-scenario-1/../../etc/hosts"]))
+        XCTAssertFalse(CrashHelper.areInsideOneScenarioSandbox(["relative/macx-scenario-1/a"]))
+        XCTAssertFalse(CrashHelper.areInsideOneScenarioSandbox(["/private/var/folders/x/T/macx-scenario-1234/work/a.txt"]),
+                       "a macx-scenario-* ancestor that isn't the temporary directory's")
+        XCTAssertFalse(CrashHelper.areInsideOneScenarioSandbox([]))
+
+        let a = try SandboxHandle.make(prefix: "macx-scenario"), b = try SandboxHandle.make(prefix: "macx-scenario")
+        defer { a.destroy(); b.destroy() }
+        let work = a.dir("work")
+        XCTAssertTrue(CrashHelper.areInsideOneScenarioSandbox([work.appending(path: "s").path, work.appending(path: "ready").path]))
+        XCTAssertFalse(CrashHelper.areInsideOneScenarioSandbox([work.appending(path: "s").path, b.dir("w").path]),
+                       "paths in two different sandboxes")
+        XCTAssertFalse(CrashHelper.areInsideOneScenarioSandbox([work.path + "/../.."]))
+        XCTAssertFalse(CrashHelper.areInsideOneScenarioSandbox([a.root.path]), "the sandbox root itself")
+        guard Darwin.symlink("/etc", work.appending(path: "etc-link").path) == 0 else { return XCTFail("symlink: errno \(errno)") }
+        XCTAssertFalse(CrashHelper.areInsideOneScenarioSandbox([work.appending(path: "etc-link/hosts").path]),
+                       "a symlink out of the sandbox")
     }
 
     func testCrashHelperOptionParsing() throws {

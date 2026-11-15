@@ -23,7 +23,8 @@ public final class Sandbox: Sendable {
     }
 
     /// Adopts an existing, empty directory created by a runner script (e.g. `--root` of a scenario run).
-    /// Refuses (throws) unless it sits directly in the temporary directory and its name starts with an allowed prefix.
+    /// Refuses (throws) unless it sits directly in the temporary directory, its name starts with an allowed prefix,
+    /// and it is an existing directory with nothing in it (so a later destroy() can't delete anything it didn't make).
     public init(adopting directory: URL) throws {
         let temp = try Sandbox.resolvedTemporaryDirectory()
         guard let resolved = Sandbox.resolve(directory.path(percentEncoded: false)) else {
@@ -33,6 +34,12 @@ public final class Sandbox: Sendable {
         let parent = (resolved as NSString).deletingLastPathComponent
         guard parent == temp, Sandbox.allowedPrefixes.contains(where: { name.hasPrefix($0 + "-") }) else {
             throw SandboxError.notASandboxDirectory(resolved)
+        }
+        var st = stat()
+        guard lstat(resolved, &st) == 0 else { throw Sandbox.posixError(errno, resolved) }
+        guard (st.st_mode & S_IFMT) == S_IFDIR else { throw Sandbox.posixError(ENOTDIR, resolved) }
+        guard try FileManager.default.contentsOfDirectory(atPath: resolved).isEmpty else {
+            throw SandboxError.notEmpty(resolved)
         }
         root = URL(filePath: resolved, directoryHint: .isDirectory)
     }
@@ -229,9 +236,33 @@ public final class Sandbox: Sendable {
         return resolved.trimmingSuffix("/")
     }
 
+    /// The sandbox root (`<temporary directory>/<prefix>-…`, fully resolved) that `path` resolves to or into, following
+    /// symlinks and ".." as `contains` does; nil for a relative path or one that resolves anywhere else.
+    public static func enclosingRoot(of path: String, prefixes: [String] = allowedPrefixes) -> String? {
+        guard let temp = try? resolvedTemporaryDirectory(), let resolved = resolve(path), resolved.hasPrefix(temp + "/") else {
+            return nil
+        }
+        let name = String(resolved.dropFirst(temp.count + 1).prefix { $0 != "/" })
+        guard prefixes.contains(where: { name.hasPrefix($0 + "-") && name.count > $0.count + 1 }) else { return nil }
+        return temp + "/" + name
+    }
+
+    /// The one sandbox root every path resolves strictly inside (never the root itself), or nil when `paths` is empty,
+    /// or any path resolves outside a sandbox or into a different one. Guards for helper processes handed paths.
+    public static func commonRoot(of paths: [String], prefixes: [String] = allowedPrefixes) -> String? {
+        var common: String?
+        for path in paths {
+            guard let root = enclosingRoot(of: path, prefixes: prefixes), resolve(path) != root,
+                  common == nil || common == root else { return nil }
+            common = root
+        }
+        return common
+    }
+
     /// Kernel-equivalent resolution: walks components from "/", following symlinks (also dangling ones,
     /// textually) and applying ".." to the resolved prefix. Components that don't exist are appended as-is.
-    static func resolve(_ path: String, depth: Int = 0) -> String? {
+    /// Nil for a relative path or a symlink loop.
+    public static func resolve(_ path: String, depth: Int = 0) -> String? {
         guard depth < 40, path.hasPrefix("/") else { return nil }
         var current = ""
         var rest = path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
@@ -317,6 +348,7 @@ public final class Sandbox: Sendable {
 
 public enum SandboxError: Error, Equatable, Sendable {
     case notASandboxDirectory(String)
+    case notEmpty(String)
 }
 
 extension String {

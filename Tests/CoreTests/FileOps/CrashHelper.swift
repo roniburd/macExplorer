@@ -22,6 +22,8 @@ extension CrashSpec {
     /// Paths the sandbox guard checks besides sources, journal and trash: the destination folder. A batch rename's
     /// destination holds plain names (checked separately), whose targets live next to the sources.
     var destinationPaths: [String] { mode == "batchRename" ? [] : [destination] }
+    /// Every path the sandbox guards check.
+    var guardedPaths: [String] { sources + destinationPaths + [journal, trash] }
 }
 
 /// Entry point executed only inside the child `xctest` process (skips everywhere else).
@@ -31,9 +33,9 @@ final class CrashHelperEntry: XCTestCase {
             throw XCTSkip("child-process entry point for crash tests")
         }
         let spec = try JSONDecoder().decode(CrashSpec.self, from: Data(raw.utf8))
-        let tmp = try Sandbox.resolvedTemporaryDirectory() + "/macx-tests-"   // /private/var/…: resolvingSymlinksInPath drops /private
-        for p in spec.sources + spec.destinationPaths + [spec.journal, spec.trash] where !p.hasPrefix(tmp) {
-            return XCTFail("crash helper refuses a path outside a test sandbox: \(p)")
+        // Every path must resolve (symlinks, "..") strictly inside one and the same macx-tests sandbox in the temp dir.
+        guard let sandboxRoot = Sandbox.commonRoot(of: spec.guardedPaths, prefixes: ["macx-tests"]) else {
+            return XCTFail("crash helper refuses paths outside one test sandbox: \(spec.guardedPaths)")
         }
         let fault = try XCTUnwrap(FaultPoint(rawValue: spec.fault))
         var tuning = FileOpTuning(faultHook: { point, _ in if point == fault { kill(getpid(), SIGKILL) } })
@@ -52,8 +54,9 @@ final class CrashHelperEntry: XCTestCase {
         default: .copy(sources: sources, destination: destination)
         }
         // Same guard on the request actually enqueued (the child has no FileOpsTestCase sandbox to delegate to).
-        for u in kind.allURLs where !u.resolvingSymlinksInPath().path.hasPrefix(tmp) && !u.path.hasPrefix(tmp) {
-            return XCTFail("crash helper refuses a job URL outside a test sandbox: \(u.path)")
+        let jobPaths = kind.allURLs.map { $0.path(percentEncoded: false) }
+        guard Sandbox.commonRoot(of: jobPaths, prefixes: ["macx-tests"]) == sandboxRoot else {
+            return XCTFail("crash helper refuses job URLs outside the test sandbox: \(jobPaths)")
         }
         let id = await queue.enqueue(JobRequest(kind))
         _ = await queue.outcome(of: id)
@@ -64,8 +67,9 @@ final class CrashHelperEntry: XCTestCase {
 extension FileOpsTestCase {
     /// Runs `spec` in a child `xcrun xctest` process of this same test bundle. Returns true if the child was SIGKILLed.
     func runCrashingChild(_ spec: CrashSpec) async throws -> Bool {
-        for p in spec.sources + spec.destinationPaths + [spec.journal, spec.trash] {
-            guard p.hasPrefix(root.path + "/") else { XCTFail("outside sandbox: \(p)"); return false }
+        let sandboxRoot = Sandbox.enclosingRoot(of: sandbox.root.path(percentEncoded: false))
+        guard sandboxRoot != nil, Sandbox.commonRoot(of: spec.guardedPaths, prefixes: ["macx-tests"]) == sandboxRoot else {
+            XCTFail("outside this test's sandbox: \(spec.guardedPaths)"); return false
         }
         if spec.mode == "batchRename" {
             let names = spec.destination.split(separator: "\n", omittingEmptySubsequences: false)

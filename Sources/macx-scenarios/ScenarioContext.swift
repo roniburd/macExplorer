@@ -105,11 +105,13 @@ final class ScenarioContext {
     func isAliasFile(_ url: URL) -> Bool { (try? url.resourceValues(forKeys: [.isAliasFileKey]).isAliasFile) == true }
     func resolveAlias(_ url: URL) -> URL? { try? URL(resolvingAliasFileAt: url) }
 
+    /// True when a file system is mounted exactly at `path`. f_mntonname is the realpath spelling (/private/var/…), so
+    /// `path` is resolved the same way; resolvingSymlinksInPath drops /private and never matched.
     static func isMounted(_ path: String) -> Bool {
         var s = statfs()
-        guard statfs(path, &s) == 0 else { return false }
+        guard statfs(path, &s) == 0, let resolved = SandboxHandle.resolvedPath(path) else { return false }
         let mountedOn = withUnsafeBytes(of: s.f_mntonname) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
-        return mountedOn == URL(filePath: path).resolvingSymlinksInPath().path
+        return mountedOn == resolved
     }
 
     // MARK: models

@@ -2,7 +2,7 @@ import XCTest
 import Darwin
 @testable import macx_scenarios
 
-@MainActor final class PathBox { var path: String? }
+@MainActor final class PathBox { var path: String?; var flag = false }
 
 @MainActor
 final class RunnerTests: XCTestCase {
@@ -62,12 +62,21 @@ final class RunnerTests: XCTestCase {
         let scenario = CoreScenario("test.imageThrow", requires: .diskImages) { ctx in
             let image = try await ctx.image("t", .apfs, sizeMB: 16)
             box.path = image.mountPoint.path
+            box.flag = ScenarioContext.isMounted(image.mountPoint.path)
             throw ScenarioFailure("after mount")
         }
         let r = await ScenarioRunner.runOne(scenario, helper: nil, requireImages: true, keepSandbox: false)
         XCTAssertEqual(r.status, .failed)
+        XCTAssertTrue(box.flag, "isMounted sees the attached image (f_mntonname keeps /private)")
         XCTAssertFalse(ScenarioContext.isMounted(try XCTUnwrap(box.path, "image never mounted: \(r.message ?? "-")")))
         XCTAssertTrue(r.sandboxRemoved, "a still-mounted image would block removal")
+    }
+
+    func testIsMountedIsFalseForAPlainDirectory() throws {
+        let handle = try SandboxHandle.make(prefix: "macx-scenario")
+        defer { handle.destroy() }
+        XCTAssertFalse(ScenarioContext.isMounted(handle.dir("plain").path))
+        XCTAssertTrue(ScenarioContext.isMounted("/"))
     }
 
     func testRelativePathOfSandboxDescendant() throws {

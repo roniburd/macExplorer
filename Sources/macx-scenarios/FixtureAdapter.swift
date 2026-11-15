@@ -19,6 +19,13 @@ struct SandboxHandle: Sendable {
     static func make(prefix: String) throws -> SandboxHandle { SandboxHandle(sandbox: try Sandbox(prefix: prefix)) }
     static var imagesAvailable: Bool { DiskImage.isAvailable }
 
+    /// The `macx-scenario-*` sandbox in the temporary directory that every path resolves strictly inside (symlinks and
+    /// ".." followed), or nil when any path is elsewhere or the paths span two sandboxes.
+    static func commonScenarioRoot(of paths: [String]) -> String? { Sandbox.commonRoot(of: paths, prefixes: ["macx-scenario"]) }
+
+    /// The fully resolved path of `path` (keeps /private, unlike resolvingSymlinksInPath), or nil for a relative one.
+    static func resolvedPath(_ path: String) -> String? { Sandbox.resolve(path) }
+
     func url(_ relative: String) -> URL { sandbox.url(relative) }
     func contains(_ url: URL) -> Bool { sandbox.contains(url) }
 
@@ -77,8 +84,10 @@ struct SandboxHandle: Sendable {
             _ = chmod(path, 0o755)
             for name in (try? FileManager.default.contentsOfDirectory(atPath: path)) ?? [] { visit(path + "/" + name) }
         }
-        precondition(root.lastPathComponent.hasPrefix("macx-"), "refusing to touch \(root.path)")
-        visit(root.path)
+        let base = root.path(percentEncoded: false).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let rootPath = "/" + base
+        precondition(Sandbox.enclosingRoot(of: rootPath) == rootPath, "refusing to touch \(rootPath)")
+        visit(rootPath)
     }
 
     func destroy() { sandbox.destroy() }

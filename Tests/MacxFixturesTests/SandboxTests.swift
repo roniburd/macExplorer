@@ -104,13 +104,48 @@ final class SandboxTests: XCTestCase {
         XCTAssertEqual(adopted.root, outside.root)
     }
 
+    func testAdoptingRefusesMissingOrNonEmptyDirectories() throws {
+        let temp = try Sandbox.resolvedTemporaryDirectory()
+        let missing = URL(filePath: temp + "/macx-tests-" + UUID().uuidString)
+        XCTAssertThrowsError(try Sandbox(adopting: missing), "a sandbox directory that doesn't exist")
+        try outside.createFile("left-over.txt")
+        XCTAssertThrowsError(try Sandbox(adopting: outside.root)) { error in
+            XCTAssertEqual(error as? SandboxError, .notEmpty(outside.root.path(percentEncoded: false).trimmingSuffix("/")))
+        }
+    }
+
+    func testEnclosingAndCommonRootResolveSymlinksAndDotDot() throws {
+        let base = sandbox.root.path(percentEncoded: false).trimmingSuffix("/")
+        let other = outside.root.path(percentEncoded: false).trimmingSuffix("/")
+        try sandbox.createDirectory("w")
+        try sandbox.createSymlink("w/out", target: other)
+        XCTAssertEqual(Sandbox.enclosingRoot(of: base + "/w/a.txt"), base)
+        XCTAssertEqual(Sandbox.enclosingRoot(of: base), base)
+        XCTAssertEqual(Sandbox.enclosingRoot(of: base.replacingOccurrences(of: "/private/var/", with: "/var/") + "/w"), base,
+                       "the /var spelling resolves to the same root")
+        XCTAssertEqual(Sandbox.enclosingRoot(of: base + "/w/out/x"), other, "a symlink into another sandbox")
+        XCTAssertNil(Sandbox.enclosingRoot(of: base + "/../../etc/hosts"))
+        XCTAssertNil(Sandbox.enclosingRoot(of: "/tmp/macx-tests-1/a"), "named like a sandbox but not in the temporary directory")
+        XCTAssertNil(Sandbox.enclosingRoot(of: "relative/macx-tests-1/a"))
+        XCTAssertNil(Sandbox.enclosingRoot(of: base + "/w", prefixes: ["macx-scenario"]), "prefix not allowed")
+        XCTAssertNil(Sandbox.enclosingRoot(of: NSHomeDirectory()))
+
+        XCTAssertEqual(Sandbox.commonRoot(of: [base + "/w/a", base + "/w/b/c"]), base)
+        XCTAssertNil(Sandbox.commonRoot(of: []))
+        XCTAssertNil(Sandbox.commonRoot(of: [base + "/w/a", other + "/b"]), "two different sandboxes")
+        XCTAssertNil(Sandbox.commonRoot(of: [base + "/w/a", base + "/w/out/b"]), "a symlink out of the sandbox")
+        XCTAssertNil(Sandbox.commonRoot(of: [base + "/w/a", base]), "the root itself is not inside")
+        XCTAssertNil(Sandbox.commonRoot(of: [base + "/w/a", base + "/w/.."]), "'..' back to the root")
+    }
+
     func testOutOfSandboxWritesTrap() throws {
         if TrapProbe.value(TrapProbe.environmentKey) != nil { throw XCTSkip("in child") }
-        try sandbox.createSymlink("out", target: outside.root.path(percentEncoded: false))
         let bundle = Bundle(for: SandboxTests.self).bundleURL
-        let env = ["MACX_SANDBOX": sandbox.root.path(percentEncoded: false),
-                   "MACX_OUTSIDE": outside.root.path(percentEncoded: false)]
         for (name, test) in [("escape", "testProbeChildEscape"), ("dotdot", "testProbeChildDotDot")] {
+            let adopted = try Sandbox()     // each child adopts a fresh, empty sandbox (adoption refuses anything else)
+            defer { adopted.destroy() }
+            let env = ["MACX_SANDBOX": adopted.root.path(percentEncoded: false),
+                       "MACX_OUTSIDE": outside.root.path(percentEncoded: false)]
             let result = try TrapProbe.run(name: name, testIdentifier: "MacxFixturesTests.SandboxTrapProbes/\(test)",
                                            bundle: bundle, environment: env)
             XCTAssertTrue(result.trapped, "\(name): status \(result.status)\n\(result.output.suffix(2000))")
@@ -126,6 +161,7 @@ final class SandboxTrapProbes: XCTestCase {
     func testProbeChildEscape() throws {
         guard TrapProbe.isChild("escape") else { throw XCTSkip("trap probe child only") }
         let s = try Sandbox(adopting: URL(filePath: TrapProbe.value("MACX_SANDBOX")!))
+        try s.createSymlink("out", target: TrapProbe.value("MACX_OUTSIDE")!)
         _ = try s.createFile("out/escaped.txt")   // "out" links to the other sandbox: must trap before writing
         XCTFail("createFile through an escaping symlink did not trap")
     }
