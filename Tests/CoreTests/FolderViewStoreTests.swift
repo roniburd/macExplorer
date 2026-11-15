@@ -487,7 +487,8 @@ final class FolderViewStoreTests: XCTestCase {
     }
 
     /// "Install Previous Version": values a newer version wrote that this one doesn't know read as not set, their
-    /// records stay, an unreadable record or column list is skipped alone, and the next write keeps the rest.
+    /// records stay, an unreadable record or column list is skipped alone, and the next write keeps the rest (without
+    /// the unknown values).
     func testUnknownValuesFromANewerVersionKeepTheirRecords() throws {
         let storage = InMemorySettingsStorage()
         let text = [
@@ -508,35 +509,45 @@ final class FolderViewStoreTests: XCTestCase {
         XCTAssertFalse(store.readOnly)
         XCTAssertEqual(store.count, 3, "/u/dangling: its list index doesn't resolve, so nothing is set and it is dropped")
         let v = volume(id: "uuid:ABC", idStable: true)
-        XCTAssertEqual(store.settings(for: loc("/u/photos", v, 42)),
-                       FolderViewSettings(density: .compact, sort: MacxFS.SortDescriptor(field: .size, ascending: false),
-                                          columns: [ColumnSetting(id: .name, width: 280, visible: true),
-                                                    ColumnSetting(id: .size, width: 81.5, visible: false)],
-                                          groupBy: .kind, calculateFolderSizes: true))
-        XCTAssertEqual(store.settings(for: loc("/u/docs", nil, nil)), FolderViewSettings(viewMode: .icons, iconSize: .large))
-        XCTAssertEqual(store.settings(for: loc("/u/kinds", nil, nil)),
-                       FolderViewSettings(columns: [ColumnSetting(id: .kind, width: 150, visible: true)]))
+        let photos = FolderViewSettings(density: .compact, sort: MacxFS.SortDescriptor(field: .size, ascending: false),
+                                        columns: [ColumnSetting(id: .name, width: 280, visible: true),
+                                                  ColumnSetting(id: .size, width: 81.5, visible: false)],
+                                        groupBy: .kind, calculateFolderSizes: true)
+        let docs = FolderViewSettings(viewMode: .icons, iconSize: .large)
+        let kinds = FolderViewSettings(columns: [ColumnSetting(id: .kind, width: 150, visible: true)])
+        XCTAssertEqual(store.settings(for: loc("/u/photos", v, 42)), photos)
+        XCTAssertEqual(store.settings(for: loc("/u/docs", nil, nil)), docs)
+        XCTAssertEqual(store.settings(for: loc("/u/kinds", nil, nil)), kinds)
         store.save(icons, for: loc("/u/new", nil, nil))
         store.flush()
         let reloaded = makeStore(storage)
-        for path in ["/u/new", "/u/docs", "/u/kinds"] { XCTAssertTrue(reloaded.hasOverride(for: loc(path, nil, nil)), path) }
-        XCTAssertTrue(reloaded.hasOverride(for: loc("/u/photos", v, 42)))
+        XCTAssertEqual(reloaded.count, 4)
+        XCTAssertEqual(reloaded.settings(for: loc("/u/photos", v, 42)), photos, "re-encoded without the unknown column")
+        XCTAssertEqual(reloaded.settings(for: loc("/u/docs", nil, nil)), docs)
+        XCTAssertEqual(reloaded.settings(for: loc("/u/kinds", nil, nil)), kinds, "its column list is renumbered")
+        XCTAssertEqual(state(reloaded, loc("/u/new", nil, nil)), icons)
     }
 
-    /// A store in a newer version's format is left as it is: no views this session, nothing written, even on flush.
-    func testNewerFormatIsNeverOverwritten() async throws {
+    /// A store in a newer version's format is left as it is: no views this session, nothing written, even on flush or
+    /// "Apply to All Folders" (the newer version's views come back when it runs again).
+    func testNewerFormatIsNeverOverwritten() throws {
+        let control = makeStore()
+        control.save(icons, for: loc("/u/a", nil, nil))
+        XCTAssertTrue(control.hasPendingFlush, "control: a change schedules a debounced write")
+
         let storage = InMemorySettingsStorage()
         let newer = Data("macx-folder-views\t4\nZ\tsomething this version can't read\n".utf8)
         storage.set(newer, forKey: FolderViewStore.storageKey)
-        let store = makeStore(storage, delay: .milliseconds(1), legacyJSON: { XCTFail("no legacy import"); return nil })
+        let store = makeStore(storage, legacyJSON: { XCTFail("no legacy import"); return nil })
         XCTAssertTrue(store.readOnly)
         XCTAssertEqual(store.count, 0)
         store.save(icons, for: loc("/u/a", nil, nil))
         XCTAssertEqual(state(store, loc("/u/a", nil, nil)), icons, "this session still shows the change")
-        try await Task.sleep(for: .milliseconds(50))
-        store.removeAll()
+        XCTAssertFalse(store.hasPendingFlush, "no debounced write is scheduled")
         store.flush()
         XCTAssertEqual(storage.data(forKey: FolderViewStore.storageKey), newer)
+        store.removeAll()
+        XCTAssertEqual(storage.data(forKey: FolderViewStore.storageKey), newer, "Apply to All Folders keeps them too")
         XCTAssertTrue(FolderViewStore.isNewerFormat(newer))
         XCTAssertFalse(FolderViewStore.isNewerFormat(Data("macx-folder-views\t3\n".utf8)))
         XCTAssertFalse(FolderViewStore.isNewerFormat(Data("not a store".utf8)))

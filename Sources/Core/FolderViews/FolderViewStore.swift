@@ -21,7 +21,9 @@ import MacxFS
 ///
 /// Compatibility with other versions ("Install Previous Version" rolls back to an older build): a value this version
 /// doesn't know (a newer column, view mode, sort field…) reads as not set and its record is kept; a record or column
-/// list that can't be read at all is skipped alone. A store whose header names a newer format is left untouched: this
+/// list that can't be read at all is skipped alone. This version's next write re-encodes only what it read, so those
+/// unknown values, extra fields, other lines and skipped records are gone from storage after it: going forward again
+/// finds the records, not the newer data in them. A store whose header names a newer format is left untouched: this
 /// session starts with no stored views and never writes (`readOnly`), so going forward again finds them all.
 ///
 /// Finder's `.DS_Store` views are cached here too (`finderView`/`setFinderView`): in memory, read once per launch
@@ -86,6 +88,9 @@ public final class FolderViewStore {
         flushTask?.cancel()
         legacyImport?.task.cancel()
     }
+
+    /// Test hook: a debounced write is scheduled or in flight.
+    var hasPendingFlush: Bool { flushTask != nil }
 
     /// Test hook: returns once the legacy import (if any) has been merged or dropped.
     func legacyImportFinished() async { await legacyImport?.task.value }
@@ -164,7 +169,8 @@ public final class FolderViewStore {
     }
 
     /// "Apply to All Folders": every folder's own record goes (and a legacy import still running is dropped). Writes
-    /// now.
+    /// now, except when `readOnly`: the newer version's stored views are kept and come back when it runs again, like
+    /// every other change made this session.
     public func removeAll() {
         legacyImport?.task.cancel()
         legacyImport = nil
@@ -211,9 +217,11 @@ public final class FolderViewStore {
     ///
     /// A field the folder doesn't set is empty (sort: field and direction both empty). uuid and fileID are empty for
     /// a path record (its key is its path key). In the path, `\`, tab, newline and carriage return are escaped as
-    /// `\\`, `\t`, `\n`, `\r`. Fields after the path, and lines with another tag, are ignored (room for a later version
-    /// to add some without a new header). Bump the header only for a change older versions can't read: they then leave
-    /// the store alone (`isNewerFormat`). New enum values don't need it. Pure; debounced writes run it off main.
+    /// `\\`, `\t`, `\n`, `\r`. Fields after the path, lines with another tag and unknown enum values are ignored, so a
+    /// later version can add them without a new header and older versions still read the rest; but an older version's
+    /// next write drops them (it encodes only what it knows). Bump the header when newer data must survive an older
+    /// version untouched, or for a change older versions can't read: they then leave the store alone
+    /// (`isNewerFormat`, `readOnly`). Pure; debounced writes run it off main.
     nonisolated static let formatPrefix = "macx-folder-views\t"
     nonisolated static let formatVersion = 3
     nonisolated static let formatHeader = formatPrefix + String(formatVersion)
