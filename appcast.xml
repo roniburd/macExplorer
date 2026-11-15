@@ -5,6 +5,15 @@
     <link>https://roniburd.github.io/macExplorer/appcast.xml</link>
     <language>en</language>
     <item>
+      <title>MacExplorer 0.7.1</title>
+      <pubDate>Sun, 15 Nov 2026 00:31:12 GMT</pubDate>
+      <sparkle:version>366</sparkle:version>
+      <sparkle:shortVersionString>0.7.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:releaseNotesLink>https://github.com/roniburd/macExplorer/releases/tag/v0.7.1</sparkle:releaseNotesLink>
+      <enclosure url="https://github.com/roniburd/macExplorer/releases/download/v0.7.1/MacExplorer-0.7.1.zip" length="13249738" type="application/octet-stream" sparkle:edSignature="u1ihNuzK9AiIs02cql7hOs8V5JgStPiQwWKq0JsCMxJKFsIdUUx2rUMs/vspdxDVuglgcsjJIcc7RRac4wv2Aw==" />
+    </item>
+    <item>
       <title>MacExplorer 0.7.0</title>
       <pubDate>Sat, 14 Nov 2026 23:19:59 GMT</pubDate>
       <sparkle:version>363</sparkle:version>
