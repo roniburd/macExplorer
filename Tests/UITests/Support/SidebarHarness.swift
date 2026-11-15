@@ -200,7 +200,7 @@ final class SidebarHarness {
     func tearDown() async {
         sidebar = nil
         session?.close()
-        await environment.fileOps.waitUntilIdle()
+        await context.stopJobsForTeardown()
         if let name = context.options.pasteboardName { NSPasteboard(name: NSPasteboard.Name(name)).releaseGlobally() }
         sandbox.destroy()
     }

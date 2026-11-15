@@ -20,6 +20,7 @@ final class ContentTestHarness {
     let interaction = ScriptedInteraction()
     private var hostedWindows: [NSWindow] = []
     private var models: [FolderModel] = []
+    private var tornDown = false
     private var lockedPaths: [String] = []
     private var restrictedPaths: [String] = []
 
@@ -169,13 +170,18 @@ final class ContentTestHarness {
         }
     }
 
-    func tearDown() async {
+    /// Runs once (a test may call it before the teardown block does). Ends jobs the way quitting does: dialogs get
+    /// their fallback, every job is cancelled, and a job still running after `stopTimeout` (one waiting on a dialog of
+    /// a router nobody stops) is reported instead of waited for forever.
+    func tearDown(stopTimeout: Duration = .seconds(10)) async {
+        guard !tornDown else { return }
+        tornDown = true
         PropertiesWindowController.closeAll(for: context)
         context.operationsUI.closePanel()
         for controller in context.windows.windows { controller.close() }
         for window in hostedWindows { window.close() }
         for model in models { model.close() }
-        await environment.fileOps.waitUntilIdle()
+        await context.stopJobsForTeardown(timeout: stopTimeout)
         for path in lockedPaths { _ = chflags(path, 0) }
         for path in restrictedPaths { _ = chmod(path, 0o755) }
         NSPasteboard(name: NSPasteboard.Name(pasteboardName)).releaseGlobally()

@@ -81,7 +81,7 @@ final class ShellHarness {
     func tearDown() async {
         ActiveKeyBindings.current = .defaults
         for controller in context.windows.windows { controller.close() }
-        await environment.fileOps.waitUntilIdle()
+        await context.stopJobsForTeardown()
         if let name = context.options.pasteboardName { NSPasteboard(name: NSPasteboard.Name(name)).releaseGlobally() }
         sandbox.destroy()
     }

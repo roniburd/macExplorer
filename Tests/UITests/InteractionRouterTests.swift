@@ -267,8 +267,7 @@ final class InteractionRouterTests: XCTestCase {
         XCTAssertEqual(info.pair.destination.url.lastPathComponent, "a.txt")
         XCTAssertFalse(info.isFolderMerge)
         presenter.answerOldest(.conflict(.one(.keepBoth)))
-        // Bounded: this wait once hung a whole CI run (about 1 in 15 runs locally). A hang now fails fast with the
-        // state needed to find it, and CI's retry-once applies.
+        // Bounded, so a job that never finishes fails here with its state instead of waiting forever.
         var outcome: JobOutcome?
         Task { outcome = await running.value }
         do {
@@ -276,11 +275,34 @@ final class InteractionRouterTests: XCTestCase {
         } catch {
             let states = operations.jobs.map { "\($0.description.verb) \($0.state)" }
             XCTFail("copy never finished: open dialogs \(presenter.openCount), shown \(presenter.shown.count), jobs \(states)")
-            running.cancel()
             return
         }
         XCTAssertEqual(outcome?.wasCancelled, false)
         XCTAssertTrue(h.exists("dst/a 2.txt"))
         XCTAssertEqual(h.lstatInfo("dst/a.txt")?.st_size, 5, "Keep Both never touches the existing item")
     }
+
+    /// A test that ends (fails, times out) while its job waits on a dialog nobody will answer must not hang the run:
+    /// teardown gives up after its stop timeout and reports the job. Before, it waited for the job forever (one CI
+    /// run hit its 45-minute limit this way).
+    func testTeardownReportsAJobStuckOnAnUnansweredDialogInsteadOfHanging() async throws {
+        let h = try await ContentTestHarness.make(self)
+        try h.file("src/a.txt", bytes: 3)
+        try h.file("dst/a.txt", bytes: 5)
+        let presenter = RecordingPresenter()
+        // Not `router(_:_:)`: nothing stops this router, as nothing stops one a test forgot.
+        let r = InteractionRouter(windows: h.context.windows, presenter: presenter, resolveHost: { _ in .operationsPanel })
+        h.environment.interaction.setTarget(r)
+        let request = JobRequest(.copy(sources: [h.url("src/a.txt")], destination: h.url("dst")), origin: OriginID(raw: 6))
+        let operations = h.environment.operations
+        _ = Task { await operations.perform(request) }
+        try await h.waitUntil("conflict asked") { presenter.shown.count == 1 }
+
+        XCTExpectFailure("teardown reports the job still waiting on the dialog")
+        var tornDown = false
+        Task { await h.tearDown(stopTimeout: .milliseconds(500)); tornDown = true }
+        try await h.waitUntil("teardown returns", timeout: .seconds(15)) { tornDown }
+        presenter.answerOldest(nil)   // let the job end before the process moves on
+    }
 }
+
