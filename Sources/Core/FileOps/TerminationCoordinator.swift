@@ -16,7 +16,7 @@ public final class TerminationCoordinator {
 
     public func stopAllAndWait(timeout: Duration = .seconds(10)) async -> Bool {
         let queue = self.queue
-        let once = ResumeOnce()
+        let once = OnceFlag()
         return await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in
             // A job blocked on an unanswered dialog never finishes its cancel, and `cancelAll` can't be
             // interrupted, so the two race in unstructured tasks rather than a task group (which would wait for both).
@@ -33,8 +33,8 @@ public final class TerminationCoordinator {
     }
 }
 
-/// First caller wins.
-final class ResumeOnce: Sendable {
+/// A claim-once flag: the first `claim()` returns true, every later one false.
+final class OnceFlag: Sendable {
     private let done = Mutex(false)
     func claim() -> Bool { done.withLock { d in defer { d = true }; return !d } }
 }
