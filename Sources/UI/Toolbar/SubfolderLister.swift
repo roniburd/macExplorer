@@ -18,7 +18,7 @@ enum SubfolderLister {
         if let remote, RemoteLocation(url: directory) != nil {
             stream = RemoteListingSource(registry: remote, types: .shared).read(directory, generation: .initial, options: options)
         } else {
-            stream = await readers.reader(for: directory).read(directory, generation: .initial, options: options)
+            stream = await readers.reader(resolving: directory).read(directory, generation: .initial, options: options)
         }
         var names: [String] = []
         loop: for await event in stream {

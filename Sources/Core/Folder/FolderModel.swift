@@ -241,10 +241,10 @@ public final class FolderModel {
         } else {
             let readers = context.readers
             readSource = { directory, generation, options in
-                await readers.reader(for: directory).read(directory, generation: generation, options: options)
+                await readers.reader(resolving: directory).read(directory, generation: generation, options: options)
             }
             itemSource = { names, directory, generation in
-                try await readers.reader(for: directory).readItems(names, in: directory, generation: generation)
+                try await readers.reader(resolving: directory).readItems(names, in: directory, generation: generation)
             }
         }
     }

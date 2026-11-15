@@ -300,7 +300,7 @@ final class FolderTreeController {
         var options = ReadOptions()
         options.directoriesOnly = true
         options.noMaterialization = true
-        let stream = await readers.reader(for: directory).read(directory, generation: .initial, options: options)
+        let stream = await readers.reader(resolving: directory).read(directory, generation: .initial, options: options)
         return await listing(from: stream, stalledReadCompleted: stalledReadCompleted)
     }
 

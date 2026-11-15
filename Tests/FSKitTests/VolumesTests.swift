@@ -99,6 +99,66 @@ final class MountTableTests: XCTestCase {
     }
 }
 
+/// DirectoryReaders.reader(resolving:): a path through a symlink reads on the volume the link points into. The
+/// "image" volume is a plain sandbox folder registered as a mount point in a test table.
+final class SymlinkVolumeLookupTests: XCTestCase {
+    private var sandbox: Sandbox!
+    private var root = ""
+    private var table = MountTable.empty
+
+    override func setUpWithError() throws {
+        sandbox = try Sandbox()
+        let s = sandbox!
+        addTeardownBlock { s.destroy() }
+        root = sandbox.root.path(percentEncoded: false).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        root = "/" + root
+        try sandbox.createDirectory("mnt/sub")
+        try sandbox.createDirectory("home")
+        try sandbox.createSymlink("home/abs", target: root + "/mnt/sub")
+        try sandbox.createSymlink("home/rel", target: "../mnt/sub")
+        try sandbox.createSymlink("home/chain", target: "abs")
+        try sandbox.createSymlink("mnt/inner", target: "/etc")      // inside the "image": never followed
+        table = MountTable([volume("boot", "/", boot: true), volume("img", root + "/mnt")])
+    }
+
+    private func resolve(_ path: String) async -> String {
+        let table = self.table
+        return await Task.detached { DirectoryReaders.resolveSymlinks(path, in: table) }.value
+    }
+
+    func testFollowsLinksOnTheBootVolumeAndStopsAtTheMountPoint() async throws {
+        let home = root + "/home"
+        let resolvedAbs = await resolve(home + "/abs/x")
+        XCTAssertEqual(resolvedAbs, root + "/mnt/sub/x")
+        let resolvedRel = await resolve(home + "/rel")
+        XCTAssertEqual(resolvedRel, root + "/mnt/sub")
+        let resolvedChain = await resolve(home + "/chain/y/../z")
+        XCTAssertEqual(resolvedChain, root + "/mnt/sub/y/../z", "inside the other volume the rest stays as written")
+        let resolvedInner = await resolve(root + "/mnt/inner/hosts")
+        XCTAssertEqual(resolvedInner, root + "/mnt/inner/hosts", "nothing on another volume is examined")
+        let resolvedPlain = await resolve(home + "/missing/a")
+        XCTAssertEqual(resolvedPlain, home + "/missing/a")
+        let viaVar = root.replacingOccurrences(of: "/private/var/", with: "/var/") + "/home/abs"
+        let resolvedVar = await resolve(viaVar)
+        XCTAssertEqual(resolvedVar, root + "/mnt/sub", "/var is itself a link to /private/var")
+    }
+
+    func testReaderResolvingPicksTheLinkTargetsVolume() async throws {
+        let readers = DirectoryReaders(lanes: LanePool(), mountTable: MountTableStore(table))
+        let link = URL(filePath: root + "/home/abs", directoryHint: .isDirectory)
+        XCTAssertEqual(readers.reader(for: link).volume.raw, "boot", "by path text the link is on the boot volume")
+        let first = await readers.reader(resolving: link)
+        XCTAssertEqual(first.volume.raw, "img")
+        let cached = await readers.reader(resolving: link)
+        XCTAssertTrue(cached === first)
+        let plain = await readers.reader(resolving: URL(filePath: root + "/home", directoryHint: .isDirectory))
+        XCTAssertEqual(plain.volume.raw, "boot")
+        let remote = URL(string: "\(RemoteScheme.name):/owner%2Frepo@main/")!
+        let refused = await readers.reader(resolving: remote)
+        XCTAssertEqual(refused.volume.raw, "remote:refused")
+    }
+}
+
 @MainActor
 final class VolumesTests: XCTestCase {
     func testStartScansSortsAndPublishesMirror() async {
