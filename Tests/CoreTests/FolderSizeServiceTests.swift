@@ -134,6 +134,7 @@ final class FolderSizeServiceTests: XCTestCase {
     func testDeepChangeRescansOnlyThatChild() async throws {
         try sandbox.createFile("big/a.bin", contents: Data(count: 3_000))
         try sandbox.createFile("small/c.bin", contents: Data(count: 1_000))
+        try sandbox.createDirectory("probe/deep")
         let model = try await model()
         let session = env.folderSizes.attach(to: model)
         await session.waitUntilIdle()
@@ -142,7 +143,11 @@ final class FolderSizeServiceTests: XCTestCase {
         try sandbox.createFile("big/deep/new.bin", contents: Data(count: 4_000))   // FSEvents → SubtreeWatcher
         await waitUntil { model.folderSize(atRow: model.row(named: "big")!)?.bytes == 7_000 }
         XCTAssertEqual(model.folderSize(atRow: model.row(named: "big")!)?.bytes, 7_000)
-        try await Task.sleep(for: .milliseconds(1_500))   // let the 1 s subtree delivery arrive too
+        // Sentinel instead of a sleep: a change two levels down in a third folder reaches only the subtree watcher
+        // (probe's own mtime stays), and FSEvents delivers in id order, so once probe is rescanned the subtree
+        // delivery of new.bin has arrived too.
+        try sandbox.createFile("probe/deep/sentinel.bin", contents: Data(count: 1))
+        await waitUntil { model.folderSize(atRow: model.row(named: "probe")!)?.bytes == 1 }
         await session.waitUntilIdle()
         XCTAssertEqual(session.scanCounts[small], before[small], "small was not rescanned")
         // Normally once: the folder watcher's mtime change and the subtree delivery are deduplicated by event id.
@@ -171,7 +176,9 @@ final class FolderSizeServiceTests: XCTestCase {
         try sandbox.createFile("A/a.bin", contents: Data(count: 3_000))
         try sandbox.createFile("B/sub/b.bin", contents: Data(count: 5_000))
         let model = try await model()
-        try await Task.sleep(for: .milliseconds(1_500))      // the fixture's own events have been delivered
+        // The fixture's own events have been delivered once the folder watcher lists a marker made after them.
+        try sandbox.createFile("ready.txt")
+        await waitUntil { model.row(named: "ready.txt") != nil }
         try sandbox.createFile("A/extra.bin", contents: Data(count: 1_000))
         model.setFolderSizesEnabled(true)
         let first = env.folderSizes.attach(to: model)

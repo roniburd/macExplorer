@@ -37,18 +37,25 @@ final class WatcherTests: XCTestCase {
         }
     }
 
+    /// Creates `relative` and waits until `sink` reports it: the stream is live, and every event numbered before
+    /// the marker's has been delivered (FSEvents delivers in event-id order). Replaces "sleep, then assert".
+    private func sentinel(_ relative: String, seenBy sink: WatchSink) async throws {
+        _ = try sandbox.createFile(relative)
+        let name = (relative as NSString).lastPathComponent
+        try await wait("sentinel \(relative)") { sink.names.contains(name) || sink.all.contains(.fullRescan) }
+    }
+
     func testDeliversDirectChildrenOnly() async throws {
         let dir = try sandbox.createDirectory("w")
         _ = try sandbox.createDirectory("w/sub")
         let sink = WatchSink()
         let watcher = Watcher(directory: dir, since: Watcher.currentEventID(), handler: sink.handler)
         defer { watcher.stop() }
-        watcher.start()
-        try await Task.sleep(for: .milliseconds(300))
+        watcher.start()                  // `since` predates the writes below: they are replayed if the stream opens late
         _ = try sandbox.createFile("w/a.txt")
         _ = try sandbox.createFile("w/sub/deep.txt")
         try await wait("a.txt event") { sink.names.contains("a.txt") }
-        try await Task.sleep(for: .milliseconds(300))
+        try await sentinel("w/z-sentinel", seenBy: sink)   // deep.txt's event (numbered earlier) has had its chance
         XCTAssertFalse(sink.names.contains("deep.txt"), "events below the folder are dropped")
         XCTAssertFalse(sink.all.contains(.fullRescan))
         XCTAssertGreaterThan(watcher.lastEventID, 0)
@@ -57,8 +64,12 @@ final class WatcherTests: XCTestCase {
     func testNoGapReplaysEventsSinceTheCapturedID() async throws {
         let dir = try sandbox.createDirectory("gap")
         let since = Watcher.currentEventID()
+        let witness = WatchSink()
+        let first = Watcher(directory: dir, since: since, handler: witness.handler)
+        defer { first.stop() }
+        first.start()
         _ = try sandbox.createFile("gap/before-start.txt")     // between capture and stream start (the read)
-        try await Task.sleep(for: .milliseconds(200))
+        try await wait("event numbered") { witness.names.contains("before-start.txt") }   // in the past for the next stream
         let sink = WatchSink()
         let watcher = Watcher(directory: dir, since: since, handler: sink.handler)
         defer { watcher.stop() }
@@ -72,7 +83,7 @@ final class WatcherTests: XCTestCase {
         let watcher = Watcher(directory: dir, since: Watcher.currentEventID(), handler: sink.handler)
         defer { watcher.stop() }
         watcher.start()
-        try await Task.sleep(for: .milliseconds(300))
+        try await sentinel("gone/ready", seenBy: sink)        // the stream is open before its root goes
         try sandbox.rename("gone", to: "moved")
         try await wait("rootChanged") { sink.all.contains(.rootChanged) }
     }
@@ -81,9 +92,14 @@ final class WatcherTests: XCTestCase {
     /// FSEvents does not reliably replay that rename to a stream whose root no longer exists (seen under load:
     /// only HistoryDone arrives). The ID here is captured after the rename, so no replay can cover it.
     func testRootGoneWhenTheStreamOpensIsRootChanged() async throws {
+        let parentSink = WatchSink()
+        let parent = Watcher(directory: sandbox.root, since: Watcher.currentEventID(), handler: parentSink.handler)
+        defer { parent.stop() }
+        parent.start()
         let dir = try sandbox.createDirectory("early")
         try sandbox.rename("early", to: "moved-early")
-        try await Task.sleep(for: .milliseconds(500))           // the rename's event is assigned an ID before the capture
+        // The rename's event has been assigned an ID (delivered to a stream on the parent) before the capture.
+        try await wait("rename numbered") { parentSink.names.contains("moved-early") || parentSink.all.contains(.fullRescan) }
         let since = Watcher.currentEventID()
         let sink = WatchSink()
         let watcher = Watcher(directory: dir, since: since, handler: sink.handler)
@@ -97,13 +113,19 @@ final class WatcherTests: XCTestCase {
         let sink = WatchSink()
         let watcher = Watcher(directory: dir, since: Watcher.currentEventID(), handler: sink.handler)
         watcher.start()
-        try await Task.sleep(for: .milliseconds(300))
+        try await sentinel("s/ready", seenBy: sink)           // delivering before the stop
         watcher.stop()
         watcher.stop()
-        try await Task.sleep(for: .milliseconds(100))
+        let delivered = sink.all.count
+        // A second stream on the same folder sees late.txt and a later marker: the first had its chance at both.
+        let witness = WatchSink()
+        let second = Watcher(directory: dir, since: Watcher.currentEventID(), handler: witness.handler)
+        defer { second.stop() }
+        second.start()
         _ = try sandbox.createFile("s/late.txt")
-        try await Task.sleep(for: .milliseconds(600))
-        XCTAssertTrue(sink.all.isEmpty)
+        try await sentinel("s/after", seenBy: witness)
+        XCTAssertEqual(sink.all.count, delivered, "nothing is delivered after stop returns")
+        XCTAssertFalse(sink.names.contains("late.txt"))
     }
 
     /// Deliveries are cut by the latency window, so a burst arrives as item chunks (each ≤ the limit) and/or a
@@ -113,8 +135,7 @@ final class WatcherTests: XCTestCase {
         let sink = WatchSink()
         let watcher = Watcher(directory: dir, since: Watcher.currentEventID(), handler: sink.handler)
         defer { watcher.stop() }
-        watcher.start()
-        try await Task.sleep(for: .milliseconds(300))
+        watcher.start()                  // `since` predates the burst: it is replayed if the stream opens late
         for i in 0..<600 { _ = try sandbox.createFile("burst/f\(i)") }
         let expected = Set((0..<600).map { "f\($0)" })
         try await wait("burst covered") { sink.all.contains(.fullRescan) || sink.names.isSuperset(of: expected) }
@@ -136,9 +157,15 @@ final class WatcherTests: XCTestCase {
         tree.unwatch(dir)
         XCTAssertEqual(tree.count, 0)
         changed.removeAll()
-        try await Task.sleep(for: .milliseconds(100))
+        // A second watcher on the same folder reports child2: the unwatched one had its chance and stayed quiet.
+        var witnessed: [URL] = []
+        let witness = TreeWatcher { witnessed.append($0) }
+        defer { witness.unwatch(dir) }
+        XCTAssertTrue(witness.watch(dir, isLocalVolume: true))
+        try await wait("witness open") { witness.liveCount == 1 }
         _ = try sandbox.createDirectory("tree/child2")
-        try await Task.sleep(for: .milliseconds(300))
+        try await wait("witness change") { witnessed.contains(dir) }
+        await Task.yield()                                    // a change hop of the unwatched node already queued on main
         XCTAssertTrue(changed.isEmpty, "an unwatched node reports nothing")
     }
 
