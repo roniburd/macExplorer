@@ -258,6 +258,37 @@ final class ColumnsViewTests: XCTestCase {
         XCTAssertFalse(handler.canPerform(.groupByKind, target: .contentSelection(session.folder)))
     }
 
+    /// "Open folders in: In a new window" does not apply in Columns (as in Finder): open still moves into the folder's
+    /// column; only an explicit Open in New Window opens a window.
+    func testOpenFoldersInNewWindowSettingStillMovesIntoTheColumn() async throws {
+        try requireGUISession()
+        let h = try await ContentTestHarness.make(self)
+        try h.file("A/B/c.txt"); try h.file("A/x.txt")
+        let window = try await h.openBrowserWindow()
+        let windows = h.context.windows
+        let before = windows.windows.count
+        let session = window.session
+        let content = try h.content(of: window)
+        let handler = try XCTUnwrap(content.handler)
+        h.environment.settings.openFoldersIn = .newWindow
+        handler.perform(.viewAsColumns, target: .contentSelection(session.folder), sender: nil)
+        let chain = try XCTUnwrap(session.columnChain)
+        session.folder.select(.names(["A"]))
+        try await h.waitUntil("A listed") { chain.models.count == 2 && chain.models[1].state == .complete }
+        handler.perform(.open, target: .contentSelection(session.folder), sender: nil)
+        XCTAssertEqual(chain.activeIndex, 1, "open on the selected folder moves into its column")
+        XCTAssertEqual(windows.windows.count, before, "the setting opens no window in Columns")
+        session.folder.select(.names(["B"]))
+        try await h.waitUntil("B listed") { chain.models.count == 3 && chain.models[2].state == .complete }
+        handler.perform(.openInNewWindow, target: .contentSelection(session.folder), sender: nil)
+        try await h.waitUntil("explicit new window opened") { windows.windows.count == before + 1 }
+        XCTAssertEqual(chain.activeIndex, 1, "an explicit new window leaves the columns where they were")
+        let opened = try XCTUnwrap(windows.windows.last)
+        XCTAssertEqual(opened.session.folder.directory.standardizedFileURL.path, h.url("A/B").standardizedFileURL.path)
+        opened.close()
+        try await h.waitUntil("new window closed") { windows.windows.count == before }
+    }
+
     func testLeavingColumnsForADeeperFolderRecordsItInHistory() async throws {
         let h = try await ContentTestHarness.make(self)
         try h.file("A/x.txt")

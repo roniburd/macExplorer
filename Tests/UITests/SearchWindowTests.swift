@@ -112,6 +112,28 @@ final class SearchWindowTests: XCTestCase {
         XCTAssertEqual(controller.searchController.scope, .subfolders)
     }
 
+    /// "Open folders in: In a new window" applies to folder results too; this window keeps showing the results.
+    func testOpenFoldersInNewWindowSettingOpensAFolderResultInANewWindow() async throws {
+        let h = try await ShellHarness.make(self)
+        try h.file("taxes/2025.pdf"); try h.file("other.txt")
+        let controller = try await h.openWindow()
+        let windows = h.context.windows
+        let before = windows.windows.count
+        h.environment.settings.openFoldersIn = .newWindow
+        let results = try await searchSubfolders("taxes", in: controller, h)
+        let row = try XCTUnwrap((0..<results.rowCount).first { results.name(atRow: $0) == "taxes" })
+        results.select(.set([row], cursor: row))
+        let content = try content(controller)
+        let handler = try XCTUnwrap(content.handler)
+        handler.perform(.open, target: try XCTUnwrap(content.commandTarget), sender: nil)
+        try await h.waitUntil("new window opened") { windows.windows.count == before + 1 }
+        let opened = try XCTUnwrap(windows.windows.last)
+        XCTAssertEqual(opened.session.folder.directory.standardizedFileURL.path, h.url("taxes").standardizedFileURL.path)
+        XCTAssertTrue(controller.session.results === results, "this window keeps its results")
+        opened.close()
+        try await h.waitUntil("new window closed") { windows.windows.count == before }
+    }
+
     func testSearchCommands() async throws {
         let h = try await ShellHarness.make(self)
         try h.file("tax.pdf")

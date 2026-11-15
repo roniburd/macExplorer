@@ -6,11 +6,13 @@ extension FileCommandController {
     // MARK: open (§5.7)
 
     /// `newWindow` is the explicit request (Open in New Window, ⌘-double-click). Folder rows of the content or search
-    /// results also open in a new window when Settings > General > "Open folders in:" says so.
+    /// results also open in a new window when Settings > General > "Open folders in:" says so, except in Columns,
+    /// where open moves into the folder's column as in Finder (only an explicit request opens a window there).
     func open(_ target: CommandTarget, newWindow explicitNewWindow: Bool) {
-        let newWindow = explicitNewWindow || environment.settings.openFoldersIn == .newWindow
+        let settingNewWindow = environment.settings.openFoldersIn == .newWindow
         switch target {
         case .resultsSelection(let results):
+            let newWindow = explicitNewWindow || settingNewWindow
             let items = openItems(rows: Array(results.selection.rows), in: results)
             guard !items.isEmpty else { return }
             let lanes = environment.lanes
@@ -20,7 +22,9 @@ extension FileCommandController {
             }
         case .contentSelection(let folder):
             // Columns (P2-19): open on the single selected folder whose column is already open moves into it.
-            if !newWindow, session?.columnChain?.enterSelectedFolder(of: folder) == true { return }
+            let columns = session?.columnChain
+            if !explicitNewWindow, columns?.enterSelectedFolder(of: folder) == true { return }
+            let newWindow = explicitNewWindow || (settingNewWindow && columns == nil)
             let items = folder.selection.rows.filter { $0 < folder.rowCount }.map { row in
                 let entry = folder.entry(atRow: row)
                 return OpenItem(url: folder.url(atRow: row), kind: entry.kind, isApplication: environment.types.isApplication(entry.typeIndex))
