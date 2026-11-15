@@ -365,4 +365,84 @@ final class ConflictTests: FileOpsTestCase {
         XCTAssertFalse(exists(a))
         XCTAssertFalse(names(mnt).contains { PartialName.isPartial($0) })
     }
+
+    // MARK: cancel and skip-all on cross-volume moves (copy, verify, delete source)
+
+    /// Cancel on the second item's conflict: the first item has landed, the conflicting and later sources stay where
+    /// they were, the existing destination is untouched, and nothing partial or trashed is left behind.
+    func testCancelMidConflictOfACrossVolumeMoveLeavesEverythingElseInPlace() async throws {
+        let a = try file("src/a", "new a"), b = try file("src/b", "new b"), c = try file("src/c", "new c")
+        try file("d/b", "old b")
+        var tuning = FileOpTuning(); tuning.forceCrossVolume = true
+        let scripted = ScriptedInteraction(conflicts: [.cancelJob])
+        let (queue, journal) = makeQueue(interaction: scripted, tuning: tuning)
+        let o = try await run(.move(sources: [a, b, c], destination: url("d")), on: queue)
+        XCTAssertTrue(o.wasCancelled)
+        XCTAssertEqual(scripted.askedConflicts().count, 1)
+        XCTAssertEqual(names(url("d")), ["a", "b"])
+        XCTAssertEqual(text(url("d/a")), "new a", "moved before the conflict")
+        XCTAssertEqual(text(url("d/b")), "old b", "the existing item is kept")
+        XCTAssertEqual(names(url("src")), ["b", "c"], "the conflicting and the remaining sources are not moved")
+        XCTAssertEqual(text(b), "new b")
+        XCTAssertEqual(trashed("b"), [])
+        XCTAssertEqual(partials(url("d")), [])
+        let entries = await journal.entries()
+        XCTAssertEqual(entries, [])
+    }
+
+    /// Cancel on a conflict inside a folder merge: what merged so far stays merged, the rest of the source folder
+    /// (with the conflicting child) stays, the destination's own child is untouched.
+    func testCancelMidMergeOfACrossVolumeMoveKeepsTheUnmovedChildren() async throws {
+        try file("src/F/a", "A"); try file("src/F/b", "new b")
+        try file("d/F/b", "old b")
+        var tuning = FileOpTuning(); tuning.forceCrossVolume = true
+        let scripted = ScriptedInteraction(conflicts: [.one(.merge), .cancelJob])
+        let (queue, _) = makeQueue(interaction: scripted, tuning: tuning)
+        let o = try await run(.move(sources: [url("src/F")], destination: url("d")), on: queue)
+        XCTAssertTrue(o.wasCancelled)
+        XCTAssertEqual(scripted.askedConflicts().map(\.isFolderMerge), [true, false])
+        XCTAssertEqual(text(url("d/F/b")), "old b")
+        XCTAssertEqual(text(url("src/F/b")), "new b", "the source folder keeps the child it did not move")
+        XCTAssertNotEqual(exists(url("src/F/a")), exists(url("d/F/a")), "a is in exactly one place")
+        XCTAssertEqual(partials(url("d/F")), [])
+        XCTAssertEqual(trashed("b"), [])
+    }
+
+    /// Skip for all on a cross-volume move: asked once, every conflicting source stays, every destination is kept,
+    /// the non-conflicting item still moves, and the skipped items are reported.
+    func testSkipAllOnACrossVolumeMoveAsksOnceAndMovesOnlyTheRest() async throws {
+        let a = try file("src/a", "new a"), b = try file("src/b", "new b"), c = try file("src/c", "new c")
+        try file("d/a", "old a"); try file("d/c", "old c")
+        var tuning = FileOpTuning(); tuning.forceCrossVolume = true
+        let scripted = ScriptedInteraction(conflicts: [.all(.skip)])
+        let (queue, _) = makeQueue(interaction: scripted, tuning: tuning)
+        let o = try await run(.move(sources: [a, b, c], destination: url("d")), on: queue)
+        XCTAssertFalse(o.wasCancelled)
+        XCTAssertEqual(scripted.askedConflicts().count, 1)
+        XCTAssertEqual(scripted.askedConflicts().first?.knownRemaining, 2)
+        XCTAssertEqual(Set(o.skipped.map(\.url)), [a, c])
+        XCTAssertEqual(names(url("src")), ["a", "c"])
+        XCTAssertEqual(text(url("d/a")), "old a"); XCTAssertEqual(text(url("d/c")), "old c")
+        XCTAssertEqual(text(url("d/b")), "new b")
+        XCTAssertEqual(trashed("a") + trashed("c"), [])
+        XCTAssertEqual(partials(url("d")), [])
+    }
+
+    /// The same on a real second volume (a disk image), so the move really is copy + verify + delete.
+    func testSkipAllMovingOntoADiskImage() async throws {
+        let mnt = try image(.hfsPlus, sizeMB: 16)
+        let a = try file("src/a", "new a"), b = try file("src/b", "new b")
+        try Data("old a".utf8).write(to: mnt.appending(path: "a"))
+        let scripted = ScriptedInteraction(conflicts: [.all(.skip)])
+        let (queue, _) = makeQueue(interaction: scripted)
+        let o = try await run(.move(sources: [a, b], destination: mnt), on: queue)
+        XCTAssertFalse(o.wasCancelled)
+        XCTAssertEqual(scripted.askedConflicts().count, 1)
+        XCTAssertEqual(o.skipped.map(\.url), [a])
+        XCTAssertEqual(text(a), "new a")
+        XCTAssertFalse(exists(b))
+        XCTAssertEqual(text(mnt.appending(path: "a")), "old a")
+        XCTAssertEqual(text(mnt.appending(path: "b")), "new b")
+        XCTAssertFalse(names(mnt).contains { PartialName.isPartial($0) })
+    }
 }
