@@ -153,6 +153,56 @@ final class InlineRenameTests: XCTestCase {
         try await h.waitUntil("renamed") { h.exists("a.md") }
     }
 
+    /// The extension prompt is a sheet: the edit or the item can change before it is answered.
+    private final class HeldAnswer {
+        var continuation: CheckedContinuation<Bool, Never>?
+        func answer(_ yes: Bool) { continuation?.resume(returning: yes); continuation = nil }
+    }
+
+    private func holdConfirm(_ rename: InlineRenameController) -> HeldAnswer {
+        let held = HeldAnswer()
+        rename.confirm = { _, _ in await withCheckedContinuation { held.continuation = $0 } }
+        return held
+    }
+
+    func testCancelWhileTheExtensionPromptIsUpRenamesNothing() async throws {
+        let h = try await ContentTestHarness.make(self)
+        try h.file("a.txt")
+        let (content, _, _) = try await h.makeContent()
+        let rename = try beginRename(content, "a.txt")
+        let held = holdConfirm(rename)
+        try type("a.md", rename)
+        try send(#selector(NSResponder.insertNewline(_:)), rename)
+        try await h.waitUntil("asked") { held.continuation != nil }
+        rename.cancel()
+        held.answer(true)
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertTrue(h.exists("a.txt"))
+        XCTAssertFalse(h.exists("a.md"))
+    }
+
+    func testItemReplacedWhileTheExtensionPromptIsUpIsNotRenamed() async throws {
+        let h = try await ContentTestHarness.make(self)
+        try h.file("a.txt"); try h.file("z.txt")
+        let (content, session, _) = try await h.makeContent()
+        let rename = try beginRename(content, "a.txt")
+        let original = session.folder.identity(atRow: try XCTUnwrap(session.folder.row(named: "a.txt")))
+        let held = holdConfirm(rename)
+        try type("a.md", rename)
+        try send(#selector(NSResponder.insertNewline(_:)), rename)
+        try await h.waitUntil("asked") { held.continuation != nil }
+        // Another item takes a.txt's name: the original's identity leaves the listing.
+        try FileManager.default.removeItem(at: h.url("a.txt"))
+        try FileManager.default.moveItem(at: h.url("z.txt"), to: h.url("a.txt"))
+        session.folder.applyLocalChange(LocalChange(directory: h.url(""), removed: ["a.txt", "z.txt"]))
+        try await h.waitUntil("the original a.txt gone from the listing") { session.folder.row(of: original) == nil }
+        held.answer(true)
+        try await h.waitUntil("rename closed") { !rename.isEditing }
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertTrue(h.exists("a.txt"), "the other item keeps its name")
+        XCTAssertFalse(h.exists("a.md"))
+    }
+
     func testLeadingDotWarnsHidden() async throws {
         let h = try await ContentTestHarness.make(self)
         try h.file("b.txt")

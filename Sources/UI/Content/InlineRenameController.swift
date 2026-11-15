@@ -148,7 +148,7 @@ final class InlineRenameController: NSObject, NSTextFieldDelegate {
         case .ok(let warnings):
             isCommitting = true
             let url = source.url(atRow: row)
-            Task { await self.confirmAndRename(url: url, to: proposed, warnings: warnings, neighbor: neighbor) }
+            Task { await self.confirmAndRename(url: url, id: id, field: field, to: proposed, warnings: warnings, neighbor: neighbor) }
         }
     }
 
@@ -200,7 +200,10 @@ final class InlineRenameController: NSObject, NSTextFieldDelegate {
 
     // MARK: private
 
-    private func confirmAndRename(url: URL, to name: String, warnings: [NameWarning], neighbor: RowID?) async {
+    /// `url`, `id` and `field` are the item and field the commit started with; a prompt is a sheet, and while it is
+    /// up the edit can be cancelled or replaced and the listing can change.
+    private func confirmAndRename(url: URL, id: RowID, field committed: RenameField, to name: String, warnings: [NameWarning],
+                                  neighbor: RowID?) async {
         for warning in warnings {
             let prompt: RenamePrompt = switch warning {
             case .extensionChanged(let from, let to): .extensionChanged(from: from, to: to)
@@ -215,6 +218,20 @@ final class InlineRenameController: NSObject, NSTextFieldDelegate {
                 return
             }
         }
+        // Cancelled, or another edit began, while a prompt was up (or before this task ran): that edit is not this
+        // commit's to end.
+        guard field === committed, editingID == id else { return }
+        // The item left the listing (deleted, or replaced by another item of the same name): rename nothing.
+        guard let row = source.row(of: id) else { return finish() }
+        // Renamed or moved meanwhile: keep editing; Return renames it from where it is now.
+        guard source.url(atRow: row).standardizedFileURL == url.standardizedFileURL else {
+            isCommitting = false
+            return
+        }
+        await rename(url: url, to: name, neighbor: neighbor)
+    }
+
+    private func rename(url: URL, to name: String, neighbor: RowID?) async {
         finish()
         _ = await environment.operations.perform(JobRequest(.rename(url, to: name), origin: origin))
         guard let folder = source as? FolderModel else {
