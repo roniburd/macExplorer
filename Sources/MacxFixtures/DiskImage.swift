@@ -59,13 +59,14 @@ public final class DiskImage: Sendable {
         self.isReadOnly = readOnly
     }
 
-    private func attach(readOnly: Bool) throws {
+    /// `run` is a test seam (@testable): the hdiutil call, e.g. one with a short timeout.
+    func attach(readOnly: Bool, run: ([String]) throws -> Void = { try DiskImage.hdiutil($0) }) throws {
         var args = ["attach", "-nobrowse", "-noautoopen", "-noverify", "-mountpoint", mountPoint.path(percentEncoded: false)]
         if format == .apfs || format == .apfsCaseSensitive || format == .hfsPlus { args += ["-owners", "on"] }
         if readOnly { args.append("-readonly") }
         args.append(imageURL.path(percentEncoded: false))
         do {
-            try DiskImage.hdiutil(args)
+            try run(args)
         } catch DiskImageError.timedOut(let arguments) {
             // hdiutil was killed, but the attach may still have completed: never leave a mount behind.
             DiskImage.forceDetach(mountPoint: mountPoint.path(percentEncoded: false))

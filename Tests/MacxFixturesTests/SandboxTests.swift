@@ -153,6 +153,17 @@ final class SandboxTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: outside.root.path(percentEncoded: false)), [],
                        "nothing may be written outside the sandbox")
     }
+
+    func testAHungProbeChildIsKilledAndReportedAsTimedOut() throws {
+        if TrapProbe.value(TrapProbe.environmentKey) != nil { throw XCTSkip("in child") }
+        let bundle = Bundle(for: SandboxTests.self).bundleURL
+        let start = ContinuousClock.now
+        XCTAssertThrowsError(try TrapProbe.run(name: "hang", testIdentifier: "MacxFixturesTests.SandboxTrapProbes/testProbeChildHangs",
+                                               bundle: bundle, timeout: .seconds(2))) { error in
+            XCTAssertTrue(error is TrapProbe.TimedOut, "\(error)")
+        }
+        XCTAssertLessThan(ContinuousClock.now - start, .seconds(30), "terminated and reaped, not waited out (the child sleeps 600 s)")
+    }
 }
 
 /// Child-process halves of testOutOfSandboxWritesTrap. No setUp: the parent owns both sandboxes and the
@@ -171,6 +182,12 @@ final class SandboxTrapProbes: XCTestCase {
         let s = try Sandbox(adopting: URL(filePath: TrapProbe.value("MACX_SANDBOX")!))
         _ = s.url("../\((TrapProbe.value("MACX_OUTSIDE")! as NSString).lastPathComponent)/escaped.txt")
         XCTFail("url(..) did not trap")
+    }
+
+    func testProbeChildHangs() throws {
+        guard TrapProbe.isChild("hang") else { throw XCTSkip("trap probe child only") }
+        Thread.sleep(forTimeInterval: 600)
+        XCTFail("the parent's timeout did not end this child")
     }
 
 }

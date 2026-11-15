@@ -45,6 +45,39 @@ final class DiskImageTests: XCTestCase {
         }
     }
 
+    private func isMounted(_ point: URL) -> Bool {
+        var st = statfs()
+        guard statfs(point.path(percentEncoded: false), &st) == 0 else { return false }
+        let on = withUnsafeBytes(of: &st.f_mntonname) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
+        return on == point.path(percentEncoded: false).trimmingSuffix("/")
+    }
+
+    func testAttachThatTimesOutAfterTheImageAttachedLeavesNothingMounted() throws {
+        let image = try DiskImage.create(in: sandbox, format: .apfs, sizeMB: 16)
+        try image.detach()
+        XCTAssertFalse(isMounted(image.mountPoint))
+        var mountedBeforeTimeout = false
+        XCTAssertThrowsError(try image.attach(readOnly: false) { args in
+            try DiskImage.hdiutil(args)                      // the attach completes, then hdiutil "times out"
+            mountedBeforeTimeout = self.isMounted(image.mountPoint)
+            throw DiskImageError.timedOut(arguments: args)
+        }) { error in
+            guard case DiskImageError.timedOut = error else { return XCTFail("\(error)") }
+        }
+        XCTAssertTrue(mountedBeforeTimeout)
+        XCTAssertFalse(isMounted(image.mountPoint), "a late attach is detached")
+        XCTAssertTrue(Sandbox.mountPoints(under: sandbox.root.path(percentEncoded: false).trimmingSuffix("/")).isEmpty)
+    }
+
+    func testAttachWithAZeroTimeoutThrowsTimedOutAndLeavesNothingMounted() throws {
+        let image = try DiskImage.create(in: sandbox, format: .apfs, sizeMB: 16)
+        try image.detach()
+        XCTAssertThrowsError(try image.attach(readOnly: false) { try DiskImage.hdiutil($0, timeout: .zero) }) { error in
+            guard case DiskImageError.timedOut = error else { return XCTFail("\(error)") }
+        }
+        XCTAssertFalse(isMounted(image.mountPoint))
+    }
+
     func testDestroyDetachesStillMountedImages() throws {
         let image = try DiskImage.create(in: sandbox, format: .hfsPlus, sizeMB: 16)
         let point = image.mountPoint.path(percentEncoded: false)
