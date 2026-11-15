@@ -75,8 +75,20 @@ final class RunnerTests: XCTestCase {
     func testIsMountedIsFalseForAPlainDirectory() throws {
         let handle = try SandboxHandle.make(prefix: "macx-scenario")
         defer { handle.destroy() }
-        XCTAssertFalse(ScenarioContext.isMounted(handle.dir("plain").path))
+        XCTAssertFalse(ScenarioContext.isMounted(handle.dir("plain").path))   // a control: the old check was false too
         XCTAssertTrue(ScenarioContext.isMounted("/"))
+    }
+
+    func testIsMountedMatchesTheRealpathSpellingOfAMountPoint() throws {
+        let handle = try SandboxHandle.make(prefix: "macx-scenario")
+        defer { handle.destroy() }
+        let point = handle.dir("mnt-1").path(percentEncoded: false).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let mountedOn = "/" + point                                       // /private/var/folders/…/mnt-1, as statfs says
+        XCTAssertTrue(mountedOn.hasPrefix("/private/var/"))
+        let viaVar = mountedOn.replacingOccurrences(of: "/private/var/", with: "/var/")
+        XCTAssertTrue(ScenarioContext.isSpelling(of: mountedOn, viaVar), "/var is a link to /private/var")
+        XCTAssertTrue(ScenarioContext.isSpelling(of: mountedOn, mountedOn + "/"))
+        XCTAssertFalse(ScenarioContext.isSpelling(of: mountedOn, viaVar + "/.."))
     }
 
     func testRelativePathOfSandboxDescendant() throws {

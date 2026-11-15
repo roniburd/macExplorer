@@ -109,9 +109,14 @@ final class ScenarioContext {
     /// `path` is resolved the same way; resolvingSymlinksInPath drops /private and never matched.
     static func isMounted(_ path: String) -> Bool {
         var s = statfs()
-        guard statfs(path, &s) == 0, let resolved = SandboxHandle.resolvedPath(path) else { return false }
+        guard statfs(path, &s) == 0 else { return false }
         let mountedOn = withUnsafeBytes(of: s.f_mntonname) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
-        return mountedOn == resolved
+        return isSpelling(of: mountedOn, path)
+    }
+
+    /// True when `path`, with symlinks followed, is `mountedOn` (an f_mntonname).
+    static func isSpelling(of mountedOn: String, _ path: String) -> Bool {
+        SandboxHandle.resolvedPath(path) == mountedOn
     }
 
     // MARK: models
