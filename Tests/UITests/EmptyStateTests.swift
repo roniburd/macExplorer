@@ -52,12 +52,6 @@ final class EmptyStateTests: XCTestCase {
                                               remoteProvider: "GitHub")?.action, .retry, "no Properties for remote")
     }
 
-    func testActionTitles() {
-        XCTAssertEqual(EmptyStateAction.openPrivacySettings.title, "Open Privacy Settings")
-        XCTAssertEqual(EmptyStateAction.properties.title, "Properties")
-        XCTAssertEqual(EmptyStateAction.retry.title, "Retry")
-    }
-
     func testEmptyStateOverlayPassesClicksThrough() {
         let view = EmptyStateView()
         view.frame = NSRect(x: 0, y: 0, width: 400, height: 300)

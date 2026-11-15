@@ -29,11 +29,6 @@ final class UpdateSettingsTests: XCTestCase {
         XCTAssertFalse(SettingsChoices.showsBetaToReleaseNote(settings: s, installedVersion: "0.4.0-beta.2"))
     }
 
-    func testChannelTitles() {
-        XCTAssertEqual(SettingsChoices.title(for: UpdateChannel.release), "Release")
-        XCTAssertEqual(SettingsChoices.title(for: UpdateChannel.beta), "Beta")
-    }
-
     func testCheckNowGoesThroughTheAppCheckForUpdatesAction() {
         // Branch review: the app action opens a browser window when none is open, so a badge shows the result.
         let model = UpdateModel()

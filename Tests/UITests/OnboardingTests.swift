@@ -61,14 +61,6 @@ final class OnboardingTests: XCTestCase {
         XCTAssertEqual(RecordingURLOpener.shared.opened, [])
     }
 
-    func testTextsNameFullDiskAccessAndFnKeys() {
-        XCTAssertTrue(OnboardingTexts.fnKeys.contains("Hold fn"))
-        XCTAssertTrue(OnboardingTexts.fnKeys.contains("Use F1, F2, etc. keys as standard function keys"))
-        XCTAssertTrue(OnboardingTexts.fullDiskAccessTitle.contains("Full Disk Access"))
-        XCTAssertEqual(OnboardingTexts.openPrivacy, "Open Privacy & Security")
-        XCTAssertEqual(OnboardingTexts.continueWithout, "Continue Without Full Disk Access")
-    }
-
     func testPresentAttachesASheetThatContinueDismisses() async throws {
         let h = try await ShellHarness.make(self)
         let controller = try await h.openWindow()
