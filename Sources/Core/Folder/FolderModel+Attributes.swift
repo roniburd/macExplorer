@@ -21,12 +21,9 @@ extension FolderModel {
         guard !closed, !isRemote, !wanted.isEmpty else { return }
         let count = rowCount
         let valid = rows.filteredIndexSet { $0 >= 0 && $0 < count }
-        lastAttributeRequest = AttributeRequest(rows: valid, wanted: wanted)
-        if attributeTask != nil {
-            pendingAttributeRequest = lastAttributeRequest
-        } else {
-            startAttributeRead(AttributeRequest(rows: valid, wanted: wanted))
-        }
+        let request = AttributeRequest(rows: valid, wanted: wanted)
+        lastAttributeRequest = request
+        if let now = attributeLoader.admit(request) { startAttributeRead(now) }
     }
 
     /// Every row's value for the sort column (P2-16 sorts by it): the rows lacking it are found off the main actor
@@ -74,7 +71,7 @@ extension FolderModel {
             start += Self.attributeChunk
             let names = chunk.map(\.name)
             let ids = Dictionary(chunk.map { ($0.name, $0.id) }, uniquingKeysWith: { first, _ in first })
-            let serial = attributeSerial
+            let serial = attributeLoader.serial
             guard let result = try? await lanes.perform(on: volume, .scan, { _ in
                 ExtendedAttributeReader.read(names: names, in: directory, wanted: wanted, owners: owners)
             }) else { return false }
@@ -128,7 +125,7 @@ extension FolderModel {
 
     func needsAttributes(_ id: RowID, _ wanted: ExtendedAttributeSet) -> Bool {
         guard let entry = attributeTable[id] else { return true }
-        return staleAttributes[id] != nil || !entry.loaded.isSuperset(of: wanted)
+        return attributeLoader.stale[id] != nil || !entry.loaded.isSuperset(of: wanted)
     }
 
     private func startAttributeRead(_ request: AttributeRequest) {
@@ -142,18 +139,15 @@ extension FolderModel {
         }
         guard !names.isEmpty else { return }
         let toRead = names, directory = self.directory, owners = context.ownerNames, volume = openedVolume ?? .unknown
-        let lanes = context.lanes, wanted = request.wanted, epoch = self.epoch, serial = attributeSerial
-        attributeTask = Task { @MainActor [weak self] in
+        let lanes = context.lanes, wanted = request.wanted, epoch = self.epoch, serial = attributeLoader.serial
+        attributeLoader.task = Task { @MainActor [weak self] in
             let result = try? await lanes.perform(on: volume, .read) { _ in
                 ExtendedAttributeReader.read(names: toRead, in: directory, wanted: wanted, owners: owners)
             }
             guard let self, !self.closed, epoch == self.epoch else { return }   // a fresh load reset the slot
-            self.attributeTask = nil
+            self.attributeLoader.task = nil
             if let result { self.storeAttributes(result, ids: ids, readSerial: serial) }
-            if let next = self.pendingAttributeRequest {
-                self.pendingAttributeRequest = nil
-                self.startAttributeRead(next)
-            }
+            if let next = self.attributeLoader.takePending() { self.startAttributeRead(next) }
         }
     }
 
@@ -168,12 +162,10 @@ extension FolderModel {
             guard let id = ids[name], store.firstIndex(of: id) != nil else { continue }
             let old = attributeTable[id]
             let new: ExtendedAttributes
-            if let invalidated = staleAttributes[id] {
-                guard invalidated <= readSerial else { continue }
-                staleAttributes[id] = nil
-                new = attributes
-            } else {
-                new = old.map { $0.merging(attributes) } ?? attributes
+            switch attributeLoader.adopt(id, readSerial: readSerial) {
+            case true?: new = attributes                     // invalidated before the read began: replaced
+            case false?: continue                            // invalidated while it ran: stays stale
+            case nil: new = old.map { $0.merging(attributes) } ?? attributes
             }
             attributeTable[id] = new
             if new != old { changed.insert(id) }
@@ -211,24 +203,24 @@ extension FolderModel {
     func invalidateAllExtendedAttributes() {
         if sortColumn != nil { sortColumnRefreshPending = true }
         guard !attributeTable.isEmpty else { return }
-        attributeSerial += 1
-        for id in attributeTable.keys { staleAttributes[id] = attributeSerial }
+        let serial = attributeLoader.beginInvalidation()
+        for id in attributeTable.keys { attributeLoader.stale[id] = serial }
         scheduleAttributeRefresh()
     }
 
     private func invalidateExtendedAttributes(_ ids: [RowID]) {
         guard !ids.isEmpty else { return }
-        attributeSerial += 1
+        let serial = attributeLoader.beginInvalidation()
         var markedTable = false
         var sortIDs: [RowID] = []
         let column = sortColumn
         for id in ids {
             if attributeTable[id] != nil {
-                staleAttributes[id] = attributeSerial
+                attributeLoader.stale[id] = serial
                 markedTable = true
             }
             if column?.contains(id) == true {
-                staleSortValues[id] = attributeSerial
+                staleSortValues[id] = serial
                 sortIDs.append(id)
             }
         }
@@ -263,37 +255,30 @@ extension FolderModel {
 
     private func dropAttributes(_ id: RowID) {
         attributeTable[id] = nil
-        staleAttributes[id] = nil
+        attributeLoader.stale[id] = nil
         sortColumn?.remove(id)
         staleSortValues[id] = nil
     }
 
     /// A fresh load (start, retry): nothing cached survives, and the read in flight is dropped.
     func resetExtendedAttributes() {
-        attributeTask?.cancel()
-        attributeTask = nil
-        pendingAttributeRequest = nil
+        attributeLoader.reset()
         attributeTable = [:]
-        staleAttributes = [:]
         cancelSortReads()
         dropSortColumn()
     }
 
     func cancelExtendedAttributes() {
-        attributeTask?.cancel()
-        attributeTask = nil
-        pendingAttributeRequest = nil
-        attributeRefreshScheduled = false
+        attributeLoader.cancel()
     }
 
     /// Re-issues `lastAttributeRequest` once per main-actor turn, for a complete folder (rows still loading
     /// change every frame, and their reads would queue behind the listing).
     private func scheduleAttributeRefresh() {
-        guard !attributeRefreshScheduled, !closed, lastAttributeRequest != nil else { return }
-        attributeRefreshScheduled = true
+        guard !attributeLoader.refreshScheduled, !closed, lastAttributeRequest != nil else { return }
+        attributeLoader.scheduleRefresh()
         Task { @MainActor [weak self] in
-            guard let self, self.attributeRefreshScheduled else { return }
-            self.attributeRefreshScheduled = false
+            guard let self, self.attributeLoader.takeScheduledRefresh() else { return }
             guard !self.closed, self.state == .complete, let request = self.lastAttributeRequest else { return }
             self.requestExtendedAttributes(rows: request.rows, request.wanted)
         }

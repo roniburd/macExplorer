@@ -29,7 +29,7 @@ extension FolderModel {
         sortColumnBuilds += 1
         var column = ExtraColumnValues(kind: Self.columnKind(field))
         let wanted = ExtendedAttributeSet(sortField: field)
-        for (id, attributes) in attributeTable where staleAttributes[id] == nil && attributes.loaded.isSuperset(of: wanted) {
+        for (id, attributes) in attributeTable where attributeLoader.stale[id] == nil && attributes.loaded.isSuperset(of: wanted) {
             Self.setSortValue(&column, id, attributes, field: field)
         }
         sortColumn = column
@@ -162,7 +162,7 @@ extension FolderModel {
             for row in request.rows where row < count { keep.insert(identity(atRow: row)) }
         }
         attributeTable = attributeTable.filter { keep.contains($0.key) }
-        if !staleAttributes.isEmpty { staleAttributes = staleAttributes.filter { keep.contains($0.key) } }
+        if !attributeLoader.stale.isEmpty { attributeLoader.stale = attributeLoader.stale.filter { keep.contains($0.key) } }
     }
 
     private func scheduleColumnResort() {

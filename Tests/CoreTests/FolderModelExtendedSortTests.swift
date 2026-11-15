@@ -230,7 +230,7 @@ final class FolderModelExtendedSortTests: XCTestCase {
         try await wait { model.extendedAttributes(atRow: 0) != nil }
         for _ in 0..<5 {
             model.handleWatch(.items(["c.txt"]))
-            try await wait { model.staleSortValues.isEmpty && model.staleAttributes.isEmpty }
+            try await wait { model.staleSortValues.isEmpty && model.attributeLoader.stale.isEmpty }
         }
         try await Task.sleep(for: .milliseconds(200))
         XCTAssertNotNil(model.sortColumn?.key(model.identity(atRow: 0)))

@@ -104,6 +104,6 @@ final class RemoteFolderModelTests: XCTestCase {
         m.setFolderSizesEnabled(true)
         XCTAssertFalse(m.folderSizesEnabled)
         m.requestExtendedAttributes(rows: IndexSet(0..<m.rowCount), [.tags])
-        XCTAssertNil(m.attributeTask, "no xattr reads on a remote folder")
+        XCTAssertNil(m.attributeLoader.task, "no xattr reads on a remote folder")
     }
 }

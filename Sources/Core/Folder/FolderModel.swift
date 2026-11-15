@@ -152,10 +152,11 @@ public final class FolderModel {
     var settleWaiters: [(names: Set<String>, then: @MainActor () -> Void)] = []
     /// Renames carried by item reads not yet applied, by read seq: a later read of either side covers both.
     var unappliedRenames: [Int: [LocalChange.Rename]] = [:]
-    var rereadInFlight = false
-    var rereadPending = false
-    /// The re-read in flight reported .stalled/.waitingForPermission and has not resumed.
-    var rereadStalled = false
+    /// The full re-read (`beginReread`): none, or one in flight, with one more pending behind it and whether it
+    /// reported .stalled/.waitingForPermission and has not resumed.
+    var reread: RereadState = .idle
+    var rereadInFlight: Bool { reread != .idle }
+    var rereadStalled: Bool { reread.isStalled }
     var namesPatchedDuringReread: Set<String> = []
     var deferredChanges: [LocalChange] = []
     var pendingSelect: [String] = []
@@ -183,15 +184,9 @@ public final class FolderModel {
     var selectionTotals: SelectionTotals?
     // Extended attributes (FolderModel+Attributes, P2-15), by identity; rows that leave the store are dropped.
     var attributeTable: [RowID: ExtendedAttributes] = [:]
-    /// Entries the watcher or a patch invalidated, with the `attributeSerial` of that invalidation. They keep
-    /// their values (no blank cells) until a read that began after it replaces them.
-    var staleAttributes: [RowID: Int] = [:]
-    var attributeSerial = 0
+    /// The read in flight, the request waiting behind it, the coalesced refresh and the stale entries.
+    var attributeLoader = AttributeLoader()
     var lastAttributeRequest: AttributeRequest?
-    /// The one attribute read in flight, and the latest request made meanwhile.
-    var attributeTask: Task<Void, Never>?
-    var pendingAttributeRequest: AttributeRequest?
-    var attributeRefreshScheduled = false
     /// Sorting by an extended column (FolderModel+ExtendedSort, P2-16): the load of every row's value before the
     /// re-sort, and the coalesced re-sort after values change while sorted by one.
     var extendedSortTask: Task<Void, Never>?
@@ -201,7 +196,7 @@ public final class FolderModel {
     /// `sortColumnField`; nil when not sorted by one. `attributeTable` holds only the rows views asked for.
     var sortColumnField: SortField?
     var sortColumn: ExtraColumnValues?
-    /// Column entries the watcher or a patch invalidated, with the `attributeSerial` of that invalidation; they keep
+    /// Column entries the watcher or a patch invalidated, with the `attributeLoader.serial` of that invalidation; they keep
     /// their value (and position) until a read that began after it lands.
     var staleSortValues: [RowID: Int] = [:]
     /// A full invalidation (F5, full rescan) happened: the next `startExtendedSort` re-reads every row once.
@@ -270,7 +265,7 @@ public final class FolderModel {
         guard started, !closed else { return }
         switch state {
         case .complete:
-            if rereadInFlight && rereadStalled { abandonReread() }
+            if rereadStalled { abandonReread() }
             invalidateAllExtendedAttributes()       // F5 re-reads the visible rows' attributes too (P2-15)
             localizedNameCache = [:]
             beginReread()
@@ -530,9 +525,7 @@ public final class FolderModel {
         generation = generation.next()
         epoch += 1
         rowsPresented = false
-        rereadInFlight = false
-        rereadPending = false
-        rereadStalled = false
+        reread = .idle
         resetItemReads()
         resetExtendedAttributes()
         let gen = generation, directory = self.directory, worker = self.worker, query = self.query
@@ -719,9 +712,8 @@ public final class FolderModel {
     /// plus one pending that absorbs later requests. State stays .complete while it streams.
     func beginReread() {
         guard !closed, state == .complete else { return }
-        if rereadInFlight { rereadPending = true; return }
-        rereadInFlight = true
-        rereadStalled = false
+        if case .running = reread { reread.setPending(); return }
+        reread = .running(pending: false, stalled: false)
         namesPatchedDuringReread = []
         generation = generation.next()
         let gen = generation, directory = self.directory, worker = self.worker, query = self.query
@@ -746,9 +738,9 @@ public final class FolderModel {
             guard batch.generation == gen else { return }
             await worker.ingest(batch)
         case .stalled, .waitingForPermission:
-            rereadStalled = true                    // the rows on screen stay; refresh() abandons this read
+            reread.setStalled(true)                 // the rows on screen stay; refresh() abandons this read
         case .resumed:
-            rereadStalled = false
+            reread.setStalled(false)
         case .completed:
             let epoch = self.epoch
             enqueue { [weak self] in
@@ -765,14 +757,14 @@ public final class FolderModel {
         case .failed(let failure):
             await worker.cancel()
             guard !closed, generation == gen else { return }
-            rereadInFlight = false
+            let pending = reread.isPending
+            reread = .idle
             if failure.stage == .truncatedRecords && !readsWithFallback {
                 readsWithFallback = true       // the rows on screen stay; the same re-read again, with readdir + stat
                 beginReread()
+                if pending { reread.setPending() }  // it keeps the one pending behind it
                 return
             }
-            rereadPending = false
-            rereadStalled = false
             clearRows()
             setState(FolderState(failure))
         }
@@ -783,22 +775,17 @@ public final class FolderModel {
     private func abandonReread() {
         readTask?.cancel()
         readTask = nil
-        rereadInFlight = false
-        rereadPending = false
-        rereadStalled = false
+        reread = .idle
     }
 
     private func rereadDone() {
-        rereadInFlight = false
-        rereadStalled = false
+        let pending = reread.isPending
+        reread = .idle
         let names = namesPatchedDuringReread
         namesPatchedDuringReread = []
         if !names.isEmpty { enqueuePatch(names.sorted(), renames: []) }
         startExtendedSort()                 // new rows lack the sort column's values
-        if rereadPending {
-            rereadPending = false
-            beginReread()
-        }
+        if pending { beginReread() }
     }
 
     func stopWatcher() {
@@ -813,5 +800,26 @@ public final class FolderModel {
         }
         watcher = w
         w.start()
+    }
+}
+
+/// FolderModel's full re-read (`beginReread`): none, or one in flight. `pending`: another re-read was requested
+/// while it ran (at most one, absorbing later requests). `stalled`: it reported .stalled/.waitingForPermission and
+/// has not resumed (refresh() abandons it).
+enum RereadState: Equatable {
+    case idle
+    case running(pending: Bool, stalled: Bool)
+
+    var isPending: Bool { if case .running(true, _) = self { true } else { false } }
+    var isStalled: Bool { if case .running(_, true) = self { true } else { false } }
+
+    /// A request while one runs: it becomes pending. No effect when idle.
+    mutating func setPending() {
+        if case .running(_, let stalled) = self { self = .running(pending: true, stalled: stalled) }
+    }
+
+    /// The running re-read stalled or resumed. No effect when idle.
+    mutating func setStalled(_ stalled: Bool) {
+        if case .running(let pending, _) = self { self = .running(pending: pending, stalled: stalled) }
     }
 }
