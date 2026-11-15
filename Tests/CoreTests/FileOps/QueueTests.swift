@@ -235,7 +235,7 @@ final class QueueTests: FileOpsTestCase {
         XCTAssertFalse(r1); XCTAssertTrue(r2)
     }
 
-    /// Review B1-8: finished jobs' outcomes and undo flags are pruned to the most recent ones.
+    /// Review B1-8: finished jobs' outcomes and undo flags are pruned to the most recent ones (oldest first).
     func testFinishedJobBookkeepingIsBounded() async throws {
         var tuning = FileOpTuning()
         tuning.bodyOverride = { _ in }
@@ -250,9 +250,40 @@ final class QueueTests: FileOpsTestCase {
         let counts = await queue.retainedFinishedCounts
         XCTAssertEqual(counts.outcomes, FileOpQueue.finishedOutcomeLimit)
         XCTAssertEqual(counts.undoFlags, ids.count, "undo flags are tiny: a far longer window")
+        let keptNewest = await queue.retainsOutcome(of: ids[ids.count - 1])
+        let keptLastInWindow = await queue.retainsOutcome(of: ids[ids.count - FileOpQueue.finishedOutcomeLimit])
+        let keptFirstOutOfWindow = await queue.retainsOutcome(of: ids[ids.count - FileOpQueue.finishedOutcomeLimit - 1])
+        let keptOldest = await queue.retainsOutcome(of: ids[0])
+        XCTAssertTrue(keptNewest); XCTAssertTrue(keptLastInWindow)
+        XCTAssertFalse(keptFirstOutOfWindow); XCTAssertFalse(keptOldest)
         let last = await queue.registersUndo(ids[ids.count - 1]), first = await queue.registersUndo(ids[0])
         XCTAssertEqual(last, (ids.count - 1) % 2 == 0)
         XCTAssertTrue(first)
+    }
+
+    /// Review B1 follow-up: past the undo-flag window the oldest flags go too (and read as false), newest kept.
+    func testFinishedUndoFlagsArePrunedOldestFirst() async throws {
+        var tuning = FileOpTuning()
+        tuning.bodyOverride = { _ in }
+        tuning.finishedOutcomeLimit = 2
+        tuning.finishedUndoFlagLimit = 5
+        let (queue, _) = makeQueue(tuning: tuning)
+        let a = try file("a")
+        var ids: [JobID] = []
+        for _ in 0..<8 {
+            let id = await queue.enqueue(request(.trash([a]), registersUndo: true))
+            _ = await queue.outcome(of: id)
+            ids.append(id)
+        }
+        let counts = await queue.retainedFinishedCounts
+        XCTAssertEqual(counts.outcomes, 2)
+        XCTAssertEqual(counts.undoFlags, 5)
+        var flags: [Bool] = []
+        for id in ids { flags.append(await queue.registersUndo(id)) }
+        XCTAssertEqual(flags, [false, false, false, true, true, true, true, true])
+        var kept: [Bool] = []
+        for id in ids { kept.append(await queue.retainsOutcome(of: id)) }
+        XCTAssertEqual(kept, [false, false, false, false, false, false, true, true])
     }
 
     /// Review Focus 1 at job level: the plan phase asks per refused item and continues with the rest.

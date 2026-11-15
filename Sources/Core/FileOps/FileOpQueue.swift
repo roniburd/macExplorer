@@ -13,6 +13,9 @@ public struct FileOpTuning: Sendable {
     var bodyOverride: (@Sendable (JobContext) async -> Void)? = nil
     /// Maps an archive tool's path (/usr/bin/ditto, /usr/bin/aa) to a replacement, e.g. /usr/bin/false.
     var toolOverride: (@Sendable (String) -> String)? = nil
+    /// How many finished jobs keep their outcome / undo flag (FileOpQueue's bookkeeping window).
+    var finishedOutcomeLimit = FileOpQueue.finishedOutcomeLimit
+    var finishedUndoFlagLimit = FileOpQueue.finishedUndoFlagLimit
     public init(progressInterval: Duration = .milliseconds(100), copyChunkBytes: Int = 1 << 20,
                 faultHook: (@Sendable (FaultPoint, JobID) -> Void)? = nil) {
         self.progressInterval = progressInterval; self.copyChunkBytes = copyChunkBytes; self.faultHook = faultHook
@@ -45,7 +48,8 @@ public actor FileOpQueue {
     private var entries: [JobID: Entry] = [:]
     /// Finished jobs' outcomes (`outcome(of:)` after the job ended) and undo flags (`registersUndo`, read by
     /// OperationsCenter as each job finishes). Only the most recent finished jobs are kept (`finishedOutcomeLimit`,
-    /// `finishedUndoFlagLimit`): a record can be large and is only asked for right after its job ends.
+    /// `finishedUndoFlagLimit`, overridable through FileOpTuning in tests): a record can be large and is only asked
+    /// for right after its job ends.
     private var outcomes: [JobID: JobOutcome] = [:]
     private var undoFlags: [JobID: Bool] = [:]
     private var finishedOrder: [JobID] = []
@@ -174,9 +178,9 @@ public actor FileOpQueue {
     }
 
     private func pruneFinished() {
-        let n = finishedOrder.count
-        if n > Self.finishedOutcomeLimit { outcomes[finishedOrder[n - Self.finishedOutcomeLimit - 1]] = nil }
-        guard n > Self.finishedUndoFlagLimit else { return }
+        let n = finishedOrder.count, outcomeLimit = tuning.finishedOutcomeLimit
+        if n > outcomeLimit { outcomes[finishedOrder[n - outcomeLimit - 1]] = nil }
+        guard n > max(tuning.finishedUndoFlagLimit, outcomeLimit) else { return }
         let old = finishedOrder.removeFirst()
         undoFlags[old] = nil
         outcomes[old] = nil
@@ -184,6 +188,8 @@ public actor FileOpQueue {
 
     /// Finished jobs whose bookkeeping is still held (tests).
     var retainedFinishedCounts: (outcomes: Int, undoFlags: Int) { (outcomes.count, undoFlags.count) }
+    /// Whether `id`'s finished outcome is still held (tests).
+    func retainsOutcome(of id: JobID) -> Bool { outcomes[id] != nil }
 
     public func pause(_ id: JobID) {
         guard let e = entries[id] else { return }
