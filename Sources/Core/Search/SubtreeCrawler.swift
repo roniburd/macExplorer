@@ -2,12 +2,15 @@ import Foundation
 import MacxFS
 
 /// "Subfolders, by name" engine (§11 Phase 3): breadth-first over the root's subtree with at most
-/// `maxConcurrentReads` directory reads in flight on the root volume's `.scan` lanes, each under
+/// `maxConcurrentReads` (2) directory reads in flight on the root volume's `.scan` lanes, each under
 /// `withNoMaterialization`. Never follows symlinks or aliases, never crosses mount points, skips packages and
 /// hidden items unless enabled, skips blocked (TCC) prefixes without opening them. Name terms match the on-disk
 /// name or the Finder display name (hidden extensions), as the in-folder filter does. Localized folder names are
 /// not available without materializing metadata, so they are not matched here (accepted engine difference).
 public enum SubtreeCrawler {
+    /// Directory reads in flight at once.
+    static let maxConcurrentReads = 2
+
     /// Synchronous directory read (lane only). Returns a Result: typed-throws closures must not cross
     /// `LanePool.perform` (S1 Contract note 7).
     typealias DirectoryRead = @Sendable (URL, Generation, ReadOptions, TypeRegistry, LaneContext, (Batch) -> Bool)
@@ -121,7 +124,7 @@ struct CrawlRun: Sendable {
         let finished: Bool = await withTaskGroup(of: (String, DirectoryOutcome).self) { group in
             var inFlight = 0
             while true {
-                while inFlight < max(1, options.maxConcurrentReads), head < queue.count, !truncated {
+                while inFlight < SubtreeCrawler.maxConcurrentReads, head < queue.count, !truncated {
                     let path = queue[head]
                     head += 1
                     // Memory follows the frontier, not every folder ever queued.

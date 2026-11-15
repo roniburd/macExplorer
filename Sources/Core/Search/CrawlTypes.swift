@@ -5,7 +5,6 @@ public struct CrawlOptions: Sendable, Hashable {
     public var includePackages: Bool = false
     public var includeHidden: Bool = false
     public var maxResults: Int = 100_000
-    public var maxConcurrentReads: Int = 2
     public var progressInterval: Duration = .milliseconds(100)
     /// Finder "Show all filename extensions": when false, name terms also see the display name of items whose
     /// extension Finder hides (per-file flag, ".app"), like the in-folder filter (`Sorter.matches`).

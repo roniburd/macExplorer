@@ -7,7 +7,6 @@ public struct ReadOptions: Sendable, Hashable {
     public var forceFallback: Bool = false         // tests: readdir + fstatat path
     public var batchSize: Int = 2_000
     public var batchInterval: Duration = .milliseconds(8)
-    public var bufferSize: Int = 256 * 1024
     public init() {}
 }
 

@@ -9,6 +9,9 @@ func openDirectory(_ directory: URL) throws(ReadFailure) -> Int32 {
 }
 
 public enum BulkReader {
+    /// getattrlistbulk buffer per read.
+    static let bufferSize = 256 * 1024
+
     /// One getattrlistbulk call: `cfsk_bulk_read` in production, a corrupting wrapper in tests.
     typealias BulkRead = (Int32, UnsafeMutableRawPointer, Int) -> Int32
 
@@ -47,7 +50,7 @@ public enum BulkReader {
         let start = ContinuousClock.now
         let fd = try openDirectory(directory)
         defer { close(fd) }
-        let size = max(options.bufferSize, 4096)
+        let size = Self.bufferSize
         let buffer = UnsafeMutableRawPointer.allocate(byteCount: size, alignment: 16)
         defer { buffer.deallocate() }
         var converter = RecordConverter(types: types, directoryFD: fd)
