@@ -54,6 +54,70 @@ final class DragDropTests: XCTestCase {
         XCTAssertEqual(five.size, many.size, "at most 5 icons are drawn")
     }
 
+    private func dragEvent() throws -> NSEvent {
+        try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseDragged, location: .zero, modifierFlags: [], timestamp: 0,
+                                         windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+    }
+
+    func testDragThatGetsNoSessionDoesNotBlockLaterDrags() async throws {
+        let h = try await ContentTestHarness.make(self)
+        let drag = DragSourceController(icons: h.context.icons)
+        var starts = 0
+        drag.startSession = { _, _, _, _ in starts += 1; return nil }
+        let url = try h.file("a")
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 100, height: 100))
+        drag.begin(event: try dragEvent(), urls: [url], typeIndices: [TypeRegistry.dataIndex], view: view, frame: { _ in .zero },
+                   secondary: false)
+        XCTAssertEqual(starts, 1)
+        XCTAssertFalse(drag.isDragging, "no session: not dragging")
+        drag.begin(event: try dragEvent(), urls: [url], typeIndices: [TypeRegistry.dataIndex], view: view, frame: { _ in .zero },
+                   secondary: false)
+        XCTAssertEqual(starts, 2, "the next drag still starts")
+    }
+
+    func testSessionThatNeverReportsBackIsClearedByTheNextPress() async throws {
+        let h = try await ContentTestHarness.make(self)
+        let drag = DragSourceController(icons: h.context.icons)
+        var starts = 0
+        drag.startSession = { _, _, _, _ in starts += 1; return NSObject() }   // started, but AppKit never calls back
+        let url = try h.file("a")
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 100, height: 100))
+        func begin() throws {
+            drag.begin(event: try dragEvent(), urls: [url], typeIndices: [TypeRegistry.dataIndex], view: view,
+                       frame: { _ in .zero }, secondary: false)
+        }
+        try begin()
+        XCTAssertTrue(drag.isDragging)
+        try begin()
+        XCTAssertEqual(starts, 1, "one session per press")
+        drag.pressBegan()
+        XCTAssertFalse(drag.isDragging, "a new press means no drag of ours is running")
+        try begin()
+        XCTAssertEqual(starts, 2)
+    }
+
+    func testDetailsPressClearsAStaleDrag() async throws {
+        let h = try await ContentTestHarness.make(self)
+        try h.file("a")
+        let folder = try await h.openFolder()
+        let details = DetailsViewController(context: h.context)
+        let window = try h.host(details)
+        details.bind(folder)
+        details.view.layoutSubtreeIfNeeded()
+        details.dragSource.startSession = { _, _, _, _ in NSObject() }
+        details.dragSource.begin(event: try dragEvent(), urls: [h.url("a")], typeIndices: [TypeRegistry.dataIndex],
+                                 view: details.tableView, frame: { _ in .zero }, secondary: false)
+        XCTAssertTrue(details.dragSource.isDragging)
+        let press = try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseDown, location: NSPoint(x: 5, y: 5), modifierFlags: [],
+                                                     timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                                                     eventNumber: 0, clickCount: 1, pressure: 1))
+        details.tableView.mouseDown(with: press)
+        XCTAssertFalse(details.dragSource.isDragging)
+        details.tableView.mouseUp(with: try XCTUnwrap(NSEvent.mouseEvent(
+            with: .leftMouseUp, location: NSPoint(x: 5, y: 5), modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)))
+    }
+
     func testRightDragTrackerThreshold() {
         var tracker = RightDragTracker()
         tracker.rightMouseDown(at: NSPoint(x: 10, y: 10))

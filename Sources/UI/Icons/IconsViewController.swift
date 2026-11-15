@@ -358,6 +358,7 @@ final class IconsViewController: NSViewController, FileListView, FocusableList, 
     }
 
     func handleMouseDown(_ event: NSEvent) {
+        dragSource.pressBegan()
         guard let source else { return }
         view.window?.makeFirstResponder(collectionView)
         let point = collectionView.convert(event.locationInWindow, from: nil)

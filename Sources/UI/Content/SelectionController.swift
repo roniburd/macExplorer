@@ -1,6 +1,7 @@
 // Sources/UI/Content/SelectionController.swift
 import AppKit
 import Core
+import MacxFS
 
 struct ClickModifiers: OptionSet, Sendable {
     let rawValue: UInt8
@@ -119,32 +120,43 @@ enum SelectionController {
 }
 
 /// Mouse handling shared by Details and Icons. Built-in selection tracking is bypassed (S5-C4).
+/// The pressed item is remembered by identity, not row: a listing change between mouse-down and mouse-up (a file
+/// added or removed, a re-sort) moves rows, and the deferred click or the drag must still be about that item.
 @MainActor
 final class ListMouseHandler {
-    private var pendingMouseUp: SelectionCommand?
+    /// The deferred plain click: select only this item at mouse-up.
+    private var pendingMouseUp: RowID?
     private(set) var mouseDownWindowPoint: NSPoint?
-    private(set) var mouseDownRow: Int?
+    private var mouseDownItem: RowID?
 
     /// `hidden`: model rows in collapsed groups (grouped Details), left out of ⇧-click ranges.
     func mouseDown(row: Int?, event: NSEvent, source: any RowSource, from view: NSView, hidden: IndexSet = []) {
+        let row = row.flatMap { $0 >= 0 && $0 < source.rowCount ? $0 : nil }
         mouseDownWindowPoint = event.locationInWindow
-        mouseDownRow = row
+        mouseDownItem = row.map { source.identity(atRow: $0) }
         pendingMouseUp = nil
         switch SelectionController.click(row: row, clickCount: event.clickCount, modifiers: ClickModifiers(event.modifierFlags),
                                          selectedRows: source.selection.rows, hidden: hidden) {
         case .select(let command): source.select(command)
-        case .selectOnMouseUp(let command): pendingMouseUp = command
+        case .selectOnMouseUp: pendingMouseUp = mouseDownItem
         case .open(let newWindow):
             NSApp.sendAction(Selector((newWindow ? Command.openInNewWindow : Command.open).selectorName), to: nil, from: view)
         case .nothing: break
         }
     }
 
+    /// The pressed item's row now, or nil when the press wasn't on an item or the item has left the listing.
+    func mouseDownRow(in source: any RowSource) -> Int? {
+        mouseDownItem.flatMap { source.row(of: $0) }
+    }
+
     func mouseUp(source: any RowSource) {
-        if let pendingMouseUp { source.select(pendingMouseUp) }
+        if let item = pendingMouseUp, let row = source.row(of: item) {
+            source.select(.set(IndexSet(integer: row), cursor: row))
+        }
         pendingMouseUp = nil
         mouseDownWindowPoint = nil
-        mouseDownRow = nil
+        mouseDownItem = nil
     }
 
     /// A drag started from the mouse-down (P1-36): keep the multi-selection.

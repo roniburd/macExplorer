@@ -510,6 +510,7 @@ final class DetailsViewController: NSViewController, FileListView, FocusableList
     }
 
     func handleMouseDown(_ event: NSEvent) {
+        dragSource.pressBegan()
         view.window?.makeFirstResponder(tableView)
         endRubberBand()
         guard let source else { return }

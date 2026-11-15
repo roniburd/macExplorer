@@ -154,6 +154,7 @@ final class SidebarViewController: CommandHandlingViewController {
         outlineView.onActivate = { [weak self] row in self?.activateRow(row) }
         outlineView.menuProvider = { [weak self] row in self?.menu(forRow: row) }
         outlineView.onSecondaryDrag = { [weak self] row, event in self?.beginSecondaryDrag(row: row, event: event) }
+        outlineView.onRightMouseDown = { [weak self] in self?.dragSource.pressBegan() }
         outlineView.onNewTabGesture = { [weak self] gesture, row in self?.handleNewTabGesture(gesture, row: row) ?? false }
         outlineView.keyHandler = { [weak self] event in
             guard let self else { return false }

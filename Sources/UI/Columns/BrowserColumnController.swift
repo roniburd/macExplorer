@@ -373,6 +373,7 @@ final class BrowserColumnController: NSViewController, FileListView, FocusableLi
     // MARK: mouse
 
     func handleMouseDown(_ event: NSEvent) {
+        dragSource.pressBegan()
         guard bound else { return }
         owner?.activate(self)
         view.window?.makeFirstResponder(tableView)
@@ -409,7 +410,7 @@ final class BrowserColumnController: NSViewController, FileListView, FocusableLi
     // MARK: drags (P1-36)
 
     func handleMouseDragged(_ event: NSEvent) {
-        guard let start = mouse.mouseDownWindowPoint, let row = mouse.mouseDownRow, !dragSource.isDragging,
+        guard let start = mouse.mouseDownWindowPoint, let row = mouse.mouseDownRow(in: model), !dragSource.isDragging,
               RightDragTracker.exceedsThreshold(from: start, to: event.locationInWindow) else { return }
         mouse.cancelPendingForDrag()
         let rows = model.selection.rows.contains(row) ? model.selection.rows : IndexSet(integer: row)
@@ -418,6 +419,7 @@ final class BrowserColumnController: NSViewController, FileListView, FocusableLi
     }
 
     func handleRightMouseDown(_ event: NSEvent) {
+        dragSource.pressBegan()
         rightDrag.rightMouseDown(at: event.locationInWindow)
         rightDownEvent = event
     }

@@ -156,4 +156,31 @@ final class DetailsRubberBandTests: XCTestCase {
         details.tableView.mouseDown(with: try event(.leftMouseDown, at: blank(details, row: 3), in: details, count: 2))
         XCTAssertFalse(details.isTrackingRubberBand)
     }
+
+    // MARK: the pressed item is tracked by identity (rows move under a press)
+
+    func testDeferredClickSelectsThePressedItemAfterAResort() async throws {
+        let h = try await ContentTestHarness.make(self)
+        let (details, folder) = try await makeDetails(h, names: ["a", "b", "c", "d"])
+        folder.select(.set(IndexSet([1, 2]), cursor: 2))
+        details.tableView.mouseDown(with: try event(.leftMouseDown, at: blank(details, row: 2), in: details))
+        XCTAssertEqual(details.mouse.mouseDownRow(in: folder), 2)
+        folder.setSortDescriptor(MacxFS.SortDescriptor(field: .name, ascending: false))   // d c b a
+        try await h.waitUntil("the listing re-sorts") { folder.rowCount == 4 && folder.name(atRow: 0) == "d" }
+        XCTAssertEqual(details.mouse.mouseDownRow(in: folder), 1, "a drag now would start from c's new row")
+        details.mouse.mouseUp(source: folder)
+        XCTAssertEqual(folder.selection.rows.map { folder.name(atRow: $0) }, ["c"], "the item pressed, not whatever took its row")
+    }
+
+    func testDeferredClickOnAnItemThatVanishedDoesNothing() async throws {
+        let h = try await ContentTestHarness.make(self)
+        let (details, folder) = try await makeDetails(h, names: ["a", "b", "c", "d"])
+        folder.select(.set(IndexSet([1, 2]), cursor: 2))
+        details.tableView.mouseDown(with: try event(.leftMouseDown, at: blank(details, row: 2), in: details))
+        try FileManager.default.removeItem(at: h.url("c"))
+        try await h.waitUntil("c leaves the listing") { folder.rowCount == 3 }
+        XCTAssertNil(details.mouse.mouseDownRow(in: folder), "no drag from an item that is gone")
+        details.mouse.mouseUp(source: folder)
+        XCTAssertFalse(folder.selection.rows.map { folder.name(atRow: $0) }.contains("d"), "d took c's row; it isn't selected")
+    }
 }

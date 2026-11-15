@@ -97,12 +97,45 @@ final class DragSourceController: NSObject, NSDraggingSource {
     private var promiseDelegate: RemoteFilePromiseDelegate?
     private let environment: CoreEnvironment?
     private(set) var isDragging = false
+    /// The session `begin` started; only its `endedAt` ends the drag (an older session's late callback doesn't).
+    private var session: AnyObject?
+    /// Starts the AppKit session (tests replace it: a real session would run a drag loop). Nil: no session started.
+    var startSession: @MainActor (_ view: NSView, _ items: [NSDraggingItem], _ event: NSEvent,
+                                  _ source: DragSourceController) -> AnyObject? = { view, items, event, source in
+        let session = view.beginDraggingSession(with: items, event: event, source: source)
+        session.animatesToStartingPositionsOnCancelOrFail = true
+        session.draggingFormation = .none
+        return session
+    }
 
     /// `environment` is needed only for drags out of repository folders (nil: remote rows can't be dragged).
     init(icons: IconCache, environment: CoreEnvironment? = nil) {
         self.icons = icons
         self.environment = environment
         super.init()
+    }
+
+    /// A new mouse press: whatever drag this controller started is over (AppKit doesn't deliver presses to the view
+    /// while one of its sessions runs). Clears a drag that never got a session going, so it can't block every later
+    /// drag from this view.
+    func pressBegan() {
+        guard isDragging else { return }
+        endDrag()
+    }
+
+    private func endDrag() {
+        pendingURLs = []
+        pendingRemote = false
+        isDragging = false
+        session = nil
+    }
+
+    private func start(_ items: [NSDraggingItem], view: NSView, event: NSEvent) {
+        guard let started = startSession(view, items, event, self) else {
+            NSLog("MacExplorer couldn't start a drag from %@", String(describing: type(of: view)))
+            return endDrag()
+        }
+        session = started
     }
 
     func begin(event: NSEvent, rows: IndexSet, source: any RowSource, view: NSView, rowFrame: (Int) -> NSRect, secondary: Bool) {
@@ -139,9 +172,7 @@ final class DragSourceController: NSObject, NSDraggingSource {
             }
             return item
         }
-        let session = view.beginDraggingSession(with: items, event: event, source: self)
-        session.animatesToStartingPositionsOnCancelOrFail = true
-        session.draggingFormation = .none
+        start(items, view: view, event: event)
     }
 
     /// Remote rows (spec §4.5): one file promise per item, downloaded only when dropped.
@@ -168,9 +199,7 @@ final class DragSourceController: NSObject, NSDraggingSource {
                                   contents: index == 0 ? composite : nil)
             return item
         }
-        let session = view.beginDraggingSession(with: items, event: event, source: self)
-        session.animatesToStartingPositionsOnCancelOrFail = true
-        session.draggingFormation = .none
+        start(items, view: view, event: event)
     }
 
     func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
@@ -183,9 +212,8 @@ final class DragSourceController: NSObject, NSDraggingSource {
     }
 
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
-        pendingURLs = []
-        pendingRemote = false
-        isDragging = false
+        guard session === self.session else { return }
+        endDrag()
         // promiseDelegate stays until the next remote drag: a receiving app (Finder) asks for the promised files
         // after the drop, possibly after the session ended, and NSFilePromiseProvider's delegate is weak.
     }

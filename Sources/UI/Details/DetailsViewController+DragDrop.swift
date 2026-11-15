@@ -6,7 +6,7 @@ import MacxFS
 extension DetailsViewController {
     func handleMouseDragged(_ event: NSEvent) {
         if isTrackingRubberBand { return dragRubberBand(event) }
-        guard let source, let start = mouse.mouseDownWindowPoint, let row = mouse.mouseDownRow, !dragSource.isDragging,
+        guard let source, let start = mouse.mouseDownWindowPoint, let row = mouse.mouseDownRow(in: source), !dragSource.isDragging,
               RightDragTracker.exceedsThreshold(from: start, to: event.locationInWindow) else { return }
         mouse.cancelPendingForDrag()
         let rows = source.selection.rows.contains(row) ? source.selection.rows : IndexSet(integer: row)
@@ -14,6 +14,7 @@ extension DetailsViewController {
     }
 
     func handleRightMouseDown(_ event: NSEvent) {
+        dragSource.pressBegan()
         rightDrag.rightMouseDown(at: event.locationInWindow)
         rightDownEvent = event
     }
