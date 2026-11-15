@@ -167,6 +167,15 @@ private final class SwitchableCodeCheck: RollbackCodeCheck, @unchecked Sendable 
     func signedLikeRunningApp(_ app: URL) -> Bool { ok }
 }
 
+/// Records, per call, whether the check ran on the main thread.
+private final class ThreadRecorder: RollbackCodeCheck, @unchecked Sendable {
+    private let lock = NSLock()
+    private var _onMain: [Bool] = []
+    var onMain: [Bool] { lock.withLock { _onMain } }
+    func record() { let main = Thread.isMainThread; lock.withLock { _onMain.append(main) } }
+    func signedLikeRunningApp(_ app: URL) -> Bool { record(); return true }
+}
+
 private final class RecordingLauncher: RollbackLauncher {
     var launches: [(script: URL, arguments: [String])] = []
     func launch(script: URL, arguments: [String], log: URL) throws { launches.append((script, arguments)) }
@@ -197,6 +206,7 @@ final class RollbackServiceTests: XCTestCase {
                       inFlight: @escaping @MainActor () -> Bool = { false }, settings: Core.Settings? = nil,
                       launcher: RecordingLauncher = RecordingLauncher(),
                       skip: SparkleSkippedVersion = .inert,
+                      verifySignature: RollbackService.SignatureCheck? = nil,
                       quits: (() -> Void)? = nil) -> (RollbackService, FakeTransport, Core.Settings) {
         let t = transport ?? FakeTransport(scratch: root.appending(path: "scratch"))
         let s = settings ?? makeSettings()
@@ -206,9 +216,10 @@ final class RollbackServiceTests: XCTestCase {
             appURL: root.appending(path: "Applications/MacExplorer.app", directoryHint: .isDirectory),
             bundleID: "com.macexplorer.app", installedVersion: "0.2.0-beta.15", installedBuild: 214, processID: 1,
             opener: "/usr/bin/true")
+        let verify = verifySignature ?? { RollbackSignature.isValid(file: $0, signature: $1, publicKey: $2) }
         let service = RollbackService(config: config, settings: s, updateInFlight: inFlight, transport: t,
                                       unpacker: unpacker, codeCheck: codeCheck ?? FakeCodeCheck(ok: codeOK), launcher: launcher,
-                                      sparkleSkip: skip, terminate: { quits?() })
+                                      sparkleSkip: skip, verifySignature: verify, terminate: { quits?() })
         return (service, t, s)
     }
 
@@ -311,6 +322,19 @@ final class RollbackServiceTests: XCTestCase {
         XCTAssertTrue(launcher.launches.isEmpty)
         XCTAssertNil(settings.pendingRollback)
         XCTAssertFalse(FileManager.default.fileExists(atPath: staged.directory.path(percentEncoded: false)))
+    }
+
+    func testPrepareVerifiesTheArchiveAndTheCodeSignatureOffTheMainActor() async throws {
+        let code = ThreadRecorder(), signature = ThreadRecorder()
+        let (service, transport, _) = make(codeCheck: code, verifySignature: { file, sig, key in
+            signature.record()
+            return RollbackSignature.isValid(file: file, signature: sig, publicKey: key)
+        })
+        transport.archive = Data("zip".utf8)
+        let staged = try await service.prepare(item(signing: transport.archive)) { _ in }
+        XCTAssertEqual(signature.onMain, [false], "EdDSA maps and hashes the whole archive: not on the main thread")
+        XCTAssertEqual(code.onMain, [false], "the designated-requirement check reads the whole bundle: not on the main thread")
+        try? FileManager.default.removeItem(at: staged.directory)
     }
 
     func testQuitDuringPrepareRemovesTheStagingFolder() async throws {

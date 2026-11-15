@@ -90,12 +90,16 @@ final class RollbackService: RollbackServicing {
         var opener: String = "/usr/bin/open"
     }
 
+    typealias SignatureCheck = @Sendable (_ file: URL, _ signature: String, _ publicKey: String) -> Bool
+
     let config: Config
     private let settings: Core.Settings
     private let updateInFlight: @MainActor () -> Bool
     private let transport: any RollbackTransport
     private let unpacker: any RollbackUnpacker
     private let codeCheck: any RollbackCodeCheck
+    /// Sparkle's EdDSA check of the downloaded archive (tests record where it runs).
+    private let verifySignature: SignatureCheck
     private let launcher: any RollbackLauncher
     private let terminate: @MainActor () -> Void
     private let sparkleSkip: SparkleSkippedVersion
@@ -107,6 +111,7 @@ final class RollbackService: RollbackServicing {
     init(config: Config, settings: Core.Settings, updateInFlight: @escaping @MainActor () -> Bool,
          transport: any RollbackTransport, unpacker: any RollbackUnpacker, codeCheck: any RollbackCodeCheck,
          launcher: any RollbackLauncher, sparkleSkip: SparkleSkippedVersion = .inert,
+         verifySignature: @escaping SignatureCheck = { RollbackSignature.isValid(file: $0, signature: $1, publicKey: $2) },
          terminate: @escaping @MainActor () -> Void) {
         self.config = config
         self.settings = settings
@@ -115,6 +120,7 @@ final class RollbackService: RollbackServicing {
         self.transport = transport
         self.unpacker = unpacker
         self.codeCheck = codeCheck
+        self.verifySignature = verifySignature
         self.launcher = launcher
         self.terminate = terminate
     }
@@ -195,7 +201,7 @@ final class RollbackService: RollbackServicing {
         } catch { throw .network(Self.describe(error)) }
         progress(nil)
         // Mapping and hashing a release archive takes a while: off the main actor.
-        guard await Self.signatureIsValid(archive, signature: item.edSignature, publicKey: config.publicKey) else {
+        guard await Self.signatureIsValid(archive, signature: item.edSignature, publicKey: config.publicKey, verifySignature) else {
             throw .badSignature
         }
         let unpacked = directory.appending(path: "unpacked", directoryHint: .isDirectory)
@@ -230,8 +236,9 @@ final class RollbackService: RollbackServicing {
 
     func quit() { terminate() }
 
-    @concurrent private static func signatureIsValid(_ archive: URL, signature: String, publicKey: String) async -> Bool {
-        RollbackSignature.isValid(file: archive, signature: signature, publicKey: publicKey)
+    @concurrent private static func signatureIsValid(_ archive: URL, signature: String, publicKey: String,
+                                                     _ verify: SignatureCheck) async -> Bool {
+        verify(archive, signature, publicKey)
     }
 
     @concurrent private static func signedLikeRunningApp(_ app: URL, _ check: any RollbackCodeCheck) async -> Bool {
