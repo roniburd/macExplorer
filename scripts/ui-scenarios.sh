@@ -6,12 +6,17 @@
 # --sandbox-trash, a private --pasteboard, --fake-launch-services and --skip-onboarding, so it never writes a real
 # user folder, the real Trash, the general pasteboard or real LaunchServices defaults.
 # A failed scenario runs once more in a fresh sandbox (<run>/<name>.retry); passing then is reported as a
-# `::warning title=Flaky scenario::` and status "flaky" in .build/ui-scenario-report.json (no retry over 5 failures).
+# `::warning title=Flaky scenario::` and status "flaky" in .build/ui-scenario-report.json (no retry over MAX_RETRIES,
+# default 2, failures); a FLAKY: line lists the scenarios that only passed on retry.
+# Only one scenario app may run at a time (UI scenarios need keyboard focus), across all worktrees: the script takes the
+# lock ${TMPDIR}/macx-scenario-app.lock (scripts/lib/sandbox.sh) and exits 2 while another live run holds it.
 # Exit codes: 0 all passed (or no GUI session without --require-gui), 1 a scenario failed, 2 environment, 64 usage.
-# On exit: kill our app if it still runs, detach images under the run dir, clear uchg/000, delete the run dir.
+# On exit: kill our app if it still runs, detach images under the run dir, clear uchg/000, delete the run dir, unlock.
+# No -e: the script checks every exit status itself (a failed scenario still gets its retry, report and cleanup).
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 2
 REPO="$(pwd -P)"
+. scripts/lib/sandbox.sh
 
 usage() { echo "usage: $0 [debug|release] [--filter <substring>] [--timeout <seconds>] [--require-gui] [--keep-sandbox]" >&2; exit 64; }
 CONFIG=debug; FILTER=""; TIMEOUT=120; REQUIRE_GUI=0; KEEP=0
@@ -30,6 +35,9 @@ done
 APP="$REPO/.build/macExplorer-scenarios.app"
 BIN="$APP/Contents/MacOS/macExplorer"
 SCEN_DIR="$REPO/Tests/Scenarios"
+macx_lock "$MACX_SCENARIO_LOCK" || { echo "ui-scenarios: another scenario run holds the lock; wait for it" >&2; exit 2; }
+trap macx_unlock EXIT
+# The lock covers the runner scripts; a scenario app started some other way (site/tools/shots.py, by hand) still counts.
 if LC_ALL=C pgrep -f 'macExplorer-scenarios.app/Contents/MacOS/macExplorer' >/dev/null; then
   echo "ui-scenarios: another scenario app is running; quit it first" >&2; exit 2
 fi
@@ -37,22 +45,16 @@ fi
 TMPBASE="${TMPDIR:-/tmp}"; TMPBASE="${TMPBASE%/}"
 RUN="$TMPBASE/macx-scenario-ui-$(uuidgen)"
 mkdir "$RUN" || exit 2
-RUN_REAL="$(cd "$RUN" && pwd -P)"
 APP_PID=""
 
 cleanup() {
   if [ -n "$APP_PID" ] && kill -0 "$APP_PID" 2>/dev/null; then kill -KILL "$APP_PID" 2>/dev/null; wait "$APP_PID" 2>/dev/null; fi
+  macx_unlock
   case "$RUN" in "$TMPBASE"/macx-scenario-ui-*) ;; *) echo "refusing to clean $RUN" >&2; return 1 ;; esac
-  while IFS= read -r mp; do
-    case "$mp" in "$RUN_REAL"/*) hdiutil detach "$mp" -force >/dev/null 2>&1 ;; esac
-  done < <(mount | sed -n 's/^.* on \(.*\) (.*)$/\1/p')
-  # chmod first: chflags cannot descend into a mode-000 folder, so a uchg item inside one would keep its flag.
-  chmod -R u+rwx "$RUN" 2>/dev/null
-  chflags -R nouchg "$RUN" 2>/dev/null
-  chmod -R u+rwx "$RUN" 2>/dev/null
-  if [ "$KEEP" = 1 ]; then echo "sandbox root $RUN kept (--keep-sandbox)"; return 0; fi
-  rm -rf "$RUN"
-  if [ -e "$RUN" ]; then echo "ERROR: run directory $RUN was not removed" >&2; return 1; fi
+  if [ "$KEEP" = 1 ]; then
+    macx_detach_under "$RUN"; macx_clear_protections "$RUN"; echo "sandbox root $RUN kept (--keep-sandbox)"; return 0
+  fi
+  macx_remove_tree "$RUN" || return 1
   echo "sandbox root $RUN removed"
 }
 trap 'cleanup || exit 1' EXIT
@@ -67,9 +69,8 @@ launch() {
   shift 2
   case "$dir" in "$RUN"/*) ;; *) echo "refusing to launch outside $RUN: $dir" >&2; exit 2 ;; esac
   mkdir -p "$dir/macx-scenario-root" "$dir/state" "$dir/trash" || exit 2
-  "$BIN" --root "$dir/macx-scenario-root" --state-dir "$dir/state" --sandbox-trash "$dir/trash" \
-    --pasteboard "macx-scenario-$(uuidgen)" --fake-launch-services --skip-onboarding "$@" \
-    -ApplePersistenceIgnoreState YES > "$log" 2>&1 &
+  macx_app_args "$dir/macx-scenario-root" "$dir/state" "$dir/trash"
+  "$BIN" "${MACX_APP_ARGS[@]}" "$@" > "$log" 2>&1 &
   APP_PID=$!
 }
 
@@ -166,7 +167,7 @@ add_entry() {
   entries="${entries:+$entries,}{\"name\":$(json_string "$1"),\"status\":\"$2\",\"durationMs\":${ms:-0},\"activated\":${act:-false},\"message\":$(json_string "$3")}"
 }
 
-passed=0; flaky=0; failed=0; entries=""; failed_names=(); failed_msgs=()
+passed=0; flaky=0; failed=0; entries=""; failed_names=(); failed_msgs=(); flaky_names=()
 for n in "${names[@]}"; do
   run_scenario "$n" "$n"
   if [ -z "$msg" ]; then
@@ -179,9 +180,9 @@ for n in "${names[@]}"; do
 done
 
 # Shared CI runners are slow and uneven: each failed scenario runs ONCE more in a fresh sandbox ($RUN/<name>.retry).
-# Passing then counts as flaky (a ::warning), not failed. More than MAX_RETRIES (default 5) failures is real
+# Passing then counts as flaky (a ::warning), not failed. More than MAX_RETRIES (default 2) failures is real
 # breakage and is not retried.
-MAX_RETRIES="${MAX_RETRIES:-5}"
+MAX_RETRIES="${MAX_RETRIES:-2}"
 retry=1
 if [ ${#failed_names[@]} -gt "$MAX_RETRIES" ]; then
   retry=0; echo "ui-scenarios: ${#failed_names[@]} scenarios failed (more than $MAX_RETRIES); not retrying"
@@ -192,7 +193,7 @@ while [ "$i" -lt ${#failed_names[@]} ]; do
   msg="$first"
   if [ "$retry" = 1 ]; then echo "RETRY $n"; run_scenario "$n" "$n.retry"; fi
   if [ "$retry" = 1 ] && [ -z "$msg" ]; then
-    flaky=$((flaky + 1)); add_entry "$n" flaky "first run: $first"
+    flaky=$((flaky + 1)); flaky_names+=("$n"); add_entry "$n" flaky "first run: $first"
     echo "PASS $n on retry (${ms} ms); first run: $first"
     echo "::warning title=Flaky scenario::UI scenario $n failed then passed on retry (first run: $first)"
     [ -z "${GITHUB_STEP_SUMMARY:-}" ] || printf -- '- Flaky UI scenario `%s` (first run: %s)\n' "$n" "$first" >> "$GITHUB_STEP_SUMMARY"
@@ -206,5 +207,6 @@ done
 mkdir -p "$REPO/.build"
 printf '{"results":[%s],"passed":%d,"flaky":%d,"failed":%d}\n' "$entries" "$passed" "$flaky" "$failed" > "$REPO/.build/ui-scenario-report.json"
 echo "ui-scenarios: $passed passed, $flaky flaky (passed on retry), $failed failed"
+[ "$flaky" -eq 0 ] || echo "FLAKY: $flaky UI scenario(s) passed only on retry: ${flaky_names[*]}"
 [ ${#failed_names[@]} -eq 0 ] || echo "logs of failed runs: $LOGS"
 [ "$failed" -eq 0 ]

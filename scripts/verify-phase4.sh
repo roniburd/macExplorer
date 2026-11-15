@@ -9,6 +9,7 @@
 # verify-phase1.sh keeps its gate logs in .build/verify-phase1/<run>/; this script only reads them. It creates no
 # files of its own outside that log folder. Usage: scripts/verify-phase4.sh [--skip-ui]
 # Exit 0 all passed, 1 a check failed, 3 everything ran passed but the GUI gates were skipped.
+# No -e: the script checks every exit status itself and reports each failure.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 2
 SKIP_UI=0
@@ -18,7 +19,7 @@ log() { printf '[verify-phase4] %s\n' "$*"; }
 log "1/4 Phase 1 gates (scripts/verify-phase1.sh $*)"
 out="$(scripts/verify-phase1.sh "$@" 2>&1)"; code=$?
 printf '%s\n' "$out"
-if [ $code -ne 0 ] && [ $code -ne 3 ]; then log "verify-phase1 failed (exit $code)"; exit 1; fi
+if [ "$code" -ne 0 ] && [ "$code" -ne 3 ]; then log "verify-phase1 failed (exit $code)"; exit 1; fi
 logs="$(printf '%s\n' "$out" | sed -n 's/^.*(logs in \(.*\))$/\1/p' | tail -1)"
 case "$logs" in "$(pwd -P)"/.build/verify-phase1/macx-verify-*) ;; *) log "cannot find the gate logs ('$logs')"; exit 1 ;; esac
 
@@ -51,6 +52,6 @@ for metric in palette.rank batchRename.preview; do
   case "$result" in pass*) ;; *) bad=1 ;; esac
 done
 
-if [ $bad -ne 0 ]; then log "FAILED"; exit 1; fi
-if [ $code -eq 3 ] || [ "$SKIP_UI" = 1 ]; then log "OK, but the GUI gates were skipped (not a full Phase 4 verification)"; exit 3; fi
+if [ "$bad" -ne 0 ]; then log "FAILED"; exit 1; fi
+if [ "$code" -eq 3 ] || [ "$SKIP_UI" = 1 ]; then log "OK, but the GUI gates were skipped (not a full Phase 4 verification)"; exit 3; fi
 log "OK"

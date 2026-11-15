@@ -1,19 +1,20 @@
 #!/bin/bash
 # Runs `swift test --parallel` and retries each failed XCTest case once, alone, so one timing-dependent test on a
-# slow shared CI runner does not fail the whole run. Used by ci.yml (Test step) and release.yml (fallback when no
-# CI result exists for the tagged commit). Usage: scripts/test-with-retry.sh [extra swift test arguments...]
+# slow shared CI runner does not fail the whole run. Used by ci.yml (Test step).
+# Usage: scripts/test-with-retry.sh [extra swift test arguments...]
 # - Failed cases are read from the xUnit XML (`--xunit-output`); classname is <Module>.<Class>, name is the test.
 # - No retry when the run failed with 0 parsed failures (build error, crash without a report) or with more than
-#   MAX_RETRIES (default 5) failures: that is real breakage.
+#   MAX_RETRIES (default 2) failures: that is real breakage.
 # - Each failed case is re-run alone with `--skip-build --filter '^<Module>\.<Class>/<test>$'`; every retry must
 #   pass AND appear in its own xUnit report (a filter that matches nothing does not count as a pass).
 # - A case that failed then passed is reported as a `::warning title=Flaky test::` annotation (and in
-#   $GITHUB_STEP_SUMMARY when set). Exit 0 when the first run or every retry passed, 1 otherwise.
+#   $GITHUB_STEP_SUMMARY when set), and the last line is `FLAKY: <n> test case(s) passed only on retry: <cases>`.
+#   Exit 0 when the first run or every retry passed, 1 otherwise.
 # The xUnit reports are kept in .build/test-results/ (first.xml, retry-<n>.xml) for the CI artifact.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-MAX_RETRIES="${MAX_RETRIES:-5}"
+MAX_RETRIES="${MAX_RETRIES:-2}"
 OUT=.build/test-results
 
 # failed_cases <xunit file>: prints "<classname>/<name>" for every testcase with a <failure> or <error> child.
@@ -119,4 +120,5 @@ for c in "${flaky[@]}"; do echo "::warning title=Flaky test::$c failed then pass
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
   { echo '### Flaky tests (failed, then passed on retry)'; printf -- '- `%s`\n' "${flaky[@]}"; } >> "$GITHUB_STEP_SUMMARY"
 fi
+echo "FLAKY: ${#flaky[@]} test case(s) passed only on retry: ${flaky[*]}"
 exit 0

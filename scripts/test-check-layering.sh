@@ -2,6 +2,7 @@
 # Self-test for scripts/check-layering.sh. Builds small fake repositories inside ONE fresh
 # ${TMPDIR}/macx-tests-<UUID> directory, injects one violation per case, and checks the rule that fires.
 # Usage: scripts/test-check-layering.sh      Exit 0 when every case behaves, 1 otherwise.
+# No -e: the script checks every exit status itself and reports each failure.
 set -uo pipefail
 CHECK="$(cd "$(dirname "$0")" && pwd -P)/check-layering.sh"
 

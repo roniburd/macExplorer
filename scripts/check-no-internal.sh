@@ -5,6 +5,7 @@
 # repository never spells them; output names file:line only. Read-only.
 # Usage: scripts/check-no-internal.sh [--root <repo>]   exit 1 on a hit or an unreadable file, 0 clean, 64 usage
 #        scripts/check-no-internal.sh --hash <word>     print the denylist line for <word>
+# No -e: the script checks every exit status itself and reports each failure.
 set -uo pipefail
 usage() { echo "usage: $0 [--root <repo>] | --hash <word>" >&2; exit 64; }
 ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"

@@ -1,6 +1,7 @@
 #!/bin/bash
 # Self-test for scripts/check-no-internal.sh, in ONE fresh ${TMPDIR}/macx-tests-<UUID> directory (removed on exit).
 # Exit 0 when every case behaves, 1 otherwise.
+# No -e: the script checks every exit status itself and reports each failure.
 set -uo pipefail
 CHECK="$(cd "$(dirname "$0")" && pwd -P)/check-no-internal.sh"
 TMPBASE="${TMPDIR:-/tmp}"; TMPBASE="${TMPBASE%/}"
@@ -33,4 +34,4 @@ expect quoted 1
 grep -q "a.txt" "$SB/quoted.out" && { echo "FAIL quoted: hit in the wrong file"; fail=1; }
 repo untracked "clean"; printf 'zorblax\n' > "$SB/untracked/new.txt"; expect untracked 0
 [ "$("$CHECK" --hash Zorblax)" = "$(printf %s zorblax | shasum -a 256 | cut -d' ' -f1)" ] || { echo "FAIL hash"; fail=1; }
-exit $fail
+exit "$fail"

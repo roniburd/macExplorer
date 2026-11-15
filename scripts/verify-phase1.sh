@@ -4,32 +4,26 @@
 # .build/verify-phase1/<run>/ before it is deleted. Usage: scripts/verify-phase1.sh [--skip-ui]
 # --skip-ui records the three gates that need a GUI session (app-launch, ui-scenarios, plugin-load) as SKIPPED.
 # Exit 0 when every gate passed, 1 when any gate failed, 3 when all ran gates passed but GUI gates were skipped.
+# No -e: each gate's exit status is recorded and the remaining gates still run.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 2
 REPO="$(pwd -P)"
+. scripts/lib/sandbox.sh
 SKIP_UI=0
 for a in "$@"; do case "$a" in --skip-ui) SKIP_UI=1 ;; *) echo "usage: $0 [--skip-ui]" >&2; exit 64 ;; esac; done
 
 TMPBASE="${TMPDIR:-/tmp}"; TMPBASE="${TMPBASE%/}"
 RUN="$TMPBASE/macx-verify-$(uuidgen)"
 mkdir "$RUN" || exit 2
-RUN_REAL="$(cd "$RUN" && pwd -P)"
 LOGS="$REPO/.build/verify-phase1/$(basename "$RUN")"
 APP_PID=""
 
 cleanup() {
   if [ -n "$APP_PID" ] && kill -0 "$APP_PID" 2>/dev/null; then kill -KILL "$APP_PID" 2>/dev/null; wait "$APP_PID" 2>/dev/null; fi
   case "$RUN" in "$TMPBASE"/macx-verify-*) ;; *) echo "refusing to clean $RUN" >&2; return 1 ;; esac
+  macx_unlock
   mkdir -p "$LOGS" && cp "$RUN"/*.log "$RUN"/*.json "$LOGS"/ 2>/dev/null
-  while IFS= read -r mp; do
-    case "$mp" in "$RUN_REAL"/*) hdiutil detach "$mp" -force >/dev/null 2>&1 ;; esac
-  done < <(mount | sed -n 's/^.* on \(.*\) (.*)$/\1/p')
-  # chmod first: chflags cannot descend into a mode-000 folder, so a uchg item inside one would keep its flag.
-  chmod -R u+rwx "$RUN" 2>/dev/null
-  chflags -R nouchg "$RUN" 2>/dev/null
-  chmod -R u+rwx "$RUN" 2>/dev/null
-  rm -rf "$RUN"
-  if [ -e "$RUN" ]; then echo "ERROR: run directory $RUN was not removed" >&2; return 1; fi
+  macx_remove_tree "$RUN" || return 1
   echo "sandbox root $RUN removed (logs in $LOGS)"
 }
 trap 'cleanup || exit 1' EXIT
@@ -44,7 +38,7 @@ gate() {
   "$@" > "$RUN/$name.log" 2>&1; code=$?
   secs=$(( $(date +%s) - start ))
   total=$((total + 1))
-  if [ $code -eq 0 ]; then
+  if [ "$code" -eq 0 ]; then
     echo "GATE $name PASS (${secs} s)"
   else
     failed=$((failed + 1))
@@ -58,7 +52,7 @@ build_clean() {
   local out code
   out="$(swift build -c "$1" 2>&1)"; code=$?
   printf '%s\n' "$out"
-  [ $code -eq 0 ] || return $code
+  [ "$code" -eq 0 ] || return "$code"
   if printf '%s\n' "$out" | grep -E '(^|[^A-Za-z])warning:'; then echo "build_clean: warnings present"; return 1; fi
 }
 
@@ -70,19 +64,20 @@ app_launch() {
   TMPDIR="$RUN/" scripts/bundle.sh release --bundle-id com.macexplorer.app.scenarios --output .build/macExplorer-scenarios.app || return 1
   local d="$RUN/launch"
   mkdir -p "$d/macx-scenario-root" "$d/state" "$d/trash" || return 1
-  .build/macExplorer-scenarios.app/Contents/MacOS/macExplorer --root "$d/macx-scenario-root" --state-dir "$d/state" \
-    --sandbox-trash "$d/trash" --pasteboard "macx-scenario-$(uuidgen)" --fake-launch-services --skip-onboarding \
-    --smoke-exit-after 2 -ApplePersistenceIgnoreState YES &
+  macx_lock "$MACX_SCENARIO_LOCK" || { echo "another scenario run holds the lock"; return 1; }
+  macx_app_args "$d/macx-scenario-root" "$d/state" "$d/trash"
+  .build/macExplorer-scenarios.app/Contents/MacOS/macExplorer "${MACX_APP_ARGS[@]}" --smoke-exit-after 2 &
   APP_PID=$!
   local start
   start=$(date +%s)
   while kill -0 "$APP_PID" 2>/dev/null; do
-    if [ $(( $(date +%s) - start )) -ge 60 ]; then kill -KILL "$APP_PID"; echo "app did not exit within 60 s"; return 1; fi
+    if [ $(( $(date +%s) - start )) -ge 60 ]; then kill -KILL "$APP_PID"; macx_unlock; echo "app did not exit within 60 s"; return 1; fi
     sleep 0.2
   done
   wait "$APP_PID"; local code=$?
   APP_PID=""
-  [ $code -eq 0 ] || { echo "app exit $code"; return 1; }
+  macx_unlock
+  [ "$code" -eq 0 ] || { echo "app exit $code"; return 1; }
   cat "$d/state/smoke.json"
   [ "$(plutil -extract windowTitles.0 raw -o - "$d/state/smoke.json")" = macx-scenario-root ]
 }
@@ -116,7 +111,7 @@ safety() {
     bad=1
   fi
   [ "$(defaults_digest)" = "$DEFAULTS_BEFORE" ] || { echo "the com.macexplorer.app defaults domain changed"; bad=1; }
-  return $bad
+  return "$bad"
 }
 
 echo "run directory: $RUN"
@@ -128,6 +123,9 @@ gate layering scripts/check-layering.sh
 gate layering-selftest scripts/test-check-layering.sh
 gate internal-strings scripts/check-no-internal.sh
 gate internal-strings-selftest scripts/test-check-no-internal.sh
+gate sandbox-lib-selftest scripts/test-sandbox-lib.sh
+gate test-retry-selftest scripts/test-with-retry.sh --self-test
+gate resolve-selftest scripts/resolve-packages.sh --self-test
 gate build-release build_clean release
 gate build-debug build_clean debug
 GENERAL_BEFORE="$(general_changecount)"
@@ -136,6 +134,7 @@ if [ "$SKIP_UI" = 1 ]; then echo "GATE app-launch SKIPPED (--skip-ui)"; skipped=
 gate core-scenarios scripts/run-scenarios.sh release
 if [ "$SKIP_UI" = 1 ]; then echo "GATE ui-scenarios SKIPPED (--skip-ui)"; skipped=$((skipped + 1)); else gate ui-scenarios scripts/ui-scenarios.sh --require-gui; fi
 if [ "$SKIP_UI" = 1 ]; then echo "GATE plugin-load SKIPPED (--skip-ui)"; skipped=$((skipped + 1)); else gate plugin-load scripts/test-plugin-load.sh release; fi
+gate release-scripts scripts/release/test-release-scripts.sh
 gate bench bench
 gate safety safety
 

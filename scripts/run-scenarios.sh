@@ -8,9 +8,12 @@
 # sandbox only, clears uchg/000 inside them, and deletes them (with --keep-sandbox it detaches and clears but keeps
 # them and the run directory, and prints their paths). Nothing else is touched.
 # A failed scenario (exit 1 with a report) runs once more on its own; passing then is a `::warning title=Flaky
-# scenario::` and the script exits 0 (no retry over 5 failures). macx-scenarios itself is unchanged.
+# scenario::` and the script exits 0 (no retry over MAX_RETRIES, default 2, failures); the last line lists the
+# scenarios that only passed on retry (FLAKY: ...). macx-scenarios itself is unchanged.
+# No -e: the script checks every exit status itself (a failed scenario still gets its retry and its cleanup).
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 2
+. scripts/lib/sandbox.sh
 
 CONFIG=debug
 if [ "${1:-}" = "debug" ] || [ "${1:-}" = "release" ]; then CONFIG="$1"; shift; fi
@@ -20,25 +23,15 @@ for arg in "$@"; do [ "$arg" = "--keep-sandbox" ] && KEEP=1; done   # also passe
 TMPBASE="${TMPDIR:-/tmp}"; TMPBASE="${TMPBASE%/}"
 RUN="$TMPBASE/macx-scenario-$(uuidgen)"
 mkdir "$RUN" || exit 2
-RUN_REAL="$(cd "$RUN" && pwd -P)"
-
 TMPBASE_REAL="$(cd "$TMPBASE" && pwd -P)"
 MANIFEST="$RUN/sandboxes.txt"
 
 # Detaches images mounted below $1, clears protections and deletes $1 (keeps it with --keep-sandbox).
 remove_tree() {
-  local dir="$1" real
-  real="$(cd "$dir" 2>/dev/null && pwd -P)" || real="$dir"
-  while IFS= read -r mp; do
-    case "$mp" in "$real"/*) hdiutil detach "$mp" -force >/dev/null 2>&1 ;; esac
-  done < <(mount | sed -n 's/^.* on \(.*\) (.*)$/\1/p')
-  # chmod first: chflags cannot descend into a mode-000 folder, so a uchg item inside one would keep its flag.
-  chmod -R u+rwx "$dir" 2>/dev/null
-  chflags -R nouchg "$dir" 2>/dev/null
-  chmod -R u+rwx "$dir" 2>/dev/null
-  if [ "$KEEP" = 1 ]; then echo "sandbox $dir kept (--keep-sandbox)"; return 0; fi
-  rm -rf "$dir"
-  if [ -e "$dir" ]; then echo "ERROR: $dir was not removed" >&2; return 1; fi
+  if [ "$KEEP" = 1 ]; then
+    macx_detach_under "$1"; macx_clear_protections "$1"; echo "sandbox $1 kept (--keep-sandbox)"; return 0
+  fi
+  macx_remove_tree "$1"
 }
 
 cleanup() {
@@ -83,20 +76,21 @@ names_with_status() {
 
 # Shared CI runners are slow and uneven: each failed scenario runs ONCE more on its own (a later --filter wins over
 # one in "$@"; the substring may select a few more scenarios, only the named one is judged). Passing then counts as
-# flaky (a ::warning). More than MAX_RETRIES (default 5) failures, or a run without a report, is not retried.
+# flaky (a ::warning). More than MAX_RETRIES (default 2) failures, or a run without a report, is not retried.
+MAX_RETRIES="${MAX_RETRIES:-2}"
 failed_names=()
 while IFS= read -r n; do [ -n "$n" ] && failed_names+=("$n"); done < <(names_with_status "$RUN/report.json" failed)
 [ ${#failed_names[@]} -gt 0 ] || exit "$status"
-if [ ${#failed_names[@]} -gt "${MAX_RETRIES:-5}" ]; then
-  echo "run-scenarios: ${#failed_names[@]} scenarios failed (more than ${MAX_RETRIES:-5}); not retrying"; exit "$status"
+if [ ${#failed_names[@]} -gt "$MAX_RETRIES" ]; then
+  echo "run-scenarios: ${#failed_names[@]} scenarios failed (more than $MAX_RETRIES); not retrying"; exit "$status"
 fi
-still=0; k=0
+still=0; k=0; flaky=()
 for n in "${failed_names[@]}"; do
   k=$((k + 1))
   echo "RETRY $n"
   "$BIN" --require-images --json "$RUN/retry-$k.json" --manifest "$MANIFEST" "$@" --filter "$n" 2>&1 | tee -a "$RUN/log.txt"
   if [ -s "$RUN/retry-$k.json" ] && names_with_status "$RUN/retry-$k.json" passed | grep -qxF -- "$n"; then
-    echo "::warning title=Flaky scenario::core scenario $n failed then passed on retry"
+    flaky+=("$n"); echo "::warning title=Flaky scenario::core scenario $n failed then passed on retry"
     [ -z "${GITHUB_STEP_SUMMARY:-}" ] || printf -- '- Flaky core scenario `%s`\n' "$n" >> "$GITHUB_STEP_SUMMARY"
   else
     still=1; echo "FAIL $n again on retry"
@@ -104,4 +98,5 @@ for n in "${failed_names[@]}"; do
   cp "$RUN/retry-$k.json" ".build/scenario-retry-$k.json" 2>/dev/null
 done
 [ "$still" = 0 ] && echo "run-scenarios: every failed scenario passed on retry (flaky)"
+[ ${#flaky[@]} -eq 0 ] || echo "FLAKY: ${#flaky[@]} core scenario(s) passed only on retry: ${flaky[*]}"
 exit "$still"

@@ -4,6 +4,7 @@
 # Usage: scripts/check-layering.sh [--root <repository dir>]   (default: the repository containing this script)
 # Prints one "RULE <id>: <file>:<line>: <text>" line per violation and exits 1 if there is any, 0 when clean,
 # 64 on usage errors. It only reads source files and runs `swift package dump-package`; it writes nothing.
+# No -e: the script checks every exit status itself and reports each failure.
 set -uo pipefail
 
 usage() { echo "usage: $0 [--root <repository dir>]" >&2; exit 64; }
