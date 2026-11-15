@@ -1,5 +1,4 @@
 import Foundation
-import Core
 import MacxFS
 import MacxPluginKit
 
@@ -9,11 +8,11 @@ import MacxPluginKit
 /// Every model the chain drops is closed: its read is cancelled and its watcher stopped, so late batches of an
 /// intermediate column (held ↓ over many folders) never reach the visible columns (Review Focus 5).
 @MainActor
-final class ColumnChain {
-    typealias ModelFactory = @MainActor (URL) -> FolderModel
+public final class ColumnChain {
+    public typealias ModelFactory = @MainActor (URL) -> FolderModel
     private let makeModel: ModelFactory
-    private(set) var models: [FolderModel] = []
-    private(set) var activeIndex = 0
+    public private(set) var models: [FolderModel] = []
+    public private(set) var activeIndex = 0
     private var tokens: [ObjectIdentifier: ObserverToken] = [:]
     /// A name to select in the root column once it is listed (`reroot(_:selecting:)`, `up()`). Dropped when the
     /// listing completes without it and on any other selection change.
@@ -21,28 +20,28 @@ final class ColumnChain {
     /// A column entered with `moveRight()` before it was listed: its first row is selected once it is (P2-19: holding
     /// → or pressing → right after a folder was selected). Dropped on any selection in it and when it closes.
     private weak var pendingFirstRow: FolderModel?
-    var onChange: (() -> Void)?
+    public var onChange: (() -> Void)?
     /// The root column's folder was moved or deleted (or its volume went away) while a deeper column is active. The
     /// session observes only the active column and the root relocates once, so the chain forwards it (review fix).
     /// While the root is active the session sees its `.relocate` itself.
-    var onRootRelocate: ((URL, RelocationReason) -> Void)?
+    public var onRootRelocate: ((URL, RelocationReason) -> Void)?
 
-    init(root: URL, makeModel: @escaping ModelFactory) {
+    public init(root: URL, makeModel: @escaping ModelFactory) {
         self.makeModel = makeModel
         reroot(root, selecting: nil)
     }
 
     /// Entering Columns from another mode: the current model becomes column 0 as it is (no re-read).
-    init(adopting model: FolderModel, makeModel: @escaping ModelFactory) {
+    public init(adopting model: FolderModel, makeModel: @escaping ModelFactory) {
         self.makeModel = makeModel
         append(model, start: false)
         selectionDidChange(in: model)
     }
 
-    var activeModel: FolderModel { models[activeIndex] }
+    public var activeModel: FolderModel { models[activeIndex] }
 
     /// Replaces every column with a new root column for `url`; `name` is selected once it is listed.
-    func reroot(_ url: URL, selecting name: String?) {
+    public func reroot(_ url: URL, selecting name: String?) {
         pendingRootSelection = nil
         truncate(after: -1)
         let m = makeModel(url)
@@ -53,7 +52,7 @@ final class ColumnChain {
         onChange?()
     }
 
-    func activate(_ index: Int) {
+    public func activate(_ index: Int) {
         guard !models.isEmpty else { return }
         let clamped = max(0, min(index, models.count - 1))
         guard clamped != activeIndex else { return }
@@ -63,7 +62,7 @@ final class ColumnChain {
     }
 
     /// Activates column k+1, selecting its first row when it has no selection (which may open the next column).
-    @discardableResult func moveRight() -> Bool {
+    @discardableResult public func moveRight() -> Bool {
         guard activeIndex + 1 < models.count else { return false }
         activeIndex += 1
         let m = models[activeIndex]
@@ -77,7 +76,7 @@ final class ColumnChain {
     /// Open (Return, ⌘↓, double-click) in column k on the single selected folder that column k+1 already shows:
     /// activates that column (as `moveRight()` from k). false when the selection is anything else, so the Phase 1
     /// open runs (files, packages, links).
-    @discardableResult func enterSelectedFolder(of model: FolderModel) -> Bool {
+    @discardableResult public func enterSelectedFolder(of model: FolderModel) -> Bool {
         guard let index = models.firstIndex(where: { $0 === model }), index + 1 < models.count,
               model.selection.count == 1, let url = model.selectedURLs.first,
               url.standardizedFileURL == models[index + 1].directory.standardizedFileURL else { return false }
@@ -86,7 +85,7 @@ final class ColumnChain {
     }
 
     /// Activates column k−1; its selection stays as it is.
-    @discardableResult func moveLeft() -> Bool {
+    @discardableResult public func moveLeft() -> Bool {
         guard activeIndex > 0 else { return false }
         pendingFirstRow = nil
         activeIndex -= 1
@@ -95,7 +94,7 @@ final class ColumnChain {
     }
 
     /// The parent column, or (at the root) a new root for the parent folder that selects the old root.
-    func up() {
+    public func up() {
         guard !models.isEmpty else { return }
         if activeIndex > 0 { _ = moveLeft(); return }
         let root = models[0].directory
@@ -110,7 +109,7 @@ final class ColumnChain {
     }
 
     /// Leaving Columns: closes every other model and hands the active one to the caller. The chain becomes empty.
-    func detachActive() -> FolderModel {
+    public func detachActive() -> FolderModel {
         let keep = activeModel
         for m in models where m !== keep { m.close() }
         tokens.values.forEach { $0.cancel() }
@@ -124,7 +123,7 @@ final class ColumnChain {
     /// The volume under columns `index…` is going away (§4.2 release): they close, and column index−1 drops its
     /// selection so a later listing change doesn't reopen them before the volume unmounts. The root column has no
     /// column to fall back to (the window goes elsewhere instead).
-    func closeColumns(from index: Int) {
+    public func closeColumns(from index: Int) {
         guard index > 0, index < models.count else { return }
         truncate(after: index - 1)
         if let pending = pendingFirstRow, !models.contains(where: { $0 === pending }) { pendingFirstRow = nil }
@@ -133,7 +132,7 @@ final class ColumnChain {
     }
 
     /// Closes every column.
-    func close() {
+    public func close() {
         pendingRootSelection = nil
         truncate(after: -1)
     }

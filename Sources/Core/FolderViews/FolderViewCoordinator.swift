@@ -1,5 +1,4 @@
 import Foundation
-import Core
 import MacxFS
 
 /// Per-folder view state for browsing (spec §11 Phase 2 + design 2026-11-05 §2). A folder's view is resolved field
@@ -11,26 +10,26 @@ import MacxFS
 /// own and Finder's views), "Reset View for This Folder" and "Apply to All Folders" (every folder, Finder's views and
 /// the built-in rule included, takes the view).
 @MainActor
-final class FolderViewCoordinator {
+public final class FolderViewCoordinator {
     private let store: FolderViewStore
     private let settings: Settings
     private let lanes: LanePool
     private let volumes: Volumes
 
     /// The built-in rule's ~/Applications is the settings' home (the sandbox root in sandbox mode).
-    init(store: FolderViewStore, settings: Settings, lanes: LanePool, volumes: Volumes) {
+    public init(store: FolderViewStore, settings: Settings, lanes: LanePool, volumes: Volumes) {
         self.store = store
         self.settings = settings
         self.lanes = lanes
         self.volumes = volumes
     }
 
-    func state(for url: URL, fileID: UInt64?) -> (FolderViewState, FolderViewLocator) {
+    public func state(for url: URL, fileID: UInt64?) -> (FolderViewState, FolderViewLocator) {
         let locator = FolderViewLocator(url: url, volume: volumes.volume(for: url), fileID: fileID)
         return (state(for: locator), locator)
     }
 
-    func state(for locator: FolderViewLocator) -> FolderViewState {
+    public func state(for locator: FolderViewLocator) -> FolderViewState {
         let url = locator.url
         return FolderViewResolver.resolve(stored: store.settings(for: locator), finder: store.finderView(for: url),
                                           builtIn: settings.builtInFolderViewsOff
@@ -38,20 +37,20 @@ final class FolderViewCoordinator {
                                           defaults: settings.defaultFolderViewState())
     }
 
-    func hasOverride(for locator: FolderViewLocator) -> Bool { store.hasOverride(for: locator) }
+    public func hasOverride(for locator: FolderViewLocator) -> Bool { store.hasOverride(for: locator) }
 
     /// A user change: only the fields in `delta` become the folder's own.
-    func update(_ delta: FolderViewSettings, for locator: FolderViewLocator) {
+    public func update(_ delta: FolderViewSettings, for locator: FolderViewLocator) {
         guard !delta.isEmpty else { return }
         store.update(locator) { $0 = delta.over($0) }
     }
 
     /// The identity probe returned: a pending path record moves to the folder's object key.
-    func adopt(_ locator: FolderViewLocator) { store.adopt(locator) }
+    public func adopt(_ locator: FolderViewLocator) { store.adopt(locator) }
 
     /// Adds the folder's fileID when the volume has stable IDs and the caller didn't know it (lane probe, no
     /// materialization). Otherwise returns `locator` unchanged.
-    func refine(_ locator: FolderViewLocator) async -> FolderViewLocator {
+    public func refine(_ locator: FolderViewLocator) async -> FolderViewLocator {
         guard locator.fileID == nil, let volume = locator.volume, volume.capabilities.idStable else { return locator }
         let url = locator.url
         guard let id = await FolderIdentityProbe.fileID(of: url, lanes: lanes, volume: volume.id) else { return locator }
@@ -59,13 +58,13 @@ final class FolderViewCoordinator {
     }
 
     /// Whether Finder's view of the folder still has to be read (not read this launch, and on a local volume).
-    func needsFinderView(_ locator: FolderViewLocator) -> Bool {
+    public func needsFinderView(_ locator: FolderViewLocator) -> Bool {
         store.finderView(for: locator.url) == nil && (locator.volume?.isLocal ?? false)
     }
 
     /// Reads Finder's `.DS_Store` view of the folder on a read lane under no-materialization (never on main; never
     /// writes), caches it for the launch, and returns it (nil or empty: Finder recorded nothing).
-    func readFinderView(_ locator: FolderViewLocator) async -> FolderViewSettings? {
+    public func readFinderView(_ locator: FolderViewLocator) async -> FolderViewSettings? {
         if let cached = store.finderView(for: locator.url) { return cached }
         guard let volume = locator.volume, volume.isLocal else { return nil }
         let url = locator.url
@@ -80,16 +79,16 @@ final class FolderViewCoordinator {
     }
 
     /// "Reset View for This Folder": the folder's own record goes; Finder, the built-in rule and the defaults apply.
-    func reset(_ locator: FolderViewLocator) { store.remove(locator) }
+    public func reset(_ locator: FolderViewLocator) { store.remove(locator) }
 
     /// "Use as Default for All Folders": `state` becomes the global default. Folders keep the fields they set
     /// themselves (and Finder's), and follow the new default for the rest.
-    func useAsDefault(_ state: FolderViewState) { settings.applyDefaultView(state) }
+    public func useAsDefault(_ state: FolderViewState) { settings.applyDefaultView(state) }
 
     /// "Apply to All Folders": `state` becomes the default, every folder's own record is dropped, Finder's views
     /// recorded until now stop applying (post-merge review: otherwise any folder Finder had a view for kept it) and
     /// the built-in Applications rule is turned off for good. A `.DS_Store` Finder writes later applies again.
-    func applyToAll(_ state: FolderViewState) {
+    public func applyToAll(_ state: FolderViewState) {
         settings.applyDefaultView(state)
         settings.finderViewsIgnoredBefore = Date()
         settings.builtInFolderViewsOff = true
