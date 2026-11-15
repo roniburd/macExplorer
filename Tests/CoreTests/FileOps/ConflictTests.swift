@@ -121,6 +121,66 @@ final class ConflictTests: FileOpsTestCase {
         XCTAssertTrue(o.record.actions.contains(.deleted(url("nt/a"))))
     }
 
+    /// Review B1 follow-up: on a volume without a Trash, a landing that fails puts the set-aside item back under its
+    /// own name; nothing is deleted, nothing hidden is left behind.
+    func testReplaceWithoutTrashRestoresTheSetAsideItemWhenTheLandingFails() async throws {
+        let a = try file("src/a", "new"); try file("nt/a", "old")
+        let ntPath = url("nt").path
+        let tuning = FileOpTuning(faultHook: { point, _ in
+            guard point == .afterTrashDestination else { return }
+            // Make the final rename fail: move the copy's partial out of the way (the set-aside item stays).
+            let names = (try? FileManager.default.contentsOfDirectory(atPath: ntPath)) ?? []
+            if let p = names.first(where: { PartialName.isPartial($0) && !$0.contains(".replaced") }) {
+                _ = Darwin.rename(ntPath + "/" + p, ntPath + "/moved-away")
+            }
+        })
+        let scripted = ScriptedInteraction(conflicts: [.one(.replace)], errors: [.skip], noTrash: [true])
+        let (queue, journal) = makeQueue(interaction: scripted, tuning: tuning,
+                                         trash: SandboxTrash(directory: trashDir, refusingPathsUnder: [url("nt")]))
+        let o = try await run(.copy(sources: [a], destination: url("nt")), on: queue)
+        XCTAssertEqual(scripted.askedErrors().count, 1)
+        XCTAssertEqual(text(url("nt/a")), "old", "set-aside item put back under its own name")
+        XCTAssertEqual(text(a), "new")
+        XCTAssertEqual(partials(url("nt")), [])
+        XCTAssertFalse(o.record.actions.contains(.deleted(url("nt/a"))))
+        let entries = await journal.entries()
+        XCTAssertEqual(entries, [])
+    }
+
+    /// Review B1 follow-up: the set-aside item can't be deleted and the user skips: its journal entry outlives the job,
+    /// so the next launch deletes it (it is never a hidden orphan).
+    func testReplaceWithoutTrashKeepsTheEntryWhenTheSetAsideItemCannotBeDeleted() async throws {
+        let a = try file("src/a", "new"); try file("nt/a/inner", "old")   // file onto folder: a real Replace
+        let ntPath = url("nt").path
+        let tuning = FileOpTuning(faultHook: { point, _ in
+            guard point == .afterTrashDestination else { return }
+            // The set-aside folder's child is append-only (the unlock only clears uchg): removing it fails (EPERM).
+            let names = (try? FileManager.default.contentsOfDirectory(atPath: ntPath)) ?? []
+            if let p = names.first(where: { $0.contains(".replaced") }) { _ = chflags(ntPath + "/" + p + "/inner", UInt32(UF_APPEND)) }
+        })
+        let scripted = ScriptedInteraction(conflicts: [.one(.replace)], errors: [.skip], noTrash: [true])
+        let (queue, journal) = makeQueue(interaction: scripted, tuning: tuning,
+                                         trash: SandboxTrash(directory: trashDir, refusingPathsUnder: [url("nt")]))
+        let o = try await run(.copy(sources: [a], destination: url("nt")), on: queue)
+        XCTAssertEqual(scripted.askedErrors().count, 1)
+        XCTAssertEqual(text(url("nt/a")), "new")
+        let aside = partials(url("nt"))
+        XCTAssertEqual(aside.count, 1, "\(names(url("nt")))")
+        XCTAssertFalse(o.record.actions.contains(.deleted(url("nt/a"))))
+        let left = await journal.entries()
+        guard left.count == 1, case .trashedDestination(_, let original, let held) = left[0] else { return XCTFail("\(left)") }
+        XCTAssertEqual(original.lastPathComponent, "a")
+        XCTAssertEqual(held.lastPathComponent, aside.first)
+        // Next launch: the Replace completed, so the set-aside item goes.
+        for p in aside { XCTAssertEqual(chflags(ntPath + "/" + p + "/inner", 0), 0) }
+        let report = await LaunchRecovery.run(journal: Journal(fileURL: journalURL), lanes: LanePool())
+        XCTAssertEqual(report.removedPartials.map(\.lastPathComponent), aside)
+        XCTAssertEqual(names(url("nt")), ["a"])
+        XCTAssertEqual(text(url("nt/a")), "new")
+        let after = await Journal(fileURL: journalURL).entries()
+        XCTAssertEqual(after, [])
+    }
+
     func testReplaceRestoresTrashedItemWhenFinalRenameFails() async throws {
         let a = try file("src/a", "new"); try file("d/a", "old")
         let dPath = url("d").path

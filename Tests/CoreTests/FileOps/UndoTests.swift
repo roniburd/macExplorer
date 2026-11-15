@@ -275,6 +275,24 @@ final class UndoTests: FileOpsTestCase {
         XCTAssertEqual(text(a), "new")
     }
 
+    /// Review B1 follow-up: Undo displacing an occupant on a volume without a Trash: asked, then set aside and deleted
+    /// once the item is back (rename back: UndoPlanner.renameBack's commit).
+    func testUndoRenameIntoOccupiedPathWithoutTrashDeletesTheOccupantOnceConfirmed() async throws {
+        let a = try file("nt/a.txt", "renamed")
+        let scripted = ScriptedInteraction(conflicts: [.one(.replace)], noTrash: [true])
+        let (queue, journal) = makeQueue(interaction: scripted,
+                                         trash: SandboxTrash(directory: trashDir, refusingPathsUnder: [url("nt")]))
+        let renamed = try await run(.rename(a, to: "b.txt"), on: queue)
+        try file("nt/a.txt", "occupant")
+        let undone = try await run(.undo(renamed.record), on: queue)
+        XCTAssertEqual(scripted.askedNoTrash(), [[a]])
+        XCTAssertEqual(names(url("nt")), ["a.txt"], "no set-aside item left behind")
+        XCTAssertEqual(text(a), "renamed")
+        XCTAssertTrue(undone.record.actions.contains(.deleted(a)))
+        let entries = await journal.entries()
+        XCTAssertEqual(entries, [])
+    }
+
     func testUndoIntoOccupiedPathReplaceTrashesTheOccupantAndRedoRestoresIt() async throws {
         let a = try file("src/a.txt", "moved")
         let (queue, _) = makeQueue(interaction: ScriptedInteraction(conflicts: [.one(.replace)]))

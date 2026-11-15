@@ -148,12 +148,15 @@ extension ConflictExecutor {
     }
 
     /// The new item is in place. A trashed destination stays in the Trash (its journal entry goes); one set aside is
-    /// deleted now and recorded `.deleted` (permanent, so the job has no undo, like Delete).
+    /// deleted now and recorded `.deleted` (permanent, so the job has no undo, like Delete). If that removal fails and
+    /// the user skips or cancels, the entry is kept past the job so the next launch deletes the set-aside item (never
+    /// a hidden orphan nothing knows about).
     static func commit(_ ctx: JobContext, _ trashed: Trashed) async {
         if trashed.permanent {
             let aside = trashed.trashURL
             let r = await ctx.attempt(trashed.original) { _ in PosixFS.removeTree(aside.path, unlock: true) }
-            if r == .done { ctx.record(.deleted(trashed.original)) }
+            guard r == .done else { ctx.keepForRecovery(trashed.entry); return }
+            ctx.record(.deleted(trashed.original))
         }
         await ctx.journalClear(trashed.entry)
     }
