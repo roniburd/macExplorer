@@ -95,9 +95,7 @@ public final class CoreEnvironment {
         let readers = DirectoryReaders(lanes: lanes, mountTable: volumes.mountTableStore, types: .shared)
         self.readers = readers
         self.settings = Settings(storage: settingsStorage, home: home)
-        // Imports the earlier path-keyed folder-views.json once, read and decoded off main (the file is left in place).
-        let legacyFolderViews = statePaths.folderViewsFile
-        self.folderViews = FolderViewStore(storage: settingsStorage, legacyJSON: { try? Data(contentsOf: legacyFolderViews) })
+        self.folderViews = FolderViewStore(storage: settingsStorage)
         let bus = ChangeBus()
         self.changeBus = bus
         self.folderSizes = FolderSizeService(lanes: lanes, mountTable: volumes.mountTableStore, changeBus: bus,
