@@ -115,8 +115,27 @@ import Core
         ]
     }
 
+    /// SF Symbols for the View menu items that carry an icon: the
+    /// view modes (matching the toolbar's view switcher), the submenu headers, the pane/visibility toggles, Search,
+    /// Refresh and Full Screen. Keyed by identifier suffix (a Command raw value or a submenu id); the two standard
+    /// AppKit items (Show Sidebar, Enter Full Screen) pass theirs to `standard`. Everything else stays text-only.
+    static let viewMenuSymbols: [String: String] = [
+        Command.viewAsDetails.rawValue: "list.bullet",
+        Command.viewAsIcons.rawValue: "square.grid.2x2",
+        Command.viewAsColumns.rawValue: "rectangle.split.3x1",
+        "iconSize": "square.arrowtriangle.4.outward",
+        "density": "line.3.horizontal",
+        "sortBy": "arrow.up.arrow.down",
+        "groupBy": "rectangle.3.group",
+        Command.toggleHidden.rawValue: "eye",
+        Command.toggleCommandBar.rawValue: "menubar.rectangle",
+        Command.togglePreviewPane.rawValue: "sidebar.right",
+        "search": "magnifyingglass",
+        Command.refresh.rawValue: "arrow.clockwise",
+    ]
+
     private static func viewItems() -> [NSMenuItem] {
-        [
+        let items: [NSMenuItem] = [
             item(.viewAsDetails), item(.viewAsIcons), item(.viewAsColumns), .separator(),
             submenu(L10n.string("Icon Size"), id: "iconSize", [item(.iconSizeSmall), item(.iconSizeMedium), item(.iconSizeLarge)]),
             submenu(L10n.string("Density"), id: "density", [item(.densityCompact), item(.densityRegular), item(.densityComfortable)]),
@@ -132,7 +151,7 @@ import Core
             item(.useViewAsDefault), item(.applyViewToAllFolders), item(.resetFolderView),
             .separator(),
             item(.toggleHidden), item(.toggleCommandBar),
-            standard("Show Sidebar", #selector(NSSplitViewController.toggleSidebar(_:))),
+            standard("Show Sidebar", #selector(NSSplitViewController.toggleSidebar(_:)), symbol: "sidebar.left"),
             item(.togglePreviewPane), item(.showInPreview), item(.downloadForPreview),
             item(.previewZoomIn), item(.previewZoomOut), item(.previewActualSize),
             .separator(),
@@ -143,8 +162,15 @@ import Core
             ]),
             .separator(),
             item(.refresh), .separator(),
-            standard("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:))),
+            standard("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), symbol: "arrow.up.left.and.arrow.down.right"),
         ]
+        let prefix = "macx.menu."
+        for item in items {
+            let key = item.identifier.map { String($0.rawValue.dropFirst(prefix.count)) }
+            guard let key, let symbol = viewMenuSymbols[key] else { continue }
+            item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+        }
+        return items
     }
 
     private static func goItems() -> [NSMenuItem] {
@@ -213,8 +239,10 @@ import Core
 
     /// A non-command item. Its key equivalent, if any, comes from `KeyBindings.fixedMenuChords[title]` (all reserved,
     /// so no rebinding can shadow or take it).
-    private static func standard(_ title: String, _ action: Selector) -> NSMenuItem {
+    /// `symbol`, if given, is its SF Symbol image.
+    private static func standard(_ title: String, _ action: Selector, symbol: String? = nil) -> NSMenuItem {
         let item = NSMenuItem(title: L10n.string(title), action: action, keyEquivalent: "")
+        if let symbol { item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) }
         if let chord = KeyBindings.fixedMenuChords[title] {
             if chord == KeyChord(.character("/"), [.shift, .command]) {
                 item.keyEquivalent = "?"                         // shown as ⌘?, the macOS Help convention
