@@ -222,3 +222,43 @@ final class LaunchOptionsTests: XCTestCase {
         }
     }
 }
+
+/// Review B5: the shipped (release, com.macexplorer.app) app must not honour the test-harness options.
+final class LaunchOptionsHarnessGateTests: XCTestCase {
+    func testOnlyDebugBuildsAndTheScenarioCopyAllowHarnessOptions() {
+        XCTAssertTrue(LaunchOptions.allowsHarnessOptions(bundleIdentifier: "com.macexplorer.app", debugBuild: true))
+        XCTAssertTrue(LaunchOptions.allowsHarnessOptions(bundleIdentifier: nil, debugBuild: true))
+        XCTAssertTrue(LaunchOptions.allowsHarnessOptions(bundleIdentifier: "com.macexplorer.app.scenarios", debugBuild: false))
+        XCTAssertFalse(LaunchOptions.allowsHarnessOptions(bundleIdentifier: "com.macexplorer.app", debugBuild: false))
+        XCTAssertFalse(LaunchOptions.allowsHarnessOptions(bundleIdentifier: nil, debugBuild: false))
+        XCTAssertFalse(LaunchOptions.allowsHarnessOptions(bundleIdentifier: "com.macexplorer.app.scenarios.x", debugBuild: false))
+    }
+
+    func testReleaseAppRefusesEveryHarnessOption() {
+        let values = ["--root": "/tmp/macx-h/r", "--scenario": "/tmp/macx-h/s.json", "--scenario-output": "/tmp/macx-h/o.json",
+                      "--smoke-exit-after": "1", "--keymap": "/tmp/macx-h/k.json", "--plugins-dir": "/tmp/macx-h/p"]
+        XCTAssertEqual(Set(values.keys), LaunchOptions.harnessOptions)
+        for (option, value) in values {
+            XCTAssertThrowsError(try LaunchOptions.parse(["m", "--state-dir", "/tmp/macx-h/state", option, value],
+                                                         allowsHarness: false), option) {
+                XCTAssertEqual($0 as? LaunchOptionsError, .harnessOptionUnavailable(option))
+            }
+            XCTAssertNoThrow(try LaunchOptions.parse(["m", "--state-dir", "/tmp/macx-h/state", option, value],
+                                                     allowsHarness: true), option)
+        }
+    }
+
+    func testReleaseAppStillAcceptsTheStateIsolationOptions() throws {
+        let o = try LaunchOptions.parse(["m", "--state-dir", "/tmp/macx-h/state", "--sandbox-trash", "/tmp/macx-h/trash",
+                                         "--pasteboard", "macx-h", "--fake-launch-services", "--skip-onboarding",
+                                         "--index-status", "enabled"], allowsHarness: false)
+        XCTAssertTrue(o.isSandboxed)
+        XCTAssertEqual(o.pasteboardName, "macx-h")
+        XCTAssertEqual(o.indexStatus, .enabled)
+    }
+
+    func testDebugTestBuildsAllowTheHarnessByDefault() throws {
+        XCTAssertTrue(LaunchOptions.harnessOptionsAllowed)
+        XCTAssertNotNil(try LaunchOptions.parse(["m", "--state-dir", "/tmp/macx-h/state", "--root", "/tmp/macx-h/r"]).root)
+    }
+}

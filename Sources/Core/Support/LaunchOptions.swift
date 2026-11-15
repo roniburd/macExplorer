@@ -27,11 +27,39 @@ public struct LaunchOptions: Sendable, Equatable {
 
     public var isSandboxed: Bool { stateDirectory != nil }
 
+    /// The bundle id of the scenario copy of the app (`scripts/bundle.sh --bundle-id com.macexplorer.app.scenarios`).
+    public static let scenariosBundleIdentifier = "com.macexplorer.app.scenarios"
+    /// Test-harness options: scripted UI runs (key synthesis), smoke exits, keymap and plugin injection. Only debug
+    /// builds and the scenario copy accept them, so the shipped app can't be driven by a scenario file from the
+    /// command line. The other sandbox options (--state-dir, --sandbox-trash, ...) only keep a run away from user state.
+    public static let harnessOptions: Set<String> = [
+        "--root", "--scenario", "--scenario-output", "--smoke-exit-after", "--keymap", "--plugins-dir",
+    ]
+
+    /// Whether a build with this bundle id accepts `harnessOptions`: any debug build, or the scenario copy.
+    public static func allowsHarnessOptions(bundleIdentifier: String?, debugBuild: Bool) -> Bool {
+        debugBuild || bundleIdentifier == scenariosBundleIdentifier
+    }
+
+    /// `allowsHarnessOptions` for this process.
+    public static var harnessOptionsAllowed: Bool {
+        allowsHarnessOptions(bundleIdentifier: Bundle.main.bundleIdentifier, debugBuild: isDebugBuild)
+    }
+
+    #if DEBUG
+    private static let isDebugBuild = true
+    #else
+    private static let isDebugBuild = false
+    #endif
+
     /// Parses `CommandLine.arguments` (element 0 is the executable and is skipped).
     /// AppKit/Foundation argument-domain pairs (`-NS… value`, `-Apple… value`) and `-psn_…` are ignored.
     /// `--root`, `--scenario`, `--smoke-exit-after`, `--keymap` and `--plugins-dir` require `--state-dir` (the app exits 64 otherwise).
     /// A directory option naming an existing non-directory fails with `notADirectory`; missing directories are allowed.
-    public static func parse(_ arguments: [String]) throws(LaunchOptionsError) -> LaunchOptions {
+    /// With `allowsHarness` false (a release build that isn't the scenario copy) a `harnessOptions` entry fails with
+    /// `harnessOptionUnavailable`.
+    public static func parse(_ arguments: [String],
+                             allowsHarness: Bool = harnessOptionsAllowed) throws(LaunchOptionsError) -> LaunchOptions {
         var options = LaunchOptions()
         var index = 1
         func value(for option: String) throws(LaunchOptionsError) -> String {
@@ -44,6 +72,7 @@ public struct LaunchOptions: Sendable, Equatable {
         }
         while index < arguments.count {
             let argument = arguments[index]
+            if !allowsHarness && harnessOptions.contains(argument) { throw .harnessOptionUnavailable(argument) }
             switch argument {
             case "--root": options.root = try directory(try value(for: argument))
             case "--state-dir": options.stateDirectory = try directory(try value(for: argument))
@@ -110,4 +139,5 @@ public enum LaunchOptionsError: Error, Sendable, Equatable {
     case stateDirectoryRequired            // --root or --scenario without --state-dir → exit 64
     case notADirectory(String)
     case invalidValue(option: String, value: String)   // e.g. --index-status maybe
+    case harnessOptionUnavailable(String)  // a test-harness option in a release build that isn't the scenario copy → exit 64
 }
