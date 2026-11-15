@@ -46,7 +46,7 @@ swift test --parallel              # about 2 minutes
 | `debug` / `release` | `debug` | Build configuration |
 | `--bundle-id ID` | `com.macexplorer.app` | Bundle identifier |
 | `--output PATH` | `.build/MacExplorer.app` | Where the app goes |
-| `--version X.Y.Z[-beta.N]` | from `Info.plist` | Marketing version |
+| `--version X.Y.Z[-beta.N]` | `Info.plist`'s, plus `-dev` (e.g. `0.5.0-dev`) | Marketing version. Only `release.yml` passes it, so a local build never looks like a release. |
 | `--build N` | from `Info.plist` | Build number |
 | `--sign IDENTITY` | ad-hoc | Code-signing identity |
 | `--feed-url URL` | from `Info.plist` | Sparkle appcast URL |
@@ -79,18 +79,28 @@ Two rules hold everywhere:
 `MacxFS` lives in `Sources/FSKit`.
 It was renamed because macOS already ships a system `FSKit.framework`.
 
+### UI strings
+
+UI text lives in the String Catalog `Sources/UI/Resources/Localizable.xcstrings`; the key is the English text.
+Add entries with `scripts/l10n-add.sh "Key one" "Key %@ two"`. It writes Xcode's format (sorted keys, `"key" : value`).
+It needs `jq` (macOS ships it; else `brew install jq`).
+
 ---
 
 ## Run on a sandbox folder
 
 Run the app on a throwaway folder when you try things out.
 Nothing you own is touched.
+Use the scenario copy of the app (or a debug build): a release build with the normal bundle id refuses the
+test-harness options (`--root`, `--scenario`, `--scenario-output`, `--smoke-exit-after`, `--keymap`, `--plugins-dir`)
+and exits 64, so the shipped app can't be driven from the command line.
 
 ```bash
+scripts/bundle.sh release --bundle-id com.macexplorer.app.scenarios --output .build/macExplorer-scenarios.app
 SB="$(mktemp -d "${TMPDIR%/}/macx-fixtures-XXXXXX")"
 mkdir "$SB/root" && touch "$SB/root/a.txt" "$SB/root/b.txt"
 
-.build/MacExplorer.app/Contents/MacOS/macExplorer \
+.build/macExplorer-scenarios.app/Contents/MacOS/macExplorer \
     --root "$SB/root" --state-dir "$SB/state" --sandbox-trash "$SB/trash" \
     --pasteboard "macx-fixtures-$$" --fake-launch-services --skip-onboarding
 
@@ -110,6 +120,10 @@ rm -rf "$SB"                       # when you're done
 | `--scenario-output <file>` | Where the scenario writes its result. |
 | `--smoke-exit-after <seconds>` | Write `<state-dir>/smoke.json` and quit. |
 | `--keymap <file>` | Import a keymap file (the Settings › Shortcuts export format) into the sandbox settings before any window opens. Needs `--state-dir`. A file that can't be used exits with status 65. |
+| `--plugins-dir <dir>` | Load plugins from this folder only, never the real one. Needs `--state-dir`. |
+
+`--root`, `--scenario`, `--scenario-output`, `--smoke-exit-after`, `--keymap` and `--plugins-dir` are test-harness
+options: only debug builds and the scenario copy (`com.macexplorer.app.scenarios`) accept them.
 
 Sandboxed runs never query the real Spotlight index and never download from iCloud.
 
@@ -130,10 +144,11 @@ Each runner deletes its folders when it finishes.
 | `swift test --filter <Class>` | One test class, while you iterate | seconds |
 | `scripts/run-scenarios.sh` | Headless end-to-end file operations, undo, crash recovery, search | minutes |
 | `scripts/ui-scenarios.sh` | Scripted UI scenarios in the real app | minutes |
-| `scripts/ui-ax-smoke.sh` | Accessibility smoke test (needs Accessibility permission) | minutes |
+| `scripts/ui-ax-smoke.sh` | Accessibility smoke test (needs Accessibility permission; exits 3 with `SKIP` without it) | minutes |
 | `swift run -c release macx-bench` | Benchmarks on 1k, 10k and 100k files | minutes |
 | `scripts/check-layering.sh` | Import rules and test-safety rules | seconds |
-| `scripts/verify-phase1.sh` | All of the above, then checks nothing was left behind | longest |
+| `scripts/test-sandbox-lib.sh` | Self-test of `scripts/lib/sandbox.sh` (sandbox removal, launch options, the scenario lock) | seconds |
+| `scripts/verify-phase1.sh` | All of the above, the script self-tests (`test-with-retry.sh --self-test`, `resolve-packages.sh --self-test`, `release/test-release-scripts.sh`), then checks nothing was left behind | longest |
 | `scripts/verify-phase4.sh` | `verify-phase1.sh`, then checks every Phase 4 core family, `p4-*` UI scenario and Phase 4 budget passed | longest |
 
 Run the full suite with `--parallel`.
@@ -143,6 +158,9 @@ Serial `swift test` takes 6–7 minutes.
 
 UI scenarios need keyboard focus.
 Only one can run on the Mac at a time, across all worktrees.
+`ui-scenarios.sh`, `ui-ax-smoke.sh`, `test-plugin-load.sh` and the app-launch gate of `verify-phase1.sh` take the lock
+`${TMPDIR}/macx-scenario-app.lock` and exit 2 while another live run holds it. A lock whose process is gone is taken
+over. The sandbox cleanup and launch options these scripts share are in `scripts/lib/sandbox.sh`.
 
 - Scenario files are in `Tests/Scenarios/`.
 - Their schema is in `Sources/UI/Scenario/ScenarioFile.swift`.
@@ -186,7 +204,7 @@ CI is `.github/workflows/ci.yml`. It runs on every push to `main` and every pull
 
 It runs, in order:
 
-1. The layering checks.
+1. The layering checks and the script self-tests.
 2. Release and debug builds.
 3. The tests.
 4. The app bundle.
@@ -198,9 +216,11 @@ It runs, in order:
 Shared runners are slow, so CI retries failures once.
 
 - `scripts/test-with-retry.sh` re-runs each failed test alone.
-- It doesn't retry when more than 5 tests failed, or the build failed.
-- The scenario runners re-run each failed scenario once.
-- A pass on retry shows as a **Flaky test** warning, not a failure.
+- It doesn't retry when more than 2 tests failed (`MAX_RETRIES`), or the build failed.
+- The scenario runners re-run each failed scenario once, also only up to 2 failures.
+- A pass on retry shows as a **Flaky test** warning, not a failure, and the log ends with a
+  `FLAKY: <n> … passed only on retry: <names>` line.
+- `scripts/resolve-packages.sh` retries `swift package resolve` only on network and HTTP errors; anything else fails at once.
 
 ### Benchmark gate
 
@@ -279,7 +299,10 @@ It does this:
 4. Updates the appcast on `gh-pages` and the Homebrew cask.
 
 If CI failed: fix it or re-run it, then re-run the release.
-If the commit has no CI run, the release runs the tests itself.
+When the commit has a CI run from a push to `main`, that run decides, even if a pull-request run of the same commit
+finished first.
+If the commit has no CI run (or only cancelled ones), the release stops: run CI on the tag with
+`gh workflow run ci.yml --ref vX.Y.Z`, then re-run the release.
 
 **Dry run:** Actions › Release › Run workflow.
 This only shows up when `release.yml` is on the default branch.
@@ -306,7 +329,25 @@ A publishing run stops early unless these secrets are set.
    - **If you lose this key, existing installs can't update.**
 2. Create an orphan `gh-pages` branch with an empty commit. Turn on GitHub Pages from it.
 3. Create the public repo `roniburd/homebrew-macexplorer`. Store a token for it in `HOMEBREW_TAP_TOKEN`.
-4. For self-signed signing: store the certificate secrets. Set `RELEASE_SIGNING: self-signed` in `release.yml`. The default is `adhoc`.
+4. Store the self-signed certificate secrets. `release.yml` sets `RELEASE_SIGNING: self-signed` (the other choice is
+   `adhoc`), so a publishing run fails without them.
+
+</details>
+
+<details>
+<summary><b>Signing and library validation</b></summary>
+
+Releases are signed with the self-signed certificate, so the code identity stays the same across updates and macOS
+keeps the privacy grants (Desktop, Documents, Full Disk Access). An ad-hoc signature would change with every build.
+
+The trade-off: hardened-runtime library validation only loads code signed with the app's Team ID, and only Apple-issued
+Developer ID certificates have one. So `scripts/bundle.sh` gives ad-hoc and self-signed builds the
+`com.apple.security.cs.disable-library-validation` entitlement, or they couldn't load the embedded Sparkle.framework,
+`libMacxPluginKit.dylib` and plugins. With it, the app loads libraries signed by anyone, or not signed at all: anything
+that can write to the app bundle or a plugins folder can get code loaded into MacExplorer, where it inherits the app's
+privacy grants. The hardened runtime still blocks `DYLD_*` injection.
+
+A Developer ID build (below) keeps library validation on and gets a secure timestamp.
 
 </details>
 
@@ -333,7 +374,7 @@ Every item is required.
 | # | Run | Expect |
 |---|---|---|
 | 1 | `scripts/verify-phase4.sh` | `[verify-phase4] OK` (it runs `verify-phase1.sh` first). Any metric over budget blocks the release. |
-| 2 | `scripts/ui-ax-smoke.sh` | `PASS ui-ax-smoke` |
+| 2 | `scripts/ui-ax-smoke.sh` | `PASS ui-ax-smoke`. Exit 3 (`SKIP`) means the terminal lacks Accessibility permission: grant it and rerun. |
 
 ### Performance (Instruments)
 
