@@ -93,6 +93,8 @@ final class InlineRenameController: NSObject, NSTextFieldDelegate {
     private var originalName = ""
     private var isCommitting = false
     private var isEnding = false
+    /// The latest commit's prompts-then-rename task; tests await it before checking that nothing was renamed.
+    private(set) var commitTask: Task<Void, Never>?
     var origin: OriginID?
     var onEnd: (() -> Void)?
     /// Seam for tests; the default shows the §5.6 alerts as sheets.
@@ -148,7 +150,7 @@ final class InlineRenameController: NSObject, NSTextFieldDelegate {
         case .ok(let warnings):
             isCommitting = true
             let url = source.url(atRow: row)
-            Task { await self.confirmAndRename(url: url, id: id, field: field, to: proposed, warnings: warnings, neighbor: neighbor) }
+            commitTask = Task { await self.confirmAndRename(url: url, id: id, field: field, to: proposed, warnings: warnings, neighbor: neighbor) }
         }
     }
 

@@ -176,7 +176,7 @@ final class InlineRenameTests: XCTestCase {
         try await h.waitUntil("asked") { held.continuation != nil }
         rename.cancel()
         held.answer(true)
-        try await Task.sleep(for: .milliseconds(200))
+        await rename.commitTask?.value                                   // a rename it started would be done by now
         XCTAssertTrue(h.exists("a.txt"))
         XCTAssertFalse(h.exists("a.md"))
     }
@@ -197,10 +197,36 @@ final class InlineRenameTests: XCTestCase {
         session.folder.applyLocalChange(LocalChange(directory: h.url(""), removed: ["a.txt", "z.txt"]))
         try await h.waitUntil("the original a.txt gone from the listing") { session.folder.row(of: original) == nil }
         held.answer(true)
-        try await h.waitUntil("rename closed") { !rename.isEditing }
-        try await Task.sleep(for: .milliseconds(200))
+        await rename.commitTask?.value
+        XCTAssertFalse(rename.isEditing)
         XCTAssertTrue(h.exists("a.txt"), "the other item keeps its name")
         XCTAssertFalse(h.exists("a.md"))
+    }
+
+    func testItemRenamedWhileTheExtensionPromptIsUpKeepsEditing() async throws {
+        let h = try await ContentTestHarness.make(self)
+        try h.file("a.txt")
+        let (content, session, _) = try await h.makeContent()
+        let rename = try beginRename(content, "a.txt")
+        let original = session.folder.identity(atRow: try XCTUnwrap(session.folder.row(named: "a.txt")))
+        let held = holdConfirm(rename)
+        try type("a.md", rename)
+        try send(#selector(NSResponder.insertNewline(_:)), rename)
+        try await h.waitUntil("asked") { held.continuation != nil }
+        // The same item gets another name while the prompt is up: it stays listed under its identity.
+        try FileManager.default.moveItem(at: h.url("a.txt"), to: h.url("b.txt"))
+        session.folder.applyLocalChange(LocalChange(directory: h.url(""), renamed: [.init(from: "a.txt", to: "b.txt")]))
+        try await h.waitUntil("listed as b.txt") {
+            session.folder.row(of: original).map { session.folder.name(atRow: $0) } == "b.txt"
+        }
+        held.answer(true)
+        await rename.commitTask?.value
+        XCTAssertTrue(rename.isEditing, "keeps editing; Return renames it from where it is now")
+        XCTAssertEqual(rename.editingID, original)
+        XCTAssertTrue(h.exists("b.txt"))
+        XCTAssertFalse(h.exists("a.md"))
+        XCTAssertFalse(h.exists("a.txt"))
+        rename.cancel()
     }
 
     func testLeadingDotWarnsHidden() async throws {
