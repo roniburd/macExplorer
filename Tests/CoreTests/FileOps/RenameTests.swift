@@ -21,7 +21,8 @@ final class RenameTests: FileOpsTestCase {
         XCTAssertTrue(kept.hasSuffix(" 2.txt"))
     }
 
-    /// Review B1-7: only a plausible earlier counter (2…99, no leading zero) is bumped; other numbers are name.
+    /// Review B1-7: only a plausible earlier counter (2…99, no leading zero, and the unsuffixed sibling exists) is
+    /// bumped; other numbers are name.
     func testKeepBothKeepsNumbersThatAreNotACounter() {
         let none: (String) -> Bool = { _ in false }
         XCTAssertEqual(NameGenerator.keepBoth("IMG 0001.jpg", isDirectory: false, taken: none), "IMG 0001 2.jpg")
@@ -29,8 +30,13 @@ final class RenameTests: FileOpsTestCase {
         XCTAssertEqual(NameGenerator.keepBoth("Chapter 1.pdf", isDirectory: false, taken: none), "Chapter 1 2.pdf")
         XCTAssertEqual(NameGenerator.keepBoth("Take 05.wav", isDirectory: false, taken: none), "Take 05 2.wav")
         XCTAssertEqual(NameGenerator.keepBoth("Scan 100.png", isDirectory: false, taken: none), "Scan 100 2.png")
-        XCTAssertEqual(NameGenerator.keepBoth("Folder 9", isDirectory: true, taken: none), "Folder 10")
-        XCTAssertEqual(NameGenerator.keepBoth("x 99.txt", isDirectory: false, taken: none), "x 100.txt")
+        XCTAssertEqual(NameGenerator.keepBoth("Folder 9", isDirectory: true, taken: none), "Folder 9 2")
+        XCTAssertEqual(NameGenerator.keepBoth("Folder 9", isDirectory: true) { $0 == "Folder" }, "Folder 10")
+        XCTAssertEqual(NameGenerator.keepBoth("x 99.txt", isDirectory: false) { $0 == "x.txt" }, "x 100.txt")
+        // An album folder: "Track 10" is a real track, not our counter, even with "Track 11" taken.
+        let album: Set<String> = ["Track 10.mp3", "Track 11.mp3", "Track 12.mp3"]
+        XCTAssertEqual(NameGenerator.keepBoth("Track 10.mp3", isDirectory: false) { album.contains($0) }, "Track 10 2.mp3")
+        XCTAssertEqual(NameGenerator.keepBoth("Episode 5.mkv", isDirectory: false, taken: none), "Episode 5 2.mkv")
         let taken: Set<String> = ["IMG 0001 2.jpg"]
         XCTAssertEqual(NameGenerator.keepBoth("IMG 0001.jpg", isDirectory: false) { taken.contains($0) }, "IMG 0001 3.jpg")
     }

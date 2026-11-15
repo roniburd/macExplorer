@@ -19,13 +19,17 @@ enum NameGenerator {
 
     /// Finder's rule: " 2" is appended ("IMG 0001.jpg" → "IMG 0001 2.jpg", "Report 2024.pdf" → "Report 2024 2.pdf").
     /// A trailing " N" is read as an earlier Keep Both counter (and bumped: "x 2.txt" → "x 3.txt") only when it
-    /// plausibly is one: 2…99 with no leading zero. Anything else (a year, a camera's frame number, "Chapter 1") is
-    /// part of the name.
+    /// plausibly is one: 2…99 with no leading zero AND the name without it ("x.txt") is taken too, i.e. there is
+    /// evidence an earlier Keep Both made it. Anything else (a year, a camera's frame number, "Track 10" in an album
+    /// folder) is part of the name.
     static func keepBoth(_ name: String, isDirectory: Bool, taken: (String) -> Bool) -> String {
         let (base, ext) = split(name, isDirectory: isDirectory)
         var stem = base
         var n = 2
-        if let m = base.wholeMatch(of: /(.+) ([1-9]\d?)/), let k = Int(m.2), k >= 2 { stem = String(m.1); n = k + 1 }
+        if let m = base.wholeMatch(of: /(.+) ([1-9]\d?)/), let k = Int(m.2), k >= 2,
+           taken(join(String(m.1), suffix: "", ext)) {
+            stem = String(m.1); n = k + 1
+        }
         while true {
             let candidate = join(stem, suffix: " \(n)", ext)
             if !taken(candidate) { return candidate }
