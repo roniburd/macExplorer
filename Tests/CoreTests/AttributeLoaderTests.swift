@@ -2,8 +2,8 @@ import XCTest
 @testable import Core
 import MacxFS
 
-/// FolderModel's attribute-read bookkeeping (AttributeLoader) and re-read state (RereadState), extracted from
-/// FolderModel: the queueing, stale-serial and re-read rules the model relies on. No I/O.
+/// FolderModel's attribute-read bookkeeping (AttributeLoader), extracted from FolderModel: the queueing and
+/// stale-serial rules the model relies on. No I/O.
 @MainActor
 final class AttributeLoaderTests: XCTestCase {
     private func request(_ rows: Int...) -> AttributeRequest {
@@ -61,20 +61,5 @@ final class AttributeLoaderTests: XCTestCase {
         XCTAssertTrue(loader.stale.isEmpty)
         XCTAssertEqual(loader.serial, 1, "serials only grow")
         XCTAssertTrue(loader.refreshScheduled, "a fresh load re-issues the last request")
-    }
-
-    func testRereadStatePendingAndStalledOnlyWhileRunning() {
-        var state = RereadState.idle
-        state.setPending()
-        state.setStalled(true)
-        XCTAssertEqual(state, .idle, "no effect when idle")
-        state = .running(pending: false, stalled: false)
-        state.setStalled(true)
-        XCTAssertTrue(state.isStalled)
-        XCTAssertFalse(state.isPending)
-        state.setPending()
-        XCTAssertEqual(state, .running(pending: true, stalled: true))
-        state.setStalled(false)
-        XCTAssertEqual(state, .running(pending: true, stalled: false), "resuming keeps the pending re-read")
     }
 }

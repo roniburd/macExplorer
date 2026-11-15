@@ -545,6 +545,51 @@ final class FolderModelTests: XCTestCase {
         XCTAssertEqual(reads.reads.count, 4, "no further read")
     }
 
+    func testTruncatedReReadKeepsTheReReadPendingBehindIt() async throws {
+        let w = try await FolderTestWorld.make(self)
+        let reads = ScriptedReads()
+        let m = w.model(w.url("odd-volume"))
+        m.readSource = reads.source()
+        m.start()
+        try await w.waitUntil("read started") { reads.reads.count == 1 }
+        reads.last.continuation.yield(.batch(TestBatch.files(reads.last.generation, ["a"])))
+        reads.last.continuation.yield(.completed(ReadSummary(entryCount: 1, degradedCount: 0, usedFallback: false, elapsed: .zero)))
+        try await w.waitUntil("complete") { m.state == .complete }
+        m.refresh()
+        try await w.waitUntil("re-read") { reads.reads.count == 2 }
+        m.refresh()                                // queued behind the running re-read
+        XCTAssertTrue(m.reread.isPending)
+        reads.last.continuation.yield(.failed(ReadFailure(code: EIO, stage: .truncatedRecords)))
+        try await w.waitUntil("fallback re-read") { reads.reads.count == 3 }
+        XCTAssertTrue(reads.last.options.forceFallback)
+        XCTAssertTrue(m.reread.isPending, "the fallback retry keeps the re-read queued behind it")
+        reads.last.continuation.yield(.batch(TestBatch.files(reads.last.generation, ["a", "b"])))
+        reads.last.continuation.yield(.completed(ReadSummary(entryCount: 2, degradedCount: 0, usedFallback: true, elapsed: .zero)))
+        try await w.waitUntil("the pending re-read runs") { reads.reads.count == 4 }
+        XCTAssertTrue(reads.last.options.forceFallback)
+        reads.last.continuation.yield(.batch(TestBatch.files(reads.last.generation, ["a", "b", "c"])))
+        reads.last.continuation.yield(.completed(ReadSummary(entryCount: 3, degradedCount: 0, usedFallback: true, elapsed: .zero)))
+        try await w.waitUntil("diff applied") { m.rowNames == ["a", "b", "c"] }
+        await w.settle()
+        XCTAssertEqual(reads.reads.count, 4, "one pending re-read, run once")
+        XCTAssertEqual(m.reread, .idle)
+    }
+
+    func testRereadStatePendingAndStalledOnlyWhileRunning() {
+        var state = RereadState.idle
+        state.setPending()
+        state.setStalled(true)
+        XCTAssertEqual(state, .idle, "no effect when idle")
+        state = .running(pending: false, stalled: false)
+        state.setStalled(true)
+        XCTAssertTrue(state.isStalled)
+        XCTAssertFalse(state.isPending)
+        state.setPending()
+        XCTAssertEqual(state, .running(pending: true, stalled: true))
+        state.setStalled(false)
+        XCTAssertEqual(state, .running(pending: true, stalled: false), "resuming keeps the pending re-read")
+    }
+
     func testProductionReadsOfAFolderThroughASymlinkRunOnTheTargetVolumesLanes() async throws {
         let w = try await FolderTestWorld.make(self)
         try w.dir("img/sub")
