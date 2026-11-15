@@ -370,9 +370,5 @@ final class SearchResultsModelTests: XCTestCase {
         let live = SearchServices.forLaunch(try LaunchOptions.parse(["macExplorer"]), lanes: lanes)
         XCTAssertTrue(live.metadataQuery is SystemMetadataQuery)        // constructing it starts no query
     }
-
-    func testSandboxedEnvironmentUsesFakeSearchServices() {
-        XCTAssertTrue(env.searchServices.metadataQuery is FakeMetadataQuery)
-        XCTAssertTrue(env.searchServices.downloader is FakeUbiquitousDownloader)
-    }
+    // CoreEnvironment.sandboxed's fake search services: HarnessSearchServicesTests.testSandboxedEnvironmentUsesFakeSearchServices.
 }

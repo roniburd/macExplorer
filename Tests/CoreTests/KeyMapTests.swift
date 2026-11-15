@@ -27,7 +27,7 @@ final class KeyMapTests: XCTestCase {
         XCTAssertEqual(Command.open.selectorName, "macx_open:")
         XCTAssertEqual(Command.moveItemHere.selectorName, "macx_moveItemHere:")
         let standard: Set<Command> = [.cut, .copy, .paste, .selectAll, .undo, .redo, .cancelOperation]
-        // Phase 2's tab commands use NSWindow's own actions (Phase2KeyMapTests.testSelectorNames).
+        // Phase 2's tab commands use NSWindow's own actions (testPhase2SelectorNames).
         for c in Command.allCases where !standard.contains(c) && !c.isWindowTabCommand {
             XCTAssertEqual(c.selectorName, "macx_\(c.rawValue):", "\(c)")
         }
@@ -251,5 +251,206 @@ final class KeyMapTests: XCTestCase {
         XCTAssertEqual(d.command(for: chord("fn+delete"), in: .sidebarLocations), .moveToTrash, "disabled, not remapped")
         XCTAssertEqual(d.command(for: chord("ctrl+c"), in: .sidebarLocations), .copy)
         XCTAssertEqual(d.command(for: chord("opt+return"), in: .sidebarLocations), .properties)
+    }
+
+    // MARK: Phase 2 commands (tabs, views, Quick Look)
+
+
+    func testPhase2Primaries() {
+        XCTAssertEqual(KeyMap.primary(.newTab), chord("cmd+t"))
+        XCTAssertEqual(KeyMap.primary(.nextTab), chord("ctrl+tab"))
+        XCTAssertEqual(KeyMap.primary(.previousTab), chord("ctrl+shift+tab"))
+        XCTAssertEqual(KeyMap.primary(.showAllTabs), KeyChord(.character("\\"), [.command, .shift]))
+        XCTAssertEqual(KeyMap.primary(.viewAsDetails), chord("cmd+1"))
+        XCTAssertEqual(KeyMap.primary(.viewAsIcons), chord("cmd+2"))
+        XCTAssertEqual(KeyMap.primary(.viewAsColumns), chord("cmd+3"))
+        XCTAssertNil(KeyMap.primary(.quickLook), "Space is content-only so type-select and text fields keep it")
+        XCTAssertEqual(KeyMap.alternates(.quickLook), [KeyChord(.space)])
+        XCTAssertNil(KeyMap.primary(.copyPathTilde))
+        XCTAssertEqual(KeyMap.primary(.copyAsPath), chord("cmd+shift+c"))   // Phase 1, unchanged
+    }
+
+    func testPhase2SelectorNames() {
+        XCTAssertEqual(Command.newTab.selectorName, "newWindowForTab:")
+        XCTAssertEqual(Command.nextTab.selectorName, "selectNextTab:")
+        XCTAssertEqual(Command.previousTab.selectorName, "selectPreviousTab:")
+        XCTAssertEqual(Command.showTabBar.selectorName, "toggleTabBar:")
+        XCTAssertEqual(Command.showAllTabs.selectorName, "toggleTabOverview:")
+        XCTAssertEqual(Command.moveTabToNewWindow.selectorName, "moveTabToNewWindow:")
+        XCTAssertEqual(Command.mergeAllWindows.selectorName, "mergeAllWindows:")
+        XCTAssertEqual(Command.quickLook.selectorName, "macx_quickLook:")
+        XCTAssertEqual(Command.copyPathShellQuoted.selectorName, "macx_copyPathShellQuoted:")
+    }
+
+    func testWindowTabCommandsAreTheNSWindowActions() {
+        XCTAssertEqual(Command.windowTabCommands,
+                       [.newTab, .nextTab, .previousTab, .showTabBar, .showAllTabs, .moveTabToNewWindow, .mergeAllWindows])
+        for c in Command.allCases where !Command.windowTabCommands.contains(c) {
+            XCTAssertFalse(c.isWindowTabCommand)
+        }
+    }
+
+    func testDispatcherSpaceAndControlTab() {
+        let d = KeyDispatcher(returnKey: .open)
+        XCTAssertEqual(d.command(for: KeyChord(.space), in: .content), .quickLook)
+        XCTAssertNil(d.command(for: KeyChord(.space), in: .sidebarFolders))
+        XCTAssertNil(d.command(for: KeyChord(.space), in: .fieldEditor))
+        XCTAssertNil(d.command(for: KeyChord(.tab, [.control]), in: .content), "⌃Tab is the next-tab menu key, never focus cycling")
+        XCTAssertNil(d.command(for: KeyChord(.tab, [.control, .shift]), in: .sidebarFolders))
+        XCTAssertEqual(d.command(for: KeyChord(.tab), in: .content), .cycleFocusForward)   // Phase 1 unchanged
+    }
+
+    func testPhase2Availability() {
+        func on(_ c: Command, _ f: FocusContext = .content, _ s: CommandState) -> Bool { CommandAvailability.isEnabled(c, focus: f, state: s) }
+        XCTAssertFalse(on(.quickLook, .content, CommandState()))
+        XCTAssertTrue(on(.quickLook, .content, CommandState(selectionCount: 1)))
+        XCTAssertTrue(on(.quickLook, .content, CommandState(quickLookVisible: true)), "Space closes an open panel with nothing selected")
+        XCTAssertFalse(on(.quickLook, .sidebarFolders, CommandState(selectionCount: 1)))
+        XCTAssertFalse(on(.openInNewTab, .content, CommandState(selectionCount: 2, selectedFolderCount: 0)))
+        XCTAssertTrue(on(.openInNewTab, .content, CommandState(selectionCount: 2, selectedFolderCount: 1)))
+        XCTAssertTrue(on(.openInNewTab, .sidebarFavorites, CommandState()))
+        XCTAssertTrue(on(.groupByKind, .content, CommandState(viewMode: .details)))
+        XCTAssertFalse(on(.groupByKind, .content, CommandState(viewMode: .icons)))
+        XCTAssertFalse(on(.toggleFolderSizes, .content, CommandState(viewMode: .columns)))
+        XCTAssertTrue(on(.newTab, .sidebarLocations, CommandState()))
+        for c in [Command.copyPathTilde, .copyPathFileURL, .copyName, .copyPathShellQuoted] {
+            XCTAssertEqual(on(c, .content, CommandState(selectionCount: 1)), on(.copyAsPath, .content, CommandState(selectionCount: 1)))
+            XCTAssertFalse(on(c, .content, CommandState()))
+        }
+    }
+
+    func testFocusContextIsSidebar() {
+        XCTAssertEqual([FocusContext.content, .sidebarFavorites, .sidebarLocations, .sidebarFolders, .sidebarVolumeRoot,
+                        .addressBar, .fieldEditor].map(\.isSidebar),
+                       [false, true, true, true, true, false, false])
+    }
+
+    func testQuickLookIsNotATextCollision() {
+        XCTAssertFalse(KeyBindings.defaults.collidesWithTextEditing.contains(.quickLook))
+        XCTAssertFalse(KeyBindings.defaults.collidesWithTextEditing.contains(.nextTab))
+    }
+
+    // MARK: Phase 3 commands (preview, search)
+
+
+    static let phase3Commands: [Command] = [
+        .togglePreviewPane, .openContainingFolder, .saveSearch, .stopSearch, .searchScopeThisFolder, .searchScopeSubfolders,
+        .searchScopeThisMac, .searchModeName, .searchModeContents, .renameSavedSearch, .removeSavedSearch, .downloadForPreview,
+    ]
+
+    /// Added after Phase 3 (Preview in the item context menu).
+    static let laterPreviewCommands: [Command] = [.showInPreview, .previewZoomIn, .previewZoomOut, .previewActualSize]
+
+    func testPhase3CommandsExistInOrder() {
+        // The Phase 4 commands follow (KeymapPresetTests).
+        let beforePhase4 = Command.allCases.dropLast(CommandAvailability.phase4Commands.count)
+        XCTAssertEqual(Array(beforePhase4.suffix(Self.phase3Commands.count + Self.laterPreviewCommands.count)), Self.phase3Commands + Self.laterPreviewCommands)
+        XCTAssertNil(KeyMap.primary(.showInPreview), "Preview has no default shortcut")
+    }
+
+    func testPhase3Primaries() {
+        XCTAssertEqual(KeyMap.primary(.togglePreviewPane), chord("opt+p"))
+        XCTAssertEqual(KeyMap.primary(.openContainingFolder), chord("cmd+opt+r"))
+        for c: Command in [.saveSearch, .stopSearch, .searchScopeThisFolder, .searchScopeSubfolders, .searchScopeThisMac,
+                           .searchModeName, .searchModeContents, .renameSavedSearch, .removeSavedSearch, .downloadForPreview] {
+            XCTAssertNil(KeyMap.primary(c), "\(c)")
+        }
+        for c in Self.phase3Commands {
+            XCTAssertEqual(KeyMap.alternates(c), [], "\(c)")
+            XCTAssertEqual(KeyMap.defaultMouse(c), [], "\(c)")
+        }
+    }
+
+    func testPhase3SelectorNames() {
+        XCTAssertEqual(Command.togglePreviewPane.selectorName, "macx_togglePreviewPane:")
+        XCTAssertEqual(Command.openContainingFolder.selectorName, "macx_openContainingFolder:")
+        XCTAssertEqual(Command.removeSavedSearch.selectorName, "macx_removeSavedSearch:")
+        for c in Self.phase3Commands { XCTAssertEqual(c.selectorName, "macx_\(c.rawValue):") }
+    }
+
+    // Review Focus 2
+    func testTogglePreviewPaneCollidesWithTextEditing() {
+        XCTAssertTrue(KeyMap.collidesWithTextEditing.contains(.togglePreviewPane))
+        XCTAssertFalse(KeyMap.collidesWithTextEditing.contains(.openContainingFolder))
+        XCTAssertTrue(KeyBindings.defaults.collidesWithTextEditing.contains(.togglePreviewPane))
+        let d = KeyDispatcher(returnKey: .open)
+        XCTAssertNil(d.command(for: chord("opt+p"), in: .fieldEditor))
+        XCTAssertNil(d.command(for: chord("opt+p"), in: .addressBar))
+        XCTAssertFalse(CommandAvailability.isEnabled(.togglePreviewPane, focus: .fieldEditor, state: CommandState()))
+        XCTAssertTrue(CommandAvailability.isEnabled(.openContainingFolder, focus: .searchResults,
+                                                    state: CommandState(selectionCount: 1, showingResults: true)))
+    }
+
+    /// A user who moves Toggle Preview Pane to a ⌘ chord gets a key that no longer collides; ⌥P stays a default only
+    /// (Settings › Shortcuts still rejects typing chords as new primaries).
+    func testReboundPreviewPaneNoLongerCollides() {
+        var o = KeyBindingOverrides.empty
+        o.setPrimary(chord("opt+cmd+p"), for: .togglePreviewPane)
+        XCTAssertFalse(KeyBindings(overrides: o).collidesWithTextEditing.contains(.togglePreviewPane))
+        XCTAssertEqual(KeyBindings(overrides: o).primary(.togglePreviewPane), chord("opt+cmd+p"))
+        XCTAssertEqual(KeyBindings.validate(.key(chord("opt+p")), as: .primary), .editsTextAsPrimary)
+    }
+
+    func testDispatcherInNewFocusContexts() {
+        let d = KeyDispatcher(returnKey: .open)
+        for (key, cmd) in [("return", Command.open), ("fn+delete", .moveToTrash), ("delete", .back), ("shift+fn+delete", .deletePermanently),
+                           ("space", .quickLook)] {
+            XCTAssertEqual(d.command(for: chord(key), in: .searchResults), d.command(for: chord(key), in: .content), key)
+            XCTAssertEqual(d.command(for: chord(key), in: .searchResults), cmd, key)
+        }
+        XCTAssertEqual(KeyDispatcher(returnKey: .rename).command(for: chord("return"), in: .searchResults), .rename)
+        XCTAssertEqual(d.command(for: chord("fn+delete"), in: .sidebarSavedSearch), .removeSavedSearch)
+        XCTAssertEqual(d.command(for: chord("cmd+shift+r"), in: .sidebarSavedSearch), .renameSavedSearch)
+        XCTAssertNil(d.command(for: chord("shift+fn+delete"), in: .sidebarSavedSearch))
+        XCTAssertNil(d.command(for: chord("space"), in: .sidebarSavedSearch))
+        XCTAssertEqual(d.command(for: chord("return"), in: .sidebarSavedSearch), .open)
+        XCTAssertTrue(FocusContext.sidebarSavedSearch.isSidebar)
+        XCTAssertFalse(FocusContext.searchResults.isSidebar)
+    }
+
+    // "Del never deletes files" in SEARCHES
+    func testSavedSearchRemaps() {
+        XCTAssertEqual(CommandAvailability.effectiveCommand(.moveToTrash, focus: .sidebarSavedSearch), .removeSavedSearch)
+        XCTAssertEqual(CommandAvailability.effectiveCommand(.rename, focus: .sidebarSavedSearch), .renameSavedSearch)
+        XCTAssertNil(CommandAvailability.effectiveCommand(.deletePermanently, focus: .sidebarSavedSearch))
+        XCTAssertEqual(CommandAvailability.effectiveCommand(.moveToTrash, focus: .searchResults), .moveToTrash)
+        XCTAssertEqual(CommandAvailability.effectiveCommand(.open, focus: .sidebarSavedSearch), .open)
+    }
+
+    func testPhase3Availability() {
+        let results = CommandState(selectionCount: 1, canPaste: true, showingResults: true)
+        XCTAssertTrue(CommandAvailability.isEnabled(.openContainingFolder, focus: .searchResults, state: results))
+        XCTAssertFalse(CommandAvailability.isEnabled(.openContainingFolder, focus: .searchResults, state: CommandState(showingResults: true)))
+        XCTAssertFalse(CommandAvailability.isEnabled(.openContainingFolder, focus: .content, state: CommandState(selectionCount: 1)))
+        XCTAssertFalse(CommandAvailability.isEnabled(.openContainingFolder, focus: .sidebarFolders, state: results))
+        for c: Command in [.paste, .moveItemHere, .newFolder, .newTextFile, .newEmptyFile, .viewAsColumns] {
+            XCTAssertFalse(CommandAvailability.isEnabled(c, focus: .searchResults, state: results), "\(c)")
+        }
+        XCTAssertTrue(CommandAvailability.isEnabled(.moveToTrash, focus: .searchResults, state: results))
+        XCTAssertTrue(CommandAvailability.isEnabled(.copy, focus: .searchResults, state: results))
+        XCTAssertTrue(CommandAvailability.isEnabled(.quickLook, focus: .searchResults, state: results))
+        XCTAssertTrue(CommandAvailability.isEnabled(.togglePreviewPane, focus: .content, state: CommandState()))
+        for c: Command in [.searchScopeThisFolder, .searchScopeSubfolders, .searchScopeThisMac, .searchModeName, .searchModeContents] {
+            XCTAssertTrue(CommandAvailability.isEnabled(c, focus: .content, state: CommandState()), "\(c)")
+        }
+        XCTAssertTrue(CommandAvailability.isEnabled(.stopSearch, focus: .content, state: CommandState(isSearching: true)))
+        XCTAssertFalse(CommandAvailability.isEnabled(.stopSearch, focus: .content, state: CommandState()))
+        XCTAssertTrue(CommandAvailability.isEnabled(.saveSearch, focus: .content, state: CommandState(hasSearchQuery: true)))
+        XCTAssertFalse(CommandAvailability.isEnabled(.saveSearch, focus: .content, state: CommandState()))
+        XCTAssertTrue(CommandAvailability.isEnabled(.downloadForPreview, focus: .content, state: CommandState(selectionCount: 1, previewPaneVisible: true)))
+        XCTAssertFalse(CommandAvailability.isEnabled(.downloadForPreview, focus: .content, state: CommandState(selectionCount: 1)))
+        XCTAssertFalse(CommandAvailability.isEnabled(.downloadForPreview, focus: .content, state: CommandState(selectionCount: 2, previewPaneVisible: true)))
+        let sidebar = CommandState(selectionCount: 1)
+        for c: Command in [.open, .openInNewWindow, .openInNewTab, .renameSavedSearch, .removeSavedSearch] {
+            XCTAssertTrue(CommandAvailability.isEnabled(c, focus: .sidebarSavedSearch, state: sidebar), "\(c)")
+        }
+        for c: Command in [.cut, .copy, .paste, .moveItemHere, .duplicate, .makeAlias, .makeSymlink, .moveToTrash, .rename,
+                           .deletePermanently, .eject, .removeFromFavorites, .showPackageContents, .openInTerminal, .revealInFinder,
+                           .copyAsPath, .properties, .share, .newFolder, .newTextFile, .newEmptyFile,
+                           .copyPathTilde, .copyPathFileURL, .copyName, .copyPathShellQuoted, .quickLook] {
+            XCTAssertFalse(CommandAvailability.isEnabled(c, focus: .sidebarSavedSearch, state: sidebar), "\(c)")
+        }
+        XCTAssertFalse(CommandAvailability.isEnabled(.removeSavedSearch, focus: .content, state: sidebar))
+        XCTAssertFalse(CommandAvailability.isEnabled(.renameSavedSearch, focus: .sidebarFavorites, state: sidebar))
     }
 }
