@@ -95,6 +95,16 @@ final class EmptyStateTests: XCTestCase {
         XCTAssertEqual(content.emptyState.currentText, "You don't have permission to view 'locked'")
     }
 
+    /// Every harness clears the shared recorder, so a test sees only the URLs it opened, whatever ran before it.
+    func testHarnessStartsWithAnEmptyURLRecorder() async throws {
+        RecordingURLOpener.shared.open(URL(string: "https://example.invalid/left-over")!)
+        _ = try await ContentTestHarness.make(self)
+        XCTAssertEqual(RecordingURLOpener.shared.opened, [])
+        RecordingURLOpener.shared.open(URL(string: "https://example.invalid/left-over")!)
+        _ = try await ShellHarness.make(self, start: false)
+        XCTAssertEqual(RecordingURLOpener.shared.opened, [])
+    }
+
     func testRetryAndPrivacyActions() async throws {
         let h = try await ContentTestHarness.make(self)
         let (content, _, _) = try await h.makeContent()

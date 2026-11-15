@@ -18,6 +18,7 @@ final class ShellHarness {
     static func make(_ testCase: XCTestCase, start: Bool = true, configure: (inout LaunchOptions) -> Void = { _ in })
         async throws -> ShellHarness {
         let harness = try ShellHarness(configure: configure)
+        RecordingURLOpener.shared.reset()    // sandboxed runs record into this shared opener: start each test empty
         testCase.addTeardownBlock { @MainActor in await harness.tearDown() }
         if start { _ = await harness.environment.start() }
         return harness

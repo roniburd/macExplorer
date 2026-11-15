@@ -83,6 +83,7 @@ final class SidebarHarness {
     static func make(_ testCase: XCTestCase, folder: String = "home", root: String? = nil,
                      prepare: (SidebarHarness) throws -> Void = { _ in }) async throws -> SidebarHarness {
         let h = try SidebarHarness(root: root)
+        RecordingURLOpener.shared.reset()    // sandboxed runs record into this shared opener: start each test empty
         testCase.addTeardownBlock { @MainActor in await h.tearDown() }
         try prepare(h)
         _ = await h.environment.start()

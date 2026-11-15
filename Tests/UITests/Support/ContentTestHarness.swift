@@ -26,6 +26,7 @@ final class ContentTestHarness {
 
     static func make(_ testCase: XCTestCase) async throws -> ContentTestHarness {
         let harness = try ContentTestHarness()
+        RecordingURLOpener.shared.reset()    // sandboxed runs record into this shared opener: start each test empty
         testCase.addTeardownBlock { @MainActor in await harness.tearDown() }
         _ = await harness.environment.start()
         return harness
