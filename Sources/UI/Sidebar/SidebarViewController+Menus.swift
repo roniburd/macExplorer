@@ -21,7 +21,8 @@ final class SidebarMenuItem: NSMenuItem {
 
 extension SidebarViewController {
     /// Right-click menus (§5.4). Every row with a folder starts with Open in New Window and Open in New Tab (P2-06).
-    /// Favorites: then Remove from Favorites (+ Locate… when stale). Locations and tree volume roots: Eject, Properties.
+    /// Favorites: then Remove from Favorites (+ Locate… when stale). Repositories: Remove from Sidebar (forgets the
+    /// recent entry and its favorites). Locations and tree volume roots: Eject, Properties.
     /// Items act on the clicked row, not the selection.
     func menu(forRow row: Int) -> NSMenu? {
         guard let item = item(atRow: row), !item.isHeader else { return nil }
@@ -56,11 +57,16 @@ extension SidebarViewController {
             menu.addItem(SidebarMenuItem(L10n.string("Remove from Sidebar")) { [weak self] in
                 self?.perform(.removeSavedSearch, on: item)
             })
+        case .repository(let root):
+            menu.addItem(.separator())
+            menu.addItem(SidebarMenuItem(L10n.string("Remove from Sidebar")) { [weak self] in
+                self?.settings.removeRepository(root)
+            })
         case .location(let volume):
             addVolumeItems(volume, item: item, to: menu)
         case .folder(let node) where node.isVolumeRoot:
             addVolumeItems(node.volume, item: item, to: menu)
-        case .repository, .iCloudDrive, .cloudStorage, .trash, .folder, .favoritesHeader, .searchesHeader, .repositoriesHeader,
+        case .iCloudDrive, .cloudStorage, .trash, .folder, .favoritesHeader, .searchesHeader, .repositoriesHeader,
              .locationsHeader, .foldersHeader:
             break
         }

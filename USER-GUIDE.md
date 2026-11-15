@@ -448,7 +448,8 @@ Open a public GitHub repository as a read-only folder, without cloning it.
 - **Copy files out.** Drag files or folders to Finder or a local folder, or ⌘C here and ⌘V in a local folder.
   **Copy Path** copies the github.com link.
 - **Keep it handy.** Repositories you opened appear under **Repositories** in the sidebar; add one to Favorites
-  like any folder.
+  like any folder. Right-click a repository and choose **Remove from Sidebar** to drop it (and its favorites);
+  opening it again brings it back.
 
 Everything is read-only: rename, move to Trash, new folder and paste are off. Only public repositories work for now,
 and GitHub allows 60 requests an hour without signing in (a few per repository and branch, not per folder). When the

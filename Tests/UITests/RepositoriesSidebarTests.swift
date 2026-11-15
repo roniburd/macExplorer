@@ -71,6 +71,40 @@ final class RepositoriesSidebarTests: XCTestCase {
         XCTAssertEqual(cell.textField?.stringValue, "demo", "the provider's display root")
     }
 
+    func testRemoveFromSidebarForgetsTheRepositoryRow() async throws {
+        _ = NSApplication.shared
+        let sandbox = try Sandbox()
+        addTeardownBlock { sandbox.destroy() }
+        var options = LaunchOptions()
+        options.root = sandbox.root
+        options.stateDirectory = try sandbox.createDirectory("state")
+        options.pasteboardName = "macx-tests-\(UUID().uuidString)"
+        let context = UIContext(environment: CoreEnvironment.sandboxed(root: sandbox.root, remoteProviders: [FakeRemoteProvider()]),
+                                options: options)
+        let session = BrowserSession(environment: context.environment, initialURL: sandbox.root)
+        let sidebar = SidebarViewController(context: context, session: session)
+        _ = sidebar.view
+        addTeardownBlock { @MainActor in sidebar.close(); session.close() }
+        let settings = context.environment.settings
+        let demo = RemoteLocation(provider: "test.fake", repo: "demo").url
+        settings.addRecentRepository(RemoteLocation(provider: "test.fake", repo: "demo", ref: "main", path: ["src"]).url)
+        settings.favorites = [FavoritesResolver.makeRemoteFavorite(
+            url: RemoteLocation(provider: "test.fake", repo: "demo", ref: "main", path: ["src"]).url, displayName: "src")]
+        var deadline = ContinuousClock.now + .seconds(10)
+        while sidebar.row(of: .repository(demo)) < 0, ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(10)) }
+        let row = sidebar.row(of: .repository(demo))
+        XCTAssertGreaterThanOrEqual(row, 0)
+        let menu = try XCTUnwrap(sidebar.menu(forRow: row))
+        let remove = try XCTUnwrap(menu.items.first { $0.title == L10n.string("Remove from Sidebar") } as? SidebarMenuItem)
+        XCTAssertTrue(remove.isEnabled)
+        _ = remove.target?.perform(remove.action, with: remove)
+        XCTAssertEqual(settings.recentRepositories, [])
+        XCTAssertEqual(settings.favorites, [], "its favorites go too, or the row would stay")
+        deadline = ContinuousClock.now + .seconds(10)
+        while sidebar.sectionHeaders.contains(.repositories), ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertFalse(sidebar.sectionHeaders.contains(.repositories), "the last row gone: no section")
+    }
+
     func testRemoteFavoritesAreDroppedThroughTheProviderAndShownInSandboxMode() async throws {
         _ = NSApplication.shared
         let sandbox = try Sandbox()

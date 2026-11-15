@@ -270,6 +270,21 @@ public final class Settings {
         recentRepositories = [root] + recentRepositories.filter { $0 != root }
     }
 
+    /// Remove from Sidebar on a REPOSITORIES row: forgets `url`'s repository (provider + repo; ref and path ignored)
+    /// from `recentRepositories` and drops every favorite inside it, so the row goes away. Non-remote URLs are ignored.
+    /// Nothing remote is touched; browsing the repository again lists it again.
+    public func removeRepository(_ url: URL) {
+        guard let target = RemoteLocation(url: url) else { return }
+        func isTarget(_ string: String?) -> Bool {
+            guard let string, let url = URL(string: string), let l = RemoteLocation(url: url) else { return false }
+            return l.provider == target.provider && l.repo == target.repo
+        }
+        let recents = recentRepositories.filter { !isTarget($0) }
+        if recents != recentRepositories { recentRepositories = recents }
+        let kept = favorites.filter { !isTarget($0.remoteURL) }
+        if kept != favorites { favorites = kept }
+    }
+
     /// Moves `target` to the front of `paletteRecent` (P4-03).
     public func notePaletteUsed(_ target: PaletteTarget) {
         let entry = target.encoded

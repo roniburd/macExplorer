@@ -400,6 +400,33 @@ final class SettingsTests: XCTestCase {
         let reloaded = Settings(storage: storage, home: URL(filePath: "/Users/me", directoryHint: .isDirectory))
         XCTAssertEqual(reloaded.recentRepositories, settings.recentRepositories)
     }
+
+    func testRemoveRepositoryDropsItsRecentAndFavoritesOnly() {
+        let storage = InMemorySettingsStorage()
+        let settings = Settings(storage: storage, home: URL(filePath: "/Users/me", directoryHint: .isDirectory))
+        func url(_ provider: String, _ repo: String, _ path: [String] = []) -> URL {
+            RemoteLocation(provider: provider, repo: repo, ref: "main", path: path).url
+        }
+        settings.addRecentRepository(url("test.fake", "keep"))
+        settings.addRecentRepository(url("test.other", "gone"))   // same repo path, other provider: kept
+        settings.addRecentRepository(url("test.fake", "gone", ["src"]))
+        let local = Favorite(bookmark: Data(), displayName: "docs", lastKnownPath: "/Users/me/docs")
+        settings.favorites = [
+            FavoritesResolver.makeRemoteFavorite(url: url("test.fake", "gone", ["src"]), displayName: "src"),
+            FavoritesResolver.makeRemoteFavorite(url: url("test.fake", "gone"), displayName: "gone"),
+            FavoritesResolver.makeRemoteFavorite(url: url("test.fake", "keep", ["a"]), displayName: "a"),
+            local,
+        ]
+        settings.removeRepository(RemoteLocation(provider: "test.fake", repo: "gone").url)
+        func root(_ provider: String, _ repo: String) -> String { RemoteLocation(provider: provider, repo: repo).url.absoluteString }
+        XCTAssertEqual(settings.recentRepositories, [root("test.other", "gone"), root("test.fake", "keep")])
+        XCTAssertEqual(settings.favorites.map(\.displayName), ["a", "docs"])
+        settings.removeRepository(URL(filePath: "/Users/me/docs"))   // not remote: ignored
+        XCTAssertEqual(settings.favorites.map(\.displayName), ["a", "docs"])
+        let reloaded = Settings(storage: storage, home: URL(filePath: "/Users/me", directoryHint: .isDirectory))
+        XCTAssertEqual(reloaded.recentRepositories, settings.recentRepositories)
+        XCTAssertEqual(reloaded.favorites, settings.favorites)
+    }
 }
 
 /// Review B1-9: a value JSONEncoder rejects never deletes the stored key, and non-finite widths are never kept.
