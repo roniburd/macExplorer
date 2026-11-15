@@ -40,7 +40,8 @@ public final class SearchResultsModel: RowSource {
     private var needsFullSort = false
     private var pumping = false
     private var pendingCompletion: SearchSummary?        // applied at the end of the pump round that reached it
-    private var closed = false
+    /// Set by close(); a closed model never searches or emits again.
+    public private(set) var closed = false
     private var startedAt = ContinuousClock.now
     /// Settings.showHidden the engine of the current generation runs with (crawler includeHidden, Spotlight post-filter).
     public private(set) var includesHidden = false

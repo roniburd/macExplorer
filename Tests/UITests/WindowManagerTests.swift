@@ -115,13 +115,9 @@ final class WindowManagerTests: XCTestCase {
         XCTAssertNil(session.results, "parked")
         h.context.windows.releaseVolume(isUnder(h.url("vol")))
         XCTAssertEqual(session.folder.directory.lastPathComponent, "other", "the window isn't on the volume")
-        var events = 0
-        let token = results.observe { _ in events += 1 }
-        defer { token.cancel() }
+        XCTAssertTrue(results.closed, "the dropped model is closed")
         session.goBack()
         XCTAssertFalse(session.results === results, "the parked results were dropped, not shown again")
-        try await Task.sleep(for: .milliseconds(200))
-        XCTAssertEqual(events, 0, "the dropped model is closed")
     }
 
     func testReleaseClosesShownResultsSearchingTheVolumeAndGoesHome() async throws {
@@ -133,6 +129,7 @@ final class WindowManagerTests: XCTestCase {
         let results = try XCTUnwrap(session.results)
         h.context.windows.releaseVolume(isUnder(h.url("vol")))
         XCTAssertNil(session.results)
+        XCTAssertTrue(results.closed)
         XCTAssertEqual(session.folder.directory.standardizedFileURL.path,
                        h.environment.settings.home.standardizedFileURL.path)
         session.goBack()
