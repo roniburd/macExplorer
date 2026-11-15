@@ -154,6 +154,9 @@ Each runner deletes its folders when it finishes.
 Run the full suite with `--parallel`.
 Serial `swift test` takes 6–7 minutes.
 
+`LiveSpotlightTests` query the real Spotlight index (only inside their own sandbox) and skip unless you opt in:
+`MACX_LIVE_SPOTLIGHT=1 swift test --filter LiveSpotlightTests`.
+
 ### UI scenarios
 
 UI scenarios need keyboard focus.
@@ -462,8 +465,8 @@ Status on 2026-11-05: not run.
 <details>
 <summary><b>18. Live Spotlight</b></summary>
 
-The automated Spotlight tests only query a sandbox under `$TMPDIR`.
-Spotlight rarely indexes `$TMPDIR`, so they usually skip.
+The automated Spotlight tests (`MACX_LIVE_SPOTLIGHT=1 swift test --filter LiveSpotlightTests`) only query a sandbox
+under `$TMPDIR`. Spotlight rarely indexes `$TMPDIR`, so they usually skip even when opted in.
 
 To see real results once:
 

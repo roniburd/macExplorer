@@ -7,12 +7,16 @@ import MacxFixtures
 /// Live `NSMetadataQuery` integration, scoped ONLY to a sandbox this test creates ($TMPDIR/macx-tests-*). It never
 /// queries "This Mac" or any real folder, and never asks Spotlight to index anything (no mdimport / mdutil -i).
 /// Spotlight usually does not index $TMPDIR, so these tests skip when the probe file never shows up.
+/// Opt-in: they run only with MACX_LIVE_SPOTLIGHT=1 (they wait on the live index and add nothing to a normal run).
 final class LiveSpotlightTests: XCTestCase {
     var sandbox: Sandbox!
     var token = ""
     var request: SpotlightRequest!
 
     override func setUp() async throws {
+        guard ProcessInfo.processInfo.environment["MACX_LIVE_SPOTLIGHT"] == "1" else {
+            throw XCTSkip("live Spotlight tests are opt-in: MACX_LIVE_SPOTLIGHT=1 swift test --filter LiveSpotlightTests")
+        }
         let status = await MdutilIndexStatus(lanes: LanePool()).status(ofVolumeAt: URL(filePath: "/"))
         guard status == .enabled else { throw XCTSkip("Spotlight indexing is disabled on /") }
         sandbox = try Sandbox()
