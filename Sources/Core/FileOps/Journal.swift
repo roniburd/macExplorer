@@ -64,10 +64,11 @@ public actor Journal {
         try persist()
     }
 
-    public func finish(job: JobID) throws {
+    /// Drops every entry of `job` except `kept` (entries the next launch's recovery must still see).
+    public func finish(job: JobID, keeping kept: [JournalEntry] = []) throws {
         loadIfNeeded()
         let before = items.count
-        items.removeAll { $0.job == job }
+        items.removeAll { $0.job == job && !kept.contains($0) }
         let hadAttempts = attempts.removeValue(forKey: job) != nil
         if items.count != before || hadAttempts { try persist() }
     }

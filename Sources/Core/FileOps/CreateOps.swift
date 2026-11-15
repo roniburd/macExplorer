@@ -109,29 +109,51 @@ enum CreateOps {
         }
     }
 
-    /// from → temp → target, journaled first so LaunchRecovery can restore `from` after a crash.
+    /// from → temp → target, journaled first so LaunchRecovery can restore `from` after a crash. A failed second step
+    /// renames the item back to `from`; when even that fails the item is left at `temp` and the journal entry is kept
+    /// past the job (`keepForRecovery`), so the next launch puts it back. Retry then starts from `temp`.
     static func twoStepRename(_ ctx: JobContext, from: URL, to: URL) async -> StepResult {
         let temp = from.deletingLastPathComponent()
             .appending(path: ".\(UUID().uuidString.prefix(8).lowercased()).macx-rename-\(ctx.id.short)")
         let entry = JournalEntry.twoStepRename(job: ctx.id, temporary: temp, original: from, target: to)
-        do { try await ctx.journalRecord(entry) } catch {
-            _ = await ctx.resolveFailure(EIO, url: from, destination: to)
-            return .skipped
-        }
-        let r = await ctx.attempt(from, destination: to) { _ in
-            let first = PosixFS.rename(from.path, temp.path)
-            guard first == 0 else { return first }
-            // `to` was free for this item before step one; refuse whatever holds it now.
-            let second: Int32 = switch RenamePrimitive.rename(temp.path, to.path, renameExcl: true) {
-            case .renamed: 0
-            case .exists: EEXIST
-            case .crossDevice: EXDEV
-            case .failed(let e): e
+        journaling: while true {
+            do { try await ctx.journalRecord(entry); break journaling } catch {
+                switch await ctx.resolveFailure(EIO, url: from, destination: to) {
+                case .retry: continue journaling
+                case .skipped: return .skipped
+                case .cancelled: return .cancelled
+                }
             }
-            if second != 0 { _ = PosixFS.rename(temp.path, from.path) }
-            return second
+        }
+        let hook = ctx.tuning.faultHook, jobID = ctx.id
+        var stranded = false                      // the item is at `temp` (its rename back failed)
+        while true {
+            let atTemp = stranded
+            let (code, nowAtTemp) = (try? await ctx.onLane { _ -> (Int32, Bool) in
+                if !atTemp {
+                    let first = PosixFS.rename(from.path, temp.path)
+                    guard first == 0 else { return (first, false) }
+                    hook?(.betweenRenameSteps, jobID)
+                }
+                // `to` was free for this item before step one; refuse whatever holds it now.
+                let second: Int32 = switch RenamePrimitive.rename(temp.path, to.path, renameExcl: true) {
+                case .renamed: 0
+                case .exists: EEXIST
+                case .crossDevice: EXDEV
+                case .failed(let e): e
+                }
+                guard second != 0 else { return (0, false) }
+                // Back to `from`, never over something that appeared there meanwhile.
+                return (second, RenamePrimitive.rename(temp.path, from.path, renameExcl: true) != .renamed)
+            }) ?? (EIO, atTemp)
+            stranded = nowAtTemp
+            if code == 0 { break }
+            let answer = await ctx.resolveFailure(code, url: from, destination: to)
+            if answer == .retry { continue }
+            if stranded { ctx.keepForRecovery(entry) } else { await ctx.journalClear(entry) }
+            return answer == .skipped ? .skipped : .cancelled
         }
         await ctx.journalClear(entry)
-        return r
+        return .done
     }
 }

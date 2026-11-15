@@ -7,4 +7,6 @@ public enum FaultPoint: String, Sendable, CaseIterable {
     case archiveToolStarted
     /// A batch rename moved every item to its temporary name (between phase 1 and phase 2; job code).
     case batchRenameStaged
+    /// A two-step rename moved the item to its temporary name (between its two renames; on the lane).
+    case betweenRenameSteps
 }

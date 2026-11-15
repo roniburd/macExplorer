@@ -190,6 +190,70 @@ final class RenameTests: FileOpsTestCase {
         XCTAssertEqual(entries.filter { if case .twoStepRename = $0 { true } else { false } }, [])
     }
 
+    /// Review B1-5: the second step failed and so did the rename back (something now holds the original name). The
+    /// journal entry outlives the job, and the next launch puts the item back.
+    func testTwoStepRenameKeepsItsJournalEntryWhenTheRollbackFails() async throws {
+        let a = try file("d/a.txt", "A"); try file("d/b.txt", "B")                 // the target is taken: step two fails
+        let aPath = a.path
+        let tuning = FileOpTuning(faultHook: { point, _ in
+            if point == .betweenRenameSteps { _ = FileManager.default.createFile(atPath: aPath, contents: Data("blocker".utf8)) }
+        })
+        let journal = Journal(fileURL: journalURL)
+        let scripted = ScriptedInteraction(errors: [.skip])
+        let ctx = JobContext(id: JobID(), request: request(.rename(a, to: "b.txt")), lanes: LanePool(),
+                             trash: SandboxTrash(directory: trashDir), journal: journal, interaction: scripted, tuning: tuning)
+        let r = await CreateOps.twoStepRename(ctx, from: a, to: url("d/b.txt"))
+        XCTAssertEqual(r, .skipped)
+        XCTAssertEqual(scripted.askedErrors().count, 1, "the failure is surfaced")
+        XCTAssertEqual(text(a), "blocker", "the rename back never replaces what appeared at the original name")
+        XCTAssertEqual(text(url("d/b.txt")), "B")
+        XCTAssertEqual(names(url("d")).filter { $0.contains("macx-rename") }.count, 1, "the item waits at its temporary name")
+        try await journal.finish(job: ctx.id, keeping: ctx.keptForRecovery())       // as JobRunner does
+        let kept = await journal.entries()
+        XCTAssertEqual(kept.filter { if case .twoStepRename = $0 { true } else { false } }.count, 1)
+        try FileManager.default.removeItem(at: a)                                   // the blocker goes; next launch:
+        let report = await LaunchRecovery.run(journal: Journal(fileURL: journalURL), lanes: LanePool())
+        XCTAssertEqual(report.restoredRenames, [a])
+        XCTAssertEqual(text(a), "A")
+        let left = await Journal(fileURL: journalURL).entries()
+        XCTAssertEqual(left, [])
+    }
+
+    /// Answers the first error by making the journal writable again, then gives `answer`.
+    private final class JournalFixingInteraction: FileOpInteraction, @unchecked Sendable {
+        let statePath: String
+        let answer: ErrorResolution
+        init(statePath: String, answer: ErrorResolution) { self.statePath = statePath; self.answer = answer }
+        func resolveConflict(_ conflict: ConflictInfo, job: JobSnapshot) async -> ConflictResolution { .one(.skip) }
+        func resolveError(_ error: FileOpError, job: JobSnapshot) async -> ErrorResolution {
+            _ = chmod(statePath, 0o755)
+            return answer
+        }
+        func confirmInsufficientSpace(_ shortfall: SpaceShortfall, job: JobSnapshot) async -> Bool { false }
+        func confirmPermanentDeleteWithoutTrash(_ urls: [URL], job: JobSnapshot) async -> Bool { false }
+    }
+
+    /// Review B1-5: a failed journal write honors Retry and Cancel (it always skipped).
+    func testTwoStepRenameHonorsRetryAndCancelWhenTheJournalCannotBeWritten() async throws {
+        for answer in [ErrorResolution.retry, .cancel] {
+            let a = try file("d\(answer)/a.txt", "A")
+            XCTAssertEqual(chmod(url("state").path, 0o500), 0)                       // the journal write fails
+            let ctx = JobContext(id: JobID(), request: request(.rename(a, to: "A.txt")), lanes: LanePool(),
+                                 trash: SandboxTrash(directory: trashDir), journal: Journal(fileURL: journalURL),
+                                 interaction: JournalFixingInteraction(statePath: url("state").path, answer: answer),
+                                 tuning: FileOpTuning())
+            let r = await CreateOps.twoStepRename(ctx, from: a, to: url("d\(answer)/A.txt"))
+            if answer == .retry {
+                XCTAssertEqual(r, .done)
+                XCTAssertEqual(names(url("d\(answer)")), ["A.txt"])
+            } else {
+                XCTAssertEqual(r, .cancelled)
+                XCTAssertTrue(ctx.control.isCancelled)
+                XCTAssertEqual(names(url("d\(answer)")), ["a.txt"])
+            }
+        }
+    }
+
     func testRenameRejectsSlashEmptyAndTooLong() async throws {
         let a = try file("a.txt")
         let scripted = ScriptedInteraction()

@@ -66,6 +66,8 @@ final class JobContext: Sendable {
         var icons = IconShare()
         /// Replace on a volume without a Trash: the user agreed to delete the existing items permanently (asked once).
         var permanentReplaceApproved = false
+        /// Journal entries that must outlive the job (LaunchRecovery acts on them at the next launch).
+        var keptForRecovery: [JournalEntry] = []
     }
     private let state: Mutex<State>
 
@@ -194,6 +196,9 @@ final class JobContext: Sendable {
         try await journal.record(entry)
     }
     func journalClear(_ entry: JournalEntry) async { try? await journal.clear(entry) }
+    /// `entry` stays in the journal when the job finishes, for the next launch's recovery.
+    func keepForRecovery(_ entry: JournalEntry) { state.withLock { $0.keptForRecovery.append(entry) } }
+    func keptForRecovery() -> [JournalEntry] { state.withLock { $0.keptForRecovery } }
 
     // MARK: control and questions
     func checkpoint() async -> Bool { await control.checkpoint() }
@@ -363,7 +368,7 @@ enum JobRunner {
         case .undo(let record), .redo(let record):
             await UndoPlanner.run(ctx, record)
         }
-        try? await ctx.journal.finish(job: ctx.id)
+        try? await ctx.journal.finish(job: ctx.id, keeping: ctx.keptForRecovery())
         return ctx.outcome()
     }
 }
