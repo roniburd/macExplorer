@@ -5,7 +5,10 @@ import MacxFS
 extension FileCommandController {
     // MARK: open (§5.7)
 
-    func open(_ target: CommandTarget, newWindow: Bool) {
+    /// `newWindow` is the explicit request (Open in New Window, ⌘-double-click). Folder rows of the content or search
+    /// results also open in a new window when Settings > General > "Open folders in:" says so.
+    func open(_ target: CommandTarget, newWindow explicitNewWindow: Bool) {
+        let newWindow = explicitNewWindow || environment.settings.openFoldersIn == .newWindow
         switch target {
         case .resultsSelection(let results):
             let items = openItems(rows: Array(results.selection.rows), in: results)
@@ -33,11 +36,11 @@ extension FileCommandController {
             }
         case .folder, .favorite, .volume, .location:
             guard let url = subjectURLs(target).first else { return }
-            if newWindow { context.windows.openWindow(at: url) } else { window?.navigate(to: url) }
+            if explicitNewWindow { context.windows.openWindow(at: url) } else { window?.navigate(to: url) }
         case .savedSearch(let saved):
-            openSavedSearch(saved, in: newWindow ? .newWindow : .thisWindow)
+            openSavedSearch(saved, in: explicitNewWindow ? .newWindow : .thisWindow)
         case .currentFolder(let folder):
-            if newWindow { context.windows.openWindow(at: folder.directory) }
+            if explicitNewWindow { context.windows.openWindow(at: folder.directory) }
         }
     }
 

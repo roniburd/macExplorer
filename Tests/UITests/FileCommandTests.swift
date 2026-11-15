@@ -229,6 +229,35 @@ final class FileCommandTests: XCTestCase {
         XCTAssertNil(fake.opened().last?.app)
     }
 
+    /// Settings > General > "Open folders in: In a new window": Open on a folder row opens a window there and leaves
+    /// this one where it was; documents still open with their apps, and the default setting navigates in place.
+    func testOpenFoldersInNewWindowSettingOpensFolderRowsInANewWindow() async throws {
+        let w = try await world { try $0.file("sub/doc.txt"); try $0.file("b.txt") }
+        let windows = w.h.context.windows
+        let before = windows.windows.count
+        let here = w.folder.directory
+        w.h.environment.settings.openFoldersIn = .newWindow
+        w.select(["sub"])
+        w.commands.perform(.open, target: w.selection, sender: nil)
+        try await w.h.waitUntil("new window opened") { windows.windows.count == before + 1 }
+        let opened = try XCTUnwrap(windows.windows.last)
+        XCTAssertEqual(opened.session.folder.directory.standardizedFileURL.path, w.h.url("sub").standardizedFileURL.path)
+        XCTAssertEqual(w.folder.directory, here, "this window stays where it was")
+        w.select(["b.txt"])
+        w.commands.perform(.open, target: w.selection, sender: nil)
+        let fake = try XCTUnwrap(w.h.environment.launchServices.provider as? FakeLaunchServices)
+        try await w.h.waitUntil("document opened with its app") { fake.opened().last?.files.first?.lastPathComponent == "b.txt" }
+        XCTAssertEqual(windows.windows.count, before + 1, "a document never opens a window")
+        opened.close()
+        try await w.h.waitUntil("new window closed") { windows.windows.count == before }
+
+        w.h.environment.settings.openFoldersIn = .sameWindow
+        w.select(["sub"])
+        w.commands.perform(.open, target: w.selection, sender: nil)
+        try await w.h.waitUntil("navigated in place") { w.folder.directory.standardizedFileURL.path == w.h.url("sub").standardizedFileURL.path }
+        XCTAssertEqual(windows.windows.count, before)
+    }
+
     /// Review fix (P2-08): a mount point's listed fileID is the covered folder's, while every other route probes
     /// with stat (the mounted volume's root). Opening the row must key its view state the same way as back/forward,
     /// so one folder never gets two records. The image is created and mounted -nobrowse inside the test sandbox.
