@@ -154,6 +154,8 @@ final class SheetHost {
         guard !isDone else { return }
         isDone = true
         answer = value
+        // A sheet queued behind another one already has its sheetParent (AppKit, macOS 26), and endSheet takes it off
+        // the queue, so a dialog cancelled before it showed never attaches later (OperationsUITests covers both).
         if let parent, panel.sheetParent === parent {
             parent.endSheet(panel)              // the completion handler resumes
         } else {

@@ -232,6 +232,36 @@ final class OperationsUITests: XCTestCase {
         XCTAssertNil(b, "ended from outside: no answer, and never a hang")
     }
 
+    /// A dialog queued behind another sheet and cancelled before it shows never attaches later without an answer.
+    func testSheetHostCancelledWhileQueuedNeverAttaches() async throws {
+        try ContentTestHarness.requireWindowServer()
+        let h = try await ContentTestHarness.make(self)
+        let browser = try await h.openBrowserWindow()
+        let window = try XCTUnwrap(browser.window)
+        let blocker = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 200, height: 100), styleMask: [.titled],
+                              backing: .buffered, defer: true)
+        blocker.isReleasedWhenClosed = false
+        window.beginSheet(blocker, completionHandler: nil)
+        try await h.waitUntil("blocker shown") { window.attachedSheet === blocker }
+        let queued = SheetHost()
+        let run = Task { await queued.run(AnyView(Text(verbatim: "queued")), on: window) }
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertTrue(window.attachedSheet === blocker, "queued behind the blocker")
+        XCTAssertFalse(queued.panel.isVisible)
+        // AppKit (macOS 26) sets a queued sheet's sheetParent at beginSheet, and endSheet on it dequeues it and runs
+        // its completion handler: SheetHost.finish relies on both.
+        XCTAssertTrue(queued.panel.sheetParent === window)
+        queued.finish(nil)
+        let answer = await run.value
+        XCTAssertNil(answer)
+        window.endSheet(blocker)
+        try await h.waitUntil("blocker gone") { window.attachedSheet !== blocker }
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertNil(window.attachedSheet, "the cancelled dialog doesn't attach once the blocker ends")
+        XCTAssertFalse(queued.panel.isVisible)
+        if let sheet = window.attachedSheet { window.endSheet(sheet) }
+    }
+
     func testCapsuleLivesInStatusBarSlotAndHidesWhenIdle() async throws {
         try ContentTestHarness.requireWindowServer()
         let h = try await ContentTestHarness.make(self)
