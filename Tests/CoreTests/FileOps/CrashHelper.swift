@@ -3,6 +3,7 @@ import Darwin
 @testable import Core
 import MacxFS
 import MacxFixtures
+import Synchronization
 
 /// Describes a job the child process runs until it SIGKILLs itself at `fault`.
 struct CrashSpec: Codable {
@@ -66,7 +67,10 @@ final class CrashHelperEntry: XCTestCase {
 
 extension FileOpsTestCase {
     /// Runs `spec` in a child `xcrun xctest` process of this same test bundle. Returns true if the child was SIGKILLed.
-    func runCrashingChild(_ spec: CrashSpec) async throws -> Bool {
+    /// A child still running after `timeout` is terminated (SIGTERM, then SIGKILL 5 s later) and fails the test,
+    /// so a hung job never hangs the suite.
+    func runCrashingChild(_ spec: CrashSpec, timeout: Duration = .seconds(60),
+                          file: StaticString = #filePath, line: UInt = #line) async throws -> Bool {
         let sandboxRoot = Sandbox.enclosingRoot(of: sandbox.root.path(percentEncoded: false))
         guard sandboxRoot != nil, Sandbox.commonRoot(of: spec.guardedPaths, prefixes: ["macx-tests"]) == sandboxRoot else {
             XCTFail("outside this test's sandbox: \(spec.guardedPaths)"); return false
@@ -89,11 +93,48 @@ extension FileOpsTestCase {
         process.environment = env
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
-        return try await withCheckedThrowingContinuation { (c: CheckedContinuation<Bool, any Error>) in
+        let watchdog = ChildWatchdog()
+        let killed = try await withCheckedThrowingContinuation { (c: CheckedContinuation<Bool, any Error>) in
             process.terminationHandler = { p in
+                watchdog.exited()
                 c.resume(returning: p.terminationReason == .uncaughtSignal && p.terminationStatus == SIGKILL)
             }
-            do { try process.run() } catch { c.resume(throwing: error) }
+            do { try process.run() } catch { c.resume(throwing: error); return }
+            watchdog.arm(pid: process.processIdentifier, after: timeout)
+        }
+        if watchdog.timedOut {
+            XCTFail("crash child (\(spec.mode), fault \(spec.fault)) still running after \(timeout): terminated", file: file, line: line)
+            return false
+        }
+        return killed
+    }
+}
+
+/// Terminates a child that outlives its timeout: SIGTERM, then SIGKILL 5 s later, never after its termination
+/// handler ran.
+private final class ChildWatchdog: Sendable {
+    private let state = Mutex<(exited: Bool, timedOut: Bool)>((false, false))
+
+    var timedOut: Bool { state.withLock { $0.timedOut } }
+
+    func exited() { state.withLock { $0.exited = true } }
+
+    func arm(pid: pid_t, after timeout: Duration) {
+        let c = timeout.components
+        let seconds = Double(c.seconds) + Double(c.attoseconds) / 1e18
+        DispatchQueue.global().asyncAfter(deadline: .now() + seconds) { [self] in
+            guard signal(pid, SIGTERM, markTimedOut: true) else { return }
+            DispatchQueue.global().asyncAfter(deadline: .now() + 5) { [self] in _ = signal(pid, SIGKILL, markTimedOut: false) }
+        }
+    }
+
+    /// Signals `pid` unless the termination handler already ran (the lock orders the two). Returns false then.
+    private func signal(_ pid: pid_t, _ sig: Int32, markTimedOut: Bool) -> Bool {
+        state.withLock { s in
+            guard !s.exited else { return false }
+            if markTimedOut { s.timedOut = true }
+            kill(pid, sig)
+            return true
         }
     }
 }

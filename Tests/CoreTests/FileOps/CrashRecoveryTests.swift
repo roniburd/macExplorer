@@ -78,4 +78,18 @@ final class CrashRecoveryTests: FileOpsTestCase {
         XCTAssertEqual(text(url("src/a")), "new")
         XCTAssertEqual(names(d), ["a"])
     }
+
+    /// A child still running at its timeout is terminated and fails the test, instead of hanging the suite.
+    func testCrashChildOutlivingItsTimeoutIsTerminatedAndFails() async throws {
+        try bigFile("src/T/big", bytes: 8 << 20)
+        let d = try dir("d")
+        let options = XCTExpectedFailure.Options()
+        options.issueMatcher = { $0.compactDescription.contains("still running after") }
+        XCTExpectFailure("the watchdog reports the timeout", options: options)
+        let start = ContinuousClock.now
+        let killed = try await runCrashingChild(spec([url("src/T")], d, fault: .beforeSourceDelete, force: true),
+                                                timeout: .milliseconds(50))
+        XCTAssertFalse(killed, "terminated by the watchdog, not by its own fault point")
+        XCTAssertLessThan(ContinuousClock.now - start, .seconds(30), "SIGTERM (then SIGKILL) ends the child")
+    }
 }
