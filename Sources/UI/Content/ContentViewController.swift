@@ -446,7 +446,7 @@ final class ContentViewController: CommandHandlingViewController {
         }
     }
 
-    /// Scenario drop entry point (overview §3.14 ScenarioProbe.probePerformDrop). Drag sessions can't be synthesized
+    /// Scenario drop entry point (overview §3.14 probePerformDrop). Drag sessions can't be synthesized
     /// in-process, so this runs the same DropPolicy → menu choice → job path as a real drop.
     func scenarioDrop(sources: [URL], onto: String, modifiers: DragModifiers, secondary: Bool, choice: DragOperation?) {
         let folder = session.folder

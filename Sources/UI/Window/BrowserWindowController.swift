@@ -5,7 +5,7 @@ import MacxPluginKit
 
 /// One browser window (§5.1): unified toolbar (ToolbarController, P1-27), sidebar + content split, per-window session.
 @MainActor
-public final class BrowserWindowController: NSWindowController, NSWindowDelegate, ScenarioProbe {
+public final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     let context: UIContext
     let session: BrowserSession
     let splitViewController: BrowserSplitViewController

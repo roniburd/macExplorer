@@ -2,7 +2,8 @@ import AppKit
 import Core
 import MacxFS
 
-/// ScenarioProbe conformance (overview §3.14): model values plus the hooks later tasks install.
+/// What the in-process scenario driver (P1-41) reads from a browser window (overview §3.14 probe values): model
+/// values plus the ScenarioHooks later tasks install.
 extension BrowserWindowController {
     var probeFolderURL: URL { session.folder.directory }
 
