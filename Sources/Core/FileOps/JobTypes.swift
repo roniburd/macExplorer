@@ -28,17 +28,6 @@ public struct ModeChange: Sendable, Codable, Equatable {
         self.keepsFileExecuteBits = keepsFileExecuteBits
     }
 
-    private enum CodingKeys: String, CodingKey { case mode, applyToDirectories, applyToFiles, keepsFileExecuteBits }
-
-    /// Journal records written before `keepsFileExecuteBits` existed decode with it false.
-    public init(from decoder: any Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        self.init(mode: try c.decode(UInt16.self, forKey: .mode),
-                  applyToDirectories: try c.decode(Bool.self, forKey: .applyToDirectories),
-                  applyToFiles: try c.decode(Bool.self, forKey: .applyToFiles),
-                  keepsFileExecuteBits: try c.decodeIfPresent(Bool.self, forKey: .keepsFileExecuteBits) ?? false)
-    }
-
     /// The mode bits (0o777) an item of `mode` gets.
     public func applied(to mode: UInt16, isDirectory: Bool) -> UInt16 {
         let bits: UInt16 = isDirectory || !keepsFileExecuteBits ? 0o777 : 0o666

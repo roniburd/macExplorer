@@ -34,7 +34,7 @@ public enum KeymapPreset: String, Sendable, Codable, CaseIterable {
     }
 
     /// The preset with the fewest commands whose triggers differ from `overrides` (Explorer on a tie): what an
-    /// imported or older stored keymap is taken to be based on.
+    /// imported keymap without a base is taken to be based on.
     public static func nearest(to overrides: KeyBindingOverrides) -> KeymapPreset {
         let bindings = KeyBindings(overrides: overrides)
         var best = KeymapPreset.explorer, bestCount = Int.max

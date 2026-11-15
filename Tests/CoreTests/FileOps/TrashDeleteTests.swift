@@ -218,12 +218,6 @@ final class TrashDeleteTests: FileOpsTestCase {
         XCTAssertEqual(lst(url("T/sub/b.txt")).st_mode & 0o777, 0o640)
     }
 
-    func testModeChangeDecodesRecordsWithoutTheNewField() throws {
-        let old = Data(#"{"mode":448,"applyToDirectories":true,"applyToFiles":false}"#.utf8)
-        XCTAssertEqual(try JSONDecoder().decode(ModeChange.self, from: old),
-                       ModeChange(mode: 0o700, applyToDirectories: true, applyToFiles: false))
-    }
-
     func testChmodRecursiveFilesOnly() async throws {
         try file("T/f")
         let (queue, _) = makeQueue()

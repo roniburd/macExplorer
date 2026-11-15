@@ -248,17 +248,8 @@ public final class Settings {
             }
         }
         keyBindingOverrides = overrides
-        // Stored keys without a stored base (from before the base was always remembered): the preset they are closest
-        // to, written straight away so the guess is made once and later edits can't change it. No keys: Explorer, not
-        // written (defaults aren't stored; the first edit stores the base with the keys).
-        if let base = Self.load(KeymapPreset.self, Key.keymapBase, from: storage) {
-            keymapBase = base
-        } else if storage.data(forKey: Key.keyBindings) != nil {
-            keymapBase = KeymapPreset.nearest(to: overrides)
-            storage.set(try? JSONEncoder().encode(keymapBase), forKey: Key.keymapBase)
-        } else {
-            keymapBase = .explorer
-        }
+        // No stored base: Explorer, not written (defaults aren't stored; the first edit stores the base with the keys).
+        keymapBase = Self.load(KeymapPreset.self, Key.keymapBase, from: storage) ?? .explorer
         if (stored ?? 0) < Self.schemaVersion {
             storage.set(try? JSONEncoder().encode(Self.schemaVersion), forKey: Self.schemaVersionKey)
         }

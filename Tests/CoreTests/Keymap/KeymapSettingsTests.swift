@@ -62,16 +62,14 @@ final class KeymapSettingsTests: XCTestCase {
         XCTAssertEqual(s.keyBindings.primary(.rename), KeyMap.primary(.rename))
     }
 
-    /// The base survives a relaunch; stored keys from before it was remembered get the nearest preset.
-    func testKeymapBaseIsStoredAndInferredWhenMissing() throws {
+    /// The base survives a relaunch; with none stored it is Explorer.
+    func testKeymapBaseIsStored() throws {
         let storage = InMemorySettingsStorage()
         let home = URL(filePath: "/tmp/macx-tests-home", directoryHint: .isDirectory)
         let a = Settings(storage: storage, home: home)
         a.applyKeymapPreset(.finder)
         a.keyBindingOverrides.setPrimary(k("cmd+9"), for: .open)
         XCTAssertEqual(Settings(storage: storage, home: home).keymapBase, .finder)
-        storage.set(nil, forKey: "keymapBase")
-        XCTAssertEqual(Settings(storage: storage, home: home).keymapBase, .finder, "inferred: one edit away from Finder")
         let fresh = settings()
         XCTAssertEqual(fresh.keymapBase, .explorer)
     }
@@ -115,28 +113,6 @@ final class KeymapSettingsTests: XCTestCase {
         let b = Settings(storage: storage, home: home)
         XCTAssertEqual(b.keymapBase, .explorer)
         XCTAssertTrue(b.isShortcutModified(.open))
-    }
-
-    /// Keys stored before the base was remembered: the nearest preset is guessed once and written, so later edits
-    /// can't change the guess.
-    func testMissingBaseIsGuessedOnceAndStored() {
-        let storage = InMemorySettingsStorage()
-        let home = URL(filePath: "/tmp/macx-tests-home", directoryHint: .isDirectory)
-        let a = Settings(storage: storage, home: home)
-        a.applyKeymapPreset(.finder)
-        storage.set(nil, forKey: "keymapBase")
-        let b = Settings(storage: storage, home: home)
-        XCTAssertEqual(b.keymapBase, .finder)
-        XCTAssertNotNil(storage.data(forKey: "keymapBase"), "the guess is written straight away")
-        b.keyBindingOverrides = .empty                                   // now the keys look like Explorer's
-        XCTAssertEqual(Settings(storage: storage, home: home).keymapBase, .finder)
-        let fresh = InMemorySettingsStorage()
-        let c = Settings(storage: fresh, home: home)
-        XCTAssertEqual(c.keymapBase, .explorer)
-        c.applyKeymapPreset(.finder); c.keyBindingOverrides = .empty
-        c.keymapBase = .explorer
-        c.keyBindingOverrides = KeymapPreset.finder.overrides             // Finder's keys on an Explorer base
-        XCTAssertEqual(Settings(storage: fresh, home: home).keymapBase, .explorer)
     }
 
     /// An imported keymap is based on the file's base preset (export writes the settings' base).
