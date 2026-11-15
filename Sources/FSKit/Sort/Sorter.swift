@@ -211,39 +211,31 @@ struct Ordering: Sendable {
         return Item(group: group, primary: primary, prefix: prefix, prefix2: prefix2, index: index)
     }
 
-    /// A key arena opened by `SortKeyColumn.withStorage`.
-    typealias Arena = (bytes: UnsafeRawBufferPointer, starts: UnsafeBufferPointer<UInt32>, lengths: UnsafeBufferPointer<UInt32>)
-
-    /// The ascending order of two items of one group (total: the storage index breaks remaining ties). Integer
-    /// compares plus at most two memcmps (the extension one only for extensions longer than the 8-byte primary);
-    /// names equal in their first 16 bytes fall back to memcmp of the whole key.
-    @inline(__always)
-    private static func ordered(_ a: Item, _ b: Item, byExtension: Bool, names: Arena, extensions: Arena) -> Bool {
-        if a.primary != b.primary { return a.primary < b.primary }
-        if byExtension, max(extensions.lengths[Int(a.index)], extensions.lengths[Int(b.index)]) > 8 {   // equal 8-byte prefixes
-            let c = compare(a.index, b.index, in: extensions)
-            if c != 0 { return c < 0 }
-        }
-        if a.prefix != b.prefix { return a.prefix < b.prefix }
-        if a.prefix2 != b.prefix2 { return a.prefix2 < b.prefix2 }
-        let c = compare(a.index, b.index, in: names)
-        if c != 0 { return c < 0 }
-        return a.index < b.index
-    }
-
-    private var byExtension: Bool { field == .fileExtension || columnKind == .strings }
-
-    /// Calls `body` with a strict-weak-order `less` (groups first, then `ordered` in the sort direction). The key
-    /// arenas are opened once for every comparison.
+    /// Calls `body` with a strict-weak-order `less` (total: the storage index breaks remaining ties).
+    /// The key arenas are opened once, so each comparison is integer compares plus at most two memcmps
+    /// (the second only for extensions longer than the 8-byte primary); names equal in their first 16 bytes
+    /// fall back to memcmp of the whole key.
     func withLess<R>(_ body: ((Item, Item) -> Bool) -> R) -> R {
         nameKeys.withStorage { bytes, starts, lengths in
             extensionKeys.withStorage { extBytes, extStarts, extLengths in
-                let ascending = self.ascending, byExtension = self.byExtension
-                let names: Arena = (bytes, starts, lengths), extensions: Arena = (extBytes, extStarts, extLengths)
+                let ascending = self.ascending, byExtension = field == .fileExtension || columnKind == .strings
+                // The same comparison as `sort`'s `ordered`: keep the two in sync. (One shared static func taking
+                // the arenas measured ~3% slower on 100k-row re-sorts, §4.4.)
+                func ordered(_ a: Item, _ b: Item) -> Bool {
+                    if a.primary != b.primary { return a.primary < b.primary }
+                    if byExtension, max(extLengths[Int(a.index)], extLengths[Int(b.index)]) > 8 {   // equal 8-byte prefixes
+                        let c = Ordering.compare(a.index, b.index, extBytes, extStarts, extLengths)
+                        if c != 0 { return c < 0 }
+                    }
+                    if a.prefix != b.prefix { return a.prefix < b.prefix }
+                    if a.prefix2 != b.prefix2 { return a.prefix2 < b.prefix2 }
+                    let c = Ordering.compare(a.index, b.index, bytes, starts, lengths)
+                    if c != 0 { return c < 0 }
+                    return a.index < b.index
+                }
                 return body { a, b in
                     if a.group != b.group { return a.group < b.group }
-                    return ascending ? Ordering.ordered(a, b, byExtension: byExtension, names: names, extensions: extensions)
-                                     : Ordering.ordered(b, a, byExtension: byExtension, names: names, extensions: extensions)
+                    return ascending ? ordered(a, b) : ordered(b, a)
                 }
             }
         }
@@ -251,10 +243,11 @@ struct Ordering: Sendable {
 
     /// memcmp of two keys in an arena, shorter-is-smaller on a common prefix.
     @inline(__always)
-    private static func compare(_ a: UInt32, _ b: UInt32, in arena: Arena) -> Int32 {
-        let la = Int(arena.lengths[Int(a)]), lb = Int(arena.lengths[Int(b)])
-        if la > 0 && lb > 0, let base = arena.bytes.baseAddress {
-            let c = memcmp(base + Int(arena.starts[Int(a)]), base + Int(arena.starts[Int(b)]), min(la, lb))
+    private static func compare(_ a: UInt32, _ b: UInt32, _ bytes: UnsafeRawBufferPointer,
+                                _ starts: UnsafeBufferPointer<UInt32>, _ lengths: UnsafeBufferPointer<UInt32>) -> Int32 {
+        let la = Int(lengths[Int(a)]), lb = Int(lengths[Int(b)])
+        if la > 0 && lb > 0, let base = bytes.baseAddress {
+            let c = memcmp(base + Int(starts[Int(a)]), base + Int(starts[Int(b)]), min(la, lb))
             if c != 0 { return c }
         }
         return la == lb ? 0 : (la < lb ? -1 : 1)
@@ -283,18 +276,24 @@ struct Ordering: Sendable {
             extensionKeys.withStorage { extBytes, extStarts, extLengths in
                 // Literal closures (one per direction) so the comparison inlines into the sort; `withLess`'s
                 // closure-of-closure costs two indirect calls per comparison on 100k-row re-sorts (§4.4).
-                let byExtension = self.byExtension
-                let names: Arena = (bytes, starts, lengths), extensions: Arena = (extBytes, extStarts, extLengths)
+                let byExtension = field == .fileExtension || columnKind == .strings
+                // The same comparison as `withLess`'s `ordered`: keep the two in sync.
+                @inline(__always) func ordered(_ a: Item, _ b: Item) -> Bool {
+                    if a.primary != b.primary { return a.primary < b.primary }
+                    if byExtension, max(extLengths[Int(a.index)], extLengths[Int(b.index)]) > 8 {
+                        let c = Ordering.compare(a.index, b.index, extBytes, extStarts, extLengths)
+                        if c != 0 { return c < 0 }
+                    }
+                    if a.prefix != b.prefix { return a.prefix < b.prefix }
+                    if a.prefix2 != b.prefix2 { return a.prefix2 < b.prefix2 }
+                    let c = Ordering.compare(a.index, b.index, bytes, starts, lengths)
+                    if c != 0 { return c < 0 }
+                    return a.index < b.index
+                }
                 if ascending {
-                    items.sort { a, b in
-                        a.group != b.group ? a.group < b.group
-                            : Ordering.ordered(a, b, byExtension: byExtension, names: names, extensions: extensions)
-                    }
+                    items.sort { a, b in a.group != b.group ? a.group < b.group : ordered(a, b) }
                 } else {
-                    items.sort { a, b in
-                        a.group != b.group ? a.group < b.group
-                            : Ordering.ordered(b, a, byExtension: byExtension, names: names, extensions: extensions)
-                    }
+                    items.sort { a, b in a.group != b.group ? a.group < b.group : ordered(b, a) }
                 }
             }
         }
