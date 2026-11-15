@@ -693,9 +693,6 @@ extension DetailsViewController: InlineRenameHost {
     func renameFieldFrame(forRow modelRow: Int) -> NSRect? {
         let column = tableView.column(withIdentifier: DetailsColumns.identifier(.name))
         guard column >= 0, let row = mapping.tableRow(forModelRow: modelRow), row < tableView.numberOfRows else { return nil }
-        let cell = tableView.frameOfCell(atColumn: column, row: row)
-        let inset = CGFloat(iconPoints) + 5
-        let height: CGFloat = max(20, min(cell.height, 22))
-        return NSRect(x: cell.minX + inset, y: cell.midY - height / 2, width: max(cell.width - inset, 60), height: height)
+        return Self.singleLineFieldFrame(in: tableView.frameOfCell(atColumn: column, row: row), leading: CGFloat(iconPoints) + 5)
     }
 }

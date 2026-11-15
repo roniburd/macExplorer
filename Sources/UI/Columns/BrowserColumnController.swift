@@ -532,10 +532,8 @@ extension BrowserColumnController: InlineRenameHost {
 
     func renameFieldFrame(forRow row: Int) -> NSRect? {
         guard row >= 0, row < tableView.numberOfRows else { return nil }
-        let cell = tableView.frameOfCell(atColumn: 0, row: row)
-        let inset = CGFloat(ColumnCellView.iconPoints) + 8
-        let height: CGFloat = max(20, min(cell.height, 22))
-        return NSRect(x: cell.minX + inset, y: cell.midY - height / 2, width: max(cell.width - inset - 16, 60), height: height)
+        return Self.singleLineFieldFrame(in: tableView.frameOfCell(atColumn: 0, row: row),
+                                         leading: CGFloat(ColumnCellView.iconPoints) + 8, trailing: 16)
     }
 }
 

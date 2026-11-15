@@ -41,6 +41,14 @@ final class InlineRenameTests: XCTestCase {
 
     // MARK: pure
 
+    /// Details and Columns place their one-line field the same way: 20–22 pt tall, centred, at least 60 pt wide.
+    func testSingleLineFieldFrameClampsHeightAndWidth() {
+        let tall = DetailsViewController.singleLineFieldFrame(in: NSRect(x: 10, y: 100, width: 200, height: 30), leading: 21)
+        XCTAssertEqual(tall, NSRect(x: 31, y: 104, width: 179, height: 22))
+        let short = BrowserColumnController.singleLineFieldFrame(in: NSRect(x: 0, y: 0, width: 70, height: 16), leading: 24, trailing: 16)
+        XCTAssertEqual(short, NSRect(x: 24, y: -2, width: 60, height: 20))
+    }
+
     func testRenameProblemTexts() {
         XCTAssertEqual(ErrorText.renameProblem(.empty, name: ""), "A name can't be empty.")
         XCTAssertEqual(ErrorText.renameProblem(.containsSlash, name: "a/b"), "A name can't contain '/'.")

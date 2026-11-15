@@ -35,6 +35,15 @@ enum RenameAdvance: Sendable { case none, next, previous }
     func renameFieldFrame(forRow row: Int) -> NSRect?
 }
 
+extension InlineRenameHost {
+    /// A one-line field over a table cell's name text (Details, Columns): 20–22 pt tall and centred on the cell, from
+    /// `leading` past the icon to `trailing` before the cell's end, never narrower than 60 pt.
+    static func singleLineFieldFrame(in cell: NSRect, leading: CGFloat, trailing: CGFloat = 0) -> NSRect {
+        let height: CGFloat = max(20, min(cell.height, 22))
+        return NSRect(x: cell.minX + leading, y: cell.midY - height / 2, width: max(cell.width - leading - trailing, 60), height: height)
+    }
+}
+
 final class RenameField: NSTextField {
     /// Typing undo stays inside the edit (§6.6, QA round 1): AppKit's per-cell undo manager hands ⌘Z it can't
     /// handle to this one, which is empty, never to the window's file-operation stack.
