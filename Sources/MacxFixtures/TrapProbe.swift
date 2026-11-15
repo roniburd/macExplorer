@@ -26,9 +26,16 @@ public enum TrapProbe {
     /// The value the parent passed for `key` (e.g. a sandbox root the child adopts).
     public static func value(_ key: String) -> String? { ProcessInfo.processInfo.environment[key] }
 
-    /// Runs `xcrun xctest -XCTest <testIdentifier> <bundle>` with the probe environment and waits (≤ 120 s).
+    public struct TimedOut: Error, Sendable, CustomStringConvertible {
+        public var testIdentifier: String
+        public var output: String
+        public var description: String { "trap probe \(testIdentifier) did not exit within its timeout\n\(output.suffix(2000))" }
+    }
+
+    /// Runs `xcrun xctest -XCTest <testIdentifier> <bundle>` with the probe environment and waits (≤ `timeout`). A child
+    /// still running then is terminated (SIGKILL if needed), reaped, and reported by throwing `TimedOut`.
     public static func run(name: String, testIdentifier: String, bundle: URL,
-                           environment: [String: String] = [:]) throws -> Result {
+                           environment: [String: String] = [:], timeout: Duration = .seconds(120)) throws -> Result {
         let process = Process()
         process.executableURL = URL(filePath: "/usr/bin/xcrun")
         process.arguments = ["xctest", "-XCTest", testIdentifier, bundle.path(percentEncoded: false)]
@@ -36,12 +43,8 @@ public enum TrapProbe {
         env[environmentKey] = name
         env.merge(environment) { _, new in new }
         process.environment = env
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
-        try process.run()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        return Result(status: process.terminationStatus, output: String(decoding: data, as: UTF8.self))
+        let outcome = try ChildProcess.run(process, timeout: timeout)
+        if outcome.timedOut { throw TimedOut(testIdentifier: testIdentifier, output: outcome.output) }
+        return Result(status: outcome.status, output: outcome.output)
     }
 }

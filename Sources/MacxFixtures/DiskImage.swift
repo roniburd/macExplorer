@@ -64,7 +64,13 @@ public final class DiskImage: Sendable {
         if format == .apfs || format == .apfsCaseSensitive || format == .hfsPlus { args += ["-owners", "on"] }
         if readOnly { args.append("-readonly") }
         args.append(imageURL.path(percentEncoded: false))
-        try DiskImage.hdiutil(args)
+        do {
+            try DiskImage.hdiutil(args)
+        } catch DiskImageError.timedOut(let arguments) {
+            // hdiutil was killed, but the attach may still have completed: never leave a mount behind.
+            DiskImage.forceDetach(mountPoint: mountPoint.path(percentEncoded: false))
+            throw DiskImageError.timedOut(arguments: arguments)
+        }
         attached.withLock { $0 = true }
         sandbox.registerMount(mountPoint.path(percentEncoded: false))
     }
@@ -84,26 +90,17 @@ public final class DiskImage: Sendable {
         _ = try? hdiutil(["detach", "-force", mountPoint])
     }
 
+    /// Output is drained while hdiutil runs; on timeout it is terminated and reaped before `timedOut` is thrown.
     @discardableResult
     static func hdiutil(_ arguments: [String], timeout: Duration = .seconds(60)) throws -> String {
         let process = Process()
         process.executableURL = URL(filePath: "/usr/bin/hdiutil")
         process.arguments = arguments + ["-quiet"]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
-        let done = DispatchSemaphore(value: 0)
-        process.terminationHandler = { _ in done.signal() }
-        try process.run()
-        let seconds = Double(timeout.components.seconds)
-        if done.wait(timeout: .now() + seconds) == .timedOut {
-            process.terminate()
-            throw DiskImageError.timedOut(arguments: arguments)
+        let outcome = try ChildProcess.run(process, timeout: timeout)
+        if outcome.timedOut { throw DiskImageError.timedOut(arguments: arguments) }
+        guard outcome.status == 0 else {
+            throw DiskImageError.hdiutilFailed(arguments: arguments, status: outcome.status, output: outcome.output)
         }
-        let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-        guard process.terminationStatus == 0 else {
-            throw DiskImageError.hdiutilFailed(arguments: arguments, status: process.terminationStatus, output: output)
-        }
-        return output
+        return outcome.output
     }
 }
