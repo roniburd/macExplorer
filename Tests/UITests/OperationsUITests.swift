@@ -245,12 +245,12 @@ final class OperationsUITests: XCTestCase {
         try await h.waitUntil("blocker shown") { window.attachedSheet === blocker }
         let queued = SheetHost()
         let run = Task { await queued.run(AnyView(Text(verbatim: "queued")), on: window) }
-        try await Task.sleep(for: .milliseconds(100))
+        // AppKit (macOS 26) sets a queued sheet's sheetParent at beginSheet, and endSheet on it dequeues it and runs
+        // its completion handler: SheetHost.finish relies on both. Waiting for it also guarantees run reached
+        // beginSheet, so finish(nil) below exercises the queued path rather than the not-yet-begun one.
+        try await h.waitUntil("queued") { queued.panel.sheetParent === window }
         XCTAssertTrue(window.attachedSheet === blocker, "queued behind the blocker")
         XCTAssertFalse(queued.panel.isVisible)
-        // AppKit (macOS 26) sets a queued sheet's sheetParent at beginSheet, and endSheet on it dequeues it and runs
-        // its completion handler: SheetHost.finish relies on both.
-        XCTAssertTrue(queued.panel.sheetParent === window)
         queued.finish(nil)
         let answer = await run.value
         XCTAssertNil(answer)
