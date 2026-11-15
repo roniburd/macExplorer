@@ -1,7 +1,8 @@
 import Foundation
 
-enum IPSFixture {
-    static func make(bundleID: String = "com.macexplorer.app", timestamp: String = "2026-11-04 10:11:12.00 -0800",
+/// A synthetic macOS crash report (.ips: a JSON header line, then the JSON body) for the crash-report tests.
+public enum IPSFixture {
+    public static func make(bundleID: String = "com.macexplorer.app", timestamp: String = "2026-11-04 10:11:12.00 -0800",
                      bugType: String = "309", appVersion: String = "0.4.0", build: String = "812",
                      home: String = "/Users/tester", frameCount: Int = 30) -> String {
         let header: [String: Any] = [
