@@ -27,6 +27,8 @@ final class ContentViewController: CommandHandlingViewController {
     let listContainer = NSView()
     /// The status bar's operations capsule (P1-38, §6.2).
     private(set) var operationsCapsule: OperationsCapsule?
+    /// The progress card over the list (shared open state: `OperationsUI.card`).
+    private(set) var progressCard: ProgressCardHostingView?
     let emptyState = EmptyStateView()
     let banner = BannerView()
     /// Breathing room between the command bar and the list, in the list's background; hidden with the bar.
@@ -169,6 +171,24 @@ final class ContentViewController: CommandHandlingViewController {
             capsule.bottomAnchor.constraint(equalTo: slot.bottomAnchor),
         ])
         operationsCapsule = capsule
+        installProgressCard()
+    }
+
+    /// The progress card floats over the list's bottom-right corner, just above the capsule.
+    private func installProgressCard() {
+        var host: ProgressCardHostingView?
+        let created = ProgressCardHostingView(rootView: context.operationsUI.cardView { host?.cardFrame = $0 })
+        host = created
+        created.sizingOptions = []
+        created.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(created, positioned: .above, relativeTo: nil)
+        NSLayoutConstraint.activate([
+            created.leadingAnchor.constraint(equalTo: listContainer.leadingAnchor),
+            created.trailingAnchor.constraint(equalTo: listContainer.trailingAnchor),
+            created.topAnchor.constraint(equalTo: listContainer.topAnchor),
+            created.bottomAnchor.constraint(equalTo: listContainer.bottomAnchor),
+        ])
+        progressCard = created
     }
 
     override func flagsChanged(with event: NSEvent) {

@@ -189,6 +189,17 @@ final class OperationsUITests: XCTestCase {
         XCTAssertEqual(JobRowModel.eta(.seconds(45), locale: en), "About 45 seconds remaining")
     }
 
+    func testProgressCardDetailLine() throws {
+        var progress = JobProgress.zero
+        progress.bytesTotal = 6_000_000_000
+        progress.bytesDone = 2_000_000_000
+        let running = JobRowModel(job(progress: progress), locale: en)
+        let bytes = try XCTUnwrap(running.bytesText)
+        XCTAssertTrue(running.detailText.hasPrefix(bytes), "bytes first, then the speed when known: \(running.detailText)")
+        XCTAssertEqual(JobRowModel(job(state: .paused, progress: progress), locale: en).detailText, "Paused")
+        XCTAssertEqual(JobRowModel(job(state: .planning), locale: en).detailText, "Preparing…")
+    }
+
     func testThroughputGraph() {
         XCTAssertEqual(ThroughputGraph.normalized([]), [])
         XCTAssertEqual(ThroughputGraph.normalized([0, 0]), [0, 0])
@@ -271,6 +282,46 @@ final class OperationsUITests: XCTestCase {
         XCTAssertTrue(capsule.superview === content.statusBar.operationsSlot)
         XCTAssertTrue(capsule.isHidden, "no jobs: no capsule")
         XCTAssertEqual(capsule.button.accessibilityIdentifier(), AXID.operationsCapsule)
+    }
+
+    func testCapsuleTogglesProgressCardAndClosingPulsesIt() async throws {
+        try ContentTestHarness.requireWindowServer()
+        let h = try await ContentTestHarness.make(self)
+        try h.file("a.txt")
+        let (content, _, _) = try await h.makeContent()
+        let capsule = try XCTUnwrap(content.operationsCapsule)
+        let host = try XCTUnwrap(content.progressCard)
+        let card = h.context.operationsUI.card
+        let operations = h.environment.operations
+        let middle = NSPoint(x: host.frame.midX, y: host.frame.midY)
+        XCTAssertNil(host.hitTest(middle), "closed: clicks reach the list")
+
+        // An external activity is a job row without a queue job (nothing on disk is touched).
+        let id = operations.beginExternal(JobDescription(verb: .downloading, itemCount: 1, firstItemName: "big.mov",
+                                                         sourceFolderName: nil, destinationFolderName: "Desktop")) {}
+        defer { operations.endExternal(id) }
+        try await h.waitUntil("capsule shown after 1 s") { capsule.refresh(); return !capsule.isHidden }
+        XCTAssertFalse(card.isOpen, "under 4 s: capsule only")
+
+        capsule.button.performClick(nil)
+        XCTAssertTrue(card.isOpen)
+        try await h.waitUntil("card laid out") { !host.cardFrame.isEmpty }
+        let cardFrame = host.cardFrame
+        let flippedY = host.isFlipped ? cardFrame.midY : host.bounds.height - cardFrame.midY
+        let inside = host.convert(NSPoint(x: cardFrame.midX, y: flippedY), to: host.superview)
+        XCTAssertNotNil(host.hitTest(inside), "the card takes clicks")
+        XCTAssertNil(host.hitTest(NSPoint(x: host.frame.minX + 5, y: host.frame.maxY - 5)), "outside the card: the list")
+        XCTAssertGreaterThan(cardFrame.midX, host.bounds.midX, "bottom-right corner")
+
+        capsule.button.performClick(nil)
+        XCTAssertFalse(card.isOpen)
+        try await h.waitUntil("capsule pulsed") { capsule.pulses == 1 }
+        try await h.waitUntil("card gone") { host.cardFrame.isEmpty }
+
+        operations.endExternal(id)
+        capsule.refresh()
+        XCTAssertTrue(capsule.isHidden)
+        XCTAssertFalse(card.isOpen)
     }
 
     func testOperationsPanelOutlivesWindowsAndDeactivation() async throws {

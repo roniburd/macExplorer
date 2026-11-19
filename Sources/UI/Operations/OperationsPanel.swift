@@ -43,12 +43,13 @@ final class OperationsPanelController: NSWindowController, NSWindowDelegate {
     }
 }
 
-/// App-wide progress and dialog UI, owned by UIContext: the interaction router, the Operations panel and the job
-/// list the capsules' popovers and the panel share.
+/// App-wide progress and dialog UI, owned by UIContext: the interaction router, the Operations panel, the job
+/// list it shows, and the state of every window's progress card.
 @MainActor
 final class OperationsUI {
     private unowned let context: UIContext
     let router: InteractionRouter
+    let card = ProgressCardState()
     private var panelController: OperationsPanelController?
 
     init(context: UIContext) {
@@ -72,15 +73,24 @@ final class OperationsUI {
     func closePanel() { panelController?.close() }
 
     func listView() -> OperationsListView {
+        OperationsListView(operations: context.environment.operations, actions: jobActions())
+    }
+
+    func cardView(onCardFrame: @escaping (CGRect) -> Void) -> ProgressCardView {
+        ProgressCardView(operations: context.environment.operations, state: card, actions: jobActions(),
+                         onCardFrame: onCardFrame)
+    }
+
+    private func jobActions() -> JobActions {
         let queue = context.environment.fileOps
         let router = router
-        return OperationsListView(operations: context.environment.operations, actions: JobActions(
+        return JobActions(
             pause: { id in Task { await queue.pause(id) } },
             resume: { id in Task { await queue.resume(id) } },
             cancel: { [operations = context.environment.operations] id in
                 // External activities (remote downloads) cancel through their own handler, not the queue.
                 if !operations.cancelExternal(id) { Task { await queue.cancel(id) } }
             },
-            showQuestion: { [weak router] id in router?.revealQuestion(for: id) }))
+            showQuestion: { [weak router] id in router?.revealQuestion(for: id) })
     }
 }

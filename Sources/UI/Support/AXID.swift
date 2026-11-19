@@ -22,6 +22,8 @@ enum AXID {
     static let renameField = "macx.renameField"
     static let operationsCapsule = "macx.operations"
     static let operationsPanel = "macx.operationsPanel"
+    static let progressCard = "macx.progressCard"
+    static let progressCardClose = "macx.progressCard.close"
     static func conflictButton(_ a: ConflictAction) -> String { "macx.conflict.\(a.rawValue)" }
     static let propertiesWindow = "macx.properties"
     static let propertiesIconWell = "macx.properties.iconWell"

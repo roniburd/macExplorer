@@ -586,6 +586,17 @@
         }
       }
     },
+    "+%lld more" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "+%lld more"
+          }
+        }
+      }
+    },
     "0–9" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1562,6 +1573,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Clear Cache"
+          }
+        }
+      }
+    },
+    "Click to show progress" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click to show progress"
           }
         }
       }
@@ -3344,6 +3366,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hide Hidden Items"
+          }
+        }
+      }
+    },
+    "Hide" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide"
+          }
+        }
+      }
+    },
+    "Hide (click the progress indicator in the status bar to show it again)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide (click the progress indicator in the status bar to show it again)"
           }
         }
       }
@@ -6161,6 +6205,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Show Hidden Items"
+          }
+        }
+      }
+    },
+    "Show Less" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Less"
           }
         }
       }
