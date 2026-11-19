@@ -136,7 +136,8 @@ enum CopyEngine {
     static func copyTree(_ item: PlanItem, to destinationRoot: String, state: inout TreeCopyState, clone: Bool,
                          chunkBytes: Int, lane: LaneContext, control: JobControl,
                          progress: @escaping (Int, Int64, String?) -> Void, onChunk: @escaping () -> Void,
-                         cloned: @escaping (Int64) -> Void = { _ in }) -> TreeStep {
+                         cloned: @escaping (Int64) -> Void = { _ in },
+                         writing: (String?) -> Void = { _ in }) -> TreeStep {
         assertOffMain()
         let srcRoot = item.source.path
         while state.next < item.entries.count {
@@ -164,6 +165,9 @@ enum CopyEngine {
                 progress(1, 0, label)
             case .file, .symlink:
                 var fileBytes: Int64 = 0
+                let writes = e.type == .file && e.size > 0
+                if writes { writing(dst) }
+                defer { if writes { writing(nil) } }
                 let r = copyFile(from: src, to: dst, expectedSize: e.type == .file ? e.size : 0, clone: clone,
                                  chunkBytes: chunkBytes, lane: lane, control: control,
                                  onBytes: { fileBytes += $0; progress(0, $0, nil) }, onChunk: onChunk,
@@ -224,7 +228,8 @@ enum TreeCopier {
                                                lane: lane, control: control,
                                                progress: { items, bytes, current in ctx.addProgress(items: items, bytes: bytes, current: current) },
                                                onChunk: { hook?(.midCopyChunk, jobID) },
-                                               cloned: { ctx.addProgress(bytes: $0, cloned: $0) })
+                                               cloned: { ctx.addProgress(bytes: $0, cloned: $0) },
+                                               writing: { ctx.setWriting($0.map { URL(filePath: $0) }) })
                 return (step, st)
             }
             let (step, newState) = result ?? (.failed(index: state.next, code: EIO), state)

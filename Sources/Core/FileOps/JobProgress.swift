@@ -9,6 +9,9 @@ public struct JobProgress: Sendable, Equatable {
     /// much as an empty file, so neither the rate nor the fraction counts it (QA round 2).
     public var bytesCloned: Int64 = 0
     public var currentItem: String? = nil
+    /// The file whose data is being written right now; nil between files. FSEvents reports those writes only when
+    /// the file closes, so OperationsCenter refreshes this file's row while it grows.
+    public var writingNow: URL? = nil
     public var throughput: [Double] = []         // bytes/s actually written, oldest first, ≤ 60
     public var estimatedRemaining: Duration? = nil
     public init() {}

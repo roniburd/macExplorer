@@ -24,6 +24,9 @@ public final class OperationsCenter {
     /// Waits out `revealDelay` before a job is revealed. Test hook: a test swaps in a gate it opens by hand, so the
     /// "hidden until the delay passes" window does not depend on how quickly a loaded runner polls.
     @ObservationIgnored var revealSleep: @Sendable (Duration) async -> Void = { try? await Task.sleep(for: $0) }
+    /// How often the row of a file being written is re-read (its size grows in the list).
+    @ObservationIgnored var writeRefreshInterval: Duration = .seconds(1)
+    @ObservationIgnored private var lastWriteRefresh: [JobID: (url: URL, at: ContinuousClock.Instant)] = [:]
 
     public init(queue: FileOpQueue, undo: FileOpUndoStack, changeBus: ChangeBus,
                 actionName: @escaping @MainActor (JobDescription) -> String) {
@@ -71,9 +74,11 @@ public final class OperationsCenter {
             // A ticker update can race the finish; one for a job we no longer list is stale.
             guard let i = jobs.firstIndex(where: { $0.id == s.id }) else { return }
             jobs[i] = s
+            refreshWrittenFile(s)
         case .finished(let s, let outcome):
             jobs.removeAll { $0.id == s.id }
             revealed.remove(s.id)
+            lastWriteRefresh[s.id] = nil
             changeBus.post(outcome.localChanges)
             if await queue.registersUndo(s.id) {
                 undo.register(outcome, actionName: actionName(s.description))
@@ -85,6 +90,20 @@ public final class OperationsCenter {
                 unclaimed[s.id] = outcome                 // finished before its perform caller started waiting
             }
         }
+    }
+
+    /// FSEvents reports a file's data writes only when it closes, so a large file being copied would keep the size
+    /// it had when it was created. While a job writes a file, its row is re-read once per `writeRefreshInterval`
+    /// (and at once when the job moves on to another file).
+    private func refreshWrittenFile(_ s: JobSnapshot) {
+        guard let url = s.progress.writingNow else {
+            lastWriteRefresh[s.id] = nil
+            return
+        }
+        let now = ContinuousClock.now
+        if let last = lastWriteRefresh[s.id], last.url == url, now - last.at < writeRefreshInterval { return }
+        lastWriteRefresh[s.id] = (url, now)
+        changeBus.post([LocalChange(directory: url.deletingLastPathComponent(), modified: [url.lastPathComponent])])
     }
 
     private func scheduleReveal(_ id: JobID) {

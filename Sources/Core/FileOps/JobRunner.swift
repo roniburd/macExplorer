@@ -126,6 +126,10 @@ final class JobContext: Sendable {
             if let current { s.snapshot.progress.currentItem = current }
         }
     }
+    /// The file whose data this job is writing now (nil when it finished or failed); see JobProgress.writingNow.
+    func setWriting(_ url: URL?) {
+        state.withLock { $0.snapshot.progress.writingNow = url }
+    }
     /// Called by the queue's ticker every progressInterval. The rate counts written bytes; the ETA follows the work
     /// (items and written bytes), like the fraction.
     func tickThroughput(now: ContinuousClock.Instant) {
